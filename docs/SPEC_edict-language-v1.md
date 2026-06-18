@@ -591,6 +591,12 @@ bounds, revocation, expiry, policy epoch) is a Continuum Admission artifact and
 stays external to Edict Core (see
 [SPEC - Continuum Admission v1](./SPEC_continuum-admission-v1.md)).
 
+The carried receipt digest is the value's canonical payload and is
+**hash-significant** wherever a `CapabilityRef<T>` value appears — in Core IR,
+predicates, and artifact identity — exactly as a `Digest` scalar would be. Only
+the external receipt body stays out of the Core hash; the digest that names it
+does not (`EDICT-LANG-CAPREF-001`).
+
 ## Effect Failure Obstructions
 
 Target and lawpack effects can fail at runtime even when source typechecks.
