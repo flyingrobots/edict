@@ -1505,13 +1505,13 @@ Semantic grammar rules:
   rule; omitting a required clause is parseable but rejected in semantic
   validation (`EDICT-LANG-INTENT-CLAUSES-001`). Required: **exactly one** of
   `profile` (runtime-native intent) or `implements` (portable semantic intent);
-  a `budget` clause; and a `basis` clause unless a profile/lawpack supplies a
-  digest-locked basis template. Optional: `footprint` (a declared ceiling; the
-  computed footprint is inferred regardless) and `where`.
-- A `basis` clause is required unless the resolved operation profile or lawpack
-  supplies a digest-locked basis template; `basis none` is the explicit
-  no-basis declaration. The `basis` expression is a typed Core expression, never
-  a free-form string.
+  a `budget` clause; and a `basis` clause (see next bullet). Optional:
+  `footprint` (a declared ceiling; the computed footprint is inferred regardless)
+  and `where`.
+- The `basis` clause is required unless the resolved operation profile or lawpack
+  supplies a digest-locked basis template; `basis none` is the explicit no-basis
+  declaration. The `basis` expression is a typed Core expression, never a
+  free-form string.
 - Multiple `where` clauses are permitted and merge conjunctively.
 - `effect-else-clause` is legal only when the right-hand side expression or
   statement is an imported effect.
