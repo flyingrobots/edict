@@ -84,6 +84,28 @@ Cleanups: `canonicalEncode<T>` returns bounded `Bytes`; bounded `repo` in the
 normative example; missing lawpack target adapter is a compiler/lowering error,
 not admission-class.
 
+### Fixed (PR #2 review audit)
+
+Resolved 9 Codex review threads + 1 self-discovered issue, one commit each:
+
+- Lowerer compares cost/footprint vs the **declared target ceiling**, never an
+  admitted participant budget (prose now matches the WIT).
+- `CoreGuard`/`ObstructionMap` carry a typed obstruction payload construct so
+  guard `expected`/`observed` round-trip through Core.
+- Core `inputConstraints` carries the typed `where` predicate trees (hash-
+  significant), not a validator coordinate.
+- `CapabilityRef<T>` added to the Core type universe, `type-ref` grammar, and
+  map-key exclusions.
+- Lawpack adapter maps failures by **coordinate** (named failures sharing an
+  authority class stay distinct).
+- `acceptedLawpackAdapterAbi` deferred/optional until `edict.lawpack-adapter/v1`
+  is specified.
+- Semantic vs nonsemantic compile options split so diagnostics cannot change
+  `semanticBundleDigest`.
+- Admission explanation carries `bundleSubject {kind,digest}`.
+- Deduped the orphan intrinsic requirement ID; registered all audit IDs.
+- Defined `CanonicalEncodedMax<T>` (self-discovered).
+
 ### Notes
 
 Applies the Phase 0 design review (external "ChatGPT" feedback): SHOULD/COULD
