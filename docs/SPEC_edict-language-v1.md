@@ -1697,8 +1697,24 @@ Effect {
 CoreGuard {
   predicate: CorePredicate,
   enforcement: targetAtomic | verifierProof | localDiagnostic,
-  obstruction: ObstructionCoordinate
+  obstruction: ObstructionConstruct
 }
+
+# A hash-significant obstruction construction: the coordinate, an optional
+# binder for the low-level failure, and a typed payload expression tree (an
+# empty record when the obstruction has no payload). This is what lets a runtime
+# guard such as `require currentHead == expectedHead else
+# rope.StaleBaseHead({ expected, observed })` round-trip through Core
+# (EDICT-CORE-GUARD-PAYLOAD-001).
+ObstructionConstruct {
+  coordinate: ObstructionCoordinate,
+  failureBinder: LocalName?,
+  payload: CoreExpr            # typed record expression; {} if empty
+}
+
+# ObstructionMap entries carry the same ObstructionConstruct, keyed by the
+# effect's named failure coordinate.
+ObstructionMap = Map<FailureCoordinate, ObstructionConstruct>
 ```
 
 The target profile or lawpack defines the footprint algebra and cost template.

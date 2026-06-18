@@ -258,7 +258,14 @@ Target guards are attached to effect nodes or target application units:
     "right": { "local": "%baseHead.headId" }
   },
   "enforcement": "targetAtomic",
-  "obstruction": "jedit.rope@1.StaleBaseHead"
+  "obstruction": {
+    "coordinate": "jedit.rope@1.StaleBaseHead",
+    "failureBinder": null,
+    "payload": {
+      "expected": { "local": "%baseHead.headId" },
+      "observed": { "field": "current.canonicalHeadId" }
+    }
+  }
 }
 ```
 
