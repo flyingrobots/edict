@@ -1517,6 +1517,10 @@ Semantic grammar rules:
 }` mapping syntax.
 - Only profile-declared `domainMappable` failure classes may be author-mapped to
   domain obstructions.
+- A bare `obstruction-target` (a coordinate with no `( expr )` payload) is
+  semantically equivalent to that coordinate with an empty record payload `{}`;
+  it normalizes to `ObstructionConstruct { payload: {} }` in Core
+  (`EDICT-LANG-OBSTRUCT-EMPTY-001`).
 - `effect-branch-expr` is legal only in `let` binding position.
 - `effect-yield-block` bodies must remain A-normal and all branches must yield
   the same type.
