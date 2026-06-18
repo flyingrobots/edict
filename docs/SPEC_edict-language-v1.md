@@ -28,6 +28,9 @@ This specification distills the Edict language plan from:
 - [Design Baseline](./DESIGN_runtime-neutral-edict-sha-lock-assurance.md)
 - `~/git/blog/continuum-yolo-edict-runtime-neutral-design.md`
 - `~/git/blog/continuum-yolo-edict-shalock-holmes-design.md`
+- `~/agy-readings/observer-geometry-overview.md`
+- `~/agy-readings/append-only-log-of-comprehension.md`
+- `~/agy-readings/aion-overview.md`
 - [PR #610](https://github.com/flyingrobots/wesley/pull/610)
 - [Issue #611](https://github.com/flyingrobots/wesley/issues/611)
 
@@ -57,8 +60,13 @@ the boundaries that must not leak back into language meaning:
 
 ## Decision Summary
 
-Edict v1 is a restricted deterministic source language for lawful operations.
-It compiles to Edict Core IR, a runtime-neutral canonical operation IR with
+Edict v1 is a restricted deterministic source language for lawful optics over
+witnessed causal history. An Edict intent is an optic-shaped operation
+specification: it declares a bounded aperture, typed input and output, imported
+law and target authorities, inferred effects, proof obligations, obstruction
+mappings, support posture, and target-owned application requirements.
+
+Edict compiles to Edict Core IR, a runtime-neutral canonical optic IR with
 explicit target imports and analyzable effects. Edict Core does not contain
 graph, commit, SQL, KV, event-log, filesystem, network, clock, random, or host
 callback primitives. Runtime target profiles provide target intrinsics,
@@ -71,6 +79,50 @@ Echo DPO, or target admission. The primary Edict language implementation should
 eventually live in its own repository, with Wesley consuming it as a compiler
 component and with Echo, Continuum, and other runtimes owning their target
 profiles.
+
+## Observer Geometry And WARP Optics
+
+Edict inherits its motivating shape from Observer Geometry and WARP optics:
+
+- observation is a structured projection, not a value read;
+- every projection has a basis, aperture, accumulation posture, and degeneracy;
+- distributed reconciliation is suffix transport across frontier-indexed
+  observers under footprint and policy checks;
+- evidence has a support ledger: carried, lost, blocked, or refuting;
+- path-sensitive evidence loss creates witness debt;
+- a WARP optic places a focused aperture over a bounded slice of causal history,
+  lowers it under an admissibility law, and retains a holographic boundary
+  shell.
+
+Therefore an Edict intent is not only a typed function from input to output. It
+is an authored optic candidate:
+
+```text
+basis + aperture + law + target profile + support obligations
+  -> reading | receipt | proposed suffix | obstruction
+```
+
+Edict v1 expresses that optic shape through typed inputs and outputs, bounded
+footprints, budgets, imported lawpacks, imported target profiles, atomic guards,
+obstruction mappings, canonical Core IR, and bundle evidence. Future syntax may
+make basis, aperture, support ledgers, degeneracy posture, and holographic
+witness shells more explicit, but v1 must not contradict those concepts.
+
+Intent classes:
+
+- **revelation optic:** read-only or observer intent that projects a bounded
+  aperture into a reading without authoring history;
+- **affect/reintegration optic:** write intent that proposes effects against a
+  basis and carries the guards, support obligations, and obstruction vocabulary
+  needed for participant admission;
+- **semantic lawpack optic:** storage-neutral intent that lowers through a
+  digest-locked lawpack into a concrete target profile.
+
+Target profiles interpret Edict Core optics into runtime-owned execution
+categories. A valid interpretation must preserve the Observer Geometry
+structure: basis, aperture, projection or affect boundary, footprint
+independence, support posture, atomic guards, cost bounds, obstruction classes,
+and canonical artifact identity.
 
 ## Autonomous Operation Lane Terminology
 
@@ -188,9 +240,9 @@ into graph-shaped Continuum.
 ### Why Not Put Edict Primarily In Wesley
 
 Wesley is the GraphQL-to-compiler-evidence substrate. Edict is a new lawful
-operation language that may be authored without GraphQL and may target runtimes
-that do not use Wesley Shape IR. Putting Edict primarily in Wesley would blur
-the domain-empty boundary and pressure Wesley core to own Continuum and runtime
+optic language that may be authored without GraphQL and may target runtimes that
+do not use Wesley Shape IR. Putting Edict primarily in Wesley would blur the
+domain-empty boundary and pressure Wesley core to own Continuum and runtime
 target semantics.
 
 ### Why Not Put Edict Primarily In Continuum
@@ -941,6 +993,15 @@ An intent may lower to effects owned by at most one runtime target profile.
 Lawpack semantic effects may lower into that target. Cross-target application
 requires a composite target profile that owns coordination, obstruction, and
 atomicity semantics.
+
+### I-031 Intent Optic Structure
+
+Every Edict intent is an optic-shaped lawful operation specification. The
+compiler and target profile must preserve the intent's basis, aperture or
+footprint, projection or affect boundary, support posture, cost bounds, guards,
+obstruction mappings, and canonical artifact identity. A lowering that erases
+support loss, degeneracy, footprint overlap, or witness debt must reject or
+record the loss explicitly in derived evidence.
 
 ## Syntax Overview
 
@@ -1921,9 +1982,11 @@ the compiler/registration/obstruction split.
 ### Compared To GraphQL
 
 GraphQL defines shape, query, mutation, and subscription surfaces. Edict
-defines lawful operation implementations with compiler-visible effects.
-GraphQL may be an Edict source profile input, but GraphQL does not provide
-target footprint inference or target IR verification by itself.
+defines the bounded lawful optic body behind such surfaces: basis, aperture,
+effects, support posture, obstruction mappings, and target verification
+obligations. GraphQL may be an Edict source profile input, but GraphQL does not
+provide target footprint inference, support-ledger tracking, or target IR
+verification by itself.
 
 ### Compared To SQL And Stored Procedures
 
@@ -1939,9 +2002,9 @@ all evidence into SHA-locked bundles.
 ### Compared To Policy Languages
 
 Policy languages such as Rego decide whether something should be allowed.
-Edict defines the operation body, its typed effects, its footprint template,
-and the artifacts needed to register and invoke it. Admission policy remains
-separate.
+Edict defines the optic body, its typed effects, its footprint template,
+support obligations, obstruction mappings, and the artifacts needed to register
+and invoke it. Admission policy remains separate.
 
 ### Compared To Workflow Languages
 
@@ -2088,6 +2151,11 @@ These are important but are not parser or language freeze prerequisites:
 - Declared footprint underclaim rejects compilation.
 - FIDLAR raw callbacks are impossible in normal syntax.
 - Target lowering produces profile-owned target IR.
+- Target lowering preserves the intent optic structure: basis, aperture or
+  footprint, projection or affect boundary, support posture, guards,
+  obstruction mappings, cost bounds, and canonical artifact identity.
+- Support loss, degeneracy, footprint overlap, and witness debt cannot be
+  silently erased by Core lowering, target lowering, or explanation artifacts.
 - Echo Span IR is documented and tested as Echo target IR only.
 - A toy non-Echo target proves the architecture is not graph-bound.
 - Wesley GraphQL/weslaw bridge emits source-profile facts without making

@@ -1,8 +1,9 @@
 # Edict
 
 Edict is a restricted deterministic language for lawful operations. It compiles
-source into Edict Core IR, lowers through explicit target profiles, and binds
-the resulting artifacts into participant-neutral contract bundles.
+optic-shaped intent source into Edict Core IR, lowers through explicit target
+profiles, and binds the resulting artifacts into participant-neutral contract
+bundles.
 
 Edict is intended as a contribution toward
 [Continuum](https://github.com/flyingrobots/continuum), the protocol suite for
@@ -36,27 +37,38 @@ itself. They can say what the callable surface is, what evidence was generated,
 and how an admission should be witnessed. They do not, by themselves, give an
 agent or tool a deterministic way to say:
 
-- what it intends to read, create, replace, append, delete, or observe;
-- what basis and bounds the operation depends on;
+- what aperture over causal history it is allowed to inspect or affect;
+- what basis, frontier, and bounds the operation depends on;
 - which effects are proof-only and which materialize at runtime;
 - how target failures become domain obstructions;
 - what cost and footprint must be checked before execution;
+- what support obligations and witness debt the result carries;
 - which target-owned atomic application unit will verify the result.
 
-Edict is a proposed answer to that missing layer. Categorically, it treats a
-lawful operation as a typed, evidence-bearing morphism from a declared basis and
-input shape to a receipt, reading, obstruction, or admitted effect. Edict Core is
-the normalized form of that morphism. A target profile is then a
+Edict is a proposed answer to that missing layer. The better category-theory
+object is not a plain function or unconstrained morphism. It is an
+Observer-Geometry-shaped optic: a focused, bounded, evidence-bearing operation
+over witnessed causal history.
+
+A read intent is a revelation optic. It projects a bounded aperture into a
+reading without authoring history. A write intent is an affect/reintegration
+optic. It proposes effects against a basis and carries the guards, support
+obligations, and obstruction vocabulary needed for a participant to decide
+whether the result can enter admitted history. A semantic lawpack intent is a
+portable optic candidate that can be interpreted into different target profiles
+without pretending those targets share a storage substrate.
+
+Edict Core is the normalized form of that optic. A target profile is then a
 structure-preserving interpretation into a runtime-owned execution category,
 such as [Echo](https://github.com/flyingrobots/echo) DPO, a KV/CAS transaction
 profile, or another participant-owned target. A valid lowering must preserve the
-lawful structure: typed inputs and outputs, explicit imports, bounded effects,
-atomic guards, cost budgets, obstruction classes, and canonical artifact
-identity.
+Observer Geometry structure: basis, aperture, projection or affect boundary,
+footprint independence, support ledger posture, atomic guards, cost budgets,
+obstruction classes, and canonical artifact identity.
 
-This category-theory framing is practical, not decorative. It separates source
-derivation honesty from destination admission lawfulness. An Edict bundle can be
-honestly compiled from its source and still be obstructed, pluralized, or
+This framing is practical, not decorative. It separates source derivation
+honesty from destination admission lawfulness. An Edict bundle can be honestly
+compiled from its source and still be obstructed, pluralized, conflicted, or
 rejected by a destination participant because Continuum admission remains
 runtime-owned and basis-relative. That is the point: Edict should make proposed
 operations inspectable and reproducible without pretending to be the runtime,
