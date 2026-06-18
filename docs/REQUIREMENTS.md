@@ -68,15 +68,19 @@ artifact locked), `impl` (implementation passes).
 | EDICT-OPTIC-SOURCE-001 | Each optic field has one deterministic source (basis clause / profile template / coordinate / footprint) | Language | `optic/source/basis-clause` | `optic/source/freeform-support` | spec |
 | EDICT-DIGEST-WIRE-001 | Canonical digest is typed `[algorithm, bytes]`, never a hex string; hex only in review JSON | Bundle/ABI | `abi/digest/typed-pair` | `abi/digest/hex-string` | spec |
 | EDICT-ABI-FAILURE-NAMED-001 | Effects declare named, typed low-level failures; obstruction map keyed by failure coordinate | Target/Lawpack | `abi/failure/named-payload` | `abi/failure/undeclared-arm` | spec |
-| EDICT-TARGET-INTRINSIC-UNION-001 | Intrinsic schema is an enforced pure/effect union, not comment-gated optional fields | Target | `target/intrinsic/union-effect` | `target/intrinsic/pure-with-effectkind` | spec |
-| CONTINUUM-BUNDLE-SUBJECT-001 | Requests/receipts carry `bundleSubject {kind,digest}`; receipt echoes it; Moriarty tracks both | Bundle/Admission | `bundle/subject/echo` | `bundle/subject/mismatch` | spec |
+| CONTINUUM-BUNDLE-SUBJECT-001 | Requests/receipts/explanations carry `bundleSubject {kind,digest}`; receipt echoes it; Moriarty tracks both | Bundle/Admission | `bundle/subject/echo` | `bundle/subject/mismatch` | spec |
+| EDICT-TARGET-NEUTRAL-LOWERING-001 | Lowerer compares cost/footprint vs declared target ceiling, never an admitted participant budget | Target | `target/lowering/declared-ceiling` | `target/lowering/admitted-budget` | spec |
+| EDICT-CORE-GUARD-PAYLOAD-001 | CoreGuard/ObstructionMap carry a typed obstruction payload construct (coordinate + binder + payload expr) | Language | `core/guard/payload-roundtrip` | `core/guard/coordinate-only` | spec |
+| EDICT-CORE-WHERE-HASH-001 | Core carries typed `where` predicate trees in `inputConstraints`, not a validator coordinate | Language | `core/where/predicate-tree` | `core/where/coordinate-only` | spec |
+| EDICT-ABI-LAWPACK-ADAPTER-DEFER-001 | `acceptedLawpackAdapterAbi` is optional/deferred until `edict.lawpack-adapter/v1` exists | Target | `abi/adapter/deferred-empty` | `abi/adapter/required-undefined` | spec |
+| CONTINUUM-SEMANTIC-OPTIONS-001 | Only semantic compile options enter the semantic digest; diagnostic options excluded | Bundle | `bundle/options/semantic-only` | `bundle/options/diagnostic-in-semantic` | spec |
 | EDICT-CORE-SELFHASH-001 | No Core/manifest self-hash; digest is external descriptor | Language/Target | `core/hash/no-selfhash` | `core/hash/embedded-selfhash` | spec |
 | EDICT-CORE-NOPACKAGING-001 | Lowerer/verifier digests are bundle fields, not Core | Language/Bundle | `core/hash/lowerer-swap-stable` | `core/hash/lowerer-in-preimage` | spec |
 | EDICT-CORE-VERIFIED-EXTERNAL-001 | Core states `requiredOperationProfile`; `verifiedOperationMode` is verifier report | Language | `core/verified/external` | `core/verified/in-core` | spec |
 | EDICT-CORE-NODUP-PREPOST-001 | `preconditions`/`postconditions` are derived indices, excluded from preimage | Language | `core/prepost/derived` | `core/prepost/double-hashed` | spec |
 | EDICT-CORE-NODIAG-001 | `diagnosticPolicy` is compile option/sidecar, not hashed | Language | `core/diag/sidecar` | `core/diag/in-preimage` | spec |
 | EDICT-OPTIC-PRESERVE-001 | Optic contract preserved; support loss/degeneracy/witness debt recorded or rejected | Language | `optic/preserve/affect` | `optic/preserve/silent-loss` | spec |
-| EDICT-TARGET-INTRINSIC-CLASS-001 | Intrinsic `pure` vs `effect`; pure constructors carry no effect kind | Target | `target/intrinsic/pure-ctor` | `target/intrinsic/pure-with-effect` | spec |
+| EDICT-TARGET-INTRINSIC-CLASS-001 | Intrinsic `pure` vs `effect`, enforced as a CDDL union (pure constructors carry no effect kind/failures) | Target | `target/intrinsic/pure-ctor` | `target/intrinsic/pure-with-effectkind` | spec |
 | EDICT-LAWPACK-PURE-001 | Lawpack pure helpers are authority-free, observe no runtime state | Lawpack | `lawpack/pure/clean` | `lawpack/pure/side-door` | spec |
 | EDICT-LAWPACK-PURE-002 | Pure helpers bounded (no unbounded alloc/scan, no naked return) | Lawpack | `lawpack/pure/bounded` | `lawpack/pure/unbounded` | spec |
 | EDICT-LAWPACK-DAG-001 | Lawpack dependency graph acyclic and digest-locked | Lawpack | `lawpack/dag/acyclic` | `lawpack/dag/cycle` | spec |
