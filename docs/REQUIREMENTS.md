@@ -89,6 +89,10 @@ artifact locked), `impl` (implementation passes).
 | EDICT-OPTIC-TEMPLATE-OWNER-001 | operation-profile optic template has a canonical shape in edict-common.cddl, exported via ABIs | Target/Lawpack | `optic/template/owned` | `optic/template/undefined` | spec |
 | EDICT-OPTIC-APERTURE-REF-001 | `apertureRequirement` is a typed reference (footprintCeiling/abstractFootprintObligation), not a string | Language | `optic/aperture/typed-ref` | `optic/aperture/string` | spec |
 | EDICT-LANG-CAPABILITIES-SPLIT-001 | requiredSourceCapabilities (compiler) vs requiredCoreCapabilities (hash-significant Core field) | Language/Bundle | `lang/caps/split` | `lang/caps/conflated` | spec |
+| EDICT-LANG-INT-SAFETY-001 | Integer arithmetic overflow-safe and total; checked forms or static proof; no wrap/saturate/trap | Language | `lang/int/checked` | `lang/int/unproven-overflow` | spec |
+| EDICT-TARGET-POSTCOND-001 | Target declares `postconditionSupport`; precommit `guarantee` requires it or rejects | Target/Language | `target/postcond/supported` | `target/postcond/unsupported-guarantee` | spec |
+| EDICT-LOWERABILITY-PARTIAL-001 | Lowering is a partial semantics-preserving relation: native/adapted/composite/unsupported; unsupported is a compiler error | Language/Target | `lowering/partial/classified` | `lowering/partial/silent-approx` | spec |
+| EDICT-LAWPACK-ADAPTER-DIRECT-001 | v1 direct adaptation only; exactly one adapter per (effect,target); no chained legalization/fixed-point | Lawpack | `lawpack/adapter/direct-one` | `lawpack/adapter/chained` | spec |
 | EDICT-LANG-BYTES-NOCANON-001 | `Bytes` refinement is max-only; `canonical=` on `Bytes` is rejected | Language | `lang/bytes/max-only` | `lang/bytes/canonical-rejected` | spec |
 | EDICT-ABI-INTRINSICS-DOC-001 | The `intrinsics` resource has a fixed corpus-document shape | Target | `abi/intrinsics/document` | `abi/intrinsics/freeform` | spec |
 | EDICT-ABI-VERIFIER-BOUND-001 | An executable verifier requires sandbox + fuel; declarative verifier is classified | Lawpack | `lawpack/verifier/executable-bounded` | `lawpack/verifier/unbounded` | spec |

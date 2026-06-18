@@ -135,6 +135,21 @@ Deferred (1): the complete `edict.core/v1` CoreExpr/CorePredicate CDDL →
 issue #3; spec marks JSON expression examples illustrative and forbids freezing
 any Core hash golden before that schema lands.
 
+### Added (pre-merge: lowerability + final blockers)
+
+- **Partial Lowerability** section (early in the language spec): lowering is a
+  partial, semantics-preserving relation classified `native` / `adapted` /
+  `composite` / `unsupported`; unsupported is a compiler error, never a silent
+  approximation. README gains the lowerability value-proposition statement.
+- **Adapter Resolution** (Lawpack ABI): v1 is direct adaptation only — exactly
+  one digest-locked adapter per (semantic effect, target); zero = unsupported,
+  multiple = ambiguous; no chained legalization / fixed-point. General
+  obligation-closure composition explicitly deferred to v2 (issue).
+- **Integer safety** pinned: overflow-safe total arithmetic, `checked*` forms or
+  static proof, no wrapping/saturating/trapping.
+- **`postconditionSupport`** target-profile field: a precommit `guarantee`
+  lowers only to a profile that supports it, else unsupported-lowering error.
+
 ### Notes
 
 Applies the Phase 0 design review (external "ChatGPT" feedback): SHOULD/COULD
