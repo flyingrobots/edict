@@ -4,9 +4,14 @@ The current specification set is:
 
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type
   system, effect rules, Core IR, and language-level canonical value semantics.
+- [SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md): lawpack
+  manifest and dependency graph, exported types/constants, pure helper and
+  semantic effect signatures, proof-only vs runtime-materialized classification,
+  typed obstruction payloads, footprint/cost obligations, and target adapters.
 - [SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md):
   intrinsic signatures, effect signatures, target lowering, application model,
-  verifier ABI, footprint algebra, and cost algebra.
+  verifier ABI, footprint algebra, and cost algebra. Canonical schemas live in
+  [`abi/`](./abi/) (`edict-target-profile.cddl`, `edict-target-lowerer.wit`).
 - [SPEC - Continuum Contract Bundle v1](./SPEC_continuum-contract-bundle-v1.md):
   participant-neutral contract bundle identity, artifact graph, provenance
   references, canonical CBOR/hash framing, and attestation roles.
@@ -15,6 +20,14 @@ The current specification set is:
   receipts, capability receipts, and participant-specific decisions.
 - [GUIDE - Edict Assurance and Transparency](./GUIDE_edict-assurance-transparency.md):
   HOLMES, Watson, Moriarty, transparency logs, nutrition labels, profile diffs,
-  and relapse fuzzing.
+  relapse fuzzing, the hash ladder, the Aperture Ledger, and the two-lowerer
+  trial.
+- [REQUIREMENTS - Fixture Constitution](./REQUIREMENTS.md): every normative
+  requirement ID, its owner spec, and its positive/negative/golden fixtures.
 - [Design Baseline](./DESIGN_runtime-neutral-edict-sha-lock-assurance.md):
-  original runtime-neutral Edict/SHA-lock design packet retained as context.
+  original runtime-neutral Edict/SHA-lock design packet retained as
+  non-normative context.
+
+Machine-readable ABIs live in [`abi/`](./abi/) and are the single source of
+truth for the artifacts they describe; prose JSON in the specs is generated from
+them.

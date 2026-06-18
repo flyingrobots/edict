@@ -1,0 +1,93 @@
+---
+title: "REQUIREMENTS - Edict Fixture Constitution"
+legend: "SPEC|TRANSMUTE|PLATFORM"
+lane: "design"
+packet: "0021-continuum-yolo-runtime-neutral-edict-sha-lock-assurance"
+issue: "https://github.com/flyingrobots/wesley/issues/611"
+status: "draft"
+owners:
+  - "@flyingrobots"
+created: "2026-06-18"
+updated: "2026-06-18"
+---
+
+<!-- markdownlint-disable MD025 MD013 -->
+
+# REQUIREMENTS - Edict Fixture Constitution
+
+<!-- markdownlint-enable MD025 -->
+
+## Purpose
+
+Every normative requirement gets a stable ID. Every ID gets a positive fixture,
+a negative fixture, and (where it has hash impact) a golden artifact.
+
+> A requirement without a fixture is advisory.
+> A fixture without a requirement is folklore.
+
+This registry is the join table between the prose specs and the
+[`fixtures/`](../fixtures/) corpus (Phase 0 deliverable). It is also the input to
+[`spec.lock.json`](../spec.lock.json): the documentation build fails when an
+embedded snippet, schema, or fixture no longer matches the locked digests.
+
+## ID Scheme
+
+`<DOMAIN>-<TOPIC>-<NNN>`:
+
+- `EDICT-LANG-*` — Edict Language v1 (syntax, types, evaluation).
+- `EDICT-CORE-*` — Core IR identity and canonicalization.
+- `EDICT-OPTIC-*` — optic contract and Observer Geometry preservation.
+- `EDICT-TARGET-*` — Target Profile ABI.
+- `EDICT-LAWPACK-*` — Lawpack ABI.
+- `EDICT-ABI-*` — cross-ABI rules (no-duplication, display sidecars).
+- `EDICT-CONFORMANCE-*` — conformance/differential testing.
+- `CONTINUUM-*` — contract bundle and admission.
+
+`status`: `spec` (prose landed), `fixture` (fixture exists), `golden` (golden
+artifact locked), `impl` (implementation passes).
+
+## Registry
+
+| ID | Requirement | Owner spec | Positive fixture | Negative fixture | Status |
+| --- | --- | --- | --- | --- | --- |
+| EDICT-LANG-BOUNDS-001 | Naked unbounded `String`/`Bytes` rejected in checked lane; refined scalars bound every position | Language | `lang/bounds/bounded-hello` | `lang/bounds/naked-string` | spec |
+| EDICT-LANG-LEN-001 | `len` units pinned (Unicode scalars vs bytes); canonicalize before measure; concat bound derivation | Language | `lang/len/unicode-vs-bytes` | `lang/len/concat-overflow` | spec |
+| EDICT-LANG-INTLIT-001 | Integer width hash-significant; literal needs suffix or unambiguous type; bare ambiguous rejects | Language | `lang/intlit/suffix` | `lang/intlit/ambiguous-hash-arg` | spec |
+| EDICT-LANG-WHERE-001 | `where` is input refinement → `EDICT-INPUT-CONSTRAINT`, not runtime precondition | Language | `lang/where/input-refine` | `lang/where/touches-runtime-state` | spec |
+| EDICT-LANG-TOTAL-CHECK-001 | Runtime `require`/`guarantee` must carry `else`; faults are typed, never host exceptions | Language | `lang/require/with-else` | `lang/require/missing-else` | spec |
+| EDICT-LANG-BOOL-001 | Boolean `and`/`or` operators short-circuit | Language | `lang/bool/short-circuit` | `lang/bool/effect-in-operand` | spec |
+| EDICT-LANG-LOOP-001 | `for ... bounded N`: List only, list order, prove M<=N, never silently truncate | Language | `lang/loop/bounded-list` | `lang/loop/unprovable-bound` | spec |
+| EDICT-LANG-OBSTRUCT-EXHAUST-001 | Obstruction mapping is exhaustive over domain-mappable classes, with typed payloads | Language | `lang/obstruct/exhaustive-payload` | `lang/obstruct/missing-class` | spec |
+| EDICT-LANG-NOSHADOW-001 | Locals must not shadow import/package/type/prelude names | Language | `lang/shadow/distinct-names` | `lang/shadow/greeting-collision` | spec |
+| EDICT-LANG-ENUMVARIANT-001 | Enum case `Type.CASE` vs variant constructor `Type::Case(payload)` | Language | `lang/enumvariant/both` | `lang/enumvariant/mixed-syntax` | spec |
+| EDICT-LANG-FOOTPRINT-COST-001 | Footprint and cost are checked separately | Language | `lang/footprint/separate` | `lang/footprint/conflated` | spec |
+| EDICT-LANG-BUDGET-SPLIT-001 | Core/target/admitted budget split; target dims not in Core | Language | `lang/budget/split` | `lang/budget/target-dim-in-core` | spec |
+| EDICT-LANG-PROFILE-001 | `edict.language/v1` vs `edict.implementation/minimal-v1` capability flags | Language | `lang/profile/minimal` | `lang/profile/undeclared-capability` | spec |
+| EDICT-LANG-CAPREF-001 | `CapabilityRef<T>` carries receipt digest only; inert until admitted | Language | `lang/capref/inert` | `lang/capref/ambient-authority` | spec |
+| EDICT-LANG-READONLY-001 | Read-only is inferred; proof-only vs runtime-materialized | Language/Lawpack | `lang/readonly/proof-only` | `lang/readonly/hidden-append` | spec |
+| EDICT-CORE-SELFHASH-001 | No Core/manifest self-hash; digest is external descriptor | Language/Target | `core/hash/no-selfhash` | `core/hash/embedded-selfhash` | spec |
+| EDICT-CORE-NOPACKAGING-001 | Lowerer/verifier digests are bundle fields, not Core | Language/Bundle | `core/hash/lowerer-swap-stable` | `core/hash/lowerer-in-preimage` | spec |
+| EDICT-CORE-VERIFIED-EXTERNAL-001 | Core states `requiredOperationProfile`; `verifiedOperationMode` is verifier report | Language | `core/verified/external` | `core/verified/in-core` | spec |
+| EDICT-CORE-NODUP-PREPOST-001 | `preconditions`/`postconditions` are derived indices, excluded from preimage | Language | `core/prepost/derived` | `core/prepost/double-hashed` | spec |
+| EDICT-CORE-NODIAG-001 | `diagnosticPolicy` is compile option/sidecar, not hashed | Language | `core/diag/sidecar` | `core/diag/in-preimage` | spec |
+| EDICT-OPTIC-PRESERVE-001 | Optic contract preserved; support loss/degeneracy/witness debt recorded or rejected | Language | `optic/preserve/affect` | `optic/preserve/silent-loss` | spec |
+| EDICT-TARGET-INTRINSIC-CLASS-001 | Intrinsic `pure` vs `effect`; pure constructors carry no effect kind | Target | `target/intrinsic/pure-ctor` | `target/intrinsic/pure-with-effect` | spec |
+| EDICT-LAWPACK-PURE-001 | Lawpack pure helpers are authority-free, observe no runtime state | Lawpack | `lawpack/pure/clean` | `lawpack/pure/side-door` | spec |
+| EDICT-LAWPACK-PURE-002 | Pure helpers bounded (no unbounded alloc/scan, no naked return) | Lawpack | `lawpack/pure/bounded` | `lawpack/pure/unbounded` | spec |
+| EDICT-LAWPACK-DAG-001 | Lawpack dependency graph acyclic and digest-locked | Lawpack | `lawpack/dag/acyclic` | `lawpack/dag/cycle` | spec |
+| EDICT-LAWPACK-ADAPTER-001 | Missing target adapter is a hard error, never silent fallback | Lawpack | `lawpack/adapter/present` | `lawpack/adapter/missing` | spec |
+| EDICT-ABI-NODUP-001 | Normative manifest defined once (schema); no duplicate prose JSON | Target/Lawpack | `abi/nodup/generated` | `abi/nodup/drifted-copy` | spec |
+| EDICT-ABI-DISPLAY-001 | Display metadata/codenames live in sidecars, never in manifests | Target/Lawpack/Bundle | `abi/display/sidecar` | `abi/display/codename-in-manifest` | spec |
+| EDICT-CONFORMANCE-DIFFERENTIAL-001 | Two independent lowerers/verifiers must byte-match the corpus | Conformance | `conformance/two-lowerer/agree` | `conformance/two-lowerer/diverge` | spec |
+| CONTINUUM-BUNDLE-DAG-001 | Artifact graph acyclic; no subject references an attestation over itself | Bundle | `bundle/dag/acyclic` | `bundle/dag/cycle` | spec |
+| CONTINUUM-BUNDLE-DAG-MORIARTY-001 | Moriarty must catch any introduced cycle | Bundle/Assurance | — | `bundle/dag/moriarty-injected-cycle` | spec |
+| CONTINUUM-RECEIPT-ACYCLIC-001 | Receipt body never references its signing envelope; DSSE signs body digest | Bundle/Admission | `admission/receipt/body-then-sign` | `admission/receipt/self-signature` | spec |
+| CONTINUUM-SOURCEPATH-001 | Source paths are logical package-relative URIs, never machine-local | Bundle | `bundle/sourcepath/logical` | `bundle/sourcepath/absolute` | spec |
+
+## Backlog (IDs to allocate)
+
+Existing acceptance criteria in the Language spec (e.g. FIDLAR rejection,
+determinism, atomic application, codename coordinates, content-addressed
+duplicate create) will be assigned `EDICT-*` IDs and rows here as their fixtures
+are written, so the registry becomes the authoritative checklist for grammar and
+Core-schema freeze.

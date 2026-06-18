@@ -43,20 +43,24 @@ AdmissionRequest
   policyEpoch
   requested capabilities/budget
 
-AdmissionReceipt
+AdmissionReceiptBody
   admissionRequestDigest
   contractBundleDigest
   participant identity
   decision
   admitted bounds/capabilities
-  signature
+  (no signature reference: a body never points to the envelope signing it)
 
 DistributionEnvelope
   contract bundle
   attestations
-  zero or more admission receipts
+  zero or more (AdmissionReceiptBody + its DSSE envelope)
   transparency evidence
 ```
+
+The receipt body is hashed to `AdmissionReceiptBodyDigest`; a DSSE envelope
+signs that digest. The signature lives in the distribution envelope, never
+inside the body it authenticates (`CONTINUUM-RECEIPT-ACYCLIC-001`).
 
 The contract bundle digest is computed before admission. The same contract
 bundle may be submitted to multiple participants without recompilation and
@@ -80,11 +84,46 @@ A contract bundle binds:
 - canonicalization profile digest;
 - normative conformance fixture corpus digests;
 - verifier report digest;
-- explanation artifact digest.
+- compile explanation artifact digest.
 
-It does not include admission requests, admission receipts, participant policy,
-participant descriptors, participant catalog snapshots, display metadata, or
-signatures over itself.
+The bundle binds only the **compile explanation** artifact, which is
+participant-neutral. The **admission explanation** artifact is policy-epoch
+specific, references the bundle and a receipt, and lives outside the bundle (see
+[GUIDE - Edict Assurance and Transparency](./GUIDE_edict-assurance-transparency.md)).
+
+It does not include admission requests, admission receipts, admission
+explanations, participant policy, participant descriptors, participant catalog
+snapshots, display metadata, or signatures over itself.
+
+## Semantic And Release Bundle Digests
+
+A contract bundle exposes two digests so participant policy can decide which it
+admits:
+
+- `semanticBundleDigest` identifies the executable semantics: Core IR, target
+  IR, target profile, lawpack digests, generated artifacts, verifier report.
+  Formatting-only or comment-only source changes do not change it.
+- `releaseBundleDigest` additionally binds exact source provenance (raw source
+  artifact descriptors, logical source paths) and the compile explanation
+  artifact.
+
+`releaseBundleDigest`'s preimage references `semanticBundleDigest`, never the
+reverse, preserving acyclicity (`CONTINUUM-BUNDLE-DAG-001`).
+
+## Acyclicity
+
+The artifact graph is a DAG. One universal rule governs it
+(`CONTINUUM-BUNDLE-DAG-001`):
+
+> No artifact participating in a subject's digest may directly or transitively
+> reference an attestation, signature, receipt, or envelope whose subject is
+> that digest.
+
+Concretely: Core IR never references bundle fields; the bundle never references
+admission requests/receipts/signatures over itself; a receipt body never
+references its own signing envelope; the compile explanation never references a
+policy epoch. Acyclicity is a Moriarty fixture target: any introduced cycle must
+be caught (`CONTINUUM-BUNDLE-DAG-MORIARTY-001`).
 
 ## Core Versus Provenance
 
@@ -96,6 +135,22 @@ inputs to Core compilation.
 Formatting-only source changes may change the raw source artifact digest and the
 contract bundle digest while leaving the Core IR digest and target IR digest
 unchanged.
+
+### Logical Source Paths
+
+Source paths recorded as bundle provenance must be logical, package-relative
+URIs, never machine-local paths (`CONTINUUM-SOURCEPATH-001`). The content digest
+is identity; the logical path is reproducible provenance. A logical source path:
+
+- is UTF-8;
+- uses forward slashes only;
+- contains no `.` or `..` segments;
+- contains no drive letters and no leading slash;
+- is not derived from a symlink target;
+- never contains an absolute machine path such as `/Users/<name>/...`.
+
+A path such as `contracts/jedit/rope.graphql` is a valid locator. An absolute or
+machine-local path rejects locked-bundle production.
 
 ## Display Sidecars
 

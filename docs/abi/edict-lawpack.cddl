@@ -1,0 +1,78 @@
+; edict-lawpack.cddl
+; Canonical schema for the Edict lawpack manifest and export surface.
+; Authoritative byte encoding: edict.canonical-cbor/v1. JSON in the prose specs
+; is a review rendering generated from this schema (EDICT-ABI-NODUP-001).
+
+lawpack-manifest = {
+  apiVersion: "edict.lawpack/v1",
+  id: tstr,
+  version: tstr,
+  acceptedCoreAbi: [+ tstr],
+  dependencies: [* lawpack-dep],          ; acyclic, digest-locked (EDICT-LAWPACK-DAG-001)
+  exports: resource-ref,
+  targetAdapters: [+ target-adapter],
+  helperComponent: resource-ref,
+  verifier: resource-ref,
+  sandbox: resource-ref,
+  fuelModel: resource-ref,
+  compatibility: resource-ref,
+  conformanceFixtureCorpus: resource-ref,
+}
+
+lawpack-dep = { id: tstr, version: tstr, digest: digest }
+
+target-adapter = {
+  targetProfile: tstr,
+  targetProfileVersion: tstr,
+  adapter: resource-ref,
+}
+
+resource-ref = { id: tstr, digest: digest }
+digest = tstr .regexp "^sha256:[0-9a-f]{64}$"
+
+; --- export surface ------------------------------------------------------
+
+lawpack-exports = {
+  types: [* exported-type],
+  constants: [* exported-constant],
+  pureFunctions: [* pure-function],
+  effects: [* semantic-effect],
+  obstructions: [* obstruction-def],
+}
+
+exported-type     = { coordinate: tstr, definition: core-type-ref }
+exported-constant = { coordinate: tstr, type: core-type-ref, value: any }
+
+pure-function = {
+  coordinate: tstr,
+  typeParameters: [* tstr],
+  parameterTypes: [* core-type-ref],      ; all bounded
+  returnType: core-type-ref,              ; bounded
+  costTemplate: tstr,
+  determinismClass: "total" / "total-with-typed-diagnostic",
+}
+
+semantic-effect = {
+  coordinate: tstr,
+  typeParameters: [* tstr],
+  inputType: core-type-ref,               ; bounded
+  outputType: core-type-ref,              ; bounded
+  materialization: "proofOnly" / "runtimeMaterialized",
+  effectKindHint: effect-kind,
+  footprintObligation: tstr,
+  costObligation: tstr,
+  failureClasses: [* failure-class],
+  guardSupport: bool,
+}
+
+obstruction-def = {
+  coordinate: tstr,
+  failureClass: failure-class,
+  payloadSchema: core-type-ref,           ; typed, bounded (may be empty record)
+}
+
+effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /
+              "append" / "reduce" / "semantic.emit" / "custom"
+failure-class = "domainMappable" / "participantOwned" / "integrityFault" /
+                "resourceFault" / "internalFault"
+core-type-ref = tstr

@@ -42,7 +42,11 @@ Admission requests are canonical artifacts with their own digest.
 
 ## Admission Receipt
 
-An admission receipt contains:
+An admission receipt is split into a hashed body and an external signature so
+the body never references the envelope that signs it
+(`CONTINUUM-RECEIPT-ACYCLIC-001`).
+
+An `AdmissionReceiptBody` contains:
 
 - `admissionRequestDigest`;
 - `contractBundleDigest`;
@@ -52,11 +56,23 @@ An admission receipt contains:
 - admitted bounds and budgets;
 - admitted capabilities;
 - obstruction or rejection taxonomy for non-accept decisions;
-- policy epoch;
-- signature envelope reference.
+- policy epoch.
+
+The body is hashed to `AdmissionReceiptBodyDigest`. A DSSE envelope signs that
+digest and is carried by the distribution envelope, **not** by the body. The
+body contains no signature-envelope reference.
 
 Receipts are participant-owned evidence. Multiple participants may issue
 receipts for the same contract bundle digest.
+
+## Admission Explanation
+
+An admission explanation is the policy-epoch-specific counterpart to the
+bundle's participant-neutral compile explanation. It references the contract
+bundle digest and the `AdmissionReceiptBodyDigest`, records the participant
+policy epoch and admitted ceilings, and lives **outside** the contract bundle.
+It must never be hashed into the participant-neutral bundle
+(`CONTINUUM-BUNDLE-DAG-001`).
 
 ## Admission Evidence Is External
 

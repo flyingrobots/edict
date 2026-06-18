@@ -1,0 +1,76 @@
+; edict-target-profile.cddl
+; Canonical schema for the Edict target profile manifest.
+; Authoritative byte encoding: edict.canonical-cbor/v1
+; (see SPEC_continuum-contract-bundle-v1.md). JSON in the prose specs is a
+; review rendering generated from this schema; this CDDL is the single source
+; of truth (EDICT-ABI-NODUP-001).
+
+target-profile-manifest = {
+  apiVersion: "edict.target-profile/v1",
+  id: tstr,                         ; e.g. "echo.dpo"
+  version: tstr,                    ; e.g. "1"
+  acceptedCoreAbi: [+ tstr],        ; e.g. ["edict.core/v1"]
+
+  intrinsics: resource-ref,
+  intrinsicNamespace: tstr,
+  footprintAlgebra: resource-ref,
+  costAlgebra: resource-ref,
+  targetIr: resource-ref,
+  obstructionTaxonomy: resource-ref,
+  verifier: resource-ref,
+  lowerer: resource-ref,
+  sandbox: resource-ref,
+  fuelModel: resource-ref,
+
+  ; fields the language spec requires of every profile
+  bundleProfile: resource-ref,
+  generatedArtifactProfiles: [* resource-ref],
+  canonicalEncodingRules: resource-ref,
+  acceptedLawpackAdapterAbi: [+ tstr],
+  diagnosticAbi: resource-ref,
+
+  ; application doctrine
+  applicationModel: "atomic",
+  readConsistency: "application-snapshot" / tstr,
+  guardEvaluation: "precommit-atomic" / tstr,
+  obstructionRollback: "no-visible-effects" / tstr,
+  multiTarget: bool,
+
+  deterministicExecution: resource-ref,
+  conformanceFixtureCorpus: resource-ref,
+}
+
+; A normative subcomponent is referenced by identity plus digest. The manifest
+; never embeds its own self-digest in its preimage (EDICT-CORE-SELFHASH-001).
+resource-ref = {
+  id: tstr,
+  digest: digest,
+}
+
+digest = tstr .regexp "^sha256:[0-9a-f]{64}$"
+
+; --- intrinsic signature -------------------------------------------------
+
+intrinsic = {
+  coordinate: tstr,
+  intrinsicClass: "pure" / "effect",   ; pure constructors vs effects
+  typeParameters: [* tstr],
+  argumentTypes: [* core-type-ref],
+  returnType: core-type-ref,
+  ? effectKind: effect-kind,           ; required iff intrinsicClass == "effect"
+  ? failureClasses: [* failure-class], ; required iff intrinsicClass == "effect"
+  guardSupport: bool,
+  footprintTemplate: tstr,
+  costTemplate: tstr,
+  writeClass: "read" / "create" / "ensure" / "append" / "replace" /
+              "delete" / "none" / "custom",
+  canParticipateInAtomicGuard: bool,
+}
+
+effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /
+              "append" / "reduce" / "semantic.emit" / "custom"
+
+failure-class = "domainMappable" / "participantOwned" / "integrityFault" /
+                "resourceFault" / "internalFault"
+
+core-type-ref = tstr   ; canonical Core type coordinate

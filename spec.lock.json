@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "GENERATED ARTIFACT — do not hand-edit. Produced by the docs/spec build.",
+    "Digests are placeholders during Phase 0; the generator computes them over",
+    "the canonical schemas and fixture corpora. Documentation builds fail when",
+    "an embedded snippet or fixture no longer matches these locked digests",
+    "(EDICT-ABI-NODUP-001)."
+  ],
+  "specLockVersion": "1",
+  "generatedBy": "edict-spec-lock/0 (placeholder)",
+  "schemas": {
+    "languageSpec": "sha256:...",
+    "coreSchema": "sha256:...",
+    "lawpackSchema": "sha256:...",
+    "targetProfileSchema": "sha256:...",
+    "targetLowererWit": "sha256:...",
+    "bundleSchema": "sha256:...",
+    "admissionSchema": "sha256:...",
+    "canonicalCborProfile": "sha256:..."
+  },
+  "requirementsRegistry": "sha256:...",
+  "fixtureCorpora": {}
+}

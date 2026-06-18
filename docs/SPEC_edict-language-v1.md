@@ -45,9 +45,14 @@ the boundaries that must not leak back into language meaning:
 
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type
   system, effect rules, Core IR, and language-level canonical value semantics.
+- [SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md): lawpack
+  manifest and dependency graph, exported types/constants, pure helper and
+  semantic effect signatures, proof-only vs runtime-materialized classification,
+  typed obstruction payloads, footprint/cost obligations, and target adapters.
 - [SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md):
-  intrinsic signatures, effect signatures, target lowering, application model,
-  verifier ABI, footprint algebra, and cost algebra.
+  intrinsic signatures (pure vs effect), effect signatures, target lowering,
+  application model, verifier ABI, footprint algebra, and cost algebra. Canonical
+  schemas: `abi/edict-target-profile.cddl`, `abi/edict-target-lowerer.wit`.
 - [SPEC - Continuum Contract Bundle v1](./SPEC_continuum-contract-bundle-v1.md):
   participant-neutral contract bundle identity, artifact graph, provenance
   references, canonical CBOR/hash framing, and attestation roles.
@@ -56,7 +61,10 @@ the boundaries that must not leak back into language meaning:
   receipts, capability receipts, and participant-specific decisions.
 - [GUIDE - Edict Assurance And Transparency](./GUIDE_edict-assurance-transparency.md):
   HOLMES, Watson, Moriarty, transparency logs, nutrition labels, profile diffs,
-  and relapse fuzzing.
+  relapse fuzzing, the hash ladder, the Aperture Ledger, and the two-lowerer
+  trial.
+- [REQUIREMENTS - Fixture Constitution](./REQUIREMENTS.md): the requirement-ID
+  registry binding every normative rule to its owner spec and fixtures.
 
 ## Decision Summary
 
@@ -570,6 +578,18 @@ Prefer direct effect obstruction mapping over time-of-check/time-of-use
 prechecks. For example, `create(...) else DomainAlreadyExists` is the preferred
 v1 spelling when the only purpose of `exists()` would be to guard the create.
 
+### Capability References
+
+`CapabilityRef<T>` is a first-class, inert Core value that carries a
+capability-receipt **digest** only (`EDICT-LANG-CAPREF-001`). It names a
+delegated authority without embedding the receipt. Like `EchoRef<T>`, it is
+canonical, hashable, and powerless on its own: it grants nothing until an
+imported effect that accepts it is called, and the participant has admitted the
+referenced capability receipt. The full capability receipt (scope, basis,
+bounds, revocation, expiry, policy epoch) is a Continuum Admission artifact and
+stays external to Edict Core (see
+[SPEC - Continuum Admission v1](./SPEC_continuum-admission-v1.md)).
+
 ## Effect Failure Obstructions
 
 Target and lawpack effects can fail at runtime even when source typechecks.
@@ -592,19 +612,44 @@ worldlineRef.replace(nextWorldline)
   else rope.StaleBaseHead;
 ```
 
-The target profile owns the low-level failure taxonomy. The source obstruction
-mapping must be checked against the target or lawpack effect signature. The
-single-obstruction shorthand is legal only when exactly one profile-declared
-domain-mappable failure class remains unmapped. Effects with multiple
-domain-mappable failure classes must use the full mapping form:
+Obstruction mapping is exhaustive variant matching over the effect's declared
+domain-mappable failure classes (`EDICT-LANG-OBSTRUCT-EXHAUST-001`). It reuses
+the same machinery as `match`: every domain-mappable class must be handled
+exactly once. A mapping arm may **bind the low-level failure** and **construct a
+typed obstruction payload** from it. A bare coordinate is sugar for an empty
+payload:
 
 ```edict
 let blob = blobRef.ensure(candidate)
   else {
-    mismatch => rope.TextBlobHashConflict,
-    boundExceeded => rope.ReadBoundExceeded,
+    mismatch(fault) => rope.TextBlobHashConflict({
+      expected: candidate.contentHash,
+      observed: fault.existingContentHash,
+    }),
+    boundExceeded(fault) => rope.ReadBoundExceeded({
+      limit: fault.declaredMax,
+    }),
   };
 ```
+
+Runtime guards construct payloads the same way:
+
+```edict
+require currentHead == expectedHead
+  else rope.StaleBaseHead({
+    expected: expectedHead,
+    observed: currentHead,
+  });
+```
+
+The target profile owns the low-level failure taxonomy and the typed,
+**bounded** payload schema for each obstruction (see
+[SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md) and the Target
+Profile ABI). An obstruction payload whose fields are not typed and bounded is
+rejected — "typed obstruction payload" is not ceremonial paperwork. The
+single-obstruction shorthand is legal only when exactly one profile-declared
+domain-mappable failure class remains unmapped. Effects with multiple
+domain-mappable failure classes must use the full mapping form.
 
 Low-level failure classes are classified before source mapping:
 
@@ -622,15 +667,17 @@ platform-owned coordinates unless the target profile explicitly classifies a
 bounded resource failure as a domain obstruction. Domain obstructions may carry
 typed payload schemas declared by the lawpack or target profile.
 
-Core effect nodes carry an obstruction map such as:
+Core effect nodes carry an obstruction map from each domain-mappable failure
+class to an obstruction coordinate plus a (possibly empty) typed payload
+constructor, with an optional binder for the low-level failure:
 
 ```text
 obstructionMap:
-  missing -> rope.WorldlineMissing
-  conflict -> rope.BufferWorldlineAlreadyExists
-  mismatch -> rope.TextBlobHashConflict
-  staleGuard -> rope.StaleBaseHead
-  boundExceeded -> rope.FootprintExceeded
+  missing      -> rope.WorldlineMissing {}
+  conflict     -> rope.BufferWorldlineAlreadyExists {}
+  mismatch(f)  -> rope.TextBlobHashConflict { observed: f.existingContentHash }
+  staleGuard   -> rope.StaleBaseHead { expected, observed }
+  boundExceeded(f) -> rope.FootprintExceeded { limit: f.declaredMax }
 ```
 
 `require predicate else Obstruction` remains useful for source-level invariants.
@@ -689,22 +736,36 @@ How much work, memory, target IO, and output may this consume?
 ```
 
 Every operation must have an inferred cost model checked against an admitted
-budget. Minimal v1 budget fields:
+budget. Cost is split into three layers so the portable Core does not own
+target-specific cost dimensions (`EDICT-LANG-BUDGET-SPLIT-001`):
 
 ```text
-evaluationBudget:
+coreEvaluationBudget:        # portable, owned by Edict Core
   maxSteps
   maxAllocatedBytes
   maxOutputBytes
-  maxTargetReads
-  maxTargetWrites
-  maxClosureReads
-  maxGeneratedEffects
+
+targetBudget:                # profile-owned typed value (target cost algebra)
+  profile                    # e.g. echo.dpo@1
+  value                      # e.g. maxTargetReads/Writes/closureReads/effects
+                             #   as defined by that target's cost algebra
+
+admittedBudget:              # participant ceiling over the target budget
+                             # (Continuum Admission artifact, not Core)
 ```
 
-Pure lawpack helpers are also costed. A deterministic helper that can allocate
-unbounded memory or scan unbounded input is not acceptable in the
-lawful-autonomous lane.
+Target reads, writes, closure reads, and generated-effect counts are
+target-cost-algebra dimensions, not portable Core dimensions; they live in
+`targetBudget`, owned by the Target Profile ABI. A portable lawpack may declare
+an abstract `targetBudget` obligation that its adapter translates into the
+selected target's cost algebra (see
+[SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md)). Participant
+policy may only **lower** the admitted ceiling; it never supplies a missing Core
+budget (see [SPEC - Continuum Admission v1](./SPEC_continuum-admission-v1.md)).
+
+Pure lawpack helpers are also costed against `coreEvaluationBudget`. A
+deterministic helper that can allocate unbounded memory or scan unbounded input
+is not acceptable in the lawful-autonomous lane.
 
 ## Development Mode Versus Locked Bundle Mode
 
@@ -996,12 +1057,22 @@ atomicity semantics.
 
 ### I-031 Intent Optic Structure
 
-Every Edict intent is an optic-shaped lawful operation specification. The
-compiler and target profile must preserve the intent's basis, aperture or
-footprint, projection or affect boundary, support posture, cost bounds, guards,
-obstruction mappings, and canonical artifact identity. A lowering that erases
-support loss, degeneracy, footprint overlap, or witness debt must reject or
-record the loss explicitly in derived evidence.
+Every Edict intent is an optic-shaped lawful operation specification. Core
+carries a **minimal normative optic contract** — `opticKind`, `basis`,
+`boundaryKind` (`projection`/`affect`), aperture/footprint requirement,
+`supportPolicy`, and `lossDisposition` (see Optic Contract under Edict Core IR).
+The compiler and target profile must preserve these fields plus cost bounds,
+guards, obstruction mappings, and canonical artifact identity through lowering.
+
+Richer Observer Geometry quantities — support carried/lost/blocked/refuting,
+degeneracy findings, witness debt, and footprint overlap — are **derived
+verifier evidence** (the Aperture Ledger), not Core syntax, until the support
+algebra is pinned in a later version. A lowering that erases support loss,
+degeneracy, footprint overlap, or witness debt must reject or record the loss
+explicitly in that derived evidence (`EDICT-OPTIC-PRESERVE-001`). If the optic
+contract is not encodable for an operation, the operation is rejected, not
+silently lowered as a plain morphism. A theorem the IR cannot represent is a
+wish.
 
 ## Syntax Overview
 
@@ -1082,6 +1153,27 @@ Source may also use `record history.entry { ... } else Obstruction;` sugar. That
 sugar is not a Core primitive; it desugars to the lawpack semantic effect call
 shown above.
 
+## Names, Namespaces, And Shadowing
+
+Local bindings must not shadow import aliases, package aliases, type names, or
+prelude coordinates (`EDICT-LANG-NOSHADOW-001`). Clever shadowing saves four
+keystrokes and spends a week in diagnostics court. A `let` whose name collides
+with any in-scope import alias, type, or prelude function is rejected. (The
+README's older `greeting`-alias-plus-`greeting`-local example is exactly the
+pattern this rule forbids.)
+
+Enum cases and variant constructors use distinct, non-overlapping syntax
+(`EDICT-LANG-ENUMVARIANT-001`):
+
+- An **enum case** is selected by field access on the enum type:
+  `Qual.EnumType.CASE` (e.g. `shape.TextEncoding.UTF8`). Enum cases carry no
+  payload.
+- A **variant constructor** uses `::` and may carry a payload:
+  `Qual.VariantType::Case(payload)`.
+
+`match` arms name the bare case (`upper-ident`) for both enums and variants; the
+matched type disambiguates.
+
 ## Lexical Rules
 
 Edict source is UTF-8. Keywords and punctuation are ASCII. Identifiers use a
@@ -1099,7 +1191,8 @@ package-ref   = qual-ident , "@" , version ;
 digest-lit    = '"' , "sha256:" , 64 * hex , '"' ;
 string-lit    = '"' , { string-char | escape } , '"' ;
 bytes-lit     = "b" , string-lit ;
-int-lit       = digit , { digit | "_" } ;
+int-lit       = digit , { digit | "_" } , int-suffix? ;
+int-suffix    = "i32" | "i64" | "u32" | "u64" ;
 bool-lit      = "true" | "false" ;
 comment       = "//" , { not-newline } | "/*" , { not-end-comment } , "*/" ;
 ```
@@ -1116,6 +1209,14 @@ Lexical conformance fixtures must pin these details before parser freeze:
   default.
 - Integer underscores may appear only between digits, never at the beginning,
   end, or adjacent to another underscore.
+- Integer width and signedness are hash-significant, so every integer value
+  must resolve to exactly one of `I32`, `I64`, `U32`, `U64`. A literal resolves
+  by explicit suffix (`1u64`, `64_000i64`) or by an unambiguous expected type
+  from its context (parameter type, field type, return type, or a target/lawpack
+  argument type). A bare literal with no suffix and no unambiguous expected type
+  is rejected (`EDICT-LANG-INTLIT-001`); in particular `hash("domain", 1)` is
+  rejected because `1` has no resolvable width. The suffix and the contextual
+  type must agree or the literal rejects.
 - `digest-lit` hex is lowercase in canonical source rendering. Uppercase hex may
   parse only if normalized before semantic comparison.
 - `pattern` constraints use `edict.regex-lite/v1`, a locked non-backtracking
@@ -1176,10 +1277,14 @@ variant-case    = upper-ident , payload-type? , ","? ;
 payload-type    = "(" , type-ref , ")" ;
 
 type-ref        = qual-ident , type-args?
+                | "String" , scalar-refine?
+                | "Bytes" , scalar-refine?
                 | "Option" , "<" , type-ref , ">"
                 | "List" , "<" , type-ref , "," , "max" , "=" , bound-ref , ">"
                 | "Map" , "<" , type-ref , "," , type-ref , "," ,
                   "max" , "=" , bound-ref , ">" ;
+scalar-refine   = "<" , "max" , "=" , bound-ref ,
+                  ( "," , "canonical" , "=" , ident )? , ">" ;
 type-args       = "<" , type-ref , { "," , type-ref } , ">" ;
 
 fn-decl         = "fn" , ident , "(" , param-list? , ")" ,
@@ -1225,7 +1330,8 @@ type-annotation = ":" , type-ref ;
 assert-stmt     = "assert" , predicate , ";" ;
 require-stmt    = "require" , predicate , obstruction-clause? , ";" ;
 guarantee-stmt  = "guarantee" , predicate , obstruction-clause? , ";" ;
-obstruction-clause = "else" , qual-ident ;
+obstruction-clause = "else" , obstruction-target ;
+obstruction-target = qual-ident , ( "(" , expr , ")" )? ;
 semantic-record-stmt = "record" , qual-ident , record-lit ,
                        effect-else-clause? , ";" ;
 if-stmt         = "if" , predicate , block , else-clause? ;
@@ -1234,10 +1340,11 @@ for-stmt        = "for" , ident , "in" , expr ,
                   "bounded" , bound-ref , block ;
 effect-stmt     = call-expr , effect-else-clause? , ";" ;
 effect-else-clause = "else" , obstruction-handler ;
-obstruction-handler = qual-ident | obstruction-map-lit ;
+obstruction-handler = obstruction-target | obstruction-map-lit ;
 obstruction-map-lit = "{" , obstruction-map-entry ,
                       { "," , obstruction-map-entry } , ","? , "}" ;
-obstruction-map-entry = ident , "=>" , qual-ident ;
+obstruction-map-entry = ident , failure-binder? , "=>" , obstruction-target ;
+failure-binder  = "(" , ident , ")" ;
 effect-branch-expr = "if" , predicate , effect-yield-block ,
                      "else" , effect-yield-block ;
 effect-yield-block = "{" , statement* , yield-stmt , "}" ;
@@ -1309,6 +1416,11 @@ Semantic grammar rules:
 - Multiple `where` clauses are permitted and merge conjunctively.
 - `effect-else-clause` is legal only when the right-hand side expression or
   statement is an imported effect.
+- A `require` or `guarantee` whose predicate depends on runtime state must carry
+  an `obstruction-clause` (`else`). An omitted `else` is legal only when the
+  check is statically discharged as `verifierProof`.
+- A `where` predicate may reference only inputs and pure functions of inputs,
+  never runtime/target state, and never carries `else`.
 - Single-obstruction `effect-else-clause` shorthand is legal only when exactly
   one profile-declared `domainMappable` failure class remains unmapped. Effects
   with multiple domain-mappable classes must use `else { failure => Obstruction
@@ -1354,6 +1466,40 @@ normalization is applied. Comparison and hashing operate on the exact scalar
 sequence unless the type or field declares a canonicalization constraint such as
 `canonical=nfc`. Raw editor or file-buffer content should use `Bytes` or a
 lawpack-defined raw text scalar, not ambiently normalized `String`.
+
+#### Refined Scalar Types
+
+`String` and `Bytes` are bounded with the same `<max=...>` mechanism as `List`
+and `Map`, and `String` may also pin a canonicalization policy:
+
+```edict
+String<max=128>
+String<max=128, canonical=nfc>
+Bytes<max=65536>
+
+type UserName = String<max=128, canonical=nfc>;
+type RawText  = Bytes<max=1048576>;
+```
+
+Boundedness is expressible **everywhere** a type appears: intent parameters,
+return types, type aliases, record fields, function parameters and returns, and
+imported-effect arguments. A naked, unbounded runtime `String` or `Bytes` value
+is rejected in the lawful-autonomous lane because its output cost cannot be
+proven (`EDICT-LANG-BOUNDS-001`). Field-level `max`/`canonical` constraints and
+the refined-type form are equivalent; a value may not carry both an unbounded
+type and a separate field bound.
+
+Length and bound units are pinned (`EDICT-LANG-LEN-001`):
+
+- `len(value: String) -> U64` is the count of **Unicode scalar values**.
+- `len(value: Bytes) -> U64` is the count of **bytes**.
+- A `String<max=N>` bound is `N` Unicode scalar values; a `Bytes<max=N>` bound
+  is `N` bytes.
+- `canonical=nfc` (or another versioned profile) is applied **before** length
+  is measured and before comparison or hashing.
+- String/bytes concatenation result bounds are derived as the sum of operand
+  maxima; a concatenation whose derived bound exceeds the destination type bound
+  rejects at compile time.
 
 ### Compound Types
 
@@ -1434,13 +1580,75 @@ for mutable state.
 checked precommit inside the same atomic application unit. A guarantee may never
 fail after externally visible commit.
 
+A dynamic `require` or `guarantee` failure must be total: it resolves to a typed
+domain obstruction, never a host exception (`EDICT-LANG-TOTAL-CHECK-001`).
+Therefore:
+
+- a `require` whose predicate depends on runtime state **must** carry an `else`
+  obstruction clause;
+- a precommit `guarantee` whose predicate depends on runtime state **must**
+  carry an `else` obstruction clause;
+- an omitted `else` is legal only when the check is statically discharged by
+  `verifierProof` (i.e. the predicate is compiler/verifier-provable and can
+  never fail at runtime). Such a check carries `enforcement: verifierProof`.
+
+`assert` is always proof-only: it never carries `else`, never becomes a runtime
+obstruction, and fails compilation if it cannot be proven.
+
+## Where Clauses And Input Refinement
+
+A `where` clause is an **input refinement**, not a runtime precondition and not a
+compiler assumption (`EDICT-LANG-WHERE-001`). It constrains the operation's typed
+input and is checked by a generated input validator **before** the atomic
+application unit begins.
+
+- A `where` predicate may reference only operation inputs and pure functions of
+  them. It must not reference runtime/target state.
+- Failure is a platform-owned **invocation rejection** with the stable result
+  `EDICT-INPUT-CONSTRAINT`. It is not a domain obstruction and carries no `else`.
+- Domain-specific checks against runtime state belong in `require` (with its
+  typed obstruction), never in `where`.
+
+Multiple `where` clauses merge conjunctively. The set of input constraints is
+referenced from the Core intent as `inputConstraints` and lowers to the
+generated input validator; the predicates themselves are hash-significant.
+
+## Boolean Evaluation
+
+`&&` and `||` **short-circuit** (`EDICT-LANG-BOOL-001`). `a && b` does not
+evaluate `b` when `a` is false; `a || b` does not evaluate `b` when `a` is true.
+Short-circuiting is part of the semantics because it affects proof refinement
+(e.g. `isSome(x) && unwrap(x) > 0`), cost accounting, and which sub-expressions
+are reached. Operands are pure expressions; effects are never permitted inside a
+boolean operand (A-normal effect form still applies).
+
+## Loops
+
+`for x in collection bounded N` is the only loop form in v1
+(`EDICT-LANG-LOOP-001`):
+
+- v1 iterates `List<T, max=M>` only. `Map` iteration is deferred to a later
+  version with an explicitly defined canonical entry sequence.
+- Iteration order is list order.
+- The compiler must prove `M <= N` (the collection's declared maximum is within
+  the loop bound). If `M` cannot be statically proven `<= N`, the operation is
+  rejected at compile time; it does not defer to a runtime check that could
+  truncate.
+- The loop never silently truncates: if a runtime collection somehow exceeds its
+  proven bound, that is a `resourceFault`/integrity condition that aborts the
+  atomic application with no visible writes, never a quiet partial iteration.
+- Loop bodies obey normal A-normal effect rules; per-iteration effects retain
+  ordering and the static maximum cardinality in Core IR (I-016).
+
 ## Standard Functions
 
 The Edict Core prelude is intentionally small:
 
 - `hash(label: StringLiteral, value...) -> Digest`
 - `canonicalEncode(value) -> Bytes`
-- `len(value) -> U64`
+- `len(value) -> U64` (Unicode scalar count for `String`, byte count for
+  `Bytes`, element count for `List`/`Map`; see Refined Scalar Types,
+  `EDICT-LANG-LEN-001`)
 - `some<T>(value: T) -> Option<T>`
 - `none<T>() -> Option<T>`
 - `default<T>(value: Option<T>, fallback: T) -> T`
@@ -1562,53 +1770,13 @@ locked executable components, but their digests, ABI, sandbox identity,
 determinism constraints, fuel model, and conformance fixtures must be explicit.
 The manifest states the contract; the lowerer and verifier code satisfy it.
 
-Minimal manifest sketch:
-
-```json
-{
-  "apiVersion": "edict.target-profile/v1",
-  "id": "echo.dpo",
-  "version": "1",
-  "digest": "sha256:...",
-  "acceptedCoreAbi": ["edict.core/v1"],
-  "intrinsics": {
-    "id": "echo.dpo.intrinsics/v1",
-    "digest": "sha256:..."
-  },
-  "footprintAlgebra": {
-    "id": "echo.dpo.footprint/v1",
-    "digest": "sha256:..."
-  },
-  "targetIr": {
-    "id": "echo.span-ir/v1",
-    "digest": "sha256:..."
-  },
-  "verifier": {
-    "id": "echo.dpo.verifier/v1",
-    "digest": "sha256:..."
-  },
-  "lowerer": {
-    "id": "echo.dpo.lowerer/v1",
-    "digest": "sha256:..."
-  },
-  "sandbox": "edict.wasm-component/v1",
-  "fuelModel": {
-    "id": "edict.fuel/v1",
-    "digest": "sha256:..."
-  },
-  "applicationModel": "atomic",
-  "readConsistency": "application-snapshot",
-  "guardEvaluation": "precommit-atomic",
-  "obstructionRollback": "no-visible-effects",
-  "multiTarget": false,
-  "conformance": {
-    "fixtureCorpus": {
-      "id": "echo.dpo.conformance/v1",
-      "digest": "sha256:..."
-    }
-  }
-}
-```
+The canonical target profile manifest, its full field set, and the executable
+lowerer/verifier plugin boundary are defined **once** in
+[SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md)
+and its machine schemas (`abi/edict-target-profile.cddl`,
+`abi/edict-target-lowerer.wit`). This document intentionally does not duplicate
+the manifest JSON; duplicate normative manifests are forbidden
+(`EDICT-ABI-NODUP-001`).
 
 Display metadata is not part of the hashed target profile manifest. It belongs
 in a sidecar keyed by the target profile digest.
@@ -1684,17 +1852,25 @@ not source syntax and not target IR.
   "types": [],
   "functions": [],
   "intents": [],
-  "canonicalization": {
-    "codec": "edict.canonical-cbor/v1",
-    "hash": "sha256:..."
+  "canonicalizationProfile": {
+    "id": "edict.canonical-cbor/v1",
+    "digest": "sha256:..."
   }
 }
 ```
 
+`canonicalizationProfile` identifies the codec used to encode this module; it is
+**not** the module's own digest. A Core artifact must not contain its own
+self-hash (`EDICT-CORE-SELFHASH-001`). The Core IR digest is computed over the
+preimage and published in an external resource descriptor (e.g. the contract
+bundle's `coreIrDigest`), never embedded in the Core module itself.
+
 The raw source artifact digest is bundle provenance only. It is intentionally
 excluded from the Core IR hash preimage so comments, formatting, file paths,
 source-map locations, and other nonsemantic source changes do not alter the
-Core IR digest.
+Core IR digest. Lowerer and verifier component digests are bundle fields, not
+Core fields: a different conforming lowerer must not change the semantic Core IR
+digest (`EDICT-CORE-NOPACKAGING-001`).
 
 ### Core Intent Shape
 
@@ -1704,31 +1880,68 @@ Core IR digest.
   "coordinate": "graft.structural_history@1.intent.recordGitWarpImportBatch",
   "input": "RecordGitWarpImportBatchInput",
   "output": "RecordGitWarpImportBatchReceipt",
+  "optic": {
+    "opticKind": "affectReintegration",
+    "basis": "input.basisId",
+    "boundaryKind": "affect",
+    "supportPolicy": "carryOrObstruct",
+    "lossDisposition": "rejectOnSupportLoss"
+  },
   "claims": {
-    "declaredProfile": "echo.createOnly",
-    "verifiedOperationMode": "createOnly",
+    "requiredOperationProfile": "echo.createOnly",
     "targetAuthorities": ["echo.dpo@1"],
     "lawProfiles": []
   },
   "implements": null,
-  "preconditions": [],
-  "postconditions": [],
-  "budget": {
+  "inputConstraints": "graft.structural_history@1.intent.recordGitWarpImportBatch.where/v1",
+  "coreEvaluationBudget": {
     "maxSteps": 10000,
     "maxAllocatedBytes": 1048576,
-    "maxOutputBytes": 65536,
-    "maxTargetReads": 128,
-    "maxTargetWrites": 128,
-    "maxClosureReads": 8,
-    "maxGeneratedEffects": 256
+    "maxOutputBytes": 65536
+  },
+  "targetBudget": {
+    "profile": "echo.dpo@1",
+    "value": "echo.dpo@1.budget/recordBatch"
   },
   "body": {
     "kind": "block",
     "nodes": []
-  },
-  "diagnosticPolicy": "edict.diagnostics/v1"
+  }
 }
 ```
+
+Hash-significant intent fields are the optic contract, the
+`requiredOperationProfile` **requirement**, target authorities, law profiles,
+input-constraint reference, Core/target budgets, and the body. The following are
+**not** in the Core intent preimage:
+
+- `verifiedOperationMode` — a verifier-report field, not a Core claim. Core
+  states the requirement; the verifier proves the verdict
+  (`EDICT-CORE-VERIFIED-EXTERNAL-001`).
+- `preconditions` / `postconditions` — derived indices over the body's
+  `require`/`guarantee` nodes. The body nodes are authoritative; these flat
+  arrays are derived analysis and excluded from the preimage
+  (`EDICT-CORE-NODUP-PREPOST-001`).
+- `diagnosticPolicy` — a compile option / diagnostic sidecar selector. Repair
+  wording is not operation law (`EDICT-CORE-NODIAG-001`).
+
+### Optic Contract
+
+Per I-031, every intent carries a minimal normative optic contract in Core:
+
+- `opticKind`: `revelation` (read) or `affectReintegration` (write).
+- `basis`: the causal-history coordinate the operation depends on.
+- `boundaryKind`: `projection` (revelation) or `affect` (reintegration).
+- `supportPolicy`: how authored support/evidence must be carried.
+- `lossDisposition`: what happens on support loss, e.g. `rejectOnSupportLoss`.
+
+The aperture/footprint requirement is the operation's footprint bound (see
+Effects And Footprints). Richer Observer Geometry evidence — support
+carried/lost/blocked/refuting, degeneracy findings, witness debt, footprint
+overlap — is **derived verifier evidence** (the Aperture Ledger), not Core
+syntax, until the support algebra is pinned. A lowering may not silently erase
+support loss, degeneracy, footprint overlap, or witness debt: it must reject or
+record the loss in derived evidence (`EDICT-OPTIC-PRESERVE-001`).
 
 ### Core Body Shape
 
@@ -1837,8 +2050,11 @@ Core IR canonicalization must:
 - remove comments and formatting;
 - remove source locations from hash input;
 - include source locations in sidecar diagnostic maps;
-- include all imported lawpack/profile digests;
-- include lowerer and verifier digests when producing a locked bundle;
+- include all imported lawpack/profile digests (effects depend on them);
+- exclude lowerer and verifier component digests: they are contract-bundle
+  fields, not Core semantics (`EDICT-CORE-NOPACKAGING-001`);
+- exclude `verifiedOperationMode`, flat `preconditions`/`postconditions`
+  indices, and `diagnosticPolicy` from the preimage;
 - fail if any imported digest is unresolved.
 
 The authoritative hash input is `edict.canonical-cbor/v1` unless a later spec
@@ -2022,6 +2238,28 @@ target lowering obligations, verifier evidence, and bundle hashes.
 Echo DPO is a target semantics for typed graph rewrite. Edict Core is the
 runtime-neutral language that can lower to Echo DPO or to non-graph targets.
 Span IR is Echo target IR, not Edict Core IR.
+
+## Language Versus Implementation Profile
+
+The normative language and the first compiler are separated so the parser
+campaign is not a multi-year heroic effort (`EDICT-LANG-PROFILE-001`):
+
+- `edict.language/v1` is the full normative language defined by this spec:
+  records, enums, variants, exhaustive `match`, `Option`, bounded `List`/`Map`,
+  refined scalars, regex-lite constraints, bounded recursive imports, pure
+  first-order functions, `if`/branch-yield, bounded `for`, record spread,
+  target/lawpack effects, guards, typed obstructions, and budgets.
+- `edict.implementation/minimal-v1` is the first conformance target. It ships:
+  records, enums, `Option`, bounded `List`, pure first-order functions, `if`
+  expressions, branch-yield conditional effects, target/lawpack effects, guards,
+  typed obstructions, and budgets.
+
+Features outside minimal-v1 (variants, `Map`, regex-lite constraints, bounded
+recursive imports, record spread) come online behind named **conformance
+capability flags**. A bundle declares the capability flags it relies on; a
+conforming implementation either supports the declared flags or rejects with a
+registration-class error. Capability flags never change Core IR hash semantics
+for features that are present.
 
 ## Implementation Plan
 
