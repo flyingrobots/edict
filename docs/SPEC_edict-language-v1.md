@@ -300,6 +300,33 @@ references. Admission requests and receipts are external artifacts that
 reference the contract bundle digest; they are not part of the contract bundle
 digest.
 
+## Partial Lowerability
+
+Edict does not guarantee that every Core module lowers to every target profile.
+Target lowering is a **partial, semantics-preserving relation**
+(`EDICT-LOWERABILITY-PARTIAL-001`).
+
+For a Core operation, target profile, and digest-locked lawpack adapter set,
+lowering succeeds only when every required type, pure operation, semantic effect,
+guard, obstruction, footprint obligation, cost obligation, atomicity
+requirement, optic-preservation requirement, and postcondition is either
+natively supported by the target or lawfully discharged by a direct adapter.
+
+A successful lowering is classified as:
+
+- `native`: the target profile directly realizes the operation;
+- `adapted`: one or more lawpack adapters lower semantic effects directly into
+  target intrinsics;
+- `composite`: one composite target profile owns the complete application and
+  coordination model;
+- `unsupported`: at least one obligation cannot be discharged.
+
+Unsupported lowering is a compiler/lowering error. The compiler must not silently
+approximate semantics, weaken guards, collapse obstruction classes, widen
+authority, erase evidence loss, or fall back to ambient host execution. This is a
+distinct failure class from admission rejection (a participant decision) and from
+a runtime obstruction (a domain result at execution time); see I-012.
+
 ## Threat Model
 
 Edict exists because agents and applications should be able to author lawful
