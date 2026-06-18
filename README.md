@@ -149,6 +149,14 @@ atomic application semantics, and target IR. Edict Core must stay boring enough
 that these lowerings are honest interpretations, not hidden assumptions about a
 universal graph, database, filesystem, or event log.
 
+Edict does not promise that every operation runs everywhere. It promises that
+lowerability is explicit, inspectable, and evidence-bound.
+
+> The audacious part is not that Edict translates everything. The audacious part
+> is that Edict can say, precisely and cryptographically: This translates. This
+> translates through this adapter. This translates only under this equivalence.
+> And this does not translate without lying.
+
 ## Hello, Edict
 
 The smallest useful Edict example is intentionally boring. It has no ambient
