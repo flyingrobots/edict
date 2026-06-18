@@ -1282,6 +1282,7 @@ type-ref        = qual-ident , type-args?
                 | "String" , scalar-refine?
                 | "Bytes" , scalar-refine?
                 | "Option" , "<" , type-ref , ">"
+                | "CapabilityRef" , "<" , type-ref , ">"
                 | "List" , "<" , type-ref , "," , "max" , "=" , bound-ref , ">"
                 | "Map" , "<" , type-ref , "," , type-ref , "," ,
                   "max" , "=" , bound-ref , ">" ;
@@ -1517,13 +1518,16 @@ Length and bound units are pinned (`EDICT-LANG-LEN-001`):
 - `Option<T>`;
 - `List<T, max=N>`;
 - `Map<K, V, max=N>`;
+- `CapabilityRef<T>` (inert capability-receipt reference; see Capability
+  References);
 - imported shape/lawpack/target types.
 
 Maps must use canonical key ordering. Lists and maps must declare finite
 maximum cardinality. Map key types in v1 are limited to scalar, enum, digest,
 bytes, string with declared canonicalization policy, or imported types that
-explicitly declare canonical map-key semantics. Target references, closures,
-records, lists, maps, and variants are rejected as map keys in v1.
+explicitly declare canonical map-key semantics. Target references, capability
+references, closures, records, lists, maps, and variants are rejected as map
+keys in v1.
 
 Recursive value types are rejected in v1 unless every recursive path carries an
 explicit maximum depth in the resolved source-profile or lawpack facts. Imported
