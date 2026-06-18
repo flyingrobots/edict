@@ -2266,6 +2266,25 @@ Core IR canonicalization must:
   indices, and `diagnosticPolicy` from the preimage;
 - fail if any imported digest is unresolved.
 
+The Core intent preimage **includes**, positively and exhaustively
+(`EDICT-CORE-PREIMAGE-LIST-001`):
+
+- `coordinate`;
+- input and output types;
+- the optic contract;
+- `requiredOperationProfile`;
+- `targetAuthorities`;
+- `lawProfiles`;
+- the `implements` coordinate;
+- the typed `inputConstraints` predicate trees;
+- `coreEvaluationBudget`;
+- `targetBudget` (resolved typed ceiling);
+- the authoritative structured body (including `require`/`guarantee` nodes); and
+- all semantic import/profile/lawpack digests.
+
+A reader must not have to reconstruct the preimage by scavenging the document:
+this list and the exclusion list above are jointly authoritative.
+
 The authoritative hash input is `edict.canonical-cbor/v1` unless a later spec
 supersedes it. `edict.canonical-json/v1` is a review/debug rendering and must
 not be used as the authority for full-width typed integers unless every scalar
