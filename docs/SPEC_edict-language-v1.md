@@ -1750,9 +1750,15 @@ effects. There is no other narrowing in v1.
   the loop bound). If `M` cannot be statically proven `<= N`, the operation is
   rejected at compile time; it does not defer to a runtime check that could
   truncate.
-- The loop never silently truncates: if a runtime collection somehow exceeds its
-  proven bound, that is a `resourceFault`/integrity condition that aborts the
-  atomic application with no visible writes, never a quiet partial iteration.
+- A runtime value that violates its locked Core type bound is **malformed**, not
+  an ordinary budget exhaustion (`EDICT-LANG-BOUND-VIOLATION-001`). Input
+  violations reject during input validation. A target/runtime-produced value
+  violating its declared bound is an `integrityFault`; if caused by compiler,
+  lowerer, verifier, or runtime implementation behavior, it is an
+  `internalFault`. It is **never** silently truncated and is **never** an
+  ordinary author-visible `resourceFault`. (Because `M <= N` is proven
+  statically, this state is impossible by contract for conforming
+  implementations; the classification covers defects, not normal operation.)
 - Loop bodies obey normal A-normal effect rules; per-iteration effects retain
   ordering and the static maximum cardinality in Core IR (I-016).
 
