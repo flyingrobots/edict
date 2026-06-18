@@ -1279,15 +1279,16 @@ variant-case    = upper-ident , payload-type? , ","? ;
 payload-type    = "(" , type-ref , ")" ;
 
 type-ref        = qual-ident , type-args?
-                | "String" , scalar-refine?
-                | "Bytes" , scalar-refine?
+                | "String" , string-refine?
+                | "Bytes" , bytes-refine?
                 | "Option" , "<" , type-ref , ">"
                 | "CapabilityRef" , "<" , type-ref , ">"
                 | "List" , "<" , type-ref , "," , "max" , "=" , bound-ref , ">"
                 | "Map" , "<" , type-ref , "," , type-ref , "," ,
                   "max" , "=" , bound-ref , ">" ;
-scalar-refine   = "<" , "max" , "=" , bound-ref ,
+string-refine   = "<" , "max" , "=" , bound-ref ,
                   ( "," , "canonical" , "=" , ident )? , ">" ;
+bytes-refine    = "<" , "max" , "=" , bound-ref , ">" ;
 type-args       = "<" , type-ref , { "," , type-ref } , ">" ;
 
 fn-decl         = "fn" , ident , "(" , param-list? , ")" ,
@@ -1489,6 +1490,11 @@ Bytes<max=65536>
 type UserName = String<max=128, canonical=nfc>;
 type RawText  = Bytes<max=1048576>;
 ```
+
+Only `String` may pin a `canonical=` policy; `Bytes` carries `max` only.
+`Bytes<max=N, canonical=...>` is a syntax error (the grammar gives `Bytes` a
+max-only refinement), because bytes are measured and hashed raw and must not be
+normalized (`EDICT-LANG-BYTES-NOCANON-001`).
 
 Boundedness is expressible **everywhere** a type appears: intent parameters,
 return types, type aliases, record fields, function parameters and returns, and
