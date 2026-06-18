@@ -69,11 +69,14 @@ receipts for the same contract bundle digest.
 ## Admission Explanation
 
 An admission explanation is the policy-epoch-specific counterpart to the
-bundle's participant-neutral compile explanation. It references the contract
-bundle digest and the `AdmissionReceiptBodyDigest`, records the participant
-policy epoch and admitted ceilings, and lives **outside** the contract bundle.
-It must never be hashed into the participant-neutral bundle
-(`CONTINUUM-BUNDLE-DAG-001`).
+bundle's participant-neutral compile explanation. It references the admitted
+`bundleSubject` (`{ kind, digest }`, echoing the request/receipt) and the
+`AdmissionReceiptBodyDigest`, records the participant policy epoch and admitted
+ceilings, and lives **outside** the contract bundle. Carrying the full
+`bundleSubject` — not a singular digest — is required so replay and hash-impact
+tooling can tell which bundle identity (semantic or release) the receipt
+explains (`CONTINUUM-BUNDLE-SUBJECT-001`). It must never be hashed into the
+participant-neutral bundle (`CONTINUUM-BUNDLE-DAG-001`).
 
 ## Admission Evidence Is External
 

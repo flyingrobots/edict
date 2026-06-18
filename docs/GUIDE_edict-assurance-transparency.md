@@ -54,7 +54,7 @@ The compile explanation digest is bound by the contract bundle.
 ### Admission Explanation (participant-specific, external)
 
 ```text
-contract bundle digest
+bundleSubject { kind: semantic | release, digest }
 admission receipt body digest
 participant identity
 participant policy epoch
