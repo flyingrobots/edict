@@ -811,9 +811,13 @@ Core budget units are pinned (`EDICT-LANG-BUDGET-UNITS-001`):
 - `maxOutputBytes`: maximum `edict.canonical-cbor/v1` encoded output size in
   octets.
 
-`targetBudget` carries the resolved typed `ceiling` in semantic Core (its source
-coordinate may remain as provenance/debug metadata, but the resolved value is
-what Core hashes). This is a small, fixed cost vocabulary — not a gas economy.
+`targetBudget` in semantic Core has exactly two **hash-significant** members
+(`EDICT-LANG-TARGETBUDGET-HASH-001`): the digest-locked `costAlgebra` resource
+reference and the resolved typed `ceiling`. **Both** are in the Core preimage —
+the `ceiling` is meaningless without the `costAlgebra` that denominates it, so a
+ceiling of `128` under two different cost algebras must hash differently. The
+only non-hash part is an optional human-readable cost coordinate kept as display
+metadata. This is a small, fixed cost vocabulary — not a gas economy.
 
 Target reads, writes, closure reads, and generated-effect counts are
 target-cost-algebra dimensions, not portable Core dimensions; they live in
@@ -2342,7 +2346,8 @@ The Core intent preimage **includes**, positively and exhaustively
 - the `implements` coordinate;
 - the typed `inputConstraints` predicate trees;
 - `coreEvaluationBudget`;
-- `targetBudget` (resolved typed ceiling);
+- `targetBudget` (both the digest-locked `costAlgebra` reference and the
+  resolved typed `ceiling`);
 - the authoritative structured body (including `require`/`guarantee` nodes); and
 - all semantic import/profile/lawpack digests.
 
