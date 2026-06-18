@@ -26,7 +26,11 @@ target-profile-manifest = {
   bundleProfile: resource-ref,
   generatedArtifactProfiles: [* resource-ref],
   canonicalEncodingRules: resource-ref,
-  acceptedLawpackAdapterAbi: [+ tstr],
+  ; Reserved/deferred: lists accepted lawpack-adapter ABI ids once that
+  ; byte-level ABI (edict.lawpack-adapter/v1) is specified. Optional and empty
+  ; until then; a target cannot validate adapter compatibility from this field
+  ; before the ABI exists (EDICT-ABI-LAWPACK-ADAPTER-DEFER-001).
+  ? acceptedLawpackAdapterAbi: [* tstr],
   diagnosticAbi: resource-ref,
 
   ; application doctrine

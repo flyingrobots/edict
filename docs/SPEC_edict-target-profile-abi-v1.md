@@ -72,7 +72,7 @@ illustrative shape:
   "canonicalEncodingRules": {
     "id": "edict.canonical-cbor/v1", "digest": "sha256:..."
   },
-  "acceptedLawpackAdapterAbi": ["edict.lawpack-adapter/v1"],
+  "acceptedLawpackAdapterAbi": [],
   "diagnosticAbi": { "id": "edict.diagnostics/v1", "digest": "sha256:..." },
 
   "applicationModel": "atomic",
@@ -91,9 +91,16 @@ illustrative shape:
 
 The manifest carries every field the Language spec requires of a profile,
 including `bundleProfile`, `generatedArtifactProfiles`, `canonicalEncodingRules`,
-`acceptedLawpackAdapterAbi`, and `diagnosticAbi`. This is the **single**
-authoritative manifest; the Language spec must not duplicate it
-(`EDICT-ABI-NODUP-001`).
+and `diagnosticAbi`. This is the **single** authoritative manifest; the Language
+spec must not duplicate it (`EDICT-ABI-NODUP-001`).
+
+`acceptedLawpackAdapterAbi` is **reserved and deferred**: it will list accepted
+lawpack-adapter ABI ids once the byte-level `edict.lawpack-adapter/v1` ABI is
+specified. Until that schema exists it is optional and empty, and a target must
+not be expected to validate adapter compatibility from it
+(`EDICT-ABI-LAWPACK-ADAPTER-DEFER-001`). Lawpack adapters are still digest-locked
+resource references in the lawpack manifest; only the cross-ABI compatibility
+field is deferred.
 
 Display metadata is not part of this manifest. Human-facing names, codenames,
 and marketing copy live in sidecar documents keyed by the target profile digest.
