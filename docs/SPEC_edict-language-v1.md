@@ -2497,12 +2497,23 @@ campaign is not a multi-year heroic effort (`EDICT-LANG-PROFILE-001`):
   expressions, branch-yield conditional effects, target/lawpack effects, guards,
   typed obstructions, and budgets.
 
-Features outside minimal-v1 (variants, `Map`, regex-lite constraints, bounded
-recursive imports, record spread) come online behind named **conformance
-capability flags**. A bundle declares the capability flags it relies on; a
-conforming implementation either supports the declared flags or rejects with a
-registration-class error. Capability flags never change Core IR hash semantics
-for features that are present.
+Features outside minimal-v1 come online behind named **conformance capability
+flags**, and these are split into two distinct concepts — source-language support
+and Core-ABI support are not the same thing (`EDICT-LANG-CAPABILITIES-SPLIT-001`):
+
+- **`requiredSourceCapabilities`**: source-profile / release metadata for
+  surface-syntax features (e.g. record-spread syntax, regex-lite syntax). The
+  **compiler** checks these against the source profile.
+- **`requiredCoreCapabilities`**: inferred from Core constructs (e.g. variants,
+  maps, bounded recursive imports). This is a **hash-significant Core module
+  field**, checked by the **lowerer/verifier**.
+
+A conforming implementation supports the declared flags or rejects with a
+registration-class error. A bundle may expose a derived index over these flags,
+but that index is not a second authority: source capabilities are authoritative
+in the source profile and Core capabilities are authoritative in the Core
+module. Capability flags never change Core IR hash semantics for features that
+are present.
 
 ## Implementation Plan
 
