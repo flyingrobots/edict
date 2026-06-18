@@ -240,7 +240,8 @@ adapter:
     executionClass + resolved writeClass confirmation
     footprint obligation discharge
     cost obligation discharge
-    failureClass -> target obstruction class mapping
+    failureCoordinate -> target obstruction mapping (per named failure, so
+      same-authority failures such as mismatch and boundExceeded stay distinct)
     guard attachment rules
 ```
 
