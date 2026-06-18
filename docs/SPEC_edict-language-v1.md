@@ -1252,11 +1252,15 @@ Lexical conformance fixtures must pin these details before parser freeze:
 - Integer width and signedness are hash-significant, so every integer value
   must resolve to exactly one of `I32`, `I64`, `U32`, `U64`. A literal resolves
   by explicit suffix (`1u64`, `64_000i64`) or by an unambiguous expected type
-  from its context (parameter type, field type, return type, or a target/lawpack
-  argument type). A bare literal with no suffix and no unambiguous expected type
-  is rejected (`EDICT-LANG-INTLIT-001`); in particular `hash("domain", 1)` is
-  rejected because `1` has no resolvable width. The suffix and the contextual
-  type must agree or the literal rejects.
+  propagated from its context. Expected-type propagation reaches: record fields,
+  variant payloads, `Option` constructors, `List`/`Map` literal elements,
+  function and intrinsic arguments, return expressions, and explicit type
+  annotations. It does **not** propagate through unconstrained variadic calls
+  such as `hash("x", 1)`. A bare literal with no suffix and no unambiguous
+  expected type is rejected (`EDICT-LANG-INTLIT-001`); `hash("domain", 1)` is
+  rejected because `1` has no resolvable width. If an explicit suffix disagrees
+  with the contextual type (e.g. `1i32` where `U64` is required), the literal is
+  rejected with `EDICT-TYPE-INT-LITERAL-MISMATCH`.
 - `digest-lit` hex is lowercase in canonical source rendering. Uppercase hex may
   parse only if normalized before semantic comparison.
 - `pattern` constraints use `edict.regex-lite/v1`, a locked non-backtracking
