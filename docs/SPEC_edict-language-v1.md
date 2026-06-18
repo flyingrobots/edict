@@ -1822,6 +1822,25 @@ Bytes:
 Unchecked signed division/remainder is permitted only where overflow and
 divide-by-zero are statically excluded; otherwise use the `checked*` forms.
 
+### Integer Safety
+
+All integer arithmetic in the lawful-autonomous lane is overflow-safe and total
+(`EDICT-LANG-INT-SAFETY-001`):
+
+- A bare `+`, `-`, `*`, `/`, `%`, or unary `-` is accepted only if the compiler
+  proves, from declared scalar widths and value refinements, that it cannot
+  overflow or wrap. An unproven operation rejects at compile time.
+- Otherwise authors use the `checked*` forms, which return `Option<T>` and force
+  the caller to handle the `none` case; the unhandled result cannot be unwrapped
+  without proof.
+- Division and remainder by zero must be statically excluded or use a `checked*`
+  form; an unproven divisor rejects.
+- Signed `/` and `%` truncate toward zero, with the remainder taking the
+  dividend's sign.
+- There is no wrapping, saturating, or trapping arithmetic in v1. Overflow is
+  never a silent or runtime-panicking outcome; it is a compile-time rejection or
+  a typed `Option` the author must handle.
+
 Every prelude function must be total over valid input or must expose a typed
 diagnostic that the compiler can force authors to handle.
 
