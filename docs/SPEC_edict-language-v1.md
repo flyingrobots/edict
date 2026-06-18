@@ -1997,6 +1997,14 @@ declares idempotent ensure semantics.
 Edict Core IR is the canonical compiler output before target lowering. It is
 not source syntax and not target IR.
 
+> [!NOTE]
+> The review-JSON expression examples in this section (`CoreExpr`,
+> `CorePredicate`, `inputConstraints` trees, node shapes) are **illustrative
+> until the normative `edict.core/v1` CDDL lands**. The Phase 0 Core-schema issue
+> ([#3](https://github.com/flyingrobots/edict/issues/3)) owns the complete tagged
+> union and canonical encoding. **No Core hash golden may be frozen before that
+> schema lands** (`EDICT-CORE-EXPR-CDDL-001`).
+
 ### Core Module Shape
 
 ```json
