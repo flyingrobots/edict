@@ -1663,7 +1663,12 @@ The Edict Core prelude is intentionally small:
 - `hash(label: StringLiteral, value...) -> Digest`
 - `canonicalEncode<T>(value: T) -> Bytes<max=CanonicalEncodedMax<T>>` (the
   result is statically bounded by the input type's canonical-encoded maximum; a
-  naked unbounded `Bytes` return would violate `EDICT-LANG-BOUNDS-001`)
+  naked unbounded `Bytes` return would violate `EDICT-LANG-BOUNDS-001`).
+  `CanonicalEncodedMax<T>` is a compiler-derived type-level bound: the maximum
+  `edict.canonical-cbor/v1` encoded byte length of any value of type `T`. It is
+  finite because every checked-lane type is bounded (scalars by width or
+  refinement, `List`/`Map` by `max`, records/variants by their fields); it is
+  rejected for any `T` that is not fully bounded (`EDICT-LANG-ENCODEMAX-001`).
 - `len(value) -> U64` (Unicode scalar count for `String`, byte count for
   `Bytes`, element count for `List`/`Map`; see Refined Scalar Types,
   `EDICT-LANG-LEN-001`)
