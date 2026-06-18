@@ -1677,6 +1677,20 @@ Core hash (`EDICT-CORE-WHERE-HASH-001`). The generated input validator is a
 derived artifact lowered from these trees; any validator coordinate lives in a
 non-hash sidecar.
 
+## Basis Expressions
+
+A `basis` expression is evaluated in the **pure pre-body environment**
+(`EDICT-LANG-BASIS-PURE-001`). It may reference intent parameters, constants,
+`CapabilityRef` values, and total digest-locked pure functions over those
+values. It must **not** reference target state, imported effects, effect
+results, or locals bound in the intent body. A profile- or lawpack-supplied
+basis template obeys the same restriction.
+
+This protects the central doctrine: the basis is what the operation *says* it
+depends on, not whatever the runtime happened to reveal after execution started.
+Runtime reads may **validate or resolve** a declared basis (e.g. a stale-basis
+guard); they do not **define** it.
+
 ## Boolean Evaluation
 
 `&&` and `||` **short-circuit** (`EDICT-LANG-BOOL-001`). `a && b` does not
