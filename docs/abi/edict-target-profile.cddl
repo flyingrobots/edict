@@ -39,6 +39,9 @@ target-profile-manifest = {
   guardEvaluation: "precommit-atomic" / tstr,
   obstructionRollback: "no-visible-effects" / tstr,
   multiTarget: bool,
+  ; whether the target can evaluate precommit postcondition (`guarantee`) checks
+  ; inside the atomic application unit (EDICT-TARGET-POSTCOND-001)
+  postconditionSupport: bool,
 
   deterministicExecution: resource-ref,
   conformanceFixtureCorpus: resource-ref,

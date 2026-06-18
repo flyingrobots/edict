@@ -1652,7 +1652,10 @@ for mutable state.
 
 `guarantee` is a postcondition. It must be proven by the compiler/verifier or
 checked precommit inside the same atomic application unit. A guarantee may never
-fail after externally visible commit.
+fail after externally visible commit. A precommit (runtime-checked) `guarantee`
+lowers only to a target profile that declares `postconditionSupport`; otherwise
+lowering fails with an unsupported-lowering error, never a silent downgrade
+(`EDICT-TARGET-POSTCOND-001`).
 
 A dynamic `require`/`guarantee` failure must be total: it resolves to a typed
 domain obstruction, never a host exception (`EDICT-LANG-TOTAL-CHECK-001`). The

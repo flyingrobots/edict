@@ -80,6 +80,7 @@ illustrative shape:
   "guardEvaluation": "precommit-atomic",
   "obstructionRollback": "no-visible-effects",
   "multiTarget": false,
+  "postconditionSupport": true,
   "deterministicExecution": {
     "id": "edict.determinism/v1", "digest": "sha256:..."
   },
@@ -142,10 +143,18 @@ Target profiles must declare:
 
 - read consistency model;
 - precommit guard evaluation model;
+- `postconditionSupport`: whether precommit postcondition (`guarantee`) checks
+  can be evaluated inside the atomic application unit;
 - obstruction rollback behavior;
 - visibility rules for successful writes;
 - resource failure behavior;
 - whether the profile is single-target or a composite target profile.
+
+A precommit `guarantee` lowers only to a profile whose `postconditionSupport` is
+true. If an operation requires a precommit postcondition and the selected target
+profile does not support it, lowering fails with an unsupported-lowering
+compiler error (`EDICT-TARGET-POSTCOND-001`); it is never silently dropped or
+downgraded to a non-atomic check.
 
 The v1 default application model is:
 
