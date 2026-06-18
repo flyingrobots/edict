@@ -81,7 +81,8 @@ A contract bundle binds:
 - compiler identity and digest;
 - lowerer identity and digest;
 - verifier identity and digest;
-- compile options digest;
+- semantic compile options digest (semantic-affecting options only; nonsemantic
+  diagnostic options are bound by release/sidecar, not semantic);
 - canonicalization profile digest;
 - normative conformance fixture corpus digests;
 - verifier report digest;
@@ -112,11 +113,19 @@ semanticBundleDigest = digest(domain "edict.bundle.semantic/v1", [
   sourceProfileSemanticFactsDigest,
   generatedArtifactDigests,
   canonicalizationProfileDigest,
-  compileOptionsDigest,
+  semanticCompileOptionsDigest,
   conformanceFixtureCorpusDigests,
   verifierReportDigest
 ])
 ```
+
+Only **semantic** compile options enter `semanticCompileOptionsDigest` — those
+that can change Core IR, target IR, or canonical encoding. Nonsemantic options
+whose wording is not operation law (notably `diagnosticPolicy`, repair text, and
+other diagnostic selectors) are excluded; they are bound, if at all, by
+`releaseBundleDigest` or a diagnostic sidecar. Changing only diagnostics must not
+change `semanticBundleDigest` (`EDICT-CORE-NODIAG-001`,
+`CONTINUUM-SEMANTIC-OPTIONS-001`).
 
 A different but conforming lowerer/verifier must produce the **same**
 `semanticBundleDigest` (this is what the two-lowerer trial checks); therefore
@@ -133,6 +142,7 @@ releaseBundleDigest = digest(domain "edict.bundle.release/v1", [
   compilerIdentityAndDigest,
   lowererIdentityAndDigest,
   verifierIdentityAndDigest,
+  nonSemanticCompileOptionsDigest,
   buildProvenance,
   compileExplanationDigest
 ])
