@@ -108,7 +108,9 @@ Resolved 9 Codex review threads + 1 self-discovered issue, one commit each:
 
 ### Fixed (PR #2 review round 2 — CodeRabbit)
 
-Triage ruling: fix 15, defer 1. Bounded semantic clarifications, one commit each:
+Triage ruling: fix 15, defer 1 (16 findings total; the 15 fixes are grouped
+into the bullet categories below, one commit per finding). Bounded semantic
+clarifications:
 
 - CapabilityRef carried digest is canonical/hash-significant; obstruction
   shorthand legal only for exactly one unmapped class (zero omits `else`).

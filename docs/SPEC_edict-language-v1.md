@@ -2062,9 +2062,9 @@ hash-significant Edict Core operation semantics.
 
 Operation modes are verifier predicates over inferred effects:
 
-- `readOnly`: proof-only semantic facts plus effects whose authoritative
-  `writeClass` is `read` (including runtime semantic reads); no mutating
-  `writeClass`.
+- `readOnly`: effects that are **either** proof-only semantic facts **or** have
+  authoritative `writeClass` `read` (including runtime semantic reads); no
+  mutating `writeClass`.
 - `createOnly`: read, create, and ensure effects; no replace, delete, append,
   or runtime-materialized semantic writes except effects the resolved profile
   explicitly classifies as create.

@@ -81,7 +81,7 @@ artifact locked), `impl` (implementation passes).
 | EDICT-LANG-BASIS-PURE-001 | `basis` is pure/effect-free over inputs, constants, capability refs, pure fns; runtime reads validate not define | Language | `lang/basis/pure` | `lang/basis/runtime-read` | spec |
 | EDICT-LANG-HELPER-BOUNDS-001 | Pure-helper bounds enforced at import validation + call-site instantiation | Language/Lawpack | `lang/helper/bounded` | `lang/helper/unbounded` | spec |
 | EDICT-LANG-REQUIRE-ELSE-001 | Every `require` carries `else`; input-only require allowed for domain obstructions; `where`=input refinement; `assert`=proof | Language | `lang/require/input-only-else` | `lang/require/no-else` | spec |
-| EDICT-CORE-EXPR-CDDL-001 | Core expression/predicate CDDL + canonical encoding (deferred to issue #3; no Core golden before it lands) | Language/Core | — | `core/expr/golden-before-cddl` | deferred |
+| EDICT-CORE-EXPR-CDDL-001 | Core expression/predicate CDDL + canonical encoding (deferred to issue #3; no Core golden before it lands) | Language/Core | `(deferred → #3)` | `core/expr/golden-before-cddl` | deferred |
 | EDICT-LANG-OPTION-REFINE-001 | Only Option refinement (isSome/unwrap), lexical and variable-specific; no general narrowing | Language | `lang/refine/isSome` | `lang/refine/flows-through-helper` | spec |
 | EDICT-LANG-BOUND-VIOLATION-001 | Runtime value violating a proven static bound is integrity/internal fault, never silent truncation or resourceFault | Language | `lang/bound/integrity-fault` | `lang/bound/silent-truncate` | spec |
 | EDICT-CORE-GUARD-CATEGORY-001 | CoreGuard is targetAtomic + always carries obstruction; verifier proofs are CoreProofObligation nodes | Language | `core/guard/atomic-obstruction` | `core/guard/obstructionless` | spec |
@@ -111,7 +111,7 @@ artifact locked), `impl` (implementation passes).
 | EDICT-ABI-DISPLAY-001 | Display metadata/codenames live in sidecars, never in manifests | Target/Lawpack/Bundle | `abi/display/sidecar` | `abi/display/codename-in-manifest` | spec |
 | EDICT-CONFORMANCE-DIFFERENTIAL-001 | Two independent lowerers/verifiers must byte-match the corpus | Conformance | `conformance/two-lowerer/agree` | `conformance/two-lowerer/diverge` | spec |
 | CONTINUUM-BUNDLE-DAG-001 | Artifact graph acyclic; no subject references an attestation over itself | Bundle | `bundle/dag/acyclic` | `bundle/dag/cycle` | spec |
-| CONTINUUM-BUNDLE-DAG-MORIARTY-001 | Moriarty must catch any introduced cycle | Bundle/Assurance | — | `bundle/dag/moriarty-injected-cycle` | spec |
+| CONTINUUM-BUNDLE-DAG-MORIARTY-001 | Moriarty must catch any introduced cycle | Bundle/Assurance | `(negative-only)` | `bundle/dag/moriarty-injected-cycle` | spec |
 | CONTINUUM-RECEIPT-ACYCLIC-001 | Receipt body never references its signing envelope; DSSE signs body digest | Bundle/Admission | `admission/receipt/body-then-sign` | `admission/receipt/self-signature` | spec |
 | CONTINUUM-SOURCEPATH-001 | Source paths are logical package-relative URIs, never machine-local | Bundle | `bundle/sourcepath/logical` | `bundle/sourcepath/absolute` | spec |
 
@@ -122,3 +122,10 @@ determinism, atomic application, codename coordinates, content-addressed
 duplicate create) will be assigned `EDICT-*` IDs and rows here as their fixtures
 are written, so the registry becomes the authoritative checklist for grammar and
 Core-schema freeze.
+
+**Deferred entries** (status `deferred`) intentionally have no positive fixture
+until their dependent schema lands; their positive-fixture cell records the
+blocking dependency (e.g. `(deferred → #3)`). A row whose only fixture is a
+negative one (e.g. a Moriarty cycle-injection) marks its positive cell
+`(negative-only)`. These markers keep the table's "every ID gets fixtures"
+contract honest rather than papering over the gap with an em-dash.

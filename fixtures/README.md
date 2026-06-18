@@ -37,3 +37,9 @@ fixtures/
 Empty pending the Phase 0 fixture campaign. The first fixtures to land are the
 canonicalization golden cases and the relapse zoo (see the assurance guide), per
 the Language spec implementation plan, Phase 0.
+
+**Placeholder digests:** README/spec code examples currently use `sha256:...`
+placeholders. The fixtures derived from those examples will carry placeholder
+digests until the Phase 0 tooling (the `spec.lock.json` generator and a fixture
+validator) exists to compute and pin real digests. A GREEN example fixture is
+not expected to compile cleanly until that tooling lands.
