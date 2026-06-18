@@ -40,7 +40,7 @@ interface artifacts {
 
 // The lowerer: Core IR + profile context -> target-owned Target IR.
 world lowerer {
-  use artifacts.{artifact, outcome, digest};
+  use artifacts.{artifact, outcome};
 
   // Look up a target intrinsic signature by canonical coordinate.
   export effect-signature: func(coordinate: string) -> outcome;
