@@ -11,12 +11,30 @@ lawpack-manifest = {
   dependencies: [* lawpack-dep],          ; acyclic, digest-locked (EDICT-LAWPACK-DAG-001)
   exports: resource-ref,
   ? targetAdapters: [+ target-adapter],   ; required only if any runtime effect exists
-  ? helperComponent: resource-ref,        ; required only if helpers ship as a component
-  verifier: resource-ref,
-  ? sandbox: resource-ref,                 ; required only if executable components ship
-  ? fuelModel: resource-ref,               ; required only if executable components ship
+  ? helperComponent: executable-component, ; executable helpers carry their own sandbox+fuel
+  verifier: verifier,                      ; classified: declarative or executable
   compatibility: resource-ref,
   conformanceFixtureCorpus: resource-ref,
+}
+
+; A verifier is either a declarative ruleset (no runtime) or an executable
+; component. An executable verifier MUST carry its own sandbox and fuel model,
+; so the schema enforces that no executable component is left unbounded
+; (EDICT-ABI-VERIFIER-BOUND-001).
+verifier = declarative-verifier / executable-verifier
+declarative-verifier = { class: "declarative", ruleset: resource-ref }
+executable-verifier = {
+  class: "executable",
+  component: resource-ref,
+  sandbox: resource-ref,
+  fuelModel: resource-ref,
+}
+
+; Any executable component is bounded by its own sandbox + fuel model.
+executable-component = {
+  component: resource-ref,
+  sandbox: resource-ref,
+  fuelModel: resource-ref,
 }
 
 lawpack-dep = { id: tstr, version: tstr, digest: sha256-digest }

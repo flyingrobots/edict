@@ -95,10 +95,17 @@ from that schema and is illustrative only.
       "adapter": { "id": "jsh.kv.adapter/v1", "digest": "sha256:..." }
     }
   ],
-  "helperComponent": { "id": "jsh.helpers/v1", "digest": "sha256:..." },
-  "verifier": { "id": "jsh.verifier/v1", "digest": "sha256:..." },
-  "sandbox": { "id": "edict.wasm-component/v1", "digest": "sha256:..." },
-  "fuelModel": { "id": "edict.fuel/v1", "digest": "sha256:..." },
+  "helperComponent": {
+    "component": { "id": "jsh.helpers/v1", "digest": "sha256:..." },
+    "sandbox": { "id": "edict.wasm-component/v1", "digest": "sha256:..." },
+    "fuelModel": { "id": "edict.fuel/v1", "digest": "sha256:..." }
+  },
+  "verifier": {
+    "class": "executable",
+    "component": { "id": "jsh.verifier/v1", "digest": "sha256:..." },
+    "sandbox": { "id": "edict.wasm-component/v1", "digest": "sha256:..." },
+    "fuelModel": { "id": "edict.fuel/v1", "digest": "sha256:..." }
+  },
   "compatibility": {
     "id": "jsh.compatibility/v1",
     "digest": "sha256:..."
