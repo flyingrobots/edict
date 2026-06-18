@@ -1617,9 +1617,13 @@ application unit begins.
 - Domain-specific checks against runtime state belong in `require` (with its
   typed obstruction), never in `where`.
 
-Multiple `where` clauses merge conjunctively. The set of input constraints is
-referenced from the Core intent as `inputConstraints` and lowers to the
-generated input validator; the predicates themselves are hash-significant.
+Multiple `where` clauses merge conjunctively. The Core intent carries the
+**typed predicate trees** themselves in `inputConstraints` (not merely a
+validator coordinate), because the predicates are hash-significant: changing
+`where input.repo != ""` to a different input predicate must change the semantic
+Core hash (`EDICT-CORE-WHERE-HASH-001`). The generated input validator is a
+derived artifact lowered from these trees; any validator coordinate lives in a
+non-hash sidecar.
 
 ## Boolean Evaluation
 
@@ -1923,7 +1927,9 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
     "lawProfiles": []
   },
   "implements": null,
-  "inputConstraints": "graft.structural_history@1.intent.recordGitWarpImportBatch.where/v1",
+  "inputConstraints": [
+    { "op": "!=", "left": { "field": "%input.repo" }, "right": { "string": "" } }
+  ],
   "coreEvaluationBudget": {
     "maxSteps": 10000,
     "maxAllocatedBytes": 1048576,
