@@ -1676,10 +1676,24 @@ The Edict Core prelude is intentionally small:
   result is statically bounded by the input type's canonical-encoded maximum; a
   naked unbounded `Bytes` return would violate `EDICT-LANG-BOUNDS-001`).
   `CanonicalEncodedMax<T>` is a compiler-derived type-level bound: the maximum
-  `edict.canonical-cbor/v1` encoded byte length of any value of type `T`. It is
-  finite because every checked-lane type is bounded (scalars by width or
-  refinement, `List`/`Map` by `max`, records/variants by their fields); it is
-  rejected for any `T` that is not fully bounded (`EDICT-LANG-ENCODEMAX-001`).
+  `edict.canonical-cbor/v1` encoded byte length of any value of type `T`,
+  computed structurally (`EDICT-LANG-ENCODEMAX-001`):
+    - scalars: the fixed canonical-CBOR width for `Bool`/`I32`/`I64`/`U32`/`U64`/
+      `Digest`/`Unit`;
+    - `String<max=N[,canonical=...]>`: CBOR text-header bytes + the maximum UTF-8
+      byte length of `N` Unicode scalar values **after** the declared
+      canonicalization;
+    - `Bytes<max=N>`: CBOR byte-header bytes + `N`;
+    - records: header bytes + the sum of each field's key encoding +
+      `CanonicalEncodedMax<fieldType>`;
+    - variants: header bytes + the tag encoding + the **maximum**
+      `CanonicalEncodedMax` over all cases;
+    - `Option<T>`: `max(CanonicalEncodedMax<T>, none-encoding)`;
+    - `List<T, max=N>`: header bytes + `N * CanonicalEncodedMax<T>`;
+    - `Map<K, V, max=N>`: header bytes + `N * (CanonicalEncodedMax<K> +
+      CanonicalEncodedMax<V>)`;
+    - imported types: from the source-profile/lawpack-declared bound.
+  It is rejected for any `T` that is not fully bounded.
 - `len(value) -> U64` (Unicode scalar count for `String`, byte count for
   `Bytes`, element count for `List`/`Map`; see Refined Scalar Types,
   `EDICT-LANG-LEN-001`)
