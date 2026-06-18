@@ -1583,6 +1583,13 @@ explicitly declare canonical map-key semantics. Target references, capability
 references, closures, records, lists, maps, and variants are rejected as map
 keys in v1.
 
+A `String` map key must carry an explicit canonicalization policy (see Refined
+Scalar Types, e.g. `String<max=128, canonical=nfc>` or a `type` alias of that
+form). An imported type is a legal map key only when its source profile or
+lawpack declares canonical map-key semantics for it via the relevant ABI (see
+[SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md) and
+[SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md)).
+
 Recursive value types are rejected in v1 unless every recursive path carries an
 explicit maximum depth in the resolved source-profile or lawpack facts. Imported
 GraphQL input/object cycles without a digest-locked depth bound cannot enter a
