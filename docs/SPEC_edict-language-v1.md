@@ -654,9 +654,13 @@ The target profile owns the low-level failure taxonomy and the typed,
 [SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md) and the Target
 Profile ABI). An obstruction payload whose fields are not typed and bounded is
 rejected — "typed obstruction payload" is not ceremonial paperwork. The
-single-obstruction shorthand is legal only when exactly one profile-declared
-domain-mappable failure class remains unmapped. Effects with multiple
-domain-mappable failure classes must use the full mapping form.
+single-obstruction `else Obstruction` shorthand is legal only when the number of
+unmapped profile-declared `domainMappable` failure classes is **exactly one**;
+any other count rejects. With **zero** unmapped domain-mappable classes (the
+effect declares none, or all are already handled) the `else` clause is omitted
+entirely; writing one is rejected as dead handling. Effects with **two or more**
+unmapped domain-mappable classes must use the full `else { failure => ... }`
+mapping form (`EDICT-LANG-OBSTRUCT-EXHAUST-001`).
 
 Low-level failure classes are classified before source mapping:
 
