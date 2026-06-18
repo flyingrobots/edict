@@ -74,7 +74,10 @@ artifact locked), `impl` (implementation passes).
 | EDICT-CORE-WHERE-HASH-001 | Core carries typed `where` predicate trees in `inputConstraints`, not a validator coordinate | Language | `core/where/predicate-tree` | `core/where/coordinate-only` | spec |
 | EDICT-ABI-LAWPACK-ADAPTER-DEFER-001 | `acceptedLawpackAdapterAbi` is optional/deferred until `edict.lawpack-adapter/v1` exists | Target | `abi/adapter/deferred-empty` | `abi/adapter/required-undefined` | spec |
 | CONTINUUM-SEMANTIC-OPTIONS-001 | Only semantic compile options enter the semantic digest; diagnostic options excluded | Bundle | `bundle/options/semantic-only` | `bundle/options/diagnostic-in-semantic` | spec |
-| EDICT-LANG-ENCODEMAX-001 | `CanonicalEncodedMax<T>` is the compiler-derived max canonical-CBOR size of T; rejected for unbounded T | Language | `lang/encodemax/bounded` | `lang/encodemax/unbounded-type` | spec |
+| EDICT-LANG-ENCODEMAX-001 | `CanonicalEncodedMax<T>` is the compiler-derived max canonical-CBOR size of T, composed structurally; rejected for unbounded T | Language | `lang/encodemax/bounded` | `lang/encodemax/unbounded-type` | spec |
+| EDICT-LANG-BYTES-NOCANON-001 | `Bytes` refinement is max-only; `canonical=` on `Bytes` is rejected | Language | `lang/bytes/max-only` | `lang/bytes/canonical-rejected` | spec |
+| EDICT-ABI-INTRINSICS-DOC-001 | The `intrinsics` resource has a fixed corpus-document shape | Target | `abi/intrinsics/document` | `abi/intrinsics/freeform` | spec |
+| EDICT-ABI-VERIFIER-BOUND-001 | An executable verifier requires sandbox + fuel; declarative verifier is classified | Lawpack | `lawpack/verifier/executable-bounded` | `lawpack/verifier/unbounded` | spec |
 | EDICT-CORE-SELFHASH-001 | No Core/manifest self-hash; digest is external descriptor | Language/Target | `core/hash/no-selfhash` | `core/hash/embedded-selfhash` | spec |
 | EDICT-CORE-NOPACKAGING-001 | Lowerer/verifier digests are bundle fields, not Core | Language/Bundle | `core/hash/lowerer-swap-stable` | `core/hash/lowerer-in-preimage` | spec |
 | EDICT-CORE-VERIFIED-EXTERNAL-001 | Core states `requiredOperationProfile`; `verifiedOperationMode` is verifier report | Language | `core/verified/external` | `core/verified/in-core` | spec |

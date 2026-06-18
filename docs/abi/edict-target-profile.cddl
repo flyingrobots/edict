@@ -56,6 +56,16 @@ resource-ref = {
 sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
 
 ; --- intrinsic signature -------------------------------------------------
+; The artifact referenced by the manifest's `intrinsics` resource-ref is the
+; intrinsic-signature corpus document below. Its layout is fixed so two
+; independent profiles validate/hash the corpus identically
+; (EDICT-ABI-INTRINSICS-DOC-001).
+
+intrinsics-document = {
+  apiVersion: "edict.target-profile.intrinsics/v1",
+  intrinsics: [* intrinsic],
+}
+
 ; A genuine union: pure constructors carry no effect kind or failures; effect
 ; intrinsics must (EDICT-TARGET-INTRINSIC-CLASS-001). The schema enforces this,
 ; not a comment.
