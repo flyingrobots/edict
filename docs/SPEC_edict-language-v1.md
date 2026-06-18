@@ -1735,9 +1735,30 @@ The Edict Core prelude is intentionally small:
 - `default<T>(value: Option<T>, fallback: T) -> T`
 - `isSome(value) -> Bool`
 - `unwrap(value) -> T` only after proof that an option is present
-- integer arithmetic only when ranges prove no overflow or when using checked
-  operations that return `Option`
-- string operations with declared canonicalization policy
+
+The minimal-v1 prelude operation set is **closed** (`EDICT-LANG-PRELUDE-001`).
+Unlisted prelude operations do not exist in v1.
+
+```text
+Integer (I32/I64/U32/U64):
+  + - * / %               # only when ranges prove no overflow
+  unary -
+  == != < <= > >=
+  checkedAdd, checkedSub, checkedMul, checkedDiv, checkedRem -> Option<T>
+  no bitwise operators in v1
+  signed / and % truncate toward zero; remainder takes the dividend's sign
+String:
+  +                       # bounded concatenation (see Refined Scalar Types)
+  == !=                   # over the exact canonical scalar sequence
+  ordered comparison only if the type pins a canonicalization/collation profile
+  no slice, split, trim, case-fold, locale, or regex helper in minimal-v1
+Bytes:
+  == !=
+  no implicit string conversion
+```
+
+Unchecked signed division/remainder is permitted only where overflow and
+divide-by-zero are statically excluded; otherwise use the `checked*` forms.
 
 Every prelude function must be total over valid input or must expose a typed
 diagnostic that the compiler can force authors to handle.
