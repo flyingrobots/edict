@@ -13,6 +13,78 @@ framework, or universal graph. It is the shared protocol vocabulary by which
 heterogeneous participants say what happened, from which basis, under which law,
 with which witness, and with what outcome.
 
+## At A Glance
+
+Edict sits between contract shape and participant admission. It gives an
+operation a deterministic, inspectable body without taking over the runtime that
+will eventually admit or reject it.
+
+```mermaid
+flowchart LR
+    GraphQL[GraphQL contract shape]
+    Wesley[Wesley source-profile facts]
+    Lawpacks[Digest-locked lawpacks]
+    Source[Edict source]
+    Core[Edict Core IR]
+    TargetProfile[Target profile ABI]
+    TargetIR[Target-owned IR]
+    Bundle[Contract bundle]
+    Admission[Continuum admission]
+    Runtime[Participant runtime]
+
+    GraphQL --> Wesley
+    Wesley --> Source
+    Lawpacks --> Source
+    Source --> Core
+    Core --> TargetProfile
+    TargetProfile --> TargetIR
+    Core --> Bundle
+    TargetIR --> Bundle
+    Bundle --> Admission
+    Admission --> Runtime
+```
+
+The compilation pipeline is deliberately split from admission. A contract bundle
+is participant-neutral. Admission requests and receipts reference that bundle;
+they do not change its identity.
+
+```mermaid
+sequenceDiagram
+    participant Author
+    participant Compiler as Edict Compiler
+    participant Lowerer as Target Lowerer
+    participant Verifier as Target Verifier
+    participant Bundle as Contract Bundle
+    participant Participant
+
+    Author->>Compiler: source + locked imports
+    Compiler->>Compiler: parse, typecheck, normalize Core
+    Compiler->>Lowerer: Core IR + target profile
+    Lowerer->>Verifier: target IR + footprint + budget
+    Verifier-->>Bundle: verifier evidence
+    Compiler-->>Bundle: source, Core, target IR digests
+    Participant->>Participant: evaluate policy epoch
+    Participant->>Bundle: reference bundle digest
+    Participant-->>Author: admission receipt or rejection
+```
+
+The artifact graph is hash-oriented. Raw source provenance, semantic Core,
+target IR, verifier evidence, admission requests, and admission receipts have
+separate identities.
+
+```mermaid
+erDiagram
+    SOURCE_ARTIFACT ||--|| CORE_IR : normalizes_to
+    CORE_IR ||--|| TARGET_IR : lowers_to
+    TARGET_PROFILE ||--o{ TARGET_IR : authorizes
+    LAWPACK ||--o{ CORE_IR : contributes_effects
+    CORE_IR ||--|| CONTRACT_BUNDLE : names
+    TARGET_IR ||--|| CONTRACT_BUNDLE : names
+    VERIFIER_REPORT ||--|| CONTRACT_BUNDLE : attests
+    CONTRACT_BUNDLE ||--o{ ADMISSION_REQUEST : is_subject_of
+    ADMISSION_REQUEST ||--o| ADMISSION_RECEIPT : receives
+```
+
 ## Why Edict?
 
 Continuum's core distinction is that history is the territory. State is a
@@ -80,6 +152,234 @@ and no trust-me callbacks. Edict operations should either compile into
 SHA-locked, target-verified artifacts or fail with structured reasons that
 humans and agents can repair.
 
+## Hello, Edict
+
+The smallest useful Edict example is intentionally boring. It has no ambient
+host access, no clock, no filesystem, no network, and no target write. It is a
+bounded read-only optic from explicit input to a deterministic reading.
+
+```edict
+package examples.hello@1;
+
+use lawpack hello.optics@1 digest "sha256:..." as hello;
+
+type HelloInput = {
+  name: String,
+};
+
+type HelloReading = {
+  message: String,
+};
+
+intent sayHello(input: HelloInput)
+  returns HelloReading
+  profile hello.readOnly
+  budget <= hello.tinyBudget
+  where input.name != ""
+{
+  let message = "hello, " + input.name;
+  return { message };
+}
+```
+
+That example should compile to Core with no runtime effects. A target-backed
+intent looks similar, but every read or write must come through an imported
+target or lawpack effect and must map failures into typed obstructions:
+
+```edict
+package examples.greeting@1;
+
+use shape "schemas/greeting.graphql" as shape;
+use lawpack greeting.optics@1 digest "sha256:..." as greeting;
+use target echo.dpo@1 digest "sha256:..." as echo;
+
+intent readGreeting(input: shape.ReadGreetingInput)
+  returns shape.GreetingReading
+  profile echo.readOnly
+  budget <= greeting.readGreetingBudget
+{
+  let greetingRef = echo.ref<shape.Greeting>(input.greetingId);
+  let greeting = greetingRef.read()
+    else greeting.GreetingMissing;
+
+  return {
+    greetingId: input.greetingId,
+    message: greeting.message,
+  };
+}
+```
+
+The second example is still read-only only if the compiler proves it from the
+imported effect signatures. The `profile echo.readOnly` line is a claim to
+check, not authority to trust.
+
+## Non-Goals
+
+- Edict is not a runtime. Runtime admission, scheduling, clocks, persistence,
+  and receipts belong to participant runtimes such as Echo.
+- Edict is not a storage model. Graphs, tables, logs, files, objects, and KV
+  stores belong to target profiles.
+- Edict is not a general scripting language. Host callbacks, ambient network
+  access, filesystem mutation, randomness, and wall-clock time are not Core
+  language features.
+- Edict is not participant policy. Policies admit, reject, or constrain bundles;
+  they do not rewrite Core semantics.
+- Edict is not a way to make cross-target atomicity free. v1 intents lower to
+  one runtime effect domain unless a composite target profile explicitly owns
+  coordination and rollback.
+- Edict is not an approval bypass for agents. Lawful autonomy starts only after
+  explicit law, bounded effects, target verification, locked artifacts, and
+  participant admission.
+
+## FAQ
+
+### Is This Just GraphQL?
+
+No. GraphQL is a shape and boundary language. It is good at saying what fields,
+objects, inputs, mutations, and queries exist. It does not say which causal
+basis an operation depends on, which target effects it may emit, whether a read
+is bounded, how stale-basis failure maps into a domain obstruction, or which
+atomic application unit owns the commit.
+
+Edict is intended to sit below that callable surface. A GraphQL mutation can
+name "replace this range." Edict describes the lawful optic behind that
+mutation: the basis, aperture, proof obligations, target references, guards,
+effects, costs, obstructions, and bundle identity that make the operation
+inspectable before a participant admits it.
+
+### Is This Just Wesley With More Syntax?
+
+No. Wesley compiles contract-family shape and `weslaw` evidence. It should
+remain excellent at producing codecs, validators, manifests, generated helpers,
+and deterministic facts about authored contracts.
+
+Edict is the operation-language layer Wesley was missing. Wesley can tell you
+what the operation surface is and what artifacts were generated. Edict says
+what the operation is allowed to read or affect, which effects are proof-only or
+runtime-materialized, which lawpacks and target profiles authorize those
+effects, and what Core IR must be hashed before target lowering.
+
+The intended boundary is cooperative: Wesley can be a source-profile adapter and
+compiler evidence producer for Edict, but Wesley should not own Edict Core,
+target application semantics, or participant admission.
+
+### Is This Just OPA/Rego?
+
+No. Rego is a policy language. It answers questions such as "is this request
+allowed?" against supplied data. That is useful, but Edict is not primarily
+asking for a policy decision. It is describing a bounded lawful operation that
+can compile to target-owned effects.
+
+An Edict intent may contain proof obligations and obstruction mappings, and a
+participant policy may later accept or reject the resulting bundle. But the
+language body is not a standalone authorization rule. It carries typed inputs
+and outputs, target references, effect ordering, path conditions, loop bounds,
+cost budgets, canonical value semantics, and lowering obligations.
+
+Policy can judge an Edict bundle. Policy does not replace the bundle.
+
+### Is This Just CEL?
+
+No. CEL is intentionally small, deterministic, mutation-free, and safe to embed.
+Edict should borrow that restraint, especially around totality, bounded
+evaluation, and host authority. But CEL expressions do not describe target-owned
+atomic effects, content-addressed `ensure` semantics, stale-basis runtime
+guards, target-profile lowerings, or SHA-locked contract bundles.
+
+Edict Core should be boring in the same spirit CEL is boring. The difference is
+that Edict uses that boring core to make lawful effects explicit, not to stay in
+expression-only policy space.
+
+### Is This Just A Workflow Language?
+
+No. A workflow language coordinates tasks. It often answers "what step runs
+next?" or "which service should be called?" Edict intentionally avoids ambient
+host callbacks, open network authority, clocks, queues, and service invocation
+as language primitives.
+
+An Edict intent is closer to a target-verifiable operation plan than a process
+orchestration script. It must lower to one target-owned atomic application unit
+in v1, with explicit reads, writes, guards, obstructions, footprint, and budget.
+If a future version supports cross-bundle invocation, that invocation must bring
+its callee effects, costs, obstructions, and admission requirements into the
+same evidence model. It cannot be "run this other thing, trust me."
+
+### Is This Just Terraform Or Kubernetes YAML?
+
+No. Terraform and Kubernetes manifests are declarative configuration surfaces
+for particular infrastructure control planes. They are allowed to contain nouns
+from those domains because that is their job.
+
+Edict Core must not grow storage-shaped nouns such as graph, table, topic,
+bucket, file, event log, or cluster. Those belong to target profiles or lawpacks.
+The portable language names typed values, imports, effects, guards, bounds, and
+canonical artifacts. A target profile may interpret those effects into Echo DPO,
+a KV/CAS transaction, an event log, or some future substrate, but Core does not
+pretend those substrates are the same thing.
+
+### Is This Just A Smart-Contract Language?
+
+No. Smart-contract platforms usually bind language, execution environment,
+consensus model, account model, gas model, storage model, and deployment surface
+into one runtime world. Edict is deliberately participant-neutral. It produces
+contract bundles that a participant may admit under its own policy and target
+profile.
+
+There is no token, global validator set, global storage trie, or universal
+chain. The important property is not that every participant runs the same
+world-computer. The important property is that an operation bundle has canonical
+source, Core IR, target IR, lowering evidence, verifier evidence, footprint,
+budget, and obstruction semantics that can be inspected before runtime-owned
+admission.
+
+### Is This Just SQL, A Graph Query, Or An Event Log DSL?
+
+No. Those languages choose a storage model. Edict must not. SQL assumes tables
+and relations. Graph queries assume graph-shaped traversal. Event-log DSLs
+assume append history is the primitive.
+
+Edict can target systems that use tables, graphs, logs, content-addressed
+objects, or KV/CAS transactions, but those are target-profile facts. The Core
+language is intentionally dull about storage. It describes lawful observations
+and effects without smuggling in a universal database.
+
+### Is This Just Rust Or TypeScript In A Sandbox?
+
+No. A sandboxed plugin can be useful for deterministic helpers, lowerers, or
+verifiers, but opaque native code is not a language semantics. If a helper can
+read host state, call the network, allocate without bound, or hide effects, it
+breaks Edict's reason to exist.
+
+For assured use, pure helpers must be authored in Edict/Core or be
+digest-locked, deterministic, sandboxed, fuel-bounded, and covered by
+conformance fixtures. Opaque helper code may exist only behind conservative
+declared bounds. It cannot be allowed to launder authority through a friendly
+function name.
+
+### Is This Just Echo Intents?
+
+No. Echo is one important target family, not the language. Echo owns
+runtime-admitted causal history, scheduling, ticks, receipts, and `echo.dpo@1`
+target semantics. Edict owns the portable operation source, Core IR,
+canonicalization rules, and target-profile ABI surface.
+
+An Edict intent can lower to Echo, but it should also be able to stress a
+KV/CAS transaction target or another participant-owned target profile. That is
+the relapse test: if the language accidentally assumes Echo's storage or event
+model, it is no longer runtime-neutral.
+
+### Is This A Way For Agents To Bypass Review?
+
+No. Edict is meant to make autonomous operation harder to fake, not easier to
+wave through. The formal lane is `lawful-autonomous`: autonomous only after
+explicit law, bounded effects, deterministic Core IR, target verification,
+SHA-locked artifacts, and participant admission.
+
+The codename YOLO is allowed as a human-facing joke. It is not a canonical
+coordinate, not an approval bypass, and not authority. A lawful-autonomous
+bundle may still be rejected because the participant policy, basis, budget,
+target verifier, or admission epoch says no.
+
 ## Related Projects
 
 - [Continuum](https://github.com/flyingrobots/continuum): shared causal
@@ -109,14 +409,29 @@ humans and agents can repair.
 
 ## Current Status
 
-This repository is in Phase 0. It currently holds the design baseline and
-specification split for:
+This repository is in Phase 0. It currently holds design material, not a
+production implementation.
+
+What exists:
 
 - Edict language syntax, type system, effects, and Core IR.
 - Target profile ABI and atomic application semantics.
 - Continuum contract bundle identity.
 - Continuum admission artifacts.
 - Assurance and transparency guidance.
+
+What does not exist yet:
+
+- a parser;
+- a canonical Core encoder;
+- a compiler CLI;
+- target profile conformance fixtures;
+- Echo or KV/CAS target lowerers;
+- admission tooling.
+
+The next useful milestone is Phase 0 fixtures: examples that parse or reject,
+golden canonicalization cases, negative relapse cases, and hash-impact
+regression cases.
 
 ## Specifications
 
