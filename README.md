@@ -20,7 +20,7 @@ operation a deterministic, inspectable body without taking over the runtime that
 will eventually admit or reject it.
 
 ```mermaid
-flowchart LR
+flowchart TD
     GraphQL[GraphQL contract shape]
     Wesley[Wesley source-profile facts]
     Lawpacks[Digest-locked lawpacks]
@@ -42,47 +42,6 @@ flowchart LR
     TargetIR --> Bundle
     Bundle --> Admission
     Admission --> Runtime
-```
-
-The compilation pipeline is deliberately split from admission. A contract bundle
-is participant-neutral. Admission requests and receipts reference that bundle;
-they do not change its identity.
-
-```mermaid
-sequenceDiagram
-    participant Author
-    participant Compiler as Edict Compiler
-    participant Lowerer as Target Lowerer
-    participant Verifier as Target Verifier
-    participant Bundle as Contract Bundle
-    participant Participant
-
-    Author->>Compiler: source + locked imports
-    Compiler->>Compiler: parse, typecheck, normalize Core
-    Compiler->>Lowerer: Core IR + target profile
-    Lowerer->>Verifier: target IR + footprint + budget
-    Verifier-->>Bundle: verifier evidence
-    Compiler-->>Bundle: source, Core, target IR digests
-    Participant->>Participant: evaluate policy epoch
-    Participant->>Bundle: reference bundle digest
-    Participant-->>Author: admission receipt or rejection
-```
-
-The artifact graph is hash-oriented. Raw source provenance, semantic Core,
-target IR, verifier evidence, admission requests, and admission receipts have
-separate identities.
-
-```mermaid
-erDiagram
-    SOURCE_ARTIFACT ||--|| CORE_IR : normalizes_to
-    CORE_IR ||--|| TARGET_IR : lowers_to
-    TARGET_PROFILE ||--o{ TARGET_IR : authorizes
-    LAWPACK ||--o{ CORE_IR : contributes_effects
-    CORE_IR ||--|| CONTRACT_BUNDLE : names
-    TARGET_IR ||--|| CONTRACT_BUNDLE : names
-    VERIFIER_REPORT ||--|| CONTRACT_BUNDLE : attests
-    CONTRACT_BUNDLE ||--o{ ADMISSION_REQUEST : is_subject_of
-    ADMISSION_REQUEST ||--o| ADMISSION_RECEIPT : receives
 ```
 
 ## Why Edict?
@@ -152,13 +111,51 @@ and no trust-me callbacks. Edict operations should either compile into
 SHA-locked, target-verified artifacts or fail with structured reasons that
 humans and agents can repair.
 
+## Runtime-Neutral Lowering
+
+The same Edict source does not imply the same runtime. Edict Core captures the
+lawful operation. Target profiles interpret that Core into runtime-owned target
+IR for systems with very different backends.
+
+```mermaid
+flowchart TD
+    Source["Same Edict source"]
+    Core["Same Edict Core IR"]
+
+    EchoProfile["echo.dpo@1 target profile"]
+    KvProfile["kv.transactional@1 target profile"]
+    LogProfile["event-log profile (future)"]
+    SqlProfile["sql.tx profile (future)"]
+
+    EchoIR["Echo DPO target IR"]
+    KvIR["KV/CAS transaction IR"]
+    LogIR["Append-only log IR"]
+    SqlIR["SQL transaction IR"]
+
+    EchoRuntime["Echo runtime over witnessed causal history"]
+    KvRuntime["Compare-and-swap KV store"]
+    LogRuntime["Durable event stream"]
+    SqlRuntime["Relational transaction engine"]
+
+    Source --> Core
+    Core --> EchoProfile --> EchoIR --> EchoRuntime
+    Core --> KvProfile --> KvIR --> KvRuntime
+    Core --> LogProfile --> LogIR --> LogRuntime
+    Core --> SqlProfile --> SqlIR --> SqlRuntime
+```
+
+The target profile owns the storage model, verifier, obstruction taxonomy,
+atomic application semantics, and target IR. Edict Core must stay boring enough
+that these lowerings are honest interpretations, not hidden assumptions about a
+universal graph, database, filesystem, or event log.
+
 ## Hello, Edict
 
 The smallest useful Edict example is intentionally boring. It has no ambient
 host access, no clock, no filesystem, no network, and no target write. It is a
 bounded read-only optic from explicit input to a deterministic reading.
 
-```edict
+```graphql
 package examples.hello@1;
 
 use lawpack hello.optics@1 digest "sha256:..." as hello;
@@ -186,7 +183,7 @@ That example should compile to Core with no runtime effects. A target-backed
 intent looks similar, but every read or write must come through an imported
 target or lawpack effect and must map failures into typed obstructions:
 
-```edict
+```graphql
 package examples.greeting@1;
 
 use shape "schemas/greeting.graphql" as shape;
@@ -212,6 +209,32 @@ intent readGreeting(input: shape.ReadGreetingInput)
 The second example is still read-only only if the compiler proves it from the
 imported effect signatures. The `profile echo.readOnly` line is a claim to
 check, not authority to trust.
+
+## Bundle And Admission
+
+The compilation pipeline is deliberately split from admission. A contract bundle
+is participant-neutral. Admission requests and receipts reference that bundle;
+they do not change its identity.
+
+```mermaid
+sequenceDiagram
+    participant A as Author
+    participant C as Edict Compiler
+    participant L as Target Lowerer
+    participant V as Target Verifier
+    participant CB as Contract Bundle
+    participant P as Participant
+
+    A->>C: Source plus locked imports
+    C->>C: Parse, typecheck, normalize Core
+    C->>L: Core IR plus target profile
+    L->>V: Target IR plus footprint and budget
+    V-->>CB: Verifier evidence
+    C-->>CB: Artifact digests
+    P->>P: Evaluate policy epoch
+    P->>CB: Reference bundle digest
+    P-->>A: Admission receipt or rejection
+```
 
 ## Non-Goals
 
@@ -379,6 +402,75 @@ The codename YOLO is allowed as a human-facing joke. It is not a canonical
 coordinate, not an approval bypass, and not authority. A lawful-autonomous
 bundle may still be rejected because the participant policy, basis, budget,
 target verifier, or admission epoch says no.
+
+## Research Anchors
+
+Edict has no exact precedent. The useful precedents point to language shape,
+evidence boundaries, and failure modes, not domain equivalence:
+
+- [GraphQL](https://spec.graphql.org/) is the stable schema and callable-surface
+  precedent. Edict can use GraphQL-shaped facts, but GraphQL does not express
+  bounded target effects, obstruction mapping, or atomic application semantics.
+- [OPA/Rego](https://www.openpolicyagent.org/docs/policy-language) and
+  [CEL](https://cel.dev/) are important restraint precedents. Edict should
+  borrow their bias toward analyzable evaluation without becoming only a policy
+  or expression language.
+- [Lamport clocks](https://lamport.azurewebsites.net/pubs/time-clocks.pdf)
+  show why distributed systems need explicit ordering relations rather than
+  ambient wall-clock truth. Edict inherits that lesson through basis, frontier,
+  and admission coordinates.
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/) and
+  [OpenTelemetry signals](https://opentelemetry.io/docs/concepts/signals/) show
+  the value of separating propagated evidence from any one backend. Edict
+  bundles should do the same for operation evidence.
+- [CloudEvents](https://cloudevents.io/) is a common event-envelope precedent.
+  Edict needs stronger causal, footprint, budget, and verifier structure, but
+  the envelope lesson applies.
+- [W3C PROV-DM](https://www.w3.org/TR/prov-dm/) provides useful provenance
+  vocabulary for entities, activities, agents, and derivations. Edict needs a
+  stricter runtime-grade witness and admission posture.
+- [in-toto](https://in-toto.io/) and
+  [SLSA provenance](https://slsa.dev/spec/v1.0/provenance) are supply-chain
+  evidence precedents. Edict contract bundles should reuse their separation of
+  materials, products, builders, subjects, predicates, and attestations where
+  possible.
+- [UCAN](https://ucan.xyz/) is a useful capability-token precedent for
+  delegated authority. Edict should stay capability-shaped for agents,
+  lawpacks, target access, and admission rights.
+- [Git](https://git-scm.com/) proves the product value of portable history and
+  local autonomy. Edict preserves the history-first lesson while adding target
+  admission, bounded optics, and verifier evidence.
+- [IPLD](https://ipld.io/) is a content-addressed data precedent. Edict source,
+  Core IR, target IR, lawpacks, verifier reports, and retained artifacts should
+  be digest-addressable.
+- The
+  [WebAssembly Component Model](https://component-model.bytecodealliance.org/)
+  and [WIT](https://component-model.bytecodealliance.org/design/wit.html) show
+  how language-neutral component boundaries can work. Edict can learn from that
+  without making Wasm the semantic core.
+- [CRDT literature](https://crdt.tech/) is an important contrast. CRDTs converge
+  replicated state under specific algebraic constraints. Edict describes
+  bounded lawful operations that participants may admit, obstruct, pluralize, or
+  reject under explicit target law.
+
+## Artifact Identity
+
+The artifact graph is hash-oriented. Raw source provenance, semantic Core,
+target IR, verifier evidence, admission requests, and admission receipts have
+separate identities.
+
+```mermaid
+erDiagram
+    SOURCE_ARTIFACT ||--|| CORE_IR : normalizes_to
+    CORE_IR ||--|| TARGET_IR : lowers_to
+    TARGET_PROFILE ||--o{ TARGET_IR : authorizes
+    LAWPACK ||--o{ CORE_IR : contributes_effects
+    CORE_IR ||--|| CONTRACT_BUNDLE : names
+    TARGET_IR ||--|| CONTRACT_BUNDLE : names
+    VERIFIER_REPORT ||--|| CONTRACT_BUNDLE : attests
+    CONTRACT_BUNDLE ||--o{ ADMISSION_REQUEST : is_subject_of
+    ADMISSION_REQUEST ||--o| ADMISSION_RECEIPT : receives
+```
 
 ## Related Projects
 
