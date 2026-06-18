@@ -106,6 +106,35 @@ Resolved 9 Codex review threads + 1 self-discovered issue, one commit each:
 - Deduped the orphan intrinsic requirement ID; registered all audit IDs.
 - Defined `CanonicalEncodedMax<T>` (self-discovered).
 
+### Fixed (PR #2 review round 2 — CodeRabbit)
+
+Triage ruling: fix 15, defer 1. Bounded semantic clarifications, one commit each:
+
+- CapabilityRef carried digest is canonical/hash-significant; obstruction
+  shorthand legal only for exactly one unmapped class (zero omits `else`).
+- Core budget units pinned; `targetBudget` = costAlgebra + resolved ceiling;
+  cost checked vs declared ceiling (admission stays external).
+- Minimal-v1 prelude closed (integer/string/bytes ops; unlisted ops don't
+  exist); integer-type propagation contexts enumerated + mismatch diagnostic.
+- `basis` is pure/effect-free over inputs/constants/capability-refs/pure-fns.
+- Pure-helper bounds enforced at import + call-site.
+- Every `require` carries `else`; input-only require allowed for domain
+  obstructions; `where`/`require`/`assert` roles disjoint.
+- Option refinement only (isSome/unwrap, lexical); no general narrowing.
+- Bound violation = integrity/internal fault, never silent truncation.
+- CoreGuard is targetAtomic + always carries an obstruction; verifier proofs are
+  separate `CoreProofObligation` nodes.
+- Positive exhaustive Core-intent hash-preimage inclusion list added.
+- operation-profile optic template owned in `edict-common.cddl`;
+  `apertureRequirement` is a typed reference.
+- Source vs Core-ABI capability flags split.
+- Shared CDDL types extracted to `edict-common.cddl`; intrinsics corpus-document
+  shape defined; lawpack verifier classified (executable ⇒ sandbox+fuel).
+
+Deferred (1): the complete `edict.core/v1` CoreExpr/CorePredicate CDDL →
+issue #3; spec marks JSON expression examples illustrative and forbids freezing
+any Core hash golden before that schema lands.
+
 ### Notes
 
 Applies the Phase 0 design review (external "ChatGPT" feedback): SHOULD/COULD
