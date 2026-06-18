@@ -804,7 +804,10 @@ Core budget units are pinned (`EDICT-LANG-BUDGET-UNITS-001`):
 - `maxSteps`: maximum weighted Core evaluation steps under `edict.core-cost/v1`.
   A step is not a CPU instruction; expression/statement node evaluation, bounded
   loop iterations, pure-function invocation, and imported-helper execution are
-  charged by the digest-locked Core cost schedule.
+  charged by the digest-locked Core cost schedule. `edict.core-cost/v1` is that
+  schedule (the per-construct step weights); like the canonicalization profile it
+  is pinned by digest and owned by the Phase 0 cost-model work, not redefined
+  per operation.
 - `maxAllocatedBytes`: maximum peak live canonical-value capacity during Core
   evaluation, excluding target-owned state, source maps, code, and host
   allocator bookkeeping.
@@ -2343,6 +2346,8 @@ Core IR canonicalization must:
   fields, not Core semantics (`EDICT-CORE-NOPACKAGING-001`);
 - exclude `verifiedOperationMode`, flat `preconditions`/`postconditions`
   indices, and `diagnosticPolicy` from the preimage;
+- exclude human-readable `name` fields where a canonical `coordinate` is present;
+  the `coordinate` is authoritative (I-009), and the `name` is review metadata;
 - fail if any imported digest is unresolved.
 
 The Core intent preimage **includes**, positively and exhaustively
