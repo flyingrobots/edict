@@ -1719,10 +1719,24 @@ guard); they do not **define** it.
 
 `&&` and `||` **short-circuit** (`EDICT-LANG-BOOL-001`). `a && b` does not
 evaluate `b` when `a` is false; `a || b` does not evaluate `b` when `a` is true.
-Short-circuiting is part of the semantics because it affects proof refinement
-(e.g. `isSome(x) && unwrap(x) > 0`), cost accounting, and which sub-expressions
-are reached. Operands are pure expressions; effects are never permitted inside a
-boolean operand (A-normal effect form still applies).
+Short-circuiting is part of the semantics because it affects proof refinement,
+cost accounting, and which sub-expressions are reached. Operands are pure
+expressions; effects are never permitted inside a boolean operand (A-normal
+effect form still applies; effectful calls appear only in `let`/effect-statement
+position).
+
+### Option Refinement
+
+v1 defines exactly one refinement, not general dependent typing
+(`EDICT-LANG-OPTION-REFINE-001`). `isSome(x)` positively refines `x` to present:
+
+- in the right operand of `isSome(x) && ...`; and
+- in the `then` branch of `if isSome(x) ...`.
+
+`unwrap(x)` is legal **only** inside such a refined region, or after an
+exhaustive `Option` `match`. Refinement is **lexical and variable-specific**: it
+does not flow through arbitrary helper calls, aliases, merge points, or target
+effects. There is no other narrowing in v1.
 
 ## Loops
 
