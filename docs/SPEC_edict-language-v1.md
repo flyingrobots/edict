@@ -1474,9 +1474,10 @@ Semantic grammar rules:
 - Multiple `where` clauses are permitted and merge conjunctively.
 - `effect-else-clause` is legal only when the right-hand side expression or
   statement is an imported effect.
-- A `require` or `guarantee` whose predicate depends on runtime state must carry
-  an `obstruction-clause` (`else`). An omitted `else` is legal only when the
-  check is statically discharged as `verifierProof`.
+- A `require` always carries an `obstruction-clause` (`else`), whether its
+  predicate is input-only or runtime-state-dependent. A precommit `guarantee`
+  carries `else`; a verifier-discharged `guarantee` is a proof obligation with
+  no `else`. `assert` never carries `else`. (`EDICT-LANG-REQUIRE-ELSE-001`)
 - A `where` predicate may reference only inputs and pure functions of inputs,
   never runtime/target state, and never carries `else`.
 - Single-obstruction `effect-else-clause` shorthand is legal only when exactly
@@ -1653,20 +1654,30 @@ for mutable state.
 checked precommit inside the same atomic application unit. A guarantee may never
 fail after externally visible commit.
 
-A dynamic `require` or `guarantee` failure must be total: it resolves to a typed
-domain obstruction, never a host exception (`EDICT-LANG-TOTAL-CHECK-001`).
-Therefore:
+A dynamic `require`/`guarantee` failure must be total: it resolves to a typed
+domain obstruction, never a host exception (`EDICT-LANG-TOTAL-CHECK-001`). The
+three constructs have non-overlapping roles (`EDICT-LANG-REQUIRE-ELSE-001`):
 
-- a `require` whose predicate depends on runtime state **must** carry an `else`
-  obstruction clause;
-- a precommit `guarantee` whose predicate depends on runtime state **must**
-  carry an `else` obstruction clause;
-- an omitted `else` is legal only when the check is statically discharged by
-  `verifierProof` (i.e. the predicate is compiler/verifier-provable and can
-  never fail at runtime). Such a check carries `enforcement: verifierProof`.
+- **`where`** is pure input-domain refinement, checked before application;
+  failure is the platform result `EDICT-INPUT-CONSTRAINT`; it never carries
+  `else`.
+- **`require`** is an operation/domain precondition. It **always** carries a
+  typed `else` obstruction clause, whether its predicate is input-only or also
+  depends on runtime state. An input-only `require` is allowed when
+  domain-specific obstruction semantics are intended (e.g.
+  `require input.startByte <= input.endByte else text.InvalidRange({...})`).
+  Pure input *admissibility* belongs in `where`; universally provable facts
+  belong in `assert`.
+- **`guarantee`** is a postcondition. A precommit (runtime-checked) guarantee
+  carries a typed `else`; a guarantee discharged by the verifier is a proof
+  obligation (see CoreProofObligation under Edict Core IR), not a runtime guard,
+  and carries no `else`.
+- **`assert`** is always proof-only: it never carries `else`, never becomes a
+  runtime obstruction, and fails compilation if it cannot be proven.
 
-`assert` is always proof-only: it never carries `else`, never becomes a runtime
-obstruction, and fails compilation if it cannot be proven.
+This removes the former "`require` without `else` if verifierProof" overlap:
+`require` always has an obstruction; a thing that can be statically proven and
+needs no obstruction is an `assert`.
 
 ## Where Clauses And Input Refinement
 
