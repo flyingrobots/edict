@@ -921,10 +921,15 @@ used in Core IR hashes.
 ### I-010 Stable Core IR Hashes
 
 Core IR hash input excludes source locations, comments, formatting, import
-alias spelling, and nondeterministic map order. It includes all semantics:
-resolved coordinates, type signatures, expressions, operation bodies,
-preconditions, postconditions, imports, profile references, and effect model
-references.
+alias spelling, and nondeterministic map order. It also excludes derived indices
+and packaging fields (see Edict Core IR): the flat `preconditions`/
+`postconditions` arrays, `verifiedOperationMode`, `diagnosticPolicy`, and
+lowerer/verifier component digests. It includes all authoritative semantics:
+resolved coordinates, type signatures, expressions, operation bodies (including
+the authoritative `require`/`guarantee` nodes from which preconditions and
+postconditions are derived), the optic contract, `inputConstraints` predicate
+trees, imports, profile references, and effect model references
+(`EDICT-CORE-NODUP-PREPOST-001`).
 
 ### I-011 Target Lowering Is Profile-Owned
 
