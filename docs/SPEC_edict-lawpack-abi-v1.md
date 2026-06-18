@@ -258,6 +258,30 @@ supplies an adapter for that target profile. Absent an adapter, this is a
 artifact exists yet, so admission never enters the picture. It is never a silent
 fallback (`EDICT-LAWPACK-ADAPTER-001`).
 
+## Adapter Resolution
+
+Edict v1 uses **direct target adaptation, not chained adapter legalization**
+(`EDICT-LAWPACK-ADAPTER-DIRECT-001`). Each semantic effect is lowered by the
+target adapter owned by the lawpack that exports that effect. The adapter may
+emit target-profile intrinsics and may call resolved pure Core or lawpack
+helpers, but it must not emit another unresolved lawpack semantic effect.
+
+For a selected semantic effect and target profile, exactly one applicable
+digest-locked adapter must resolve. Zero adapters is an unsupported-lowering
+compiler error. Multiple applicable adapters is an ambiguous-lowering compiler
+error.
+
+The compiler verifies that the selected adapters collectively discharge every
+semantic effect, type, guard, obstruction, footprint, cost, atomicity, and
+postcondition obligation. Any remaining obligation rejects lowering.
+
+Edict v1 does **not** search arbitrary adapter chains or compute a fixed point
+over provided obligations. General adapter composition over an **obligation
+closure** (note: "obligation", not "capability" — capability already means
+participant authority, capability receipts, and `CapabilityRef<T>`) is future
+work, tracked separately; it is intentionally excluded here so the lowerer does
+not become a package solver.
+
 ## Compatibility Matrix
 
 The compatibility component declares, per export coordinate, which
