@@ -1413,7 +1413,7 @@ let-stmt        = "let" , ident , type-annotation? , "=" ,
 let-rhs         = expr | effect-branch-expr ;
 type-annotation = ":" , type-ref ;
 assert-stmt     = "assert" , predicate , ";" ;
-require-stmt    = "require" , predicate , obstruction-clause? , ";" ;
+require-stmt    = "require" , predicate , obstruction-clause , ";" ;
 guarantee-stmt  = "guarantee" , predicate , obstruction-clause? , ";" ;
 obstruction-clause = "else" , obstruction-target ;
 obstruction-target = qual-ident , ( "(" , expr , ")" )? ;
