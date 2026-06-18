@@ -746,9 +746,17 @@ Cost answers:
 How much work, memory, target IO, and output may this consume?
 ```
 
-Every operation must have an inferred cost model checked against an admitted
-budget. Cost is split into three layers so the portable Core does not own
-target-specific cost dimensions (`EDICT-LANG-BUDGET-SPLIT-001`):
+Every operation must have an inferred cost model. Cost is checked against
+declared ceilings, never against an admitted participant budget at compile/lower
+time (`EDICT-LANG-BUDGET-SPLIT-001`):
+
+- Core cost is checked against the declared Core ceiling.
+- Target cost is checked against the declared target ceiling.
+- Admission may impose a stricter ceiling afterward; it is external and never
+  seen by the lowerer/verifier.
+
+Cost is split into three layers so the portable Core does not own
+target-specific cost dimensions:
 
 ```text
 coreEvaluationBudget:        # portable, owned by Edict Core
@@ -756,14 +764,29 @@ coreEvaluationBudget:        # portable, owned by Edict Core
   maxAllocatedBytes
   maxOutputBytes
 
-targetBudget:                # profile-owned typed value (target cost algebra)
-  profile                    # e.g. echo.dpo@1
-  value                      # e.g. maxTargetReads/Writes/closureReads/effects
-                             #   as defined by that target's cost algebra
+targetBudget:                # owned by the target cost algebra
+  costAlgebra                # digest-locked resource reference
+  ceiling                    # resolved canonical typed value
 
 admittedBudget:              # participant ceiling over the target budget
                              # (Continuum Admission artifact, not Core)
 ```
+
+Core budget units are pinned (`EDICT-LANG-BUDGET-UNITS-001`):
+
+- `maxSteps`: maximum weighted Core evaluation steps under `edict.core-cost/v1`.
+  A step is not a CPU instruction; expression/statement node evaluation, bounded
+  loop iterations, pure-function invocation, and imported-helper execution are
+  charged by the digest-locked Core cost schedule.
+- `maxAllocatedBytes`: maximum peak live canonical-value capacity during Core
+  evaluation, excluding target-owned state, source maps, code, and host
+  allocator bookkeeping.
+- `maxOutputBytes`: maximum `edict.canonical-cbor/v1` encoded output size in
+  octets.
+
+`targetBudget` carries the resolved typed `ceiling` in semantic Core (its source
+coordinate may remain as provenance/debug metadata, but the resolved value is
+what Core hashes). This is a small, fixed cost vocabulary — not a gas economy.
 
 Target reads, writes, closure reads, and generated-effect counts are
 target-cost-algebra dimensions, not portable Core dimensions; they live in
@@ -1980,8 +2003,9 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
     "maxOutputBytes": 65536
   },
   "targetBudget": {
-    "profile": "echo.dpo@1",
-    "value": "echo.dpo@1.budget/recordBatch"
+    "costAlgebra": { "id": "echo.dpo.cost/v1", "digest": "sha256:..." },
+    "ceiling": { "maxTargetReads": 128, "maxTargetWrites": 128,
+                 "maxClosureReads": 8, "maxGeneratedEffects": 256 }
   },
   "body": {
     "kind": "block",
