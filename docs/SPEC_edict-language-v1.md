@@ -799,7 +799,13 @@ budget (see [SPEC - Continuum Admission v1](./SPEC_continuum-admission-v1.md)).
 
 Pure lawpack helpers are also costed against `coreEvaluationBudget`. A
 deterministic helper that can allocate unbounded memory or scan unbounded input
-is not acceptable in the lawful-autonomous lane.
+is not acceptable in the lawful-autonomous lane. Helper bounds are enforced in
+two stages (`EDICT-LANG-HELPER-BOUNDS-001`): **lawpack import validation**
+rejects a helper whose signature or component manifest lacks finite output and
+cost bounds; **call-site type checking** then instantiates those bounds from the
+concrete type arguments and argument refinements at each use. An opaque helper
+without a conservative digest-locked bound is unavailable in the
+lawful-autonomous lane.
 
 ## Development Mode Versus Locked Bundle Mode
 
