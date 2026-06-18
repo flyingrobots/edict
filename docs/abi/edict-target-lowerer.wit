@@ -14,10 +14,15 @@ package edict:target-profile@1.0.0;
 // referenced CDDL/spec; the component boundary moves opaque canonical bytes
 // plus a domain label so digests stay stable across hosts.
 interface artifacts {
-  type digest = string;            // "sha256:<64 hex>"
+  // Digests are typed byte values, never hex strings. Review JSON renders this
+  // as "sha256:<64 lowercase hex>" (EDICT-DIGEST-WIRE-001).
+  record digest {
+    algorithm: string,            // "sha256"
+    bytes: list<u8>,             // 32 bytes for sha256
+  }
   record artifact {
     domain: string,               // e.g. "edict.core.module/v1"
-    bytes: list<u8>,              // edict.canonical-cbor/v1 of the artifact
+    bytes: list<u8>,             // edict.canonical-cbor/v1 of the artifact
   }
   record diagnostic {
     code: string,                 // stable diagnostic code, e.g. EDICT-...
@@ -40,13 +45,18 @@ world lowerer {
   // Look up a target intrinsic signature by canonical coordinate.
   export effect-signature: func(coordinate: string) -> outcome;
 
-  // Compare an inferred footprint against a declared/admitted ceiling.
-  // Returns ok(witness) when computed <= ceiling, rejected otherwise.
-  export footprint-compare: func(computed: artifact, ceiling: artifact)
+  // Compare an inferred footprint against the operation's DECLARED footprint
+  // ceiling (aperture requirement), not an admitted participant ceiling.
+  // Returns ok(witness) when computed <= declared-ceiling, rejected otherwise.
+  export footprint-compare: func(computed: artifact, declared-ceiling: artifact)
     -> outcome;
 
-  // Compare an inferred cost against an admitted target budget.
-  export cost-compare: func(computed: artifact, budget: artifact) -> outcome;
+  // Compare an inferred cost against the operation's DECLARED target ceiling
+  // (the targetBudget in Core), not an admitted participant budget. Admission
+  // is external by design; the lowerer never sees participant policy.
+  // Returns ok(witness) when computed <= declared-target-ceiling, rejected.
+  export cost-compare: func(computed: artifact, declared-target-ceiling: artifact)
+    -> outcome;
 
   // Attach a guard to an effect node / application unit, profile-owned.
   export attach-guard: func(node: artifact, guard: artifact) -> outcome;

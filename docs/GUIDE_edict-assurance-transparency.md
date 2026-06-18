@@ -76,20 +76,25 @@ parse: accepted | rejected
 rawSourceDigest: same | changed | not-produced
 CoreIrDigest: same | changed | not-produced
 targetIrDigest: same | changed | not-produced
-contractBundleDigest: same | changed | not-produced
-admissionReceipt: still-valid | invalidated | not-applicable
+semanticBundleDigest: same | changed | not-produced
+releaseBundleDigest: same | changed | not-produced
+admissionReceipt(semantic): still-valid | invalidated | not-applicable
+admissionReceipt(release): still-valid | invalidated | not-applicable
 result: accept | reject
 ```
 
-Example: a comment-only source change should produce:
+Example: a comment-only source change should produce (note the split makes the
+outcome precise — semantics are untouched, only the release identity moves):
 
 ```text
 parse: accepted
 rawSourceDigest: changed
 CoreIrDigest: same
 targetIrDigest: same
-contractBundleDigest: changed
-admissionReceipt: invalidated
+semanticBundleDigest: same
+releaseBundleDigest: changed
+admissionReceipt(semantic): still-valid
+admissionReceipt(release): invalidated
 result: accept
 ```
 

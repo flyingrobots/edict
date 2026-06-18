@@ -183,8 +183,16 @@ Each target intrinsic must declare:
 An `effect` intrinsic additionally declares:
 
 - effect kind;
-- failure classes;
+- `effectFailures`: the **named, typed** low-level failures it can raise. Each
+  has a `coordinate` (e.g. `mismatch`, `boundExceeded`), an `authorityClass`
+  (`domainMappable`/`participantOwned`/...), and a bounded `payloadType`
+  (`EDICT-ABI-FAILURE-NAMED-001`);
 - whether the effect can participate in a target-atomic guard.
+
+Broad authority classes alone are insufficient: a source obstruction arm
+`mismatch(fault) => Domain.X(...)` binds the named failure `mismatch` declared
+here and constructs its typed domain obstruction from `fault`'s payload. An arm
+naming a failure the effect does not declare is a compile error.
 
 A `pure` intrinsic must declare `effectKind` absent and `writeClass: none`. A
 pure constructor that reaches runtime state is a relapse and rejects.
@@ -193,7 +201,9 @@ pure constructor that reaches runtime state is a relapse and rejects.
 
 Operation mode is a verifier predicate over inferred effects:
 
-- `readOnly`: read effects and proof-only semantic effects only.
+- `readOnly`: proof-only semantic facts plus effects whose authoritative
+  `writeClass` is `read` (including runtime semantic reads); no mutating
+  `writeClass`.
 - `createOnly`: read, create, and ensure effects; no replace, delete, append, or
   runtime-materialized semantic writes except effects explicitly classified as
   create by the resolved target profile.
@@ -208,13 +218,19 @@ or a more restrictive target-native primitive.
 
 ## Obstruction Taxonomy
 
-Effect failure classes are split by authority:
+Each effect declares **named** low-level failures (`effectFailures`), and each
+named failure carries an `authorityClass`. The authority class governs whether
+source may map the failure:
 
-- `domainMappable`: may be mapped by source to a domain obstruction.
+- `domainMappable`: may be mapped by source to a typed domain obstruction.
 - `participantOwned`: remains a participant or admission obstruction.
 - `integrityFault`: remains an integrity failure.
 - `resourceFault`: remains a resource or budget obstruction.
 - `internalFault`: remains a platform/internal failure.
+
+The obstruction map is keyed by **failure coordinate**, not by authority class,
+so two `domainMappable` failures on the same effect (e.g. `mismatch` and
+`boundExceeded`) are distinct, separately-mapped arms.
 
 Source `else` mappings may translate only profile-declared `domainMappable`
 classes. Authors must not translate permission failure, signature failure,

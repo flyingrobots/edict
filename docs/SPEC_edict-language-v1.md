@@ -534,7 +534,8 @@ Semantic effects must declare:
 - effect coordinate;
 - input type;
 - output type;
-- whether the effect is proof-only or runtime-materialized;
+- `executionClass` (`proofOnly` or `runtime`), orthogonal to the resolved
+  `writeClass`;
 - footprint summary or required target lowering obligations;
 - cost summary or required target lowering obligations;
 - obstruction taxonomy if the effect can fail at runtime.
@@ -1088,7 +1089,7 @@ use target echo.dpo@1 digest "sha256:..." as echo;
 
 type RecordGitWarpImportBatchInput = {
   basisId: shape.ID,
-  repo: String,
+  repo: String<max=512>,
   commit: Digest,
 };
 
@@ -1099,6 +1100,7 @@ type RecordGitWarpImportBatchReceipt = {
 intent recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
   returns RecordGitWarpImportBatchReceipt
   profile echo.createOnly
+  basis input.basisId
   budget <= history.recordBatchBudget
   where input.repo != ""
 {
@@ -1299,11 +1301,13 @@ intent-decl     = "intent" , ident , "(" , param-list? , ")" ,
                   intent-clause* , block ;
 intent-clause   = profile-clause
                 | implements-clause
+                | basis-clause
                 | where-clause
                 | footprint-clause
                 | budget-clause ;
 profile-clause  = "profile" , qual-ident ;
 implements-clause = "implements" , qual-ident ;
+basis-clause    = "basis" , ( "none" | expr ) ;
 where-clause    = "where" , predicate , { "," , predicate } ;
 footprint-clause = "footprint" , "<=" , qual-ident ;
 budget-clause   = "budget" , "<=" , qual-ident ;
@@ -1411,8 +1415,12 @@ Semantic grammar rules:
   accepted as v1 declarations.
 - Keywords are reserved as bare identifiers but may appear after `.` as member
   names, so `ref.ensure(value)` and `history.event.record(value)` are legal.
-- Each intent may contain at most one `profile`, one `implements`, one
-  `footprint`, and one `budget` clause.
+- Each intent may contain at most one `profile`, one `implements`, one `basis`,
+  one `footprint`, and one `budget` clause.
+- A `basis` clause is required unless the resolved operation profile or lawpack
+  supplies a digest-locked basis template; `basis none` is the explicit
+  no-basis declaration. The `basis` expression is a typed Core expression, never
+  a free-form string.
 - Multiple `where` clauses are permitted and merge conjunctively.
 - `effect-else-clause` is legal only when the right-hand side expression or
   statement is an imported effect.
@@ -1645,7 +1653,9 @@ boolean operand (A-normal effect form still applies).
 The Edict Core prelude is intentionally small:
 
 - `hash(label: StringLiteral, value...) -> Digest`
-- `canonicalEncode(value) -> Bytes`
+- `canonicalEncode<T>(value: T) -> Bytes<max=CanonicalEncodedMax<T>>` (the
+  result is statically bounded by the input type's canonical-encoded maximum; a
+  naked unbounded `Bytes` return would violate `EDICT-LANG-BOUNDS-001`)
 - `len(value) -> U64` (Unicode scalar count for `String`, byte count for
   `Bytes`, element count for `List`/`Map`; see Refined Scalar Types,
   `EDICT-LANG-LEN-001`)
@@ -1816,7 +1826,9 @@ hash-significant Edict Core operation semantics.
 
 Operation modes are verifier predicates over inferred effects:
 
-- `readOnly`: read and proof-only semantic effects only.
+- `readOnly`: proof-only semantic facts plus effects whose authoritative
+  `writeClass` is `read` (including runtime semantic reads); no mutating
+  `writeClass`.
 - `createOnly`: read, create, and ensure effects; no replace, delete, append,
   or runtime-materialized semantic writes except effects the resolved profile
   explicitly classifies as create.
@@ -1882,10 +1894,12 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
   "output": "RecordGitWarpImportBatchReceipt",
   "optic": {
     "opticKind": "affectReintegration",
-    "basis": "input.basisId",
     "boundaryKind": "affect",
-    "supportPolicy": "carryOrObstruct",
-    "lossDisposition": "rejectOnSupportLoss"
+    "basis": { "kind": "fieldAccess", "of": "%input", "field": "basisId",
+               "type": "shape.ID" },
+    "apertureRequirement": "echo.dpo@1.footprint/recordBatch",
+    "supportPolicy": "continuum.support.carry-or-obstruct/v1",
+    "lossDisposition": "continuum.support.reject-on-loss/v1"
   },
   "claims": {
     "requiredOperationProfile": "echo.createOnly",
@@ -1927,16 +1941,21 @@ input-constraint reference, Core/target budgets, and the body. The following are
 
 ### Optic Contract
 
-Per I-031, every intent carries a minimal normative optic contract in Core:
+Per I-031, every intent carries a minimal normative optic contract in Core. Each
+field has exactly one deterministic source of truth
+(`EDICT-OPTIC-SOURCE-001`):
 
-- `opticKind`: `revelation` (read) or `affectReintegration` (write).
-- `basis`: the causal-history coordinate the operation depends on.
-- `boundaryKind`: `projection` (revelation) or `affect` (reintegration).
-- `supportPolicy`: how authored support/evidence must be carried.
-- `lossDisposition`: what happens on support loss, e.g. `rejectOnSupportLoss`.
+| Core field | How it is produced |
+| --- | --- |
+| `basis` | the `basis` source clause (a typed Core expression, or `none`), or a digest-locked profile/lawpack basis template |
+| `opticKind` (`revelation`/`affectReintegration`) | the resolved operation-profile optic template (not author free-text) |
+| `boundaryKind` (`projection`/`affect`) | the resolved operation-profile optic template |
+| `apertureRequirement` | an explicit Core field populated from the footprint ceiling, or a digest-locked abstract footprint obligation |
+| `supportPolicy` | a canonical profile **coordinate** (e.g. `continuum.support.carry-or-obstruct/v1`), never a free-form string |
+| `lossDisposition` | a canonical profile **coordinate** (e.g. `continuum.support.reject-on-loss/v1`), never a free-form string |
 
-The aperture/footprint requirement is the operation's footprint bound (see
-Effects And Footprints). Richer Observer Geometry evidence — support
+The `basis` value in Core is a typed expression tree, not the review rendering
+`"input.basisId"`. Richer Observer Geometry evidence — support
 carried/lost/blocked/refuting, degeneracy findings, witness debt, footprint
 overlap — is **derived verifier evidence** (the Aperture Ledger), not Core
 syntax, until the support algebra is pinned. A lowering may not silently erase

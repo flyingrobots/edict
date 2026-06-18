@@ -64,7 +64,12 @@ artifact locked), `impl` (implementation passes).
 | EDICT-LANG-BUDGET-SPLIT-001 | Core/target/admitted budget split; target dims not in Core | Language | `lang/budget/split` | `lang/budget/target-dim-in-core` | spec |
 | EDICT-LANG-PROFILE-001 | `edict.language/v1` vs `edict.implementation/minimal-v1` capability flags | Language | `lang/profile/minimal` | `lang/profile/undeclared-capability` | spec |
 | EDICT-LANG-CAPREF-001 | `CapabilityRef<T>` carries receipt digest only; inert until admitted | Language | `lang/capref/inert` | `lang/capref/ambient-authority` | spec |
-| EDICT-LANG-READONLY-001 | Read-only is inferred; proof-only vs runtime-materialized | Language/Lawpack | `lang/readonly/proof-only` | `lang/readonly/hidden-append` | spec |
+| EDICT-LANG-READONLY-001 | Read-only inferred; executionClass (proofOnly/runtime) orthogonal to writeClass; runtime read is allowed | Language/Lawpack | `lang/readonly/runtime-read` | `lang/readonly/hidden-append` | spec |
+| EDICT-OPTIC-SOURCE-001 | Each optic field has one deterministic source (basis clause / profile template / coordinate / footprint) | Language | `optic/source/basis-clause` | `optic/source/freeform-support` | spec |
+| EDICT-DIGEST-WIRE-001 | Canonical digest is typed `[algorithm, bytes]`, never a hex string; hex only in review JSON | Bundle/ABI | `abi/digest/typed-pair` | `abi/digest/hex-string` | spec |
+| EDICT-ABI-FAILURE-NAMED-001 | Effects declare named, typed low-level failures; obstruction map keyed by failure coordinate | Target/Lawpack | `abi/failure/named-payload` | `abi/failure/undeclared-arm` | spec |
+| EDICT-TARGET-INTRINSIC-UNION-001 | Intrinsic schema is an enforced pure/effect union, not comment-gated optional fields | Target | `target/intrinsic/union-effect` | `target/intrinsic/pure-with-effectkind` | spec |
+| CONTINUUM-BUNDLE-SUBJECT-001 | Requests/receipts carry `bundleSubject {kind,digest}`; receipt echoes it; Moriarty tracks both | Bundle/Admission | `bundle/subject/echo` | `bundle/subject/mismatch` | spec |
 | EDICT-CORE-SELFHASH-001 | No Core/manifest self-hash; digest is external descriptor | Language/Target | `core/hash/no-selfhash` | `core/hash/embedded-selfhash` | spec |
 | EDICT-CORE-NOPACKAGING-001 | Lowerer/verifier digests are bundle fields, not Core | Language/Bundle | `core/hash/lowerer-swap-stable` | `core/hash/lowerer-in-preimage` | spec |
 | EDICT-CORE-VERIFIED-EXTERNAL-001 | Core states `requiredOperationProfile`; `verifiedOperationMode` is verifier report | Language | `core/verified/external` | `core/verified/in-core` | spec |

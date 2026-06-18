@@ -29,14 +29,15 @@ Continuum separates four artifact layers:
 
 ```text
 ContractBundle
-  source artifact digest
+  semanticBundleDigest      # executable semantics
+  releaseBundleDigest       # semantic + source provenance + toolchain
   Core IR digest
   target IR digest
   generated artifacts
   compiler/lowerer/verifier evidence references
 
 AdmissionRequest
-  contractBundleDigest
+  bundleSubject { kind: semantic | release, digest }
   participantDescriptorDigest
   catalogSnapshotDigest
   admissionPolicyDigest
@@ -45,7 +46,7 @@ AdmissionRequest
 
 AdmissionReceiptBody
   admissionRequestDigest
-  contractBundleDigest
+  bundleSubject { kind: semantic | release, digest }   # echoes the request
   participant identity
   decision
   admitted bounds/capabilities
@@ -98,17 +99,54 @@ snapshots, display metadata, or signatures over itself.
 ## Semantic And Release Bundle Digests
 
 A contract bundle exposes two digests so participant policy can decide which it
-admits:
+admits. The two preimages are exact (`CONTINUUM-BUNDLE-SUBJECT-001`).
 
-- `semanticBundleDigest` identifies the executable semantics: Core IR, target
-  IR, target profile, lawpack digests, generated artifacts, verifier report.
-  Formatting-only or comment-only source changes do not change it.
-- `releaseBundleDigest` additionally binds exact source provenance (raw source
-  artifact descriptors, logical source paths) and the compile explanation
-  artifact.
+`semanticBundleDigest` identifies the executable semantics. Its preimage is:
+
+```text
+semanticBundleDigest = digest(domain "edict.bundle.semantic/v1", [
+  coreIrDigest,
+  targetProfileDigest,
+  targetIrDigest,
+  lawpackDigests,
+  sourceProfileSemanticFactsDigest,
+  generatedArtifactDigests,
+  canonicalizationProfileDigest,
+  compileOptionsDigest,
+  conformanceFixtureCorpusDigests,
+  verifierReportDigest
+])
+```
+
+A different but conforming lowerer/verifier must produce the **same**
+`semanticBundleDigest` (this is what the two-lowerer trial checks); therefore
+toolchain identities are **not** in the semantic preimage. Formatting-only or
+comment-only source changes also do not change it.
+
+`releaseBundleDigest` additionally binds source provenance and the exact
+toolchain. Its preimage is:
+
+```text
+releaseBundleDigest = digest(domain "edict.bundle.release/v1", [
+  semanticBundleDigest,
+  rawSourceArtifactDescriptors,     # incl. logical source paths
+  compilerIdentityAndDigest,
+  lowererIdentityAndDigest,
+  verifierIdentityAndDigest,
+  buildProvenance,
+  compileExplanationDigest
+])
+```
 
 `releaseBundleDigest`'s preimage references `semanticBundleDigest`, never the
 reverse, preserving acyclicity (`CONTINUUM-BUNDLE-DAG-001`).
+
+Wherever an artifact, request, or receipt references "the bundle", it carries an
+explicit `bundleSubject`:
+
+```text
+bundleSubject = { kind: "semantic" / "release", digest: <Digest> }
+```
 
 ## Acyclicity
 
@@ -187,8 +225,10 @@ The v1 profile pins:
 - map keys sorted by deterministic encoded-byte lexical order;
 - no length-first map ordering variant;
 - all text labels encoded as UTF-8 without normalization;
-- digest bytes represented as byte strings in authoritative CBOR;
-- human hex strings allowed only in review JSON.
+- digests encoded as the typed pair `[algorithm, bytes]` (e.g.
+  `["sha256", h'..32 bytes..']`), never as a `"sha256:<hex>"` string, in
+  authoritative CBOR (`EDICT-DIGEST-WIRE-001`);
+- human hex rendering `"sha256:<64 lowercase hex>"` allowed only in review JSON.
 
 Generic canonical values carry scalar type explicitly, so `U32(1)` and `U64(1)`
 have distinct preimages.

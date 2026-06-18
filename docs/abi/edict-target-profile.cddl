@@ -44,33 +44,61 @@ target-profile-manifest = {
 ; never embeds its own self-digest in its preimage (EDICT-CORE-SELFHASH-001).
 resource-ref = {
   id: tstr,
-  digest: digest,
+  digest: sha256-digest,
 }
 
-digest = tstr .regexp "^sha256:[0-9a-f]{64}$"
+; Digests are authoritative as typed byte values, never hex strings. Review JSON
+; renders this as "sha256:<64 lowercase hex>" (EDICT-DIGEST-WIRE-001).
+sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
 
 ; --- intrinsic signature -------------------------------------------------
+; A genuine union: pure constructors carry no effect kind or failures; effect
+; intrinsics must (EDICT-TARGET-INTRINSIC-CLASS-001). The schema enforces this,
+; not a comment.
 
-intrinsic = {
+intrinsic = pure-intrinsic / effect-intrinsic
+
+pure-intrinsic = {
   coordinate: tstr,
-  intrinsicClass: "pure" / "effect",   ; pure constructors vs effects
+  intrinsicClass: "pure",
   typeParameters: [* tstr],
   argumentTypes: [* core-type-ref],
   returnType: core-type-ref,
-  ? effectKind: effect-kind,           ; required iff intrinsicClass == "effect"
-  ? failureClasses: [* failure-class], ; required iff intrinsicClass == "effect"
+  guardSupport: false,
+  footprintTemplate: tstr,
+  costTemplate: tstr,
+  writeClass: "none",
+}
+
+effect-intrinsic = {
+  coordinate: tstr,
+  intrinsicClass: "effect",
+  typeParameters: [* tstr],
+  argumentTypes: [* core-type-ref],
+  returnType: core-type-ref,
+  effectKind: effect-kind,
+  effectFailures: [* effect-failure],   ; named, typed low-level failures
   guardSupport: bool,
   footprintTemplate: tstr,
   costTemplate: tstr,
   writeClass: "read" / "create" / "ensure" / "append" / "replace" /
-              "delete" / "none" / "custom",
+              "delete" / "custom",
   canParticipateInAtomicGuard: bool,
+}
+
+; A named low-level failure an effect can raise. The source obstruction map
+; binds it (by coordinate) and constructs a typed domain obstruction from its
+; payload. (EDICT-ABI-FAILURE-NAMED-001)
+effect-failure = {
+  coordinate: tstr,                     ; e.g. "mismatch", "boundExceeded"
+  authorityClass: authority-class,
+  payloadType: core-type-ref,           ; typed, bounded (may be empty record)
 }
 
 effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /
               "append" / "reduce" / "semantic.emit" / "custom"
 
-failure-class = "domainMappable" / "participantOwned" / "integrityFault" /
-                "resourceFault" / "internalFault"
+authority-class = "domainMappable" / "participantOwned" / "integrityFault" /
+                  "resourceFault" / "internalFault"
 
 core-type-ref = tstr   ; canonical Core type coordinate

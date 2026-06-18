@@ -157,45 +157,63 @@ effect:
   typeParameters
   inputType           # bounded
   outputType          # bounded
-  materialization     # proofOnly | runtimeMaterialized
+  executionClass      # proofOnly | runtime
   effectKindHint      # read | append | create | ensure | replace | delete |
                       #   reduce | semantic.emit | custom
   footprintObligation # abstract obligation OR required target lowering
   costObligation      # abstract obligation OR required target lowering
-  failureClasses      # see Obstruction Schemas
+  effectFailures      # named typed failures; see Obstruction Schemas
   guardSupport        # whether the effect can participate in a target guard
 ```
 
-`materialization` is the load-bearing field for read-only inference
-(`EDICT-LANG-READONLY-001`):
+`executionClass` and the authoritative `writeClass` of the resolved lowering are
+**orthogonal** axes (`EDICT-LANG-READONLY-001`). `executionClass` says whether a
+fact is established by proof or by touching the runtime; the `writeClass` (fixed
+by the resolved target adapter intrinsic) says whether that runtime touch reads
+or mutates. A runtime read is neither a proof-only fact nor a runtime write.
 
-- `proofOnly` semantic facts may be compatible with `readOnly` operation mode.
-- `runtimeMaterialized` effects (anything that lowers to a durable append,
-  create, replace, delete, audit write, or projection mutation) are not
-  read-only and must reject any `readOnly` claim that contains them.
+`readOnly` operation mode therefore permits:
 
-A semantic effect's `effectKindHint` is advisory at the lawpack layer; the
-authoritative effect kind for a given lowering is fixed by the target adapter.
+- `executionClass: proofOnly` semantic facts; and
+- `executionClass: runtime` effects whose authoritative target `writeClass` is
+  `read`.
+
+`readOnly` rejects any effect whose authoritative `writeClass` is `create`,
+`ensure`, `append`, `replace`, `delete`, or `custom`-mutating. The
+`effectKindHint` is advisory at the lawpack layer; the authoritative effect kind
+and `writeClass` for a given lowering are fixed by the target adapter.
 
 ## Obstruction Schemas
 
-Lawpack obstructions are typed. Each obstruction declares a coordinate and a
-bounded payload schema:
+Two related but distinct typed objects are declared
+(`EDICT-ABI-FAILURE-NAMED-001`):
+
+A **named low-level failure** (`effectFailure`) is what an effect can raise:
+
+```text
+effectFailure:
+  coordinate          # e.g. "mismatch", "boundExceeded"
+  authorityClass      # domainMappable | participantOwned | integrityFault |
+                      #   resourceFault | internalFault
+  payloadType         # typed, bounded record (may be empty)
+```
+
+Each `semantic-effect` references its exact `effectFailures`. A **domain
+obstruction** is what source maps a `domainMappable` failure to:
 
 ```text
 obstruction:
   coordinate          # e.g. jedit.rope@1.TextBlobHashConflict
-  failureClass        # domainMappable | participantOwned | integrityFault |
-                      #   resourceFault | internalFault
+  authorityClass      # the authority class the obstruction belongs to
   payloadSchema       # typed, bounded record (may be empty)
 ```
 
-Only `domainMappable` classes may be author-mapped in source `else` clauses.
-Payload fields must themselves be typed and bounded; an obstruction whose
-payload contains a naked `String`/`Bytes` is rejected. Effect failure mapping in
-source is exhaustive over the effect's declared domain-mappable failure classes
-and reuses the language's exhaustive-match machinery
-(`EDICT-LANG-OBSTRUCT-EXHAUST-001`).
+Only `domainMappable` failures may be author-mapped in source `else` clauses,
+and the obstruction map is keyed by failure coordinate. Payload fields must
+themselves be typed and bounded; a payload containing a naked `String`/`Bytes`
+is rejected. Effect failure mapping in source is exhaustive over the effect's
+declared `domainMappable` failures and reuses the language's exhaustive-match
+machinery (`EDICT-LANG-OBSTRUCT-EXHAUST-001`).
 
 ## Footprint And Cost Obligations
 
@@ -219,7 +237,7 @@ adapter:
   targetProfile + version + acceptedTargetIr
   perEffectLowering:
     semanticEffectCoordinate -> target intrinsic plan
-    materialization confirmation
+    executionClass + resolved writeClass confirmation
     footprint obligation discharge
     cost obligation discharge
     failureClass -> target obstruction class mapping
@@ -227,9 +245,10 @@ adapter:
 ```
 
 A portable semantic intent compiles for a target **only** when the lawpack
-supplies an adapter for that target profile. Absent an adapter, lowering fails
-with a registration/admission-class error, never a silent fallback
-(`EDICT-LAWPACK-ADAPTER-001`).
+supplies an adapter for that target profile. Absent an adapter, this is a
+**compiler/lowering error**, not an admission-class error: no valid target
+artifact exists yet, so admission never enters the picture. It is never a silent
+fallback (`EDICT-LAWPACK-ADAPTER-001`).
 
 ## Compatibility Matrix
 

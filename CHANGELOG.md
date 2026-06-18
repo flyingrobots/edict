@@ -55,8 +55,39 @@ released implementation.
 - README/docs drift fixes: `edict` code fences, corrected artifact ER-diagram
   cardinality, bounded the `hello` example, fixed the alias-shadowing example.
 
+### Changed (yellow-light review, round 2)
+
+Five underdetermined contracts nailed before implementation:
+
+- **Optic source production**: added the `basis` source clause (incl.
+  `basis none`); pinned one deterministic source for each Core optic field
+  (basis clause / profile template / canonical coordinate / footprint ceiling);
+  `basis` is a typed Core expression, `apertureRequirement` an explicit field;
+  `supportPolicy`/`lossDisposition` are coordinates, not strings.
+- **Lawpack classification**: replaced `materialization` with orthogonal
+  `executionClass` (`proofOnly`/`runtime`) × authoritative `writeClass`;
+  `readOnly` now permits runtime reads (writeClass=read).
+- **Named typed failures**: ABIs declare `effectFailures` (coordinate +
+  authorityClass + bounded payloadType) per effect; obstruction map keyed by
+  failure coordinate; target intrinsic CDDL is an enforced pure/effect union;
+  lawpack components made appropriately optional.
+- **Digest wire format**: canonical digest is the typed pair
+  `[algorithm, bytes]` everywhere (CDDL, WIT, bundle spec); `"sha256:<hex>"` is
+  review-JSON only.
+- **Bundle subject propagation**: defined exact `semanticBundleDigest` and
+  `releaseBundleDigest` preimages (toolchain identity lives in release, not
+  semantic); requests/receipts carry `bundleSubject {kind,digest}`; Moriarty
+  matrix tracks both; lowerer compares cost against the declared target ceiling,
+  not an admitted participant budget.
+
+Cleanups: `canonicalEncode<T>` returns bounded `Bytes`; bounded `repo` in the
+normative example; missing lawpack target adapter is a compiler/lowering error,
+not admission-class.
+
 ### Notes
 
 Applies the Phase 0 design review (external "ChatGPT" feedback): SHOULD/COULD
 treated as MUST. Design baseline marked non-normative historical context. Grammar
-and Core schema remain **unfrozen**; v1 is not yet stable.
+and Core schema remain **unfrozen** but the five yellow-light joints are now
+determined; next step is Phase 0 implementation (parser fixtures, Core CDDL,
+canonical-CBOR goldens, tiny KV target). v1 is not yet stable.

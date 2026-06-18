@@ -27,7 +27,8 @@ are not components of that digest.
 
 An admission request contains:
 
-- `contractBundleDigest`;
+- `bundleSubject` (`{ kind: semantic | release, digest }`) — the participant
+  declares which bundle identity it is admitting (`CONTINUUM-BUNDLE-SUBJECT-001`);
 - participant descriptor digest;
 - catalog snapshot digest;
 - admission policy digest;
@@ -49,7 +50,7 @@ the body never references the envelope that signs it
 An `AdmissionReceiptBody` contains:
 
 - `admissionRequestDigest`;
-- `contractBundleDigest`;
+- `bundleSubject` — echoes the request's exact `{ kind, digest }`;
 - participant identity;
 - decision;
 - admitted operation set;
@@ -76,10 +77,11 @@ It must never be hashed into the participant-neutral bundle
 
 ## Admission Evidence Is External
 
-A contract bundle digest is computed before admission. Admission requests and
-receipts reference the contract bundle digest but are not components of that
-digest. A distribution envelope may aggregate bundles, attestations, and receipts
-without changing the identity of the enclosed contract bundle.
+Both the `semanticBundleDigest` and `releaseBundleDigest` are computed before
+admission. Admission requests and receipts reference a `bundleSubject` but are
+not components of either bundle digest. A distribution envelope may aggregate
+bundles, attestations, and receipts without changing the identity of the
+enclosed contract bundle.
 
 ## Capability Receipts
 
@@ -117,7 +119,7 @@ Admission evidence must bind:
 - policy epoch or monotonic policy version;
 - admitted target profile digests;
 - admitted lawpack digests;
-- admitted bundle digest.
+- the admitted `bundleSubject` (kind + digest).
 
 Replay under a newer participant policy is detectable because the request and
 receipt remain bound to their original policy epoch and digest.
