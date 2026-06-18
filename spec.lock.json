@@ -11,6 +11,7 @@
   "schemas": {
     "languageSpec": "sha256:...",
     "coreSchema": "sha256:...",
+    "commonSchema": "sha256:...",
     "lawpackSchema": "sha256:...",
     "targetProfileSchema": "sha256:...",
     "targetLowererWit": "sha256:...",
