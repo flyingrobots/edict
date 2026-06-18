@@ -1498,6 +1498,13 @@ Semantic grammar rules:
   names, so `ref.ensure(value)` and `history.event.record(value)` are legal.
 - Each intent may contain at most one `profile`, one `implements`, one `basis`,
   one `footprint`, and one `budget` clause.
+- The grammar accepts `intent-clause*`, but clause **requiredness** is a semantic
+  rule; omitting a required clause is parseable but rejected in semantic
+  validation (`EDICT-LANG-INTENT-CLAUSES-001`). Required: **exactly one** of
+  `profile` (runtime-native intent) or `implements` (portable semantic intent);
+  a `budget` clause; and a `basis` clause unless a profile/lawpack supplies a
+  digest-locked basis template. Optional: `footprint` (a declared ceiling; the
+  computed footprint is inferred regardless) and `where`.
 - A `basis` clause is required unless the resolved operation profile or lawpack
   supplies a digest-locked basis template; `basis none` is the explicit
   no-basis declaration. The `basis` expression is a typed Core expression, never
