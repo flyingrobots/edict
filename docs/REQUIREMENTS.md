@@ -93,6 +93,8 @@ artifact locked), `impl` (implementation passes).
 | EDICT-TARGET-POSTCOND-001 | Target declares `postconditionSupport`; precommit `guarantee` requires it or rejects | Target/Language | `target/postcond/supported` | `target/postcond/unsupported-guarantee` | spec |
 | EDICT-LOWERABILITY-PARTIAL-001 | Lowering is a partial semantics-preserving relation: native/adapted/composite/unsupported; unsupported is a compiler error | Language/Target | `lowering/partial/classified` | `lowering/partial/silent-approx` | spec |
 | EDICT-LAWPACK-ADAPTER-DIRECT-001 | v1 direct adaptation only; exactly one adapter per (effect,target); no chained legalization/fixed-point | Lawpack | `lawpack/adapter/direct-one` | `lawpack/adapter/chained` | spec |
+| EDICT-LANG-TARGETBUDGET-HASH-001 | targetBudget costAlgebra ref + ceiling both hash-significant; ceiling meaningless without its algebra | Language | `lang/targetbudget/both-hashed` | `lang/targetbudget/algebra-unhashed` | spec |
+| EDICT-LANG-OBSTRUCT-EMPTY-001 | Bare obstruction-target normalizes to ObstructionConstruct with empty `{}` payload | Language | `lang/obstruct/bare-empty` | `lang/obstruct/bare-undefined` | spec |
 | EDICT-LANG-BYTES-NOCANON-001 | `Bytes` refinement is max-only; `canonical=` on `Bytes` is rejected | Language | `lang/bytes/max-only` | `lang/bytes/canonical-rejected` | spec |
 | EDICT-ABI-INTRINSICS-DOC-001 | The `intrinsics` resource has a fixed corpus-document shape | Target | `abi/intrinsics/document` | `abi/intrinsics/freeform` | spec |
 | EDICT-ABI-VERIFIER-BOUND-001 | An executable verifier requires sandbox + fuel; declarative verifier is classified | Lawpack | `lawpack/verifier/executable-bounded` | `lawpack/verifier/unbounded` | spec |
