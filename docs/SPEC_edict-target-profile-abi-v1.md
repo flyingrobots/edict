@@ -107,8 +107,8 @@ byte-level exchange so two independent lowerers/verifiers can interoperate:
 ```text
 Core IR (canonical-cbor)        --> lowerer.lower             --> Target IR
 target intrinsic coordinate     --> lowerer.effect-signature  --> signature
-computed footprint + ceiling    --> lowerer.footprint-compare --> ok | rejected
-computed cost + admitted budget --> lowerer.cost-compare      --> ok | rejected
+computed footprint + declared ceiling --> lowerer.footprint-compare --> ok | rejected
+computed cost + declared target ceiling --> lowerer.cost-compare    --> ok | rejected
 effect node + guard             --> lowerer.attach-guard      --> node'
 Target IR (canonical-cbor)      --> verifier.verify           --> verifier report
 any stage                       --> diagnostic[]              --> Watson input
@@ -120,6 +120,11 @@ hosts. Diagnostics are structured (`code`, `severity`, `message`, optional
 `repair`, optional non-hash `span`); they are never hashed into semantic
 artifacts. The verifier is evidence, not authority: it never mutates runtime
 state and never overrides participant admission (I-014).
+
+The lowerer compares cost and footprint against the operation's **declared**
+target ceiling only. It never receives a participant-admitted budget; admission
+is external by design, so target IR and verifier artifacts stay
+participant-neutral bundle inputs (`EDICT-TARGET-NEUTRAL-LOWERING-001`).
 
 ## Application Model
 
