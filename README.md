@@ -8,6 +8,26 @@ The language exists to make autonomous operation boring in the right places:
 explicit law, bounded effects, target-owned verification, canonical artifacts,
 and participant admission.
 
+## Why Edict?
+
+Modern agents can propose useful changes faster than most runtimes can safely
+accept them. The missing layer is not another privileged callback surface; it is
+a way to describe an operation so its authority, footprint, cost, target
+semantics, and failure modes are visible before execution.
+
+Edict is intended as a contribution toward the Continuum project: a concrete
+operation language and artifact model for lawful-autonomous self-extension. In
+that model, Continuum participants remain the authority for admission and
+execution, while Edict supplies the deterministic source language, Core IR,
+canonicalization rules, target-profile ABI, and conformance fixtures needed to
+make proposed operations inspectable and reproducible.
+
+The goal is maximum autonomy only after maximum explicitness: no ambient host
+authority, no hidden storage model, no unchecked filesystem or network access,
+and no trust-me callbacks. Edict operations should either compile into
+SHA-locked, target-verified artifacts or fail with structured reasons that
+humans and agents can repair.
+
 ## Current Status
 
 This repository is in Phase 0. It currently holds the design baseline and
