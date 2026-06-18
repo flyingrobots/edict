@@ -1848,10 +1848,19 @@ Effect {
   costTemplate: CostTemplateRef
 }
 
+# A CoreGuard is always an atomic runtime guard and always carries an
+# obstruction (EDICT-CORE-GUARD-CATEGORY-001). Verifier/compiler proofs are NOT
+# guards — they are CoreProofObligation nodes. Local prechecks are diagnostic
+# sidecars, not Core truth.
 CoreGuard {
   predicate: CorePredicate,
-  enforcement: targetAtomic | verifierProof | localDiagnostic,
+  enforcement: targetAtomic,
   obstruction: ObstructionConstruct
+}
+
+CoreProofObligation {
+  predicate: CorePredicate,
+  origin: assert | guarantee
 }
 
 # A hash-significant obstruction construction: the coordinate, an optional
