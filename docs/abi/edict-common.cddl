@@ -1,0 +1,30 @@
+; edict-common.cddl
+; Shared CDDL types for the Edict ABIs. Defined ONCE here and assembled with
+; each schema (edict-target-profile.cddl, edict-lawpack.cddl) by the build;
+; neither schema redefines these, so they cannot drift (EDICT-ABI-NODUP-001).
+; Authoritative byte encoding: edict.canonical-cbor/v1.
+
+; A normative subcomponent referenced by identity plus digest. Manifests never
+; embed their own self-digest in their preimage (EDICT-CORE-SELFHASH-001).
+resource-ref = { id: tstr, digest: sha256-digest }
+
+; Digests are authoritative as typed byte values, never hex strings. Review JSON
+; renders this as "sha256:<64 lowercase hex>" (EDICT-DIGEST-WIRE-001).
+sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
+
+; A named low-level failure an effect can raise. The source obstruction map
+; binds it (by coordinate) and constructs a typed domain obstruction from its
+; payload (EDICT-ABI-FAILURE-NAMED-001).
+effect-failure = {
+  coordinate: tstr,                       ; e.g. "mismatch", "boundExceeded"
+  authorityClass: authority-class,
+  payloadType: core-type-ref,             ; typed, bounded (may be empty record)
+}
+
+effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /
+              "append" / "reduce" / "semantic.emit" / "custom"
+
+authority-class = "domainMappable" / "participantOwned" / "integrityFault" /
+                  "resourceFault" / "internalFault"
+
+core-type-ref = tstr   ; canonical Core type coordinate

@@ -45,11 +45,8 @@ target-adapter = {
   adapter: resource-ref,
 }
 
-resource-ref = { id: tstr, digest: sha256-digest }
-
-; Digests are authoritative as typed byte values, never hex strings. Review JSON
-; renders this as "sha256:<64 lowercase hex>" (EDICT-DIGEST-WIRE-001).
-sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
+; Shared types resource-ref and sha256-digest are defined once in
+; edict-common.cddl and assembled with this schema (EDICT-ABI-NODUP-001).
 
 ; --- export surface ------------------------------------------------------
 
@@ -86,23 +83,11 @@ semantic-effect = {
   guardSupport: bool,
 }
 
-; A named low-level failure an effect can raise. The source obstruction map
-; binds it (by coordinate) and constructs a typed domain obstruction from its
-; payload. (EDICT-ABI-FAILURE-NAMED-001)
-effect-failure = {
-  coordinate: tstr,                       ; e.g. "mismatch", "boundExceeded"
-  authorityClass: authority-class,
-  payloadType: core-type-ref,             ; typed, bounded (may be empty record)
-}
-
 obstruction-def = {
   coordinate: tstr,
   authorityClass: authority-class,
   payloadSchema: core-type-ref,           ; typed, bounded (may be empty record)
 }
 
-effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /
-              "append" / "reduce" / "semantic.emit" / "custom"
-authority-class = "domainMappable" / "participantOwned" / "integrityFault" /
-                  "resourceFault" / "internalFault"
-core-type-ref = tstr
+; effect-failure, effect-kind, authority-class, and core-type-ref are defined
+; once in edict-common.cddl and assembled with this schema (EDICT-ABI-NODUP-001).

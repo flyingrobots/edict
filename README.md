@@ -554,6 +554,7 @@ regression cases.
 
 Machine schemas (single source of truth for the ABIs):
 
+- [`docs/abi/edict-common.cddl`](./docs/abi/edict-common.cddl) (shared types)
 - [`docs/abi/edict-target-profile.cddl`](./docs/abi/edict-target-profile.cddl)
 - [`docs/abi/edict-target-lowerer.wit`](./docs/abi/edict-target-lowerer.wit)
 - [`docs/abi/edict-lawpack.cddl`](./docs/abi/edict-lawpack.cddl)
