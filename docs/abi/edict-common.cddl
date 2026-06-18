@@ -28,3 +28,27 @@ authority-class = "domainMappable" / "participantOwned" / "integrityFault" /
                   "resourceFault" / "internalFault"
 
 core-type-ref = tstr   ; canonical Core type coordinate
+
+; An operation profile supplies the optic template a Core intent resolves its
+; opticKind/boundaryKind/supportPolicy/lossDisposition from. Target profiles and
+; lawpacks may export instances; this is its single canonical shape
+; (EDICT-OPTIC-TEMPLATE-OWNER-001).
+operation-profile = {
+  coordinate: tstr,
+  opticTemplate: optic-template,
+  effectPredicate: tstr,           ; coordinate of the operation-mode predicate
+}
+
+optic-template = {
+  opticKind: "revelation" / "affectReintegration",
+  boundaryKind: "projection" / "affect",
+  supportPolicy: tstr,             ; canonical support-policy coordinate
+  lossDisposition: tstr,           ; canonical loss-disposition coordinate
+  ? basisTemplate: tstr,           ; optional digest-locked basis template coord
+}
+
+; apertureRequirement is a typed reference, never a free-form string. A review
+; rendering may show its coordinate (EDICT-OPTIC-APERTURE-REF-001).
+aperture-requirement = footprint-ceiling-ref / abstract-footprint-obligation-ref
+footprint-ceiling-ref = { kind: "footprintCeiling", ref: tstr }
+abstract-footprint-obligation-ref = { kind: "abstractFootprintObligation", ref: tstr }

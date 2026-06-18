@@ -2084,7 +2084,8 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
     "boundaryKind": "affect",
     "basis": { "kind": "fieldAccess", "of": "%input", "field": "basisId",
                "type": "shape.ID" },
-    "apertureRequirement": "echo.dpo@1.footprint/recordBatch",
+    "apertureRequirement": { "kind": "footprintCeiling",
+                             "ref": "echo.dpo@1.footprint/recordBatch" },
     "supportPolicy": "continuum.support.carry-or-obstruct/v1",
     "lossDisposition": "continuum.support.reject-on-loss/v1"
   },
@@ -2138,11 +2139,25 @@ field has exactly one deterministic source of truth
 | Core field | How it is produced |
 | --- | --- |
 | `basis` | the `basis` source clause (a typed Core expression, or `none`), or a digest-locked profile/lawpack basis template |
-| `opticKind` (`revelation`/`affectReintegration`) | the resolved operation-profile optic template (not author free-text) |
+| `opticKind` (`revelation`/`affectReintegration`) | the resolved operation-profile **optic template** (not author free-text) |
 | `boundaryKind` (`projection`/`affect`) | the resolved operation-profile optic template |
-| `apertureRequirement` | an explicit Core field populated from the footprint ceiling, or a digest-locked abstract footprint obligation |
+| `apertureRequirement` | a typed reference: `footprintCeiling` ref or `abstractFootprintObligation` ref |
 | `supportPolicy` | a canonical profile **coordinate** (e.g. `continuum.support.carry-or-obstruct/v1`), never a free-form string |
 | `lossDisposition` | a canonical profile **coordinate** (e.g. `continuum.support.reject-on-loss/v1`), never a free-form string |
+
+The **operation-profile optic template** is the owner of `opticKind`,
+`boundaryKind`, `supportPolicy`, `lossDisposition`, and an optional basis
+template. Its single canonical shape (`operation-profile` / `optic-template`) is
+defined in [`abi/edict-common.cddl`](./abi/edict-common.cddl) and may be exported
+by target profiles and lawpacks; the normative ABI surface is
+[SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md) and
+[SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md)
+(`EDICT-OPTIC-TEMPLATE-OWNER-001`).
+
+`apertureRequirement` is a **typed reference** (`footprintCeiling` or
+`abstractFootprintObligation`), not a free-form string
+(`EDICT-OPTIC-APERTURE-REF-001`). Where an example shows a bare coordinate, that
+is the review rendering of the typed reference, not a contradictory string.
 
 The `basis` value in Core is a typed expression tree, not the review rendering
 `"input.basisId"`. Richer Observer Geometry evidence — support
