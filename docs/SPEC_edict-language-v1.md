@@ -1305,7 +1305,7 @@ Lexical conformance fixtures must pin these details before parser freeze:
   expected type is rejected (`EDICT-LANG-INTLIT-001`); `hash("domain", 1)` is
   rejected because `1` has no resolvable width. If an explicit suffix disagrees
   with the contextual type (e.g. `1i32` where `U64` is required), the literal is
-  rejected with `EDICT-TYPE-INT-LITERAL-MISMATCH`.
+  rejected with `EDICT-LANG-INTLIT-002`.
 - `digest-lit` hex is lowercase in canonical source rendering. Uppercase hex may
   parse only if normalized before semantic comparison.
 - `pattern` constraints use `edict.regex-lite/v1`, a locked non-backtracking

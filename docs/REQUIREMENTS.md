@@ -44,7 +44,8 @@ embedded snippet, schema, or fixture no longer matches the locked digests.
 - `CONTINUUM-*` — contract bundle and admission.
 
 `status`: `spec` (prose landed), `fixture` (fixture exists), `golden` (golden
-artifact locked), `impl` (implementation passes).
+artifact locked), `impl` (implementation passes), `deferred` (requirement stated
+but owned by a follow-up issue; no fixtures until its dependency lands).
 
 ## Registry
 
@@ -76,7 +77,7 @@ artifact locked), `impl` (implementation passes).
 | CONTINUUM-SEMANTIC-OPTIONS-001 | Only semantic compile options enter the semantic digest; diagnostic options excluded | Bundle | `bundle/options/semantic-only` | `bundle/options/diagnostic-in-semantic` | spec |
 | EDICT-LANG-ENCODEMAX-001 | `CanonicalEncodedMax<T>` is the compiler-derived max canonical-CBOR size of T, composed structurally; rejected for unbounded T | Language | `lang/encodemax/bounded` | `lang/encodemax/unbounded-type` | spec |
 | EDICT-LANG-BUDGET-UNITS-001 | Core budget units pinned (steps/peak live bytes/output octets); targetBudget = costAlgebra+resolved ceiling | Language | `lang/budget/units` | `lang/budget/undefined-units` | spec |
-| EDICT-TYPE-INT-LITERAL-MISMATCH | Suffix disagreeing with contextual integer type rejects; propagation contexts enumerated | Language | `lang/intlit/context-propagate` | `lang/intlit/suffix-context-mismatch` | spec |
+| EDICT-LANG-INTLIT-002 | Suffix disagreeing with contextual integer type rejects; propagation contexts enumerated | Language | `lang/intlit/context-propagate` | `lang/intlit/suffix-context-mismatch` | spec |
 | EDICT-LANG-PRELUDE-001 | Minimal-v1 prelude op set is closed; unlisted prelude ops do not exist | Language | `lang/prelude/closed` | `lang/prelude/unlisted-op` | spec |
 | EDICT-LANG-BASIS-PURE-001 | `basis` is pure/effect-free over inputs, constants, capability refs, pure fns; runtime reads validate not define | Language | `lang/basis/pure` | `lang/basis/runtime-read` | spec |
 | EDICT-LANG-HELPER-BOUNDS-001 | Pure-helper bounds enforced at import validation + call-site instantiation | Language/Lawpack | `lang/helper/bounded` | `lang/helper/unbounded` | spec |
