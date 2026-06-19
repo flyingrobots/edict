@@ -53,6 +53,7 @@ exports:
   pureFunctions:[ ... deterministic, authority-free helpers ... ]
   effects:      [ ... semantic effects that emit facts ... ]
   obstructions: [ ... typed obstruction definitions ... ]
+  operationProfiles:[ ... optic templates profile/implements resolve against ... ]
 ```
 
 - A `pureFunction` is deterministic, total over valid input, cost-bounded,
@@ -87,11 +88,15 @@ from that schema and is illustrative only.
     {
       "targetProfile": "echo.dpo",
       "targetProfileVersion": "1",
+      "acceptedTargetProfile": { "id": "echo.dpo", "digest": "sha256:..." },
+      "acceptedTargetIr": { "id": "echo.span-ir/v1", "digest": "sha256:..." },
       "adapter": { "id": "jsh.echo-dpo.adapter/v1", "digest": "sha256:..." }
     },
     {
       "targetProfile": "kv.transactional",
       "targetProfileVersion": "1",
+      "acceptedTargetProfile": { "id": "kv.transactional", "digest": "sha256:..." },
+      "acceptedTargetIr": { "id": "kv.tx-ir/v1", "digest": "sha256:..." },
       "adapter": { "id": "jsh.kv.adapter/v1", "digest": "sha256:..." }
     }
   ],
