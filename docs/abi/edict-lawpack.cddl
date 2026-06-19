@@ -56,6 +56,10 @@ lawpack-exports = {
   pureFunctions: [* pure-function],
   effects: [* semantic-effect],
   obstructions: [* obstruction-def],
+  ; operation-profile records this lawpack exports (optic templates that
+  ; `implements`/`profile` clauses resolve against). operation-profile is
+  ; defined in edict-common.cddl (EDICT-ABI-OPPROFILE-SLOT-001).
+  operationProfiles: [* operation-profile],
 }
 
 exported-type     = { coordinate: tstr, definition: core-type-ref }

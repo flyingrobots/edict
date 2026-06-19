@@ -13,6 +13,10 @@ target-profile-manifest = {
 
   intrinsics: resource-ref,
   intrinsicNamespace: tstr,
+  ; publishes this profile's operation-profile records (optic templates that
+  ; `profile`/`implements` clauses resolve against). References an
+  ; operation-profiles-document (EDICT-ABI-OPPROFILE-SLOT-001).
+  operationProfiles: resource-ref,
   footprintAlgebra: resource-ref,
   costAlgebra: resource-ref,
   targetIr: resource-ref,
@@ -60,6 +64,14 @@ target-profile-manifest = {
 intrinsics-document = {
   apiVersion: "edict.target-profile.intrinsics/v1",
   intrinsics: [* intrinsic],
+}
+
+; The artifact referenced by the manifest's `operationProfiles` resource-ref.
+; operation-profile / optic-template are defined in edict-common.cddl
+; (EDICT-ABI-OPPROFILE-SLOT-001).
+operation-profiles-document = {
+  apiVersion: "edict.target-profile.operation-profiles/v1",
+  profiles: [* operation-profile],
 }
 
 ; A genuine union: pure constructors carry no effect kind or failures; effect
