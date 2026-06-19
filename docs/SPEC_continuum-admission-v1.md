@@ -20,8 +20,9 @@ updated: "2026-06-18"
 ## Purpose
 
 Continuum admission is participant policy over a participant-neutral contract
-bundle. Admission requests and receipts reference a contract bundle digest; they
-are not components of that digest.
+bundle. Admission requests and receipts reference a `bundleSubject`
+(`{ kind: semantic | release, digest }`); they are not components of either
+bundle digest (`CONTINUUM-BUNDLE-SUBJECT-001`).
 
 ## Admission Request
 
@@ -64,7 +65,7 @@ digest and is carried by the distribution envelope, **not** by the body. The
 body contains no signature-envelope reference.
 
 Receipts are participant-owned evidence. Multiple participants may issue
-receipts for the same contract bundle digest.
+receipts for the same `bundleSubject`.
 
 ## Admission Explanation
 

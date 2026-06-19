@@ -297,8 +297,8 @@ Participant-neutral SHA-locked release artifact binding source artifact
 digests, Core IR digest, target IR digest, lawpack digests, target profile
 digest, verifier reports, generated artifact hashes, and compiler evidence
 references. Admission requests and receipts are external artifacts that
-reference the contract bundle digest; they are not part of the contract bundle
-digest.
+reference a `bundleSubject` (`{ kind, digest }`); they are not part of either
+bundle digest.
 
 ## Partial Lowerability
 
@@ -366,7 +366,7 @@ Threat response is layered:
   references.
 - Admission requests and receipts carry participant descriptor, catalog
   snapshot, policy digest, policy epoch, requested capabilities, and admitted
-  ceilings outside the contract bundle digest.
+  ceilings outside the bundle digests, referencing a `bundleSubject`.
 - Read-only, footprint, and cost claims are theorems checked from inferred
   effects and budgets, not trusted labels.
 
@@ -1114,10 +1114,12 @@ hash-significant Core IR.
 
 ### I-028 Admission Evidence Is External
 
-A contract bundle digest is computed before admission. Admission requests and
-receipts reference the contract bundle digest but are not components of that
-digest. A distribution envelope may aggregate bundles, attestations, and
-receipts without changing the identity of the enclosed contract bundle.
+The `semanticBundleDigest` and `releaseBundleDigest` are computed before
+admission. Admission requests and receipts reference a `bundleSubject`
+(`{ kind, digest }`) but are not components of either bundle digest. A
+distribution envelope may aggregate bundles, attestations, and receipts without
+changing the identity of the enclosed contract bundle
+(`CONTINUUM-BUNDLE-SUBJECT-001`).
 
 ### I-029 Atomic Application
 
