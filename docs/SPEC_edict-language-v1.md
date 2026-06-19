@@ -2132,6 +2132,7 @@ not source syntax and not target IR.
     "sourceProfile": "edict@1",
     "sourceProfileFactsDigest": "sha256:..."
   },
+  "requiredCoreCapabilities": [],
   "imports": [],
   "types": [],
   "functions": [],
@@ -2142,6 +2143,14 @@ not source syntax and not target IR.
   }
 }
 ```
+
+`requiredCoreCapabilities` is a hash-significant Core module field: the set of
+non-minimal Core constructs the module relies on (e.g. variants, maps, bounded
+recursive imports), inferred from the Core itself. It is in the Core preimage so
+a lowerer/verifier has an authoritative in-Core flag and a module cannot alter
+its capability set without changing the Core digest
+(`EDICT-LANG-CAPABILITIES-SPLIT-001`). `requiredSourceCapabilities` is **not**
+here — it is source-profile/release metadata, checked by the compiler.
 
 `canonicalizationProfile` identifies the codec used to encode this module; it is
 **not** the module's own digest. A Core artifact must not contain its own
@@ -2203,8 +2212,9 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
 Hash-significant intent fields are the optic contract, the
 `requiredOperationProfile` **requirement**, target authorities, law profiles,
 the typed `inputConstraints` predicate trees (not a validator reference),
-`requiredCoreCapabilities`, Core/target budgets, and the body. The following are
-**not** in the Core intent preimage:
+Core/target budgets, and the body. (The module-level `requiredCoreCapabilities`
+field is also hash-significant; see Core Module Shape.) The following are **not**
+in the Core intent preimage:
 
 - `verifiedOperationMode` — a verifier-report field, not a Core claim. Core
   states the requirement; the verifier proves the verdict
@@ -2369,6 +2379,7 @@ Core IR canonicalization must:
 - remove source locations from hash input;
 - include source locations in sidecar diagnostic maps;
 - include all imported lawpack/profile digests (effects depend on them);
+- include the module-level `requiredCoreCapabilities` set;
 - exclude lowerer and verifier component digests: they are contract-bundle
   fields, not Core semantics (`EDICT-CORE-NOPACKAGING-001`);
 - exclude `verifiedOperationMode`, flat `preconditions`/`postconditions`
