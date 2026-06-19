@@ -1214,6 +1214,7 @@ use lawpack history.optics@1 digest "sha256:..." as history;
 intent recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
   returns RecordGitWarpImportBatchReceipt
   implements history.recordEntry
+  basis input.basisId
   budget <= history.recordBatchBudget
 {
   let entry = history.entry.record({
@@ -2862,6 +2863,15 @@ These are important but are not parser or language freeze prerequisites:
 - Do not make HOLMES, Watson, or Moriarty runtime authorities.
 
 ## Appendix A: jedit Intent Stress Test
+
+> [!NOTE]
+> These are **exploratory sketches** that stress the language against real
+> intents, not conforming reference intents. They predate later normative rules
+> and may omit now-required clauses (e.g. a `basis` clause, per
+> `EDICT-LANG-INTENT-CLAUSES-001`) or use shorthand. They are **not** part of the
+> "examples become GREEN fixtures" promise; the normative examples are in the
+> README and the main spec body. A sketch is promoted to a fixture only after it
+> is completed to conform.
 
 ### Source Anchors
 
