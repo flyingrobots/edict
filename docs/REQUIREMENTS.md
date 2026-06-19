@@ -96,6 +96,7 @@ artifact locked), `impl` (implementation passes).
 | EDICT-LANG-TARGETBUDGET-HASH-001 | targetBudget costAlgebra ref + ceiling both hash-significant; ceiling meaningless without its algebra | Language | `lang/targetbudget/both-hashed` | `lang/targetbudget/algebra-unhashed` | spec |
 | EDICT-LANG-OBSTRUCT-EMPTY-001 | Bare obstruction-target normalizes to ObstructionConstruct with empty `{}` payload | Language | `lang/obstruct/bare-empty` | `lang/obstruct/bare-undefined` | spec |
 | EDICT-LANG-INTENT-CLAUSES-001 | Intent clause requiredness (profile xor implements, budget, basis-unless-template); omission parseable but semantically rejected | Language | `lang/clauses/required-present` | `lang/clauses/missing-budget` | spec |
+| EDICT-OPMODE-AUTHORITY-001 | Operation-mode predicates defined authoritatively in Target Profile ABI; language spec mirror must not diverge | Target/Language | `opmode/mirror-matches` | `opmode/mirror-diverges` | spec |
 | EDICT-LANG-BYTES-NOCANON-001 | `Bytes` refinement is max-only; `canonical=` on `Bytes` is rejected | Language | `lang/bytes/max-only` | `lang/bytes/canonical-rejected` | spec |
 | EDICT-ABI-INTRINSICS-DOC-001 | The `intrinsics` resource has a fixed corpus-document shape | Target | `abi/intrinsics/document` | `abi/intrinsics/freeform` | spec |
 | EDICT-ABI-VERIFIER-BOUND-001 | An executable verifier requires sandbox + fuel; declarative verifier is classified | Lawpack | `lawpack/verifier/executable-bounded` | `lawpack/verifier/unbounded` | spec |

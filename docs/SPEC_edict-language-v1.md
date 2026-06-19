@@ -2070,7 +2070,11 @@ Bundle profile, assurance lane, admission class, participant policy, and
 admission evidence are packaging and admission fields. They are not
 hash-significant Edict Core operation semantics.
 
-Operation modes are verifier predicates over inferred effects:
+Operation modes are verifier predicates over inferred effects. The **normative**
+definition of each predicate lives in the Operation Mode Predicates section of
+[SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md); the
+summary below mirrors it for convenience and must not diverge
+(`EDICT-OPMODE-AUTHORITY-001`):
 
 - `readOnly`: effects that are **either** proof-only semantic facts **or** have
   authoritative `writeClass` `read` (including runtime semantic reads); no

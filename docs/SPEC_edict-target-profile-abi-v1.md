@@ -220,6 +220,10 @@ pure constructor that reaches runtime state is a relapse and rejects.
 
 ## Operation Mode Predicates
 
+This section is the **authoritative** definition of the operation-mode
+predicates (`EDICT-OPMODE-AUTHORITY-001`); the language spec's Profile Vocabulary
+mirrors it for convenience only.
+
 Operation mode is a verifier predicate over inferred effects:
 
 - `readOnly`: effects that are **either** proof-only semantic facts **or** have
