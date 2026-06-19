@@ -1598,9 +1598,12 @@ Boundedness is expressible **everywhere** a type appears: intent parameters,
 return types, type aliases, record fields, function parameters and returns, and
 imported-effect arguments. A naked, unbounded runtime `String` or `Bytes` value
 is rejected in the lawful-autonomous lane because its output cost cannot be
-proven (`EDICT-LANG-BOUNDS-001`). Field-level `max`/`canonical` constraints and
-the refined-type form are equivalent; a value may not carry both an unbounded
-type and a separate field bound.
+proven (`EDICT-LANG-BOUNDS-001`). The two spellings are **equivalent and both
+valid**: the refined-type form (`name: String<max=128, canonical=nfc>`) and a
+record field's `field-constraint` (`name: String max=128`). What is rejected is a
+**conflicting double bound** — declaring both a refined-type bound and a separate
+field constraint that disagree on the same field. A bare `String`/`Bytes` with
+neither a refined-type bound nor a field constraint is the rejected naked form.
 
 Length and bound units are pinned (`EDICT-LANG-LEN-001`):
 
