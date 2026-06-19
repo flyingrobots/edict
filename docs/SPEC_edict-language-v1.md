@@ -2098,7 +2098,7 @@ summary below mirrors it for convenience and must not diverge
   explicitly classifies as create.
 - `append`: read and append effects; no replace or delete.
 - `replace`: read, create, ensure, and replace effects as profile-defined; no
-  delete unless an explicit target profile mode grants it.
+  delete unless the profile explicitly classifies the operation mode as custom.
 - `custom`: all effect kinds are checked against the named target or lawpack
   profile predicate.
 
