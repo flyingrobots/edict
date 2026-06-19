@@ -11,6 +11,9 @@
 //! in `flyingrobots/wesley`; it operates on bundles and evidence, downstream of
 //! this crate, and is wired in at the assurance phase — not depended on here.
 
+pub mod ast;
+pub mod parser;
 pub mod token;
 
+pub use parser::{parse_module, ParseError};
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
