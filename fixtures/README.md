@@ -38,10 +38,12 @@ Empty pending the Phase 0 fixture campaign. The first fixtures to land are the
 canonicalization golden cases and the relapse zoo (see the assurance guide), per
 the Language spec implementation plan, Phase 0.
 
-**Placeholder digests:** README/spec code examples currently use `sha256:...`
-placeholders. A GREEN fixture must still parse, typecheck, and be accepted
-verbatim — the placeholder only defers **digest-lock validation** (matching the
-import against a pinned digest), not compilation. Until the Phase 0 tooling (the
-`spec.lock.json` generator and a fixture validator) exists to compute and pin
-real digests, that lock step is skipped; the example is otherwise a valid GREEN
-fixture.
+**Placeholder digests:** prose in the README/specs writes `sha256:...` as a
+human ellipsis, which is **not lexable** — the grammar's `digest-lit` requires
+`sha256:` followed by exactly 64 hex characters. A GREEN fixture is therefore
+**not** the prose verbatim: it uses a syntactically valid **dummy digest**
+(e.g. `sha256:` + 64 `0`s) so it parses and typechecks. The placeholder only
+defers **digest-lock validation** (matching the import against a *real* pinned
+digest), not compilation. Until the Phase 0 tooling (the `spec.lock.json`
+generator and a fixture validator) computes and pins real digests, that lock
+step is skipped; the example is otherwise a valid GREEN fixture.
