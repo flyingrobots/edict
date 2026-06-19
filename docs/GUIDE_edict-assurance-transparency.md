@@ -188,8 +188,9 @@ degeneracy findings
 ```
 
 These are derived evidence, not Core fields. The Core optic contract
-(`opticKind`, `basis`, `boundaryKind`, `supportPolicy`, `lossDisposition`)
-remains the normative surface; the ledger is the analyzed result. A lowering that
+(`opticKind`, `basis`, `boundaryKind`, `apertureRequirement`, `supportPolicy`,
+`lossDisposition`) remains the normative surface; the ledger is the analyzed
+result. A lowering that
 would silently erase support loss, degeneracy, footprint overlap, or witness
 debt must instead record it here or reject (`EDICT-OPTIC-PRESERVE-001`).
 

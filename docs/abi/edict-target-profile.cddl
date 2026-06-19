@@ -63,6 +63,10 @@ target-profile-manifest = {
 
 intrinsics-document = {
   apiVersion: "edict.target-profile.intrinsics/v1",
+  ; intrinsic `coordinate`s MUST be unique within the corpus: the WIT boundary
+  ; resolves signatures by coordinate (`effect-signature(coordinate)`), so a
+  ; duplicate would let two lowerers pick different signatures for the same
+  ; source call (EDICT-ABI-INTRINSIC-UNIQUE-001).
   intrinsics: [* intrinsic],
 }
 

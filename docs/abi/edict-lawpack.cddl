@@ -74,8 +74,9 @@ exported-constant = { coordinate: tstr, type: core-type-ref, value: any }
 ; guarantees an implementation exists (EDICT-LAWPACK-PURE-IMPL-001):
 ;   - "edict": authored in Edict/Core; the Core body is carried inline (hashed
 ;     with the export surface). The schema requires the `body` field.
-;   - "component": implemented outside Edict; carries no inline body and REQUIRES
-;     the manifest's helperComponent (digest-locked + sandbox + fuel).
+;   - "component": implemented outside Edict; carries no inline body and instead
+;     carries its own digest-locked `implementation` (sandbox + fuel). It does
+;     not depend on the optional manifest-level helperComponent.
 pure-function = edict-pure-function / component-pure-function
 
 pure-function-common = (

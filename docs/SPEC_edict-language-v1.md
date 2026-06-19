@@ -2902,11 +2902,14 @@ Two adjacent jedit contract surfaces also exist:
 - `contracts/jedit/structural-history.graphql`, an app-owned structural
   history contract marked as a surface Wesley should consume later.
 
-This appendix treats `rope.graphql` as the normative current stress fixture
-because it is the installed generated jedit package. The other two surfaces are
-included as secondary stress sketches because they expose useful Edict language
-pressure: capability invocation/composition, opaque handles, and semantic
-history events.
+This appendix treats `rope.graphql` as the primary stress surface because it is
+the installed generated jedit package. Consistent with the note above: the
+rope-package and structural-history intents are clause-conformant **fixture
+candidates**, while the product text-buffer optic surface is the one deliberate
+**non-v1 sketch** (it exposes capability invocation/composition and opaque
+handles via the rejected `invoke`/`use capability` forms). "Stress fixture" here
+means the shape/source anchor, not a promise that every sketch in the appendix
+compiles.
 
 ### Stress Findings
 

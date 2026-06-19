@@ -258,7 +258,7 @@ sequenceDiagram
     V-->>CB: Verifier evidence
     C-->>CB: Artifact digests
     P->>P: Evaluate policy epoch
-    P->>CB: Reference bundle digest
+    P->>CB: Reference bundleSubject (semantic or release)
     P-->>A: Admission receipt or rejection
 ```
 

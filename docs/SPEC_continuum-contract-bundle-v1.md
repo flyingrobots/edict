@@ -63,9 +63,9 @@ The receipt body is hashed to `AdmissionReceiptBodyDigest`; a DSSE envelope
 signs that digest. The signature lives in the distribution envelope, never
 inside the body it authenticates (`CONTINUUM-RECEIPT-ACYCLIC-001`).
 
-The contract bundle digest is computed before admission. The same contract
-bundle may be submitted to multiple participants without recompilation and
-without changing the contract bundle digest.
+Both bundle digests (`semanticBundleDigest`, `releaseBundleDigest`) are computed
+before admission. The same contract bundle may be submitted to multiple
+participants without recompilation and without changing its digests.
 
 ## Contract Bundle Contents
 
@@ -181,8 +181,8 @@ semantic facts, Shape IR, Law IR, and digest-locked compile options are semantic
 inputs to Core compilation.
 
 Formatting-only source changes may change the raw source artifact digest and the
-contract bundle digest while leaving the Core IR digest and target IR digest
-unchanged.
+`releaseBundleDigest` while leaving the Core IR digest, target IR digest, and
+`semanticBundleDigest` unchanged (`CONTINUUM-BUNDLE-SUBJECT-001`).
 
 ### Logical Source Paths
 
@@ -277,7 +277,7 @@ V1 roles:
 - COSE_Sign1 may be used later for a directly signed CBOR distribution envelope,
   but v1 does not require both DSSE and COSE for the same claim.
 
-The contract bundle digest remains independent of its external signatures and
+The bundle digests remain independent of their external signatures and
 attestations.
 
 ## Distribution Envelope

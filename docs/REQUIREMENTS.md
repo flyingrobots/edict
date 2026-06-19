@@ -102,6 +102,8 @@ but owned by a follow-up issue; no fixtures until its dependency lands).
 | EDICT-LAWPACK-PURE-IMPL-001 | Exported pure helper needs a hash-bound implementation (edict body or component+sandbox+fuel) | Lawpack | `lawpack/pure/has-impl` | `lawpack/pure/signature-only` | spec |
 | EDICT-LAWPACK-ADAPTER-TARGETIR-001 | Target adapter digest-locks its accepted target profile + Target IR; resolution can't bind a republished IR | Lawpack | `lawpack/adapter/targetir-locked` | `lawpack/adapter/targetir-unlocked` | spec |
 | EDICT-ABI-FAILURE-UNIQUE-001 | An effect's `effectFailures` coordinates must be unique (obstruction map keyed by coordinate) | Target/Lawpack | `abi/failure/unique-coords` | `abi/failure/dup-coord` | spec |
+| EDICT-ABI-FAILURE-IDENT-001 | Failure coordinates must be bare Edict `ident`s (source obstruction map LHS only accepts ident) | Target/Lawpack | `abi/failure/ident-coord` | `abi/failure/hyphen-coord` | spec |
+| EDICT-ABI-INTRINSIC-UNIQUE-001 | Intrinsic coordinates unique within the corpus (WIT resolves signatures by coordinate) | Target | `abi/intrinsic/unique-coords` | `abi/intrinsic/dup-coord` | spec |
 | EDICT-LANG-BYTES-NOCANON-001 | `Bytes` refinement is max-only; `canonical=` on `Bytes` is rejected | Language | `lang/bytes/max-only` | `lang/bytes/canonical-rejected` | spec |
 | EDICT-ABI-INTRINSICS-DOC-001 | The `intrinsics` resource has a fixed corpus-document shape | Target | `abi/intrinsics/document` | `abi/intrinsics/freeform` | spec |
 | EDICT-ABI-VERIFIER-BOUND-001 | An executable verifier requires sandbox + fuel; declarative verifier is classified | Lawpack | `lawpack/verifier/executable-bounded` | `lawpack/verifier/unbounded` | spec |

@@ -25,10 +25,16 @@ sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
 ; with different authorityClass/payloadType) make exhaustive mapping and binder
 ; typing ambiguous and are rejected (EDICT-ABI-FAILURE-UNIQUE-001).
 effect-failure = {
-  coordinate: tstr,                       ; e.g. "mismatch", "boundExceeded"
+  coordinate: failure-ident,              ; e.g. "mismatch", "boundExceeded"
   authorityClass: authority-class,
   payloadType: core-type-ref,             ; typed, bounded (may be empty record)
 }
+
+; A failure coordinate must be a bare Edict `ident` (letter/underscore then
+; letters/digits/underscores). The source obstruction-map left-hand side only
+; accepts `ident`, so a hyphen/dot/keyword coordinate would be ABI-valid yet
+; impossible to map exhaustively in source (EDICT-ABI-FAILURE-IDENT-001).
+failure-ident = tstr .regexp "[A-Za-z_][A-Za-z0-9_]*"
 
 effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /
               "append" / "reduce" / "semantic.emit" / "custom"
