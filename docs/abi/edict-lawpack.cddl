@@ -95,7 +95,11 @@ edict-pure-function = {
 
 component-pure-function = {
   pure-function-common,
-  source: "component",                    ; implementation in helperComponent
+  source: "component",
+  ; the digest-locked component implementing this helper. Required at the schema
+  ; level so a component helper can never validate without a hash-bound,
+  ; sandbox+fuel-described implementation (EDICT-LAWPACK-PURE-IMPL-001).
+  implementation: executable-component,
 }
 
 ; The Core function body. Its full schema is edict.core/v1 (issue #3); until

@@ -160,14 +160,14 @@ or whose cost template admits unbounded allocation or unbounded input scanning,
 rejects (`EDICT-LAWPACK-PURE-002`). Helpers may only return typed diagnostics
 through `Option`/typed result, never host exceptions.
 
-Every exported helper must have a hash-bound implementation
-(`EDICT-LAWPACK-PURE-IMPL-001`). A `source: edict` helper carries its body in the
-export surface (hashed with it). A `source: component` helper is implemented
-outside Edict/Core and **requires** the manifest's `helperComponent` — a
-digest-locked executable component with sandbox and fuel. Publishing a callable
-helper coordinate with only a signature and no implementation (no `edict` body
-and no `helperComponent`) is rejected for locked-bundle production: a compiler
-could not otherwise reproduce the helper's semantics or bound it.
+Every exported helper must have a hash-bound implementation, enforced by the
+schema (`EDICT-LAWPACK-PURE-IMPL-001`). A `source: edict` helper carries its Core
+`body` inline (hashed with the export surface). A `source: component` helper
+carries its own `implementation` — a digest-locked `executable-component` with
+sandbox and fuel — directly on the helper, so it cannot validate without one (it
+does not rely on the optional manifest-level `helperComponent`). A signature-only
+helper with neither an `edict` body nor a component `implementation` cannot be
+expressed, so a compiler can always reproduce and bound the helper's semantics.
 
 ## Semantic Effect Signatures
 
