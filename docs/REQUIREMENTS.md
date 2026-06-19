@@ -105,6 +105,7 @@ but owned by a follow-up issue; no fixtures until its dependency lands).
 | EDICT-ABI-FAILURE-IDENT-001 | Failure coordinates must be bare Edict `ident`s (source obstruction map LHS only accepts ident) | Target/Lawpack | `abi/failure/ident-coord` | `abi/failure/hyphen-coord` | spec |
 | EDICT-ABI-INTRINSIC-UNIQUE-001 | Intrinsic coordinates unique within the corpus (schema-enforced via coordinate-keyed map) | Target | `abi/intrinsic/unique-coords` | `abi/intrinsic/dup-coord` | spec |
 | EDICT-ABI-OPPROFILE-UNIQUE-001 | Operation-profile coordinates unique (coordinate-keyed map) so resolution is deterministic | Target/Lawpack | `abi/opprofile/unique-coords` | `abi/opprofile/dup-coord` | spec |
+| EDICT-LANG-RECORD-SHORTHAND-001 | Bare `ident` record entry `{ x }` is shorthand for `{ x: x }` | Language | `lang/record/shorthand` | `lang/record/shorthand-unbound` | spec |
 | EDICT-LANG-BYTES-NOCANON-001 | `Bytes` refinement is max-only; `canonical=` on `Bytes` is rejected | Language | `lang/bytes/max-only` | `lang/bytes/canonical-rejected` | spec |
 | EDICT-ABI-INTRINSICS-DOC-001 | The `intrinsics` resource has a fixed corpus-document shape | Target | `abi/intrinsics/document` | `abi/intrinsics/freeform` | spec |
 | EDICT-ABI-VERIFIER-BOUND-001 | An executable verifier requires sandbox + fuel; declarative verifier is classified | Lawpack | `lawpack/verifier/executable-bounded` | `lawpack/verifier/unbounded` | spec |

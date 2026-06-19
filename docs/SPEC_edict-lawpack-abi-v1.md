@@ -86,15 +86,11 @@ from that schema and is illustrative only.
   },
   "targetAdapters": [
     {
-      "targetProfile": "echo.dpo",
-      "targetProfileVersion": "1",
       "acceptedTargetProfile": { "id": "echo.dpo", "digest": "sha256:..." },
       "acceptedTargetIr": { "id": "echo.span-ir/v1", "digest": "sha256:..." },
       "adapter": { "id": "jsh.echo-dpo.adapter/v1", "digest": "sha256:..." }
     },
     {
-      "targetProfile": "kv.transactional",
-      "targetProfileVersion": "1",
       "acceptedTargetProfile": { "id": "kv.transactional", "digest": "sha256:..." },
       "acceptedTargetIr": { "id": "kv.tx-ir/v1", "digest": "sha256:..." },
       "adapter": { "id": "jsh.kv.adapter/v1", "digest": "sha256:..." }
@@ -256,8 +252,7 @@ that lowers each semantic effect to that target's intrinsics, mapping:
 
 ```text
 adapter:
-  targetProfile + version
-  acceptedTargetProfile   # digest-locked resource ref
+  acceptedTargetProfile   # digest-locked resource ref (authoritative selector)
   acceptedTargetIr        # digest-locked resource ref
   perEffectLowering:
     semanticEffectCoordinate -> target intrinsic plan

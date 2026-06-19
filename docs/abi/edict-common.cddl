@@ -1,7 +1,7 @@
 ; edict-common.cddl
 ; Shared CDDL types for the Edict ABIs, defined ONCE here so they cannot drift
 ; (EDICT-ABI-NODUP-001). Two groups:
-;   - resource-ref, sha256-digest, effect-failure, effect-kind, authority-class,
+;   - resource-ref, sha256-digest, effect-failure-body, effect-kind, authority-class,
 ;     core-type-ref: assembled with edict-target-profile.cddl and
 ;     edict-lawpack.cddl by the build; those schemas do not redefine them.
 ;   - operation-profile, optic-template, aperture-requirement and their refs:
@@ -24,8 +24,11 @@ sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
 ; obstruction map is keyed by coordinate, two failures sharing a coordinate (even
 ; with different authorityClass/payloadType) make exhaustive mapping and binder
 ; typing ambiguous and are rejected (EDICT-ABI-FAILURE-UNIQUE-001).
-effect-failure = {
-  coordinate: failure-ident,              ; e.g. "mismatch", "boundExceeded"
+;
+; Effects carry their failures as a map `{ failure-ident => effect-failure-body }`
+; (see the target/lawpack effect schemas). The failure coordinate is the map
+; KEY, so it is not repeated in the body and cannot disagree with the key.
+effect-failure-body = {
   authorityClass: authority-class,
   payloadType: core-type-ref,             ; typed, bounded (may be empty record)
 }
@@ -49,10 +52,10 @@ core-type-ref = tstr   ; canonical Core type coordinate
 
 ; An operation profile supplies the optic template a Core intent resolves its
 ; opticKind/boundaryKind/supportPolicy/lossDisposition from. Target profiles and
-; lawpacks may export instances; this is its single canonical shape
-; (EDICT-OPTIC-TEMPLATE-OWNER-001).
+; lawpacks publish these as a map `{ coordinate => operation-profile }`, so the
+; coordinate is the KEY, not a value field (EDICT-OPTIC-TEMPLATE-OWNER-001,
+; EDICT-ABI-OPPROFILE-UNIQUE-001).
 operation-profile = {
-  coordinate: tstr,
   opticTemplate: optic-template,
   effectPredicate: tstr,           ; coordinate of the operation-mode predicate
 }

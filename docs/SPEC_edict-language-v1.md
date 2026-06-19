@@ -647,9 +647,9 @@ worldlineRef.replace(nextWorldline)
 ```
 
 Obstruction mapping is exhaustive variant matching over the effect's declared
-domain-mappable failure classes (`EDICT-LANG-OBSTRUCT-EXHAUST-001`). It reuses
-the same machinery as `match`: every domain-mappable class must be handled
-exactly once. A mapping arm may **bind the low-level failure** and **construct a
+domain-mappable failure **coordinates** (`EDICT-LANG-OBSTRUCT-EXHAUST-001`). It
+reuses the same machinery as `match`: every domain-mappable failure coordinate
+must be handled exactly once. A mapping arm may **bind the low-level failure** and **construct a
 typed obstruction payload** from it. A bare coordinate is sugar for an empty
 payload:
 
@@ -680,14 +680,16 @@ The target profile owns the low-level failure taxonomy and the typed,
 **bounded** payload schema for each obstruction (see
 [SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md) and the Target
 Profile ABI). An obstruction payload whose fields are not typed and bounded is
-rejected — "typed obstruction payload" is not ceremonial paperwork. The
-single-obstruction `else Obstruction` shorthand is legal only when the number of
-unmapped profile-declared `domainMappable` failure classes is **exactly one**;
-any other count rejects. With **zero** unmapped domain-mappable classes (the
-effect declares none, or all are already handled) the `else` clause is omitted
-entirely; writing one is rejected as dead handling. Effects with **two or more**
-unmapped domain-mappable classes must use the full `else { failure => ... }`
-mapping form (`EDICT-LANG-OBSTRUCT-EXHAUST-001`).
+rejected — "typed obstruction payload" is not ceremonial paperwork. Exhaustiveness is counted by **`domainMappable` failure coordinate**, not by
+authority class (an effect can have several `domainMappable` failures — distinct
+coordinates — that share the `domainMappable` class). The single-obstruction
+`else Obstruction` shorthand is legal only when the number of unmapped
+`domainMappable` failure **coordinates** is **exactly one**; any other count
+rejects. With **zero** unmapped domain-mappable coordinates (the effect declares
+none, or all are already handled) the `else` clause is omitted entirely; writing
+one is rejected as dead handling. Effects with **two or more** unmapped
+domain-mappable coordinates must use the full `else { failure => ... }` mapping
+form, one arm per coordinate (`EDICT-LANG-OBSTRUCT-EXHAUST-001`).
 
 Low-level failure classes are classified before source mapping:
 
@@ -1187,7 +1189,7 @@ intent recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
   where input.repo != ""
 {
   let basisRef = echo.ref<StructuralBasis>(input.basisId);
-  let basis = basisRef.read()
+  let basisValue = basisRef.read()
     else history.StructuralBasisMissing;
   let batchId = hash("GitWarpImportBatch", input.repo, input.commit);
 
@@ -1462,7 +1464,7 @@ unary           = ( "!" | "-" ) , unary | postfix ;
 postfix         = primary , { field-access | call-suffix | type-call-suffix } ;
 field-access    = "." , ident ;
 call-suffix     = "(" , arg-list? , ")" ;
-type-call-suffix = "<" , type-ref , ">" , "(" , arg-list? , ")" ;
+type-call-suffix = type-args , "(" , arg-list? , ")" ;
 arg-list        = expr , { "," , expr } ;
 
 primary         = ident
@@ -1489,7 +1491,7 @@ match-binding   = "(" , ident , ")" ;
 record-lit      = "{" , record-entry-list? , "}" ;
 record-entry-list = record-entry , { "," , record-entry } , ","? ;
 record-entry    = record-field | spread-field ;
-record-field    = ident , ":" , expr ;
+record-field    = ident , ":" , expr | ident ;
 spread-field    = "..." , expr ;
 list-lit        = "[" , expr-list? , "]" ;
 expr-list       = expr , { "," , expr } , ","? ;
@@ -1531,9 +1533,9 @@ Semantic grammar rules:
 - A `where` predicate may reference only inputs and pure functions of inputs,
   never runtime/target state, and never carries `else`.
 - Single-obstruction `effect-else-clause` shorthand is legal only when exactly
-  one profile-declared `domainMappable` failure class remains unmapped. Effects
-  with multiple domain-mappable classes must use `else { failure => Obstruction
-}` mapping syntax.
+  one profile-declared `domainMappable` failure **coordinate** remains unmapped.
+  Effects with multiple unmapped domain-mappable coordinates must use
+  `else { failure => Obstruction }` mapping syntax, one arm per coordinate.
 - Only profile-declared `domainMappable` failure classes may be author-mapped to
   domain obstructions.
 - A bare `obstruction-target` (a coordinate with no `( expr )` payload) is
@@ -1551,6 +1553,10 @@ Semantic grammar rules:
 - `variant-lit` constructor cases must belong to the named variant type.
 - `match-expr` must cover every variant case exactly once unless a future
   version adds explicit wildcard syntax.
+- A bare `ident` record entry is **field shorthand**: `{ message }` desugars to
+  `{ message: message }` (the field takes the value of the in-scope local or
+  field of the same name). This is what `return { message };` and
+  `return { batchId };` use (`EDICT-LANG-RECORD-SHORTHAND-001`).
 - Record spreads evaluate left-to-right. Later explicit fields override earlier
   spread fields; duplicate explicit fields reject; the resulting field set must
   exactly match the expected record type.
@@ -1976,7 +1982,7 @@ effective cardinalities are derived effect-analysis artifacts.
 Examples:
 
 ```edict
-let basis = echo.ref<StructuralBasis>(input.basisId).read()
+let basisValue = echo.ref<StructuralBasis>(input.basisId).read()
   else history.StructuralBasisMissing;
 ```
 
@@ -2803,7 +2809,7 @@ These are important but are not parser or language freeze prerequisites:
 - Effect failures map to typed domain obstructions through checked
   `obstructionMap` entries.
 - Single `else Obstruction` shorthand rejects when an effect exposes multiple
-  unmapped domain-mappable failure classes.
+  unmapped domain-mappable failure coordinates.
 - Participant-owned, integrity, resource, and internal failures cannot be
   laundered into author-defined domain obstructions.
 - Source `budget <=` clauses lower to Core budgets and reject underclaimed cost.
@@ -3305,11 +3311,11 @@ intent replaceRange(input: optic.ReplaceRangeInput)
   returns optic.ReplaceRangePayload
   profile textBuffer.productEdit
 {
-  let basis = textBuffer.resolveBuffer(input.bufferId);
+  let resolvedBasis = textBuffer.resolveBuffer(input.bufferId);
 
   let edited = invoke rope.replaceRangeAsTick({
-    worldlineId: basis.worldlineId,
-    baseHeadId: basis.headId,
+    worldlineId: resolvedBasis.worldlineId,
+    baseHeadId: resolvedBasis.headId,
     startByte: input.startByte,
     endByte: input.endByte,
     insertText: input.insertText,
@@ -3333,10 +3339,10 @@ intent textWindow(
   returns optic.TextWindowReading
   profile textBuffer.productRead
 {
-  let basis = textBuffer.resolveReadBasis(readBasis);
+  let resolvedBasis = textBuffer.resolveReadBasis(readBasis);
 
   let reading = invoke rope.textWindow({
-    worldlineId: basis.worldlineId,
+    worldlineId: resolvedBasis.worldlineId,
     cursorLine: input.cursorLine,
     viewportLineCount: input.viewportLineCount,
     beforeLines: input.beforeLines,

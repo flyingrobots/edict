@@ -39,15 +39,13 @@ executable-component = {
 
 lawpack-dep = { id: tstr, version: tstr, digest: sha256-digest }
 
+; Adapter selection keys SOLELY off the digest-locked `acceptedTargetProfile`
+; (its `id` is the profile id; its `digest` pins the exact profile/version). There
+; are no independent display strings that could disagree with the lock, so a
+; resolver cannot bind an adapter to one target while the lock proves another
+; (EDICT-LAWPACK-ADAPTER-TARGETIR-001).
 target-adapter = {
-  ; `acceptedTargetProfile` (a digest-locked ref) is the AUTHORITATIVE selector;
-  ; resolution keys off it, not the display strings. The `targetProfile` /
-  ; `targetProfileVersion` strings MUST equal the id/version of
-  ; `acceptedTargetProfile`, so a selector cannot point at one profile while the
-  ; lock proves another (EDICT-LAWPACK-ADAPTER-TARGETIR-001).
-  targetProfile: tstr,
-  targetProfileVersion: tstr,
-  acceptedTargetProfile: resource-ref,    ; digest-locked, authoritative
+  acceptedTargetProfile: resource-ref,    ; digest-locked, authoritative selector
   acceptedTargetIr: resource-ref,         ; digest-locked
   adapter: resource-ref,
 }
@@ -120,7 +118,7 @@ semantic-effect = {
   effectKindHint: effect-kind,
   footprintObligation: tstr,
   costObligation: tstr,
-  effectFailures: { * failure-ident => effect-failure },  ; keyed by coordinate; unique
+  effectFailures: { * failure-ident => effect-failure-body },  ; keyed by coordinate; unique
   guardSupport: bool,
 }
 
@@ -130,5 +128,5 @@ obstruction-def = {
   payloadSchema: core-type-ref,           ; typed, bounded (may be empty record)
 }
 
-; effect-failure, effect-kind, authority-class, and core-type-ref are defined
+; effect-failure-body, effect-kind, authority-class, and core-type-ref are defined
 ; once in edict-common.cddl and assembled with this schema (EDICT-ABI-NODUP-001).

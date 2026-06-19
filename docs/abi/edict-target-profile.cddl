@@ -83,10 +83,11 @@ operation-profiles-document = {
 ; intrinsics must (EDICT-TARGET-INTRINSIC-CLASS-001). The schema enforces this,
 ; not a comment.
 
+; The intrinsic's coordinate is the intrinsics map KEY, not a value field, so the
+; key and coordinate can never disagree (EDICT-ABI-INTRINSIC-UNIQUE-001).
 intrinsic = pure-intrinsic / effect-intrinsic
 
 pure-intrinsic = {
-  coordinate: tstr,
   intrinsicClass: "pure",
   typeParameters: [* tstr],
   argumentTypes: [* core-type-ref],
@@ -98,15 +99,15 @@ pure-intrinsic = {
 }
 
 effect-intrinsic = {
-  coordinate: tstr,
   intrinsicClass: "effect",
   typeParameters: [* tstr],
   argumentTypes: [* core-type-ref],
   returnType: core-type-ref,
   effectKind: effect-kind,
-  ; map keyed by failure coordinate (failure-ident) → uniqueness enforced by the
-  ; schema (EDICT-ABI-FAILURE-UNIQUE-001). Key MUST equal the record coordinate.
-  effectFailures: { * failure-ident => effect-failure },
+  ; map keyed by failure coordinate (failure-ident); the failure coordinate is
+  ; the key, not a value field, so uniqueness is structural
+  ; (EDICT-ABI-FAILURE-UNIQUE-001).
+  effectFailures: { * failure-ident => effect-failure-body },
   guardSupport: bool,
   footprintTemplate: tstr,
   costTemplate: tstr,
@@ -115,5 +116,5 @@ effect-intrinsic = {
   canParticipateInAtomicGuard: bool,
 }
 
-; effect-failure, effect-kind, authority-class, and core-type-ref are defined
+; effect-failure-body, effect-kind, authority-class, and core-type-ref are defined
 ; once in edict-common.cddl and assembled with this schema (EDICT-ABI-NODUP-001).
