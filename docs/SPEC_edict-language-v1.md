@@ -2292,7 +2292,11 @@ construction.
             "effectKind": "ensure",
             "guards": [],
             "obstructionMap": {
-              "mismatch": "jedit.rope@1.TextBlobHashConflict"
+              "mismatch": {
+                "coordinate": "jedit.rope@1.TextBlobHashConflict",
+                "failureBinder": "fault",
+                "payload": { "observed": { "field": "fault.existingContentHash" } }
+              }
             },
             "costTemplate": "echo.dpo@1.cost.ensure-node",
             "footprintTemplate": "echo.dpo@1.footprint.ensure-node"
@@ -2328,7 +2332,11 @@ construction.
             "effectKind": "create",
             "guards": [],
             "obstructionMap": {
-              "conflict": "jedit.rope@1.RopeLeafAlreadyExists"
+              "conflict": {
+                "coordinate": "jedit.rope@1.RopeLeafAlreadyExists",
+                "failureBinder": null,
+                "payload": {}
+              }
             }
           }
         ]
