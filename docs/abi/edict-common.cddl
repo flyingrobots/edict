@@ -50,6 +50,11 @@ optic-template = {
   supportPolicy: tstr,             ; canonical support-policy coordinate
   lossDisposition: tstr,           ; canonical loss-disposition coordinate
   ? basisTemplate: tstr,           ; optional digest-locked basis template coord
+  ; the aperture requirement this template supplies. Required when the template
+  ; is the source of a Core optic's apertureRequirement (i.e. the intent has no
+  ; source `footprint <= ...`), since apertureRequirement is mandatory in Core
+  ; (EDICT-OPTIC-APERTURE-REF-001).
+  ? apertureRequirement: aperture-requirement,
 }
 
 ; apertureRequirement is a typed reference, never a free-form string. A review
