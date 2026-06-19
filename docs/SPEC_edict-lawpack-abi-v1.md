@@ -251,7 +251,9 @@ that lowers each semantic effect to that target's intrinsics, mapping:
 
 ```text
 adapter:
-  targetProfile + version + acceptedTargetIr
+  targetProfile + version
+  acceptedTargetProfile   # digest-locked resource ref
+  acceptedTargetIr        # digest-locked resource ref
   perEffectLowering:
     semanticEffectCoordinate -> target intrinsic plan
     executionClass + resolved writeClass confirmation

@@ -42,6 +42,11 @@ lawpack-dep = { id: tstr, version: tstr, digest: sha256-digest }
 target-adapter = {
   targetProfile: tstr,
   targetProfileVersion: tstr,
+  ; the exact target-profile and Target IR this adapter was built against,
+  ; digest-locked so adapter resolution can't bind to a republished profile or
+  ; Target IR under the same id/version (EDICT-LAWPACK-ADAPTER-TARGETIR-001).
+  acceptedTargetProfile: resource-ref,
+  acceptedTargetIr: resource-ref,
   adapter: resource-ref,
 }
 

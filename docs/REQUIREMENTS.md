@@ -100,6 +100,7 @@ but owned by a follow-up issue; no fixtures until its dependency lands).
 | EDICT-OPMODE-AUTHORITY-001 | Operation-mode predicates defined authoritatively in Target Profile ABI; language spec mirror must not diverge | Target/Language | `opmode/mirror-matches` | `opmode/mirror-diverges` | spec |
 | EDICT-ABI-OPPROFILE-SLOT-001 | Target profiles + lawpacks publish operation-profile records via a hash-locked ABI slot | Target/Lawpack | `abi/opprofile/published` | `abi/opprofile/no-slot` | spec |
 | EDICT-LAWPACK-PURE-IMPL-001 | Exported pure helper needs a hash-bound implementation (edict body or component+sandbox+fuel) | Lawpack | `lawpack/pure/has-impl` | `lawpack/pure/signature-only` | spec |
+| EDICT-LAWPACK-ADAPTER-TARGETIR-001 | Target adapter digest-locks its accepted target profile + Target IR; resolution can't bind a republished IR | Lawpack | `lawpack/adapter/targetir-locked` | `lawpack/adapter/targetir-unlocked` | spec |
 | EDICT-LANG-BYTES-NOCANON-001 | `Bytes` refinement is max-only; `canonical=` on `Bytes` is rejected | Language | `lang/bytes/max-only` | `lang/bytes/canonical-rejected` | spec |
 | EDICT-ABI-INTRINSICS-DOC-001 | The `intrinsics` resource has a fixed corpus-document shape | Target | `abi/intrinsics/document` | `abi/intrinsics/freeform` | spec |
 | EDICT-ABI-VERIFIER-BOUND-001 | An executable verifier requires sandbox + fuel; declarative verifier is classified | Lawpack | `lawpack/verifier/executable-bounded` | `lawpack/verifier/unbounded` | spec |
