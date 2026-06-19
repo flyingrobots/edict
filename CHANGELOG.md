@@ -97,6 +97,11 @@ released implementation.
   with `bundleSubject`; Core/README examples updated to the new rules
   (ObstructionConstruct, `basis` clauses); registry `deferred` status defined and
   the int-literal-mismatch ID numbered (`EDICT-LANG-INTLIT-002`).
+- Further ripple round: `edict`-source pure helpers must carry an inline body
+  (CDDL union); `operationProfiles` added to the target-profile manifest example;
+  `optic-template` can publish `apertureRequirement`; target adapters digest-lock
+  their accepted target profile + Target IR; GREEN fixtures use syntactically
+  valid dummy digests (the prose `sha256:...` is an un-lexable ellipsis).
 
 ### Deferred
 
