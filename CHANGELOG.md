@@ -111,6 +111,11 @@ released implementation.
   declared ceilings (never `admitted`); obstruction coverage includes lawpack
   effects; portable example gains a `basis`; Appendix A scoped as exploratory
   non-fixtures; `effectFailures` coordinates must be unique per effect.
+- **jedit appendix brought to clause-conformance** (it is the intended first
+  real-world use case): added correct `basis` clauses to all 12 rope-package and
+  structural-history intents; the Product Text Buffer Optic sketch remains the
+  one deliberate non-v1 example (uses rejected `invoke`/`use capability` to show
+  design pressure). Appendix note rewritten accordingly.
 
 ### Deferred
 

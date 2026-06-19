@@ -2865,13 +2865,13 @@ These are important but are not parser or language freeze prerequisites:
 ## Appendix A: jedit Intent Stress Test
 
 > [!NOTE]
-> These are **exploratory sketches** that stress the language against real
-> intents, not conforming reference intents. They predate later normative rules
-> and may omit now-required clauses (e.g. a `basis` clause, per
-> `EDICT-LANG-INTENT-CLAUSES-001`) or use shorthand. They are **not** part of the
-> "examples become GREEN fixtures" promise; the normative examples are in the
-> README and the main spec body. A sketch is promoted to a fixture only after it
-> is completed to conform.
+> jedit is the intended first real-world use case, so these are kept
+> **clause-conformant**, not left to rot. The rope-package and structural-history
+> intents below carry the clauses v1 requires (including `basis`, per
+> `EDICT-LANG-INTENT-CLAUSES-001`) and are fixture candidates. The one
+> deliberate exception is the **Product Text Buffer Optic Sketch**, which uses
+> `use capability` and `invoke` — **explicitly rejected v1 grammar** — to expose
+> design pressure; it is a negative/illustrative sketch, not a conforming intent.
 
 ### Source Anchors
 
@@ -2956,6 +2956,7 @@ use target echo.dpo@1 as echo;
 intent createBufferWorldline(input: shape.CreateBufferWorldlineInput)
   returns shape.CreateBufferWorldlineResult
   profile echo.createOnly
+  basis none
   footprint <= rope.createBufferWorldlineMax
   budget <= rope.createBufferWorldlineBudget
   where input.bufferKey != ""
@@ -3042,6 +3043,7 @@ intent createBufferWorldline(input: shape.CreateBufferWorldlineInput)
 intent replaceRangeAsTick(input: shape.ReplaceRangeAsTickInput)
   returns shape.ReplaceRangeAsTickResult
   profile echo.boundaryReplacementLens
+  basis input.baseHeadId
   footprint <= rope.replaceRangeAsTickMax
   budget <= rope.replaceRangeAsTickBudget
   where input.startByte <= input.endByte
@@ -3152,6 +3154,7 @@ intent replaceRangeAsTick(input: shape.ReplaceRangeAsTickInput)
 intent createCheckpoint(input: shape.CreateCheckpointInput)
   returns shape.CreateCheckpointResult
   profile echo.createOnly
+  basis input.worldlineId
   footprint <= rope.createCheckpointMax
   budget <= rope.createCheckpointBudget
 {
@@ -3187,6 +3190,7 @@ intent createCheckpoint(input: shape.CreateCheckpointInput)
 intent worldlineSnapshot(input: shape.WorldlineSnapshotInput)
   returns shape.WorldlineSnapshot
   profile echo.readOnly
+  basis input.worldlineId
   footprint <= rope.worldlineSnapshotMax
   budget <= rope.worldlineSnapshotBudget
 {
@@ -3212,6 +3216,7 @@ intent worldlineSnapshot(input: shape.WorldlineSnapshotInput)
 intent textWindow(input: shape.TextWindowInput)
   returns shape.TextWindowReading
   profile echo.readOnly
+  basis input.worldlineId
   footprint <= rope.textWindowMax
   budget <= rope.textWindowBudget
   where input.viewportLineCount >= 0,
@@ -3358,6 +3363,7 @@ use lawpack jedit.structural_history@1 as history;
 intent createTextHistory(input: historyShape.CreateTextHistoryInput)
   returns historyShape.CreateTextHistoryPayload
   implements history.createTextHistory
+  basis none
   budget <= history.createTextHistoryBudget
 {
   let _created = history.textHistoryCreated.record({
@@ -3374,6 +3380,7 @@ intent createTextHistory(input: historyShape.CreateTextHistoryInput)
 intent replaceTextRange(input: historyShape.ReplaceTextRangeInput)
   returns historyShape.ReplaceTextRangePayload
   implements history.replaceTextRange
+  basis input.baseRevisionId
   budget <= history.replaceTextRangeBudget
   where input.startByte <= input.endByte
 {
@@ -3395,6 +3402,7 @@ intent replaceTextRange(input: historyShape.ReplaceTextRangeInput)
 intent openTextEditGroup(input: historyShape.OpenTextEditGroupInput)
   returns historyShape.TextEditGroupPayload
   implements history.openTextEditGroup
+  basis input.historyId
   budget <= history.openTextEditGroupBudget
 {
   let _opened = history.textEditGroupOpened.record({
@@ -3410,6 +3418,7 @@ intent includeTextEventInOpenGroup(
 )
   returns historyShape.TextEditGroupPayload
   implements history.includeTextEventInOpenGroup
+  basis input.historyId
   budget <= history.includeTextEventInOpenGroupBudget
 {
   let _included = history.textEventIncludedInOpenGroup.record({
@@ -3424,6 +3433,7 @@ intent includeTextEventInOpenGroup(
 intent closeTextEditGroup(input: historyShape.CloseTextEditGroupInput)
   returns historyShape.TextEditGroupPayload
   implements history.closeTextEditGroup
+  basis input.historyId
   budget <= history.closeTextEditGroupBudget
 {
   let _closed = history.textEditGroupClosed.record({
@@ -3437,6 +3447,7 @@ intent closeTextEditGroup(input: historyShape.CloseTextEditGroupInput)
 intent createTextCheckpoint(input: historyShape.CreateTextCheckpointInput)
   returns historyShape.CreateTextCheckpointPayload
   implements history.createTextCheckpoint
+  basis input.revisionId
   budget <= history.createTextCheckpointBudget
 {
   let _checkpoint = history.textCheckpointCreated.record({
@@ -3454,6 +3465,7 @@ intent textHistorySnapshot(input: historyShape.TextHistorySnapshotInput)
   returns historyShape.TextHistorySnapshotReading
   implements history.textHistorySnapshot
   profile history.readOnly
+  basis input.historyId
   budget <= history.textHistorySnapshotBudget
 {
   let reading = history.textHistorySnapshot.read({
