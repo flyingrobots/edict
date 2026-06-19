@@ -1656,9 +1656,16 @@ in A-normal effect position inside an intent body. Pure expressions may:
 - hash canonical values;
 - branch with `if then else`.
 
+Pure expressions may call **pure** target/lawpack intrinsics — the inert,
+hashable plan constructors whose `intrinsicClass` is `pure` and `writeClass` is
+`none` (e.g. `echo.ref<T>(id)`, `echo.edge<...>(...)`, id/plan constructors). A
+pure constructor allocates no runtime handle and observes no state; it only
+produces a canonical plan term.
+
 Pure expressions may not:
 
-- call target intrinsics or lawpack semantic effects;
+- call target/lawpack **effect** intrinsics (any `intrinsicClass: effect`) or
+  lawpack semantic effects;
 - observe runtime state;
 - allocate runtime handles;
 - call host callbacks;
