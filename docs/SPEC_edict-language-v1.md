@@ -2101,8 +2101,7 @@ summary below mirrors it for convenience and must not diverge
 - `append`: read and append effects; no replace or delete.
 - `replace`: read, create, ensure, and replace effects as profile-defined; no
   delete unless the profile explicitly classifies the operation mode as custom.
-- `custom`: all effect kinds are checked against the named target or lawpack
-  profile predicate.
+- `custom`: target-profile-defined predicate with a digest-locked verifier rule.
 
 `ensure` counts as read plus conditional create for cost and obstruction
 analysis, but it is compatible with `createOnly` when the target profile
