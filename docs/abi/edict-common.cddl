@@ -20,6 +20,10 @@ sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
 ; A named low-level failure an effect can raise. The source obstruction map
 ; binds it (by coordinate) and constructs a typed domain obstruction from its
 ; payload (EDICT-ABI-FAILURE-NAMED-001).
+; An effect's `effectFailures` list MUST have unique `coordinate`s: since the
+; obstruction map is keyed by coordinate, two failures sharing a coordinate (even
+; with different authorityClass/payloadType) make exhaustive mapping and binder
+; typing ambiguous and are rejected (EDICT-ABI-FAILURE-UNIQUE-001).
 effect-failure = {
   coordinate: tstr,                       ; e.g. "mismatch", "boundExceeded"
   authorityClass: authority-class,

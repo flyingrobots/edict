@@ -258,7 +258,10 @@ source may map the failure:
 
 The obstruction map is keyed by **failure coordinate**, not by authority class,
 so two `domainMappable` failures on the same effect (e.g. `mismatch` and
-`boundExceeded`) are distinct, separately-mapped arms.
+`boundExceeded`) are distinct, separately-mapped arms. An effect's
+`effectFailures` coordinates must be **unique**; a repeated coordinate makes
+exhaustive mapping and binder typing ambiguous and is rejected
+(`EDICT-ABI-FAILURE-UNIQUE-001`).
 
 Source `else` mappings may translate only profile-declared `domainMappable`
 classes. Authors must not translate permission failure, signature failure,
