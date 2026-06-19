@@ -40,13 +40,15 @@ executable-component = {
 lawpack-dep = { id: tstr, version: tstr, digest: sha256-digest }
 
 target-adapter = {
+  ; `acceptedTargetProfile` (a digest-locked ref) is the AUTHORITATIVE selector;
+  ; resolution keys off it, not the display strings. The `targetProfile` /
+  ; `targetProfileVersion` strings MUST equal the id/version of
+  ; `acceptedTargetProfile`, so a selector cannot point at one profile while the
+  ; lock proves another (EDICT-LAWPACK-ADAPTER-TARGETIR-001).
   targetProfile: tstr,
   targetProfileVersion: tstr,
-  ; the exact target-profile and Target IR this adapter was built against,
-  ; digest-locked so adapter resolution can't bind to a republished profile or
-  ; Target IR under the same id/version (EDICT-LAWPACK-ADAPTER-TARGETIR-001).
-  acceptedTargetProfile: resource-ref,
-  acceptedTargetIr: resource-ref,
+  acceptedTargetProfile: resource-ref,    ; digest-locked, authoritative
+  acceptedTargetIr: resource-ref,         ; digest-locked
   adapter: resource-ref,
 }
 
@@ -61,10 +63,12 @@ lawpack-exports = {
   pureFunctions: [* pure-function],
   effects: [* semantic-effect],
   obstructions: [* obstruction-def],
+  ; keyed by operation-profile coordinate → uniqueness enforced
+  ; (EDICT-ABI-OPPROFILE-UNIQUE-001)
   ; operation-profile records this lawpack exports (optic templates that
   ; `implements`/`profile` clauses resolve against). operation-profile is
   ; defined in edict-common.cddl (EDICT-ABI-OPPROFILE-SLOT-001).
-  operationProfiles: [* operation-profile],
+  operationProfiles: { * tstr => operation-profile },  ; keyed by coordinate
 }
 
 exported-type     = { coordinate: tstr, definition: core-type-ref }
@@ -116,7 +120,7 @@ semantic-effect = {
   effectKindHint: effect-kind,
   footprintObligation: tstr,
   costObligation: tstr,
-  effectFailures: [* effect-failure],     ; named, typed low-level failures
+  effectFailures: { * failure-ident => effect-failure },  ; keyed by coordinate; unique
   guardSupport: bool,
 }
 

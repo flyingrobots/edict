@@ -31,9 +31,12 @@ effect-failure = {
 }
 
 ; A failure coordinate must be a bare Edict `ident` (letter/underscore then
-; letters/digits/underscores). The source obstruction-map left-hand side only
-; accepts `ident`, so a hyphen/dot/keyword coordinate would be ABI-valid yet
-; impossible to map exhaustively in source (EDICT-ABI-FAILURE-IDENT-001).
+; letters/digits/underscores) AND must not be a reserved keyword (e.g. `else`,
+; `basis`, `where`, `require`, `for`, `if`). The source obstruction-map LHS only
+; accepts a non-keyword `ident`, so a hyphen/dot/keyword coordinate would be
+; ABI-valid yet impossible to map exhaustively in source. The regex captures the
+; lexical shape; keyword exclusion is an additional validation rule
+; (EDICT-ABI-FAILURE-IDENT-001).
 failure-ident = tstr .regexp "[A-Za-z_][A-Za-z0-9_]*"
 
 effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /

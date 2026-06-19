@@ -705,9 +705,11 @@ platform-owned coordinates unless the target profile explicitly classifies a
 bounded resource failure as a domain obstruction. Domain obstructions may carry
 typed payload schemas declared by the lawpack or target profile.
 
-Core effect nodes carry an obstruction map from each domain-mappable failure
-class to an obstruction coordinate plus a (possibly empty) typed payload
-constructor, with an optional binder for the low-level failure:
+Core effect nodes carry an obstruction map keyed by each domain-mappable
+**failure coordinate** (not by authority class, so two `domainMappable` failures
+on the same effect such as `mismatch` and `boundExceeded` stay distinct) to an
+obstruction coordinate plus a (possibly empty) typed payload constructor, with an
+optional binder for the low-level failure:
 
 ```text
 obstructionMap:

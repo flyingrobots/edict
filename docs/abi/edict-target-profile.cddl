@@ -61,21 +61,22 @@ target-profile-manifest = {
 ; independent profiles validate/hash the corpus identically
 ; (EDICT-ABI-INTRINSICS-DOC-001).
 
+; intrinsics is a MAP keyed by coordinate, so the schema itself enforces
+; coordinate uniqueness (the WIT boundary resolves by coordinate via
+; `effect-signature(coordinate)`). Each map key MUST equal its record's
+; `coordinate` field (EDICT-ABI-INTRINSIC-UNIQUE-001).
 intrinsics-document = {
   apiVersion: "edict.target-profile.intrinsics/v1",
-  ; intrinsic `coordinate`s MUST be unique within the corpus: the WIT boundary
-  ; resolves signatures by coordinate (`effect-signature(coordinate)`), so a
-  ; duplicate would let two lowerers pick different signatures for the same
-  ; source call (EDICT-ABI-INTRINSIC-UNIQUE-001).
-  intrinsics: [* intrinsic],
+  intrinsics: { * tstr => intrinsic },
 }
 
 ; The artifact referenced by the manifest's `operationProfiles` resource-ref.
-; operation-profile / optic-template are defined in edict-common.cddl
-; (EDICT-ABI-OPPROFILE-SLOT-001).
+; operation-profile / optic-template are defined in edict-common.cddl. Keyed by
+; coordinate so resolution can't pick between two same-coordinate profiles
+; (EDICT-ABI-OPPROFILE-SLOT-001, EDICT-ABI-OPPROFILE-UNIQUE-001).
 operation-profiles-document = {
   apiVersion: "edict.target-profile.operation-profiles/v1",
-  profiles: [* operation-profile],
+  profiles: { * tstr => operation-profile },
 }
 
 ; A genuine union: pure constructors carry no effect kind or failures; effect
@@ -103,7 +104,9 @@ effect-intrinsic = {
   argumentTypes: [* core-type-ref],
   returnType: core-type-ref,
   effectKind: effect-kind,
-  effectFailures: [* effect-failure],   ; named, typed low-level failures
+  ; map keyed by failure coordinate (failure-ident) → uniqueness enforced by the
+  ; schema (EDICT-ABI-FAILURE-UNIQUE-001). Key MUST equal the record coordinate.
+  effectFailures: { * failure-ident => effect-failure },
   guardSupport: bool,
   footprintTemplate: tstr,
   costTemplate: tstr,

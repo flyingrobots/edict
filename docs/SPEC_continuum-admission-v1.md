@@ -93,7 +93,9 @@ Opaque handles are participant/app capability receipts, not ambient authority.
 A receipt should include:
 
 - handle id;
-- issuer bundle hash;
+- issuer `bundleSubject` (`{ kind: semantic | release, digest }`, the same
+  shape as admission requests/receipts, so tooling can tell which bundle
+  identity issued the capability) (`CONTINUUM-BUNDLE-SUBJECT-001`);
 - participant identity;
 - scope;
 - basis coordinate, such as worldline/head for jedit;
