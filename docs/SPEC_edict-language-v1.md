@@ -2202,7 +2202,8 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
 
 Hash-significant intent fields are the optic contract, the
 `requiredOperationProfile` **requirement**, target authorities, law profiles,
-input-constraint reference, Core/target budgets, and the body. The following are
+the typed `inputConstraints` predicate trees (not a validator reference),
+`requiredCoreCapabilities`, Core/target budgets, and the body. The following are
 **not** in the Core intent preimage:
 
 - `verifiedOperationMode` — a verifier-report field, not a Core claim. Core
