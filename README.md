@@ -179,6 +179,7 @@ type HelloReading = {
 intent sayHello(input: HelloInput)
   returns HelloReading
   profile hello.readOnly
+  basis none
   budget <= hello.tinyBudget
   where input.name != ""
 {
@@ -207,6 +208,7 @@ use target echo.dpo@1 digest "sha256:..." as echo;
 intent readGreeting(input: shape.ReadGreetingInput)
   returns shape.GreetingReading
   profile echo.readOnly
+  basis input.greetingId
   budget <= greetingLaw.readGreetingBudget
 {
   let greetingRef = echo.ref<shape.Greeting>(input.greetingId);
