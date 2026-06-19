@@ -39,7 +39,9 @@ canonicalization golden cases and the relapse zoo (see the assurance guide), per
 the Language spec implementation plan, Phase 0.
 
 **Placeholder digests:** README/spec code examples currently use `sha256:...`
-placeholders. The fixtures derived from those examples will carry placeholder
-digests until the Phase 0 tooling (the `spec.lock.json` generator and a fixture
-validator) exists to compute and pin real digests. A GREEN example fixture is
-not expected to compile cleanly until that tooling lands.
+placeholders. A GREEN fixture must still parse, typecheck, and be accepted
+verbatim — the placeholder only defers **digest-lock validation** (matching the
+import against a pinned digest), not compilation. Until the Phase 0 tooling (the
+`spec.lock.json` generator and a fixture validator) exists to compute and pin
+real digests, that lock step is skipped; the example is otherwise a valid GREEN
+fixture.
