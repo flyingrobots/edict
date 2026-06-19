@@ -1503,11 +1503,12 @@ Semantic grammar rules:
   one `footprint`, and one `budget` clause.
 - The grammar accepts `intent-clause*`, but clause **requiredness** is a semantic
   rule; omitting a required clause is parseable but rejected in semantic
-  validation (`EDICT-LANG-INTENT-CLAUSES-001`). Required: **exactly one** of
-  `profile` (runtime-native intent) or `implements` (portable semantic intent);
-  a `budget` clause; and a `basis` clause (see next bullet). Optional:
-  `footprint` (a declared ceiling; the computed footprint is inferred regardless)
-  and `where`.
+  validation (`EDICT-LANG-INTENT-CLAUSES-001`). Required: **at least one** of
+  `profile` (operation mode on a target) or `implements` (a portable law profile
+  the intent satisfies) — an intent may carry **both** (e.g. `implements` a law
+  profile while declaring a `profile` operation mode); a `budget` clause; and a
+  `basis` clause (see next bullet). Optional: `footprint` (a declared ceiling;
+  the computed footprint is inferred regardless) and `where`.
 - The `basis` clause is required unless the resolved operation profile or lawpack
   supplies a digest-locked basis template; `basis none` is the explicit no-basis
   declaration. The `basis` expression is a typed Core expression, never a
