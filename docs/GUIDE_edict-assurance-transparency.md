@@ -39,7 +39,7 @@ target profile
 source artifact digest
 Core IR digest
 target IR digest
-optic contract (opticKind, basis, boundaryKind, supportPolicy, lossDisposition)
+optic contract (opticKind, basis, boundaryKind, apertureRequirement, supportPolicy, lossDisposition)
 reads and writes with bounds
 core/target budget
 obstruction taxonomy and mappings
@@ -202,19 +202,24 @@ bundle:
 operation coordinate
 required operation profile -> verified operation mode
 guard obligations proven
-footprint inequalities proven (computed <= ceiling)
-cost inequalities proven (core/target/admitted)
+footprint inequalities proven (computed <= declared ceiling)
+cost inequalities proven (core + target declared ceilings only)
 optic-preservation claims proven
 profile predicates proven
 ```
 
-It is derived evidence (HOLMES output), never runtime authority (I-014).
+It is derived evidence (HOLMES output), never runtime authority (I-014). It is a
+**pre-admission**, participant-neutral artifact, so it never proves `admitted`
+(participant) cost inequalities — admission is external and the
+lowerer/verifier path never sees admitted ceilings
+(`EDICT-TARGET-NEUTRAL-LOWERING-001`).
 
 ## Obstruction Coverage
 
-`edict obstruction coverage` proves that every domain-mappable failure class of
-every imported intrinsic an operation uses is exhaustively handled
-(`EDICT-LANG-OBSTRUCT-EXHAUST-001`). An unhandled domain-mappable class is a
+`edict obstruction coverage` proves that every `domainMappable` failure of every
+imported effect an operation uses — both target intrinsics **and lawpack
+semantic effects** (e.g. `history.entry.record`) — is exhaustively handled
+(`EDICT-LANG-OBSTRUCT-EXHAUST-001`). An unhandled domain-mappable failure is a
 compile error, not a runtime surprise.
 
 ## Two-Lowerer Trial
