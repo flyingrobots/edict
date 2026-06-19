@@ -229,8 +229,12 @@ imported effect signatures. The `profile echo.readOnly` line is a claim to
 check, not authority to trust.
 
 Every Edict example shown as valid in this README is intended to live in
-`fixtures/` and be compiled (or rejected) verbatim, so documentation cannot
-drift from the language. See the [requirements registry](./docs/REQUIREMENTS.md).
+`fixtures/` and be compiled (or rejected) so documentation cannot drift from the
+language. The fixture is near-verbatim, with one mechanical substitution: prose
+`digest "sha256:..."` ellipses become syntactically valid dummy digests
+(`sha256:` + 64 hex), since the grammar's `digest-lit` requires 64 hex digits.
+See [`fixtures/README.md`](./fixtures/README.md) and the
+[requirements registry](./docs/REQUIREMENTS.md).
 
 ## Bundle And Admission
 
