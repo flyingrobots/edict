@@ -65,20 +65,37 @@ lawpack-exports = {
 exported-type     = { coordinate: tstr, definition: core-type-ref }
 exported-constant = { coordinate: tstr, type: core-type-ref, value: any }
 
-pure-function = {
+; A pure helper is a discriminated union by `source`, so the schema itself
+; guarantees an implementation exists (EDICT-LAWPACK-PURE-IMPL-001):
+;   - "edict": authored in Edict/Core; the Core body is carried inline (hashed
+;     with the export surface). The schema requires the `body` field.
+;   - "component": implemented outside Edict; carries no inline body and REQUIRES
+;     the manifest's helperComponent (digest-locked + sandbox + fuel).
+pure-function = edict-pure-function / component-pure-function
+
+pure-function-common = (
   coordinate: tstr,
   typeParameters: [* tstr],
   parameterTypes: [* core-type-ref],      ; all bounded
   returnType: core-type-ref,              ; bounded
   costTemplate: tstr,
   determinismClass: "total" / "total-with-typed-diagnostic",
-  ; "edict": authored in Edict/Core (body carried in the export surface).
-  ; "component": implemented outside Edict; REQUIRES the manifest's
-  ; helperComponent (digest-locked + sandbox + fuel). A "component" helper with
-  ; no helperComponent is rejected for locked-bundle production
-  ; (EDICT-LAWPACK-PURE-IMPL-001).
-  source: "edict" / "component",
+)
+
+edict-pure-function = {
+  pure-function-common,
+  source: "edict",
+  body: core-fn-body,                     ; inline, hash-significant
 }
+
+component-pure-function = {
+  pure-function-common,
+  source: "component",                    ; implementation in helperComponent
+}
+
+; The Core function body. Its full schema is edict.core/v1 (issue #3); until
+; that CDDL lands this is an opaque-but-present canonical value.
+core-fn-body = any
 
 semantic-effect = {
   coordinate: tstr,
