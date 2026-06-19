@@ -102,6 +102,15 @@ released implementation.
   `optic-template` can publish `apertureRequirement`; target adapters digest-lock
   their accepted target profile + Target IR; GREEN fixtures use syntactically
   valid dummy digests (the prose `sha256:...` is an un-lexable ellipsis).
+- Schema/example/prose alignment round (+ proactive same-class sweep): lawpack
+  manifest example carries adapter target-locks; export-surface summary lists
+  `operationProfiles`; component pure helpers carry their own digest-locked
+  `implementation`; language operation-mode `custom` bullet mirrors the ABI;
+  README fixture promise accounts for digest substitution; compile explanation
+  surfaces `apertureRequirement`; LawfulnessCertificate proves only core+target
+  declared ceilings (never `admitted`); obstruction coverage includes lawpack
+  effects; portable example gains a `basis`; Appendix A scoped as exploratory
+  non-fixtures; `effectFailures` coordinates must be unique per effect.
 
 ### Deferred
 
