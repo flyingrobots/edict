@@ -86,6 +86,17 @@ released implementation.
 - Self-review nits: dropped an unused WIT import; de-duplicated the
   `basis`-requiredness wording; locked `edict-common.cddl` in `spec.lock.json`;
   corrected the `edict-common.cddl` header.
+- Second-order ripples from the above (Codex + CodeRabbit round): an intent may
+  carry **both** `profile` and `implements` (was wrongly "exactly one"); pure
+  expressions may call **pure** target/lawpack constructors (only effect
+  intrinsics forbidden); integer-literal propagation reaches binary operands;
+  field-constraint and refined-type bounds are both valid; `requiredCoreCapabilities`
+  is a hash-significant Core module field; operation-profile records get a
+  publication slot in the target/lawpack ABIs; exported pure helpers require a
+  hash-bound implementation; residual singular bundle-digest references replaced
+  with `bundleSubject`; Core/README examples updated to the new rules
+  (ObstructionConstruct, `basis` clauses); registry `deferred` status defined and
+  the int-literal-mismatch ID numbered (`EDICT-LANG-INTLIT-002`).
 
 ### Deferred
 
