@@ -1,0 +1,56 @@
+# --- Agent / editor working dirs ---
+.claude/
+.obsidian/
+.idea/
+.vscode/
+*.code-workspace
+
+# --- macOS ---
+.DS_Store
+.DS_Store?
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+.DocumentRevisions-V100
+.fseventsd
+.TemporaryItems
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+Icon?
+
+# --- Linux ---
+*~
+.directory
+.Trash-*
+
+# --- Windows ---
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- Logs / temp / env ---
+*.log
+*.tmp
+*.swp
+*.swo
+*.bak
+.env
+.env.*
+!.env.example
+
+# --- Node / JS tooling (for when code lands) ---
+node_modules/
+dist/
+build/
+coverage/
+.pnpm-store/
+.turbo/
+*.tsbuildinfo
+
+# --- Rust (for when target lowerers land) ---
+target/
+**/*.rs.bk

@@ -1,0 +1,132 @@
+; edict-lawpack.cddl
+; Canonical schema for the Edict lawpack manifest and export surface.
+; Authoritative byte encoding: edict.canonical-cbor/v1. JSON in the prose specs
+; is a review rendering generated from this schema (EDICT-ABI-NODUP-001).
+
+lawpack-manifest = {
+  apiVersion: "edict.lawpack/v1",
+  id: tstr,
+  version: tstr,
+  acceptedCoreAbi: [+ tstr],
+  dependencies: [* lawpack-dep],          ; acyclic, digest-locked (EDICT-LAWPACK-DAG-001)
+  exports: resource-ref,
+  ? targetAdapters: [+ target-adapter],   ; required only if any runtime effect exists
+  ? helperComponent: executable-component, ; executable helpers carry their own sandbox+fuel
+  verifier: verifier,                      ; classified: declarative or executable
+  compatibility: resource-ref,
+  conformanceFixtureCorpus: resource-ref,
+}
+
+; A verifier is either a declarative ruleset (no runtime) or an executable
+; component. An executable verifier MUST carry its own sandbox and fuel model,
+; so the schema enforces that no executable component is left unbounded
+; (EDICT-ABI-VERIFIER-BOUND-001).
+verifier = declarative-verifier / executable-verifier
+declarative-verifier = { class: "declarative", ruleset: resource-ref }
+executable-verifier = {
+  class: "executable",
+  component: resource-ref,
+  sandbox: resource-ref,
+  fuelModel: resource-ref,
+}
+
+; Any executable component is bounded by its own sandbox + fuel model.
+executable-component = {
+  component: resource-ref,
+  sandbox: resource-ref,
+  fuelModel: resource-ref,
+}
+
+lawpack-dep = { id: tstr, version: tstr, digest: sha256-digest }
+
+; Adapter selection keys SOLELY off the digest-locked `acceptedTargetProfile`
+; (its `id` is the profile id; its `digest` pins the exact profile/version). There
+; are no independent display strings that could disagree with the lock, so a
+; resolver cannot bind an adapter to one target while the lock proves another
+; (EDICT-LAWPACK-ADAPTER-TARGETIR-001).
+target-adapter = {
+  acceptedTargetProfile: resource-ref,    ; digest-locked, authoritative selector
+  acceptedTargetIr: resource-ref,         ; digest-locked
+  adapter: resource-ref,
+}
+
+; Shared types resource-ref and sha256-digest are defined once in
+; edict-common.cddl and assembled with this schema (EDICT-ABI-NODUP-001).
+
+; --- export surface ------------------------------------------------------
+
+lawpack-exports = {
+  types: [* exported-type],
+  constants: [* exported-constant],
+  pureFunctions: [* pure-function],
+  effects: [* semantic-effect],
+  obstructions: [* obstruction-def],
+  ; keyed by operation-profile coordinate → uniqueness enforced
+  ; (EDICT-ABI-OPPROFILE-UNIQUE-001)
+  ; operation-profile records this lawpack exports (optic templates that
+  ; `implements`/`profile` clauses resolve against). operation-profile is
+  ; defined in edict-common.cddl (EDICT-ABI-OPPROFILE-SLOT-001).
+  operationProfiles: { * tstr => operation-profile },  ; keyed by coordinate
+}
+
+exported-type     = { coordinate: tstr, definition: core-type-ref }
+exported-constant = { coordinate: tstr, type: core-type-ref, value: any }
+
+; A pure helper is a discriminated union by `source`, so the schema itself
+; guarantees an implementation exists (EDICT-LAWPACK-PURE-IMPL-001):
+;   - "edict": authored in Edict/Core; the Core body is carried inline (hashed
+;     with the export surface). The schema requires the `body` field.
+;   - "component": implemented outside Edict; carries no inline body and instead
+;     carries its own digest-locked `implementation` (sandbox + fuel). It does
+;     not depend on the optional manifest-level helperComponent.
+pure-function = edict-pure-function / component-pure-function
+
+pure-function-common = (
+  coordinate: tstr,
+  typeParameters: [* tstr],
+  parameterTypes: [* core-type-ref],      ; all bounded
+  returnType: core-type-ref,              ; bounded
+  costTemplate: tstr,
+  determinismClass: "total" / "total-with-typed-diagnostic",
+)
+
+edict-pure-function = {
+  pure-function-common,
+  source: "edict",
+  body: core-fn-body,                     ; inline, hash-significant
+}
+
+component-pure-function = {
+  pure-function-common,
+  source: "component",
+  ; the digest-locked component implementing this helper. Required at the schema
+  ; level so a component helper can never validate without a hash-bound,
+  ; sandbox+fuel-described implementation (EDICT-LAWPACK-PURE-IMPL-001).
+  implementation: executable-component,
+}
+
+; The Core function body. Its full schema is edict.core/v1 (issue #3); until
+; that CDDL lands this is an opaque-but-present canonical value.
+core-fn-body = any
+
+semantic-effect = {
+  coordinate: tstr,
+  typeParameters: [* tstr],
+  inputType: core-type-ref,               ; bounded
+  outputType: core-type-ref,              ; bounded
+  executionClass: "proofOnly" / "runtime",   ; orthogonal to writeClass
+  effectKindHint: effect-kind,
+  footprintObligation: tstr,
+  costObligation: tstr,
+  effectFailures: { * failure-ident => effect-failure-body },  ; keyed by coordinate; unique
+  guardSupport: bool,
+}
+
+obstruction-def = {
+  coordinate: tstr,
+  authorityClass: authority-class,
+  payloadSchema: core-type-ref,           ; typed, bounded (may be empty record)
+}
+
+; effect-failure-body, effect-kind, authority-class, and core-type-ref are defined
+; once in edict-common.cddl and assembled with this schema (EDICT-ABI-NODUP-001).

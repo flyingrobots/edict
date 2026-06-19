@@ -149,28 +149,37 @@ atomic application semantics, and target IR. Edict Core must stay boring enough
 that these lowerings are honest interpretations, not hidden assumptions about a
 universal graph, database, filesystem, or event log.
 
+Edict does not promise that every operation runs everywhere. It promises that
+lowerability is explicit, inspectable, and evidence-bound.
+
+> The audacious part is not that Edict translates everything. The audacious part
+> is that Edict can say, precisely and cryptographically: This translates. This
+> translates through this adapter. This translates only under this equivalence.
+> And this does not translate without lying.
+
 ## Hello, Edict
 
 The smallest useful Edict example is intentionally boring. It has no ambient
 host access, no clock, no filesystem, no network, and no target write. It is a
 bounded read-only optic from explicit input to a deterministic reading.
 
-```graphql
+```edict
 package examples.hello@1;
 
 use lawpack hello.optics@1 digest "sha256:..." as hello;
 
 type HelloInput = {
-  name: String,
+  name: String<max=256>,
 };
 
 type HelloReading = {
-  message: String,
+  message: String<max=512>,
 };
 
 intent sayHello(input: HelloInput)
   returns HelloReading
   profile hello.readOnly
+  basis none
   budget <= hello.tinyBudget
   where input.name != ""
 {
@@ -179,25 +188,32 @@ intent sayHello(input: HelloInput)
 }
 ```
 
-That example should compile to Core with no runtime effects. A target-backed
-intent looks similar, but every read or write must come through an imported
-target or lawpack effect and must map failures into typed obstructions:
+That example should compile to Core with no runtime effects. The scalar bounds
+are not decoration: a naked, unbounded `String` is rejected in the
+lawful-autonomous lane because its output cost cannot be proven. The same source
+with `name: String` and `message: String` is a negative (RED) fixture, not valid
+documentation.
 
-```graphql
+A target-backed intent looks similar, but every read or write must come through
+an imported target or lawpack effect and must map failures into typed
+obstructions:
+
+```edict
 package examples.greeting@1;
 
 use shape "schemas/greeting.graphql" as shape;
-use lawpack greeting.optics@1 digest "sha256:..." as greeting;
+use lawpack greeting.optics@1 digest "sha256:..." as greetingLaw;
 use target echo.dpo@1 digest "sha256:..." as echo;
 
 intent readGreeting(input: shape.ReadGreetingInput)
   returns shape.GreetingReading
   profile echo.readOnly
-  budget <= greeting.readGreetingBudget
+  basis input.greetingId
+  budget <= greetingLaw.readGreetingBudget
 {
   let greetingRef = echo.ref<shape.Greeting>(input.greetingId);
   let greeting = greetingRef.read()
-    else greeting.GreetingMissing;
+    else greetingLaw.GreetingMissing;
 
   return {
     greetingId: input.greetingId,
@@ -206,9 +222,19 @@ intent readGreeting(input: shape.ReadGreetingInput)
 }
 ```
 
-The second example is still read-only only if the compiler proves it from the
+The lawpack is aliased `greetingLaw` so the local `greeting` does not shadow an
+import alias; locals shadowing imports, types, or prelude names are rejected. The
+second example is still read-only only if the compiler proves it from the
 imported effect signatures. The `profile echo.readOnly` line is a claim to
 check, not authority to trust.
+
+Every Edict example shown as valid in this README is intended to live in
+`fixtures/` and be compiled (or rejected) so documentation cannot drift from the
+language. The fixture is near-verbatim, with one mechanical substitution: prose
+`digest "sha256:..."` ellipses become syntactically valid dummy digests
+(`sha256:` + 64 hex), since the grammar's `digest-lit` requires 64 hex digits.
+See [`fixtures/README.md`](./fixtures/README.md) and the
+[requirements registry](./docs/REQUIREMENTS.md).
 
 ## Bundle And Admission
 
@@ -232,7 +258,7 @@ sequenceDiagram
     V-->>CB: Verifier evidence
     C-->>CB: Artifact digests
     P->>P: Evaluate policy epoch
-    P->>CB: Reference bundle digest
+    P->>CB: Reference bundleSubject (semantic or release)
     P-->>A: Admission receipt or rejection
 ```
 
@@ -461,12 +487,12 @@ separate identities.
 
 ```mermaid
 erDiagram
-    SOURCE_ARTIFACT ||--|| CORE_IR : normalizes_to
-    CORE_IR ||--|| TARGET_IR : lowers_to
+    SOURCE_ARTIFACT }o--|| CORE_IR : normalizes_to
+    CORE_IR ||--o{ TARGET_IR : lowers_to
     TARGET_PROFILE ||--o{ TARGET_IR : authorizes
     LAWPACK ||--o{ CORE_IR : contributes_effects
-    CORE_IR ||--|| CONTRACT_BUNDLE : names
-    TARGET_IR ||--|| CONTRACT_BUNDLE : names
+    CORE_IR ||--o{ CONTRACT_BUNDLE : named_by
+    TARGET_IR ||--o{ CONTRACT_BUNDLE : named_by
     VERIFIER_REPORT ||--|| CONTRACT_BUNDLE : attests
     CONTRACT_BUNDLE ||--o{ ADMISSION_REQUEST : is_subject_of
     ADMISSION_REQUEST ||--o| ADMISSION_RECEIPT : receives
@@ -507,10 +533,14 @@ production implementation.
 What exists:
 
 - Edict language syntax, type system, effects, and Core IR.
-- Target profile ABI and atomic application semantics.
+- Lawpack ABI (portable semantic effects, pure helpers, target adapters).
+- Target profile ABI and atomic application semantics, with machine schemas
+  (CDDL manifest, WIT plugin boundary) as the single source of truth.
 - Continuum contract bundle identity.
 - Continuum admission artifacts.
 - Assurance and transparency guidance.
+- A requirements registry (the Fixture Constitution) tying every normative
+  requirement to its owner spec and planned fixtures.
 
 What does not exist yet:
 
@@ -528,11 +558,20 @@ regression cases.
 ## Specifications
 
 - [SPEC - Edict Language v1](./docs/SPEC_edict-language-v1.md)
+- [SPEC - Edict Lawpack ABI v1](./docs/SPEC_edict-lawpack-abi-v1.md)
 - [SPEC - Edict Target Profile ABI v1](./docs/SPEC_edict-target-profile-abi-v1.md)
 - [SPEC - Continuum Contract Bundle v1](./docs/SPEC_continuum-contract-bundle-v1.md)
 - [SPEC - Continuum Admission v1](./docs/SPEC_continuum-admission-v1.md)
 - [GUIDE - Edict Assurance and Transparency](./docs/GUIDE_edict-assurance-transparency.md)
+- [Requirements Registry (Fixture Constitution)](./docs/REQUIREMENTS.md)
 - [Design Baseline](./docs/DESIGN_runtime-neutral-edict-sha-lock-assurance.md)
+
+Machine schemas (single source of truth for the ABIs):
+
+- [`docs/abi/edict-common.cddl`](./docs/abi/edict-common.cddl) (shared types)
+- [`docs/abi/edict-target-profile.cddl`](./docs/abi/edict-target-profile.cddl)
+- [`docs/abi/edict-target-lowerer.wit`](./docs/abi/edict-target-lowerer.wit)
+- [`docs/abi/edict-lawpack.cddl`](./docs/abi/edict-lawpack.cddl)
 
 ## Repository Boundary
 

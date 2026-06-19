@@ -1,0 +1,76 @@
+// edict-target-lowerer.wit
+// Executable plugin boundary for the Edict target lowerer/verifier lane.
+// The Wasm component lane (edict.wasm-component/v1) implements these worlds.
+// The CBOR exchange types are defined canonically in edict-target-profile.cddl;
+// here `bytes` always means edict.canonical-cbor/v1 of the named artifact.
+//
+// This boundary is the difference between a prose ABI and an ABI: two
+// independent components that exchange these bytes and agree are a
+// specification (EDICT-CONFORMANCE-DIFFERENTIAL-001). A prose checklist is not.
+
+package edict:target-profile@1.0.0;
+
+// Shared canonical-CBOR artifact payloads. The inner shape is pinned by the
+// referenced CDDL/spec; the component boundary moves opaque canonical bytes
+// plus a domain label so digests stay stable across hosts.
+interface artifacts {
+  // Digests are typed byte values, never hex strings. Review JSON renders this
+  // as "sha256:<64 lowercase hex>" (EDICT-DIGEST-WIRE-001).
+  record digest {
+    algorithm: string,            // "sha256"
+    bytes: list<u8>,             // 32 bytes for sha256
+  }
+  record artifact {
+    domain: string,               // e.g. "edict.core.module/v1"
+    bytes: list<u8>,             // edict.canonical-cbor/v1 of the artifact
+  }
+  record diagnostic {
+    code: string,                 // stable diagnostic code, e.g. EDICT-...
+    severity: string,             // "error" | "warning" | "info"
+    message: string,
+    repair: option<string>,       // agent-readable repair metadata
+    // source spans live in a non-hash sidecar, never in semantic artifacts
+    span: option<string>,
+  }
+  variant outcome {
+    ok(artifact),
+    rejected(list<diagnostic>),
+  }
+}
+
+// The lowerer: Core IR + profile context -> target-owned Target IR.
+world lowerer {
+  use artifacts.{artifact, outcome};
+
+  // Look up a target intrinsic signature by canonical coordinate.
+  export effect-signature: func(coordinate: string) -> outcome;
+
+  // Compare an inferred footprint against the operation's DECLARED footprint
+  // ceiling (aperture requirement), not an admitted participant ceiling.
+  // Returns ok(witness) when computed <= declared-ceiling, rejected otherwise.
+  export footprint-compare: func(computed: artifact, declared-ceiling: artifact)
+    -> outcome;
+
+  // Compare an inferred cost against the operation's DECLARED target ceiling
+  // (the targetBudget in Core), not an admitted participant budget. Admission
+  // is external by design; the lowerer never sees participant policy.
+  // Returns ok(witness) when computed <= declared-target-ceiling, rejected.
+  export cost-compare: func(computed: artifact, declared-target-ceiling: artifact)
+    -> outcome;
+
+  // Attach a guard to an effect node / application unit, profile-owned.
+  export attach-guard: func(node: artifact, guard: artifact) -> outcome;
+
+  // Lower Core IR to Target IR. Input binds the Core module digest plus the
+  // resolved profile/lawpack-adapter digests so lowering is reproducible.
+  export lower: func(core: artifact, context: artifact) -> outcome;
+}
+
+// The verifier: Target IR -> verifier report (operation mode, optic
+// preservation, footprint/cost inequalities, guard obligations). The verifier
+// is evidence, not authority (I-014); it never mutates runtime state.
+world verifier {
+  use artifacts.{artifact, outcome};
+
+  export verify: func(target-ir: artifact, context: artifact) -> outcome;
+}

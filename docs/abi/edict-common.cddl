@@ -1,0 +1,80 @@
+; edict-common.cddl
+; Shared CDDL types for the Edict ABIs, defined ONCE here so they cannot drift
+; (EDICT-ABI-NODUP-001). Two groups:
+;   - resource-ref, sha256-digest, effect-failure-body, effect-kind, authority-class,
+;     core-type-ref: assembled with edict-target-profile.cddl and
+;     edict-lawpack.cddl by the build; those schemas do not redefine them.
+;   - operation-profile, optic-template, aperture-requirement and their refs:
+;     consumed by the Core/optic layer (the forthcoming edict.core/v1 CDDL,
+;     issue #3) and referenced by the language/target-profile specs.
+; Authoritative byte encoding: edict.canonical-cbor/v1.
+
+; A normative subcomponent referenced by identity plus digest. Manifests never
+; embed their own self-digest in their preimage (EDICT-CORE-SELFHASH-001).
+resource-ref = { id: tstr, digest: sha256-digest }
+
+; Digests are authoritative as typed byte values, never hex strings. Review JSON
+; renders this as "sha256:<64 lowercase hex>" (EDICT-DIGEST-WIRE-001).
+sha256-digest = [ algorithm: "sha256", bytes: bstr .size 32 ]
+
+; A named low-level failure an effect can raise. The source obstruction map
+; binds it (by coordinate) and constructs a typed domain obstruction from its
+; payload (EDICT-ABI-FAILURE-NAMED-001).
+; An effect's `effectFailures` list MUST have unique `coordinate`s: since the
+; obstruction map is keyed by coordinate, two failures sharing a coordinate (even
+; with different authorityClass/payloadType) make exhaustive mapping and binder
+; typing ambiguous and are rejected (EDICT-ABI-FAILURE-UNIQUE-001).
+;
+; Effects carry their failures as a map `{ failure-ident => effect-failure-body }`
+; (see the target/lawpack effect schemas). The failure coordinate is the map
+; KEY, so it is not repeated in the body and cannot disagree with the key.
+effect-failure-body = {
+  authorityClass: authority-class,
+  payloadType: core-type-ref,             ; typed, bounded (may be empty record)
+}
+
+; A failure coordinate must be a bare Edict `ident` (letter/underscore then
+; letters/digits/underscores) AND must not be a reserved keyword (e.g. `else`,
+; `basis`, `where`, `require`, `for`, `if`). The source obstruction-map LHS only
+; accepts a non-keyword `ident`, so a hyphen/dot/keyword coordinate would be
+; ABI-valid yet impossible to map exhaustively in source. The regex captures the
+; lexical shape; keyword exclusion is an additional validation rule
+; (EDICT-ABI-FAILURE-IDENT-001).
+failure-ident = tstr .regexp "[A-Za-z_][A-Za-z0-9_]*"
+
+effect-kind = "read" / "create" / "ensure" / "replace" / "delete" /
+              "append" / "reduce" / "semantic.emit" / "custom"
+
+authority-class = "domainMappable" / "participantOwned" / "integrityFault" /
+                  "resourceFault" / "internalFault"
+
+core-type-ref = tstr   ; canonical Core type coordinate
+
+; An operation profile supplies the optic template a Core intent resolves its
+; opticKind/boundaryKind/supportPolicy/lossDisposition from. Target profiles and
+; lawpacks publish these as a map `{ coordinate => operation-profile }`, so the
+; coordinate is the KEY, not a value field (EDICT-OPTIC-TEMPLATE-OWNER-001,
+; EDICT-ABI-OPPROFILE-UNIQUE-001).
+operation-profile = {
+  opticTemplate: optic-template,
+  effectPredicate: tstr,           ; coordinate of the operation-mode predicate
+}
+
+optic-template = {
+  opticKind: "revelation" / "affectReintegration",
+  boundaryKind: "projection" / "affect",
+  supportPolicy: tstr,             ; canonical support-policy coordinate
+  lossDisposition: tstr,           ; canonical loss-disposition coordinate
+  ? basisTemplate: tstr,           ; optional digest-locked basis template coord
+  ; the aperture requirement this template supplies. Required when the template
+  ; is the source of a Core optic's apertureRequirement (i.e. the intent has no
+  ; source `footprint <= ...`), since apertureRequirement is mandatory in Core
+  ; (EDICT-OPTIC-APERTURE-REF-001).
+  ? apertureRequirement: aperture-requirement,
+}
+
+; apertureRequirement is a typed reference, never a free-form string. A review
+; rendering may show its coordinate (EDICT-OPTIC-APERTURE-REF-001).
+aperture-requirement = footprint-ceiling-ref / abstract-footprint-obligation-ref
+footprint-ceiling-ref = { kind: "footprintCeiling", ref: tstr }
+abstract-footprint-obligation-ref = { kind: "abstractFootprintObligation", ref: tstr }

@@ -20,14 +20,16 @@ updated: "2026-06-18"
 ## Purpose
 
 Continuum admission is participant policy over a participant-neutral contract
-bundle. Admission requests and receipts reference a contract bundle digest; they
-are not components of that digest.
+bundle. Admission requests and receipts reference a `bundleSubject`
+(`{ kind: semantic | release, digest }`); they are not components of either
+bundle digest (`CONTINUUM-BUNDLE-SUBJECT-001`).
 
 ## Admission Request
 
 An admission request contains:
 
-- `contractBundleDigest`;
+- `bundleSubject` (`{ kind: semantic | release, digest }`) — the participant
+  declares which bundle identity it is admitting (`CONTINUUM-BUNDLE-SUBJECT-001`);
 - participant descriptor digest;
 - catalog snapshot digest;
 - admission policy digest;
@@ -42,28 +44,48 @@ Admission requests are canonical artifacts with their own digest.
 
 ## Admission Receipt
 
-An admission receipt contains:
+An admission receipt is split into a hashed body and an external signature so
+the body never references the envelope that signs it
+(`CONTINUUM-RECEIPT-ACYCLIC-001`).
+
+An `AdmissionReceiptBody` contains:
 
 - `admissionRequestDigest`;
-- `contractBundleDigest`;
+- `bundleSubject` — echoes the request's exact `{ kind, digest }`;
 - participant identity;
 - decision;
 - admitted operation set;
 - admitted bounds and budgets;
 - admitted capabilities;
 - obstruction or rejection taxonomy for non-accept decisions;
-- policy epoch;
-- signature envelope reference.
+- policy epoch.
+
+The body is hashed to `AdmissionReceiptBodyDigest`. A DSSE envelope signs that
+digest and is carried by the distribution envelope, **not** by the body. The
+body contains no signature-envelope reference.
 
 Receipts are participant-owned evidence. Multiple participants may issue
-receipts for the same contract bundle digest.
+receipts for the same `bundleSubject`.
+
+## Admission Explanation
+
+An admission explanation is the policy-epoch-specific counterpart to the
+bundle's participant-neutral compile explanation. It references the admitted
+`bundleSubject` (`{ kind, digest }`, echoing the request/receipt) and the
+`AdmissionReceiptBodyDigest`, records the participant policy epoch and admitted
+ceilings, and lives **outside** the contract bundle. Carrying the full
+`bundleSubject` — not a singular digest — is required so replay and hash-impact
+tooling can tell which bundle identity (semantic or release) the receipt
+explains (`CONTINUUM-BUNDLE-SUBJECT-001`). It must never be hashed into the
+participant-neutral bundle (`CONTINUUM-BUNDLE-DAG-001`).
 
 ## Admission Evidence Is External
 
-A contract bundle digest is computed before admission. Admission requests and
-receipts reference the contract bundle digest but are not components of that
-digest. A distribution envelope may aggregate bundles, attestations, and receipts
-without changing the identity of the enclosed contract bundle.
+Both the `semanticBundleDigest` and `releaseBundleDigest` are computed before
+admission. Admission requests and receipts reference a `bundleSubject` but are
+not components of either bundle digest. A distribution envelope may aggregate
+bundles, attestations, and receipts without changing the identity of the
+enclosed contract bundle.
 
 ## Capability Receipts
 
@@ -71,7 +93,9 @@ Opaque handles are participant/app capability receipts, not ambient authority.
 A receipt should include:
 
 - handle id;
-- issuer bundle hash;
+- issuer `bundleSubject` (`{ kind: semantic | release, digest }`, the same
+  shape as admission requests/receipts, so tooling can tell which bundle
+  identity issued the capability) (`CONTINUUM-BUNDLE-SUBJECT-001`);
 - participant identity;
 - scope;
 - basis coordinate, such as worldline/head for jedit;
@@ -101,7 +125,7 @@ Admission evidence must bind:
 - policy epoch or monotonic policy version;
 - admitted target profile digests;
 - admitted lawpack digests;
-- admitted bundle digest.
+- the admitted `bundleSubject` (kind + digest).
 
 Replay under a newer participant policy is detectable because the request and
 receipt remain bound to their original policy epoch and digest.

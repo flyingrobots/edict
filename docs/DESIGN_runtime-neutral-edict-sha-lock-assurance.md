@@ -21,6 +21,16 @@ updated: "2026-06-18"
 
 <!-- markdownlint-enable MD025 -->
 
+> [!WARNING]
+> **NON-NORMATIVE HISTORICAL BASELINE.**
+> This document is retained as design context for the original packet `0021`.
+> Where it conflicts with any `SPEC_*` document, **the SPEC document wins**.
+> Source examples in this file may not conform to Edict Language v1. In
+> particular, older examples use `assert` for runtime/relational checks; under
+> the v1 specs `assert` is a compiler/verifier proof obligation only, and
+> runtime relational checks belong in `require`/`guarantee`. Do not cite this
+> file as authority for syntax, Core IR shape, hash semantics, or the ABI.
+
 ## Linked Issue
 
 - [Issue #611 - runtime-neutral Continuum target profiles](https://github.com/flyingrobots/wesley/issues/611)
