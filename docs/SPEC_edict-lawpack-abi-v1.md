@@ -147,12 +147,22 @@ pureFunction:
   returnType          # bounded
   costTemplate        # bounded steps/allocated bytes/output bytes
   determinismClass    # total | total-with-typed-diagnostic
+  source              # edict | component
 ```
 
 A helper whose return type is unbounded (`String` or `Bytes` without a maximum),
 or whose cost template admits unbounded allocation or unbounded input scanning,
 rejects (`EDICT-LAWPACK-PURE-002`). Helpers may only return typed diagnostics
 through `Option`/typed result, never host exceptions.
+
+Every exported helper must have a hash-bound implementation
+(`EDICT-LAWPACK-PURE-IMPL-001`). A `source: edict` helper carries its body in the
+export surface (hashed with it). A `source: component` helper is implemented
+outside Edict/Core and **requires** the manifest's `helperComponent` — a
+digest-locked executable component with sandbox and fuel. Publishing a callable
+helper coordinate with only a signature and no implementation (no `edict` body
+and no `helperComponent`) is rejected for locked-bundle production: a compiler
+could not otherwise reproduce the helper's semantics or bound it.
 
 ## Semantic Effect Signatures
 

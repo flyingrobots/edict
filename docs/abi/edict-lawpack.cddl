@@ -72,6 +72,12 @@ pure-function = {
   returnType: core-type-ref,              ; bounded
   costTemplate: tstr,
   determinismClass: "total" / "total-with-typed-diagnostic",
+  ; "edict": authored in Edict/Core (body carried in the export surface).
+  ; "component": implemented outside Edict; REQUIRES the manifest's
+  ; helperComponent (digest-locked + sandbox + fuel). A "component" helper with
+  ; no helperComponent is rejected for locked-bundle production
+  ; (EDICT-LAWPACK-PURE-IMPL-001).
+  source: "edict" / "component",
 }
 
 semantic-effect = {
