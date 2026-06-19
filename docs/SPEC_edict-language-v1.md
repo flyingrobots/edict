@@ -1294,9 +1294,12 @@ Lexical conformance fixtures must pin these details before parser freeze:
   by explicit suffix (`1u64`, `64_000i64`) or by an unambiguous expected type
   propagated from its context. Expected-type propagation reaches: record fields,
   variant payloads, `Option` constructors, `List`/`Map` literal elements,
-  function and intrinsic arguments, return expressions, and explicit type
-  annotations. It does **not** propagate through unconstrained variadic calls
-  such as `hash("x", 1)`. A bare literal with no suffix and no unambiguous
+  function and intrinsic arguments, return expressions, explicit type
+  annotations, and **binary equality/relational/arithmetic operands** (a bare
+  literal takes the resolved type of the typed opposite operand, so `len(x) == 0`
+  and `input.maxBytes >= 0` resolve `0` to the operand's width). It does **not**
+  propagate through unconstrained variadic calls such as `hash("x", 1)`, nor when
+  both operands are bare literals. A bare literal with no suffix and no unambiguous
   expected type is rejected (`EDICT-LANG-INTLIT-001`); `hash("domain", 1)` is
   rejected because `1` has no resolvable width. If an explicit suffix disagrees
   with the contextual type (e.g. `1i32` where `U64` is required), the literal is
