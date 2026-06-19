@@ -54,6 +54,9 @@ illustrative shape:
   "acceptedCoreAbi": ["edict.core/v1"],
   "intrinsicNamespace": "echo.dpo@1",
   "intrinsics": { "id": "echo.dpo.intrinsics/v1", "digest": "sha256:..." },
+  "operationProfiles": {
+    "id": "echo.dpo.operation-profiles/v1", "digest": "sha256:..."
+  },
   "footprintAlgebra": { "id": "echo.dpo.footprint/v1", "digest": "sha256:..." },
   "costAlgebra": { "id": "echo.dpo.cost/v1", "digest": "sha256:..." },
   "targetIr": { "id": "echo.span-ir/v1", "digest": "sha256:..." },
