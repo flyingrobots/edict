@@ -42,6 +42,55 @@ pub fn parse_module(src: &str) -> Result<Module, ParseError> {
     Parser::new(tokens).module()
 }
 
+/// Structural and clause keywords that are **reserved as bare identifiers**
+/// (SPEC Edict Language v1 §1510): they may not stand alone as a value or a
+/// binder name. They remain legal as member names after `.` (§1511), which is
+/// handled separately by [`Parser::ident`].
+///
+/// Deliberately *excluded* are words that are keywords only in a specific
+/// position yet ordinary identifiers elsewhere:
+/// - the import **kinds** `shape`/`lawpack`/`target`/`core`/`capability`, which
+///   are idiomatically reused as the import alias (`use shape "…" as shape;`);
+/// - the prelude value words `none` (also the `basis none` marker), `some`,
+///   `len`, `hash` and the built-in type constructors, so `none<T>()` parses;
+/// - `record`/`map`/`unit`/`migration`/`projection`, whose productions are not
+///   yet parsed — they will join this set when their syntax lands.
+fn is_keyword(s: &str) -> bool {
+    matches!(
+        s,
+        "package"
+            | "use"
+            | "type"
+            | "enum"
+            | "variant"
+            | "intent"
+            | "returns"
+            | "profile"
+            | "implements"
+            | "basis"
+            | "footprint"
+            | "budget"
+            | "where"
+            | "let"
+            | "return"
+            | "require"
+            | "guarantee"
+            | "assert"
+            | "if"
+            | "then"
+            | "else"
+            | "for"
+            | "in"
+            | "bounded"
+            | "yield"
+            | "match"
+            | "as"
+            | "digest"
+            | "fn"
+            | "const"
+    )
+}
+
 struct Parser {
     tokens: Vec<Token>,
     idx: usize,
@@ -129,6 +178,19 @@ impl Parser {
             }
             other => self.err(format!("expected identifier, found {other:?}")),
         }
+    }
+
+    /// Read a *binder* identifier — a name being introduced (a `let`/parameter
+    /// name). Unlike [`Self::ident`], a reserved keyword is rejected here, since
+    /// a binder is a bare identifier (SPEC §1510).
+    fn binder(&mut self) -> Result<String, ParseError> {
+        let name = self.ident()?;
+        if is_keyword(&name) {
+            return self.err(format!(
+                "keyword `{name}` is reserved and cannot be used as a name"
+            ));
+        }
+        Ok(name)
     }
 
     fn string(&mut self) -> Result<String, ParseError> {
@@ -531,7 +593,7 @@ impl Parser {
         let mut params = Vec::new();
         while *self.peek() != TokenKind::RParen {
             let pstart = self.peek_span().start;
-            let pname = self.ident()?;
+            let pname = self.binder()?;
             self.expect(&TokenKind::Colon)?;
             let ty = self.type_ref()?;
             params.push(Param {
@@ -610,7 +672,7 @@ impl Parser {
     fn stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span().start;
         if self.eat_kw("let") {
-            let name = self.ident()?;
+            let name = self.binder()?;
             let ty = if self.eat(&TokenKind::Colon) {
                 Some(self.type_ref()?)
             } else {
@@ -692,16 +754,8 @@ impl Parser {
         let start = self.peek_span().start;
         self.expect_kw("if")?;
         let pred = self.expr()?;
-        if self.eat_kw("then") {
-            let then = self.expr()?;
-            self.expect_kw("else")?;
-            let els = self.expr()?;
-            Ok(Expr::If {
-                cond: Box::new(pred),
-                then: Box::new(then),
-                els: Box::new(els),
-                span: Span::new(start, self.prev_end()),
-            })
+        if self.at_kw("then") {
+            self.ternary_tail(start, pred)
         } else if *self.peek() == TokenKind::LBrace {
             let then_block = self.yield_block()?;
             self.expect_kw("else")?;
@@ -862,6 +916,13 @@ impl Parser {
         let start = self.peek_span().start;
         self.expect_kw("if")?;
         let cond = self.expr()?;
+        self.ternary_tail(start, cond)
+    }
+
+    /// Parse the `then expr else expr` tail of a ternary, given the already
+    /// parsed condition and the construct's start offset. Shared by `if_ternary`
+    /// and the ternary branch of `let_rhs`.
+    fn ternary_tail(&mut self, start: usize, cond: Expr) -> Result<Expr, ParseError> {
         self.expect_kw("then")?;
         let then = self.expr()?;
         self.expect_kw("else")?;
@@ -1090,10 +1151,11 @@ impl Parser {
                 break;
             }
         }
-        self.expect(&TokenKind::RBrace)?;
+        // Check before consuming `}` so the error points at the empty body.
         if arms.is_empty() {
             return self.err("`match` must have at least one arm");
         }
+        self.expect(&TokenKind::RBrace)?;
         Ok(Expr::Match {
             scrutinee: Box::new(scrutinee),
             arms,
@@ -1147,6 +1209,9 @@ impl Parser {
                 Ok(Expr::Str { value, span })
             }
             TokenKind::Ident(kw) if kw == "match" => self.match_expr(),
+            TokenKind::Ident(name) if is_keyword(&name) => self.err(format!(
+                "keyword `{name}` is reserved and cannot be used as a bare identifier"
+            )),
             TokenKind::Ident(name) => {
                 self.idx += 1;
                 Ok(Expr::Ident { name, span })
