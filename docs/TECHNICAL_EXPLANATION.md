@@ -1,17 +1,19 @@
 # Table of Contents
 
-- [1. Domain Dictionary (Glossary)](#1-domain-dictionary-glossary) — Line 53
-- [2. High-Level Architecture Overview](#2-high-level-architecture-overview) — Line 73
-- [3. Bootstrapping vs. Runtime Execution](#3-bootstrapping-vs-runtime-execution) — Line 83
-- [4. The Entry Point: Compilation Lifecycle](#4-the-entry-point-compilation-lifecycle) — Line 101
-- [5. Lexical Analysis (token.rs)](#5-lexical-analysis-tokenrs) — Line 145
-- [6. Syntactic Analysis & Precedence Climbing (parser.rs)](#6-syntactic-analysis--precedence-climbing-parserrs) — Line 212
-- [7. Anatomy of a Payload: AST Transformations](#7-anatomy-of-a-payload-ast-transformations) — Line 306
-- [8. Unhappy Paths & Error Handling](#8-unhappy-paths--error-handling) — Line 473
-- [9. Security Boundaries: SHA-Locks & Sandbox Isolation](#9-security-boundaries-sha-locks--sandbox-isolation) — Line 501
-- [10. Concurrency, Parallelism, and Determinism](#10-concurrency-parallelism-and-determinism) — Line 511
-- [11. External Dependencies & Boundaries](#11-external-dependencies--boundaries) — Line 521
-- [12. Design Rationale & Trade-offs](#12-design-rationale--trade-offs) — Line 531
+- [1. Domain Dictionary (Glossary)](#1-domain-dictionary-glossary) — Line 55
+- [2. High-Level Architecture Overview](#2-high-level-architecture-overview) — Line 75
+- [3. Bootstrapping vs. Runtime Execution](#3-bootstrapping-vs-runtime-execution) — Line 85
+- [4. The Entry Point: Compilation Lifecycle](#4-the-entry-point-compilation-lifecycle) — Line 103
+- [5. Lexical Analysis (token.rs)](#5-lexical-analysis-tokenrs) — Line 147
+- [6. Syntactic Analysis & Precedence Climbing (parser.rs)](#6-syntactic-analysis--precedence-climbing-parserrs) — Line 214
+- [7. Anatomy of a Payload: AST Transformations](#7-anatomy-of-a-payload-ast-transformations) — Line 308
+- [8. Unhappy Paths & Error Handling](#8-unhappy-paths--error-handling) — Line 475
+- [9. Security Boundaries: SHA-Locks & Sandbox Isolation](#9-security-boundaries-sha-locks--sandbox-isolation) — Line 503
+- [10. Concurrency, Parallelism, and Determinism](#10-concurrency-parallelism-and-determinism) — Line 513
+- [11. External Dependencies & Boundaries](#11-external-dependencies--boundaries) — Line 523
+- [12. Design Rationale & Trade-offs](#12-design-rationale--trade-offs) — Line 533
+- [13. Computer Languages: A Comparative Taxonomic Overview](#13-computer-languages-a-comparative-taxonomic-overview) — Line 554
+- [14. Novel Language Quirks, Features, and Design Rationales](#14-novel-language-quirks-features-and-design-rationales) — Line 578
 
 ```mermaid
 mindmap
@@ -546,3 +548,49 @@ During the creation of Edict minimal-v1, the architecture made explicit design c
 * **Trade-off**: Recursive-descent implementation vs. using `LALR` toolchains (e.g., LALRPOP or peg).
 * **Benefit**: Better compile times, zero dependency footprint, highly detailed custom parse error Spans, and easy contextual keyword peeking.
 * **Cost**: Maintenance requires manually adjusting parsing functions when grammar specifications change.
+
+---
+
+## 13. Computer Languages: A Comparative Taxonomic Overview
+
+When analyzing computer languages in general, systems engineers evaluate them across three taxonomic axes: Generality, State Paradigm, and Authority Model. Under this framework, Edict represents a distinct design point:
+
+### Domain-Specific vs. General Purpose Languages (DSLs vs. GPLs)
+Traditional General-Purpose Languages (GPLs) like Rust, Go, or Python are **Turing-complete** by design. They support arbitrary computation, unbounded loops, dynamic memory allocation, and indirect system calls. In contrast, Domain-Specific Languages (DSLs) restrict execution semantics to solve specific systemic problems efficiently. 
+
+Edict is a highly specialized DSL. By design, Edict lacks Turing completeness in its source language: it prohibits arbitrary iterative loops and unbounded recursion. This is not a limitation but a deliberate security feature. It ensures that the Execution Halting Problem is mitigated statically. Every Edict intent can have its cost calculated and capped before execution starts.
+
+### State Paradigm & Execution Determinism
+Modern computer languages manage execution state through different paradigms:
+1. **Imperative/OOP**: Memory is a stateful graph modified via reference-sharing and locks. This introduces concurrency races and makes execution history highly variable.
+2. **Purely Functional**: State is immutable; new states are returned as values. Execution is deterministic but often relies on complex, nested garbage collectors.
+3. **Capabilities-Based**: State access is protected by cryptographic tokens or capability descriptors rather than raw pointer access.
+
+Edict occupies a hybrid space. Expressions are functional, pure, and deterministic. Side effects are sequentialized via A-normal form (ANF) statements. This structures the execution history into a transparent, verifiable timeline of state changes, making audits reproducible.
+
+### Ambient Authority vs. Sandbox Isolation
+In a standard computer language runtime, a process executes with "Ambient Authority" — the process inherits the permissions of the user running it. A library imported from a package repository can silently invoke socket connections, spawn files, or leak environment variables (FIDLAR).
+
+Edict abandons Ambient Authority entirely. Runtimes must verify and sign incoming **Contract Bundles** before they are admitted. Any effectful operation must target an adapter defined within a SHA-256 digest-locked lawpack or target profile, executing in a strictly sandboxed WASM component.
+
+---
+
+## 14. Novel Language Quirks, Features, and Design Rationales
+
+Edict incorporates several specific syntactic and behavioral designs that differ from mainstream computer languages. This section details these quirks and explains the engineering rationale behind them.
+
+### Quirk A: Adjacency-Locked Package Versions
+* **Quirk**: The lexer and parser require that the package version specifiers (e.g., `examples.hello@1.2.3-beta`) contain zero whitespace characters. Standard punctuation (dots, hyphens, and alphanumeric segments) must be tightly adjacent.
+* **Why We Did It This Way**: In traditional languages, package declarations are parsed using complex grammatical rules, or they are delegated to external configuration files (e.g., `Cargo.toml`, `package.json`). Edict places imports directly inside the code file, requiring strict cryptographic pinning. To prevent version numbers from being parsed as member accesses or mathematical expressions (`major.minor - beta`), the lexer binds the version as a single atomic token. Terminating version parsing immediately upon encountering whitespace eliminates parsing ambiguities.
+
+### Quirk B: Contextual Keyword Resolution
+* **Quirk**: Keywords like `max`, `min`, `canonical`, `type`, and `intent` are not reserved tokens in Edict. The lexer produces a generic `Ident(String)` token for all keywords. The [Parser](file:///Users/james/git/edict/crates/edict-syntax/src/parser.rs#L44-L47) determines contextually whether an identifier represents a declaration keyword or a variable name.
+* **Why We Did It This Way**: In languages with reserved keyword sets, developers cannot use common words like `type` or `max` as field names (e.g., `payload.type` or `object.max` are syntax errors in Rust and Java unless escaped). By matching keywords contextually, Edict allows developers to write natural, standard API interfaces while keeping the underlying compiler lexer simple and zero-dependency.
+
+### Quirk C: Obstruction-Driven Control Flow (No Exceptions)
+* **Quirk**: Edict has no `try/catch` mechanism, no `throw` statement, and no `null` pointers. If an effectful call fails, it must be bound inline to an alternative outcome payload: `let node = ref.read() else law.MissingNode;`.
+* **Why We Did It This Way**: In traditional runtimes, exception unwinding allocates memory for stack traces and jumps instructions dynamically. This runtime overhead is highly non-deterministic and architecture-dependent, preventing static cost estimation. By forcing explicit inline outcomes at the syntax boundary, the compiler can track all execution branches and statically verify cost bounds (`budget <= law.tinyBudget`).
+
+### Quirk D: Constrained Scalar Types (`String<max=256>`)
+* **Quirk**: Basic types are parameterized directly in type signatures with bounds (e.g., `String<max=256>` or `Bytes<max=1024>`).
+* **Why We Did It This Way**: GPLs allow dynamically sized strings, allocating memory from a heap as needed. In high-assurance sandboxes, dynamic heap allocation can lead to denial-of-service memory exhaustion attacks. Integrating length bounds directly into the type definition allows the Edict compiler to compute the maximum memory footprint of an intent before admission.
