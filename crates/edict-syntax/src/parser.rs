@@ -5,8 +5,8 @@
 
 use crate::ast::{
     BinOp, Block, BoundRef, Decl, Expr, FieldConstraint, FieldDecl, Import, ImportKind,
-    IntentClause, IntentDecl, Module, PackageRef, Param, RecordEntry, ScalarRefine, Stmt, TypeDecl,
-    TypeExpr, TypeRef, UnOp,
+    IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget,
+    PackageRef, Param, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -564,11 +564,13 @@ impl Parser {
             };
             self.expect(&TokenKind::Eq)?;
             let value = self.expr()?;
+            let els = self.maybe_else_handler()?;
             self.expect(&TokenKind::Semi)?;
             Ok(Stmt::Let {
                 name,
                 ty,
                 value,
+                els,
                 span: Span::new(start, self.prev_end()),
             })
         } else if self.eat_kw("return") {
@@ -578,12 +580,110 @@ impl Parser {
                 value,
                 span: Span::new(start, self.prev_end()),
             })
+        } else if self.eat_kw("require") {
+            let predicate = self.expr()?;
+            self.expect_kw("else")?;
+            let obstruction = self.obstruction_target()?;
+            self.expect(&TokenKind::Semi)?;
+            Ok(Stmt::Require {
+                predicate,
+                obstruction,
+                span: Span::new(start, self.prev_end()),
+            })
+        } else if self.eat_kw("guarantee") {
+            let predicate = self.expr()?;
+            let obstruction = if self.eat_kw("else") {
+                Some(self.obstruction_target()?)
+            } else {
+                None
+            };
+            self.expect(&TokenKind::Semi)?;
+            Ok(Stmt::Guarantee {
+                predicate,
+                obstruction,
+                span: Span::new(start, self.prev_end()),
+            })
+        } else if self.eat_kw("assert") {
+            let predicate = self.expr()?;
+            self.expect(&TokenKind::Semi)?;
+            Ok(Stmt::Assert {
+                predicate,
+                span: Span::new(start, self.prev_end()),
+            })
         } else {
-            self.err(format!(
-                "expected statement (`let`/`return`), found {:?}",
-                self.peek()
-            ))
+            // effect statement: an imported-effect call with optional `else`.
+            let call = self.expr()?;
+            let els = self.maybe_else_handler()?;
+            self.expect(&TokenKind::Semi)?;
+            Ok(Stmt::Effect {
+                call,
+                els,
+                span: Span::new(start, self.prev_end()),
+            })
         }
+    }
+
+    /// Parse an optional `else <obstruction-handler>` clause.
+    fn maybe_else_handler(&mut self) -> Result<Option<ObstructionHandler>, ParseError> {
+        if self.eat_kw("else") {
+            Ok(Some(self.obstruction_handler()?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn obstruction_handler(&mut self) -> Result<ObstructionHandler, ParseError> {
+        if *self.peek() == TokenKind::LBrace {
+            Ok(ObstructionHandler::Map(self.obstruction_map()?))
+        } else {
+            Ok(ObstructionHandler::Single(self.obstruction_target()?))
+        }
+    }
+
+    fn obstruction_target(&mut self) -> Result<ObstructionTarget, ParseError> {
+        let start = self.peek_span().start;
+        let coordinate = self.path()?;
+        let payload = if self.eat(&TokenKind::LParen) {
+            let e = self.expr()?;
+            self.expect(&TokenKind::RParen)?;
+            Some(e)
+        } else {
+            None
+        };
+        Ok(ObstructionTarget {
+            coordinate,
+            payload,
+            span: Span::new(start, self.prev_end()),
+        })
+    }
+
+    fn obstruction_map(&mut self) -> Result<Vec<ObstructionArm>, ParseError> {
+        self.expect(&TokenKind::LBrace)?;
+        let mut arms = Vec::new();
+        while *self.peek() != TokenKind::RBrace {
+            let start = self.peek_span().start;
+            let failure = self.ident()?;
+            let binder = if self.eat(&TokenKind::LParen) {
+                let b = self.ident()?;
+                self.expect(&TokenKind::RParen)?;
+                Some(b)
+            } else {
+                None
+            };
+            self.expect(&TokenKind::FatArrow)?;
+            let target = self.obstruction_target()?;
+            arms.push(ObstructionArm {
+                failure,
+                binder,
+                target,
+                span: Span::new(start, self.prev_end()),
+            });
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Ok(arms)
     }
 
     // --- expressions (precedence climbing) ---
@@ -688,16 +788,88 @@ impl Parser {
     fn postfix(&mut self) -> Result<Expr, ParseError> {
         let start = self.peek_span().start;
         let mut e = self.primary()?;
-        while *self.peek() == TokenKind::Dot {
-            self.idx += 1;
-            let field = self.ident()?;
-            e = Expr::Field {
-                base: Box::new(e),
-                field,
-                span: Span::new(start, self.prev_end()),
-            };
+        loop {
+            match self.peek() {
+                TokenKind::Dot => {
+                    self.idx += 1;
+                    let field = self.ident()?;
+                    e = Expr::Field {
+                        base: Box::new(e),
+                        field,
+                        span: Span::new(start, self.prev_end()),
+                    };
+                }
+                TokenKind::LParen => {
+                    let args = self.call_args()?;
+                    e = Expr::Call {
+                        callee: Box::new(e),
+                        type_args: Vec::new(),
+                        args,
+                        span: Span::new(start, self.prev_end()),
+                    };
+                }
+                TokenKind::Lt => {
+                    // `<` is ambiguous (generics vs comparison). Only treat it as
+                    // a type-call when `<type-args>` is immediately followed by
+                    // `(`; otherwise backtrack and let `relational` handle `<`.
+                    let Some(type_args) = self.try_type_call_args() else {
+                        break;
+                    };
+                    let args = self.call_args()?;
+                    e = Expr::Call {
+                        callee: Box::new(e),
+                        type_args,
+                        args,
+                        span: Span::new(start, self.prev_end()),
+                    };
+                }
+                _ => break,
+            }
         }
         Ok(e)
+    }
+
+    fn call_args(&mut self) -> Result<Vec<Expr>, ParseError> {
+        self.expect(&TokenKind::LParen)?;
+        let mut args = Vec::new();
+        while *self.peek() != TokenKind::RParen {
+            args.push(self.expr()?);
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.expect(&TokenKind::RParen)?;
+        Ok(args)
+    }
+
+    /// Try to parse `<type-args>` that is immediately followed by `(` (a
+    /// type-call). On any mismatch, restore the cursor and return `None` so the
+    /// caller can treat `<` as the relational operator.
+    fn try_type_call_args(&mut self) -> Option<Vec<TypeRef>> {
+        let save = self.idx;
+        self.idx += 1; // consume '<'
+        let mut args = Vec::new();
+        loop {
+            let Ok(t) = self.type_ref() else {
+                self.idx = save;
+                return None;
+            };
+            args.push(t);
+            if self.eat(&TokenKind::Comma) {
+                continue;
+            }
+            break;
+        }
+        if *self.peek() != TokenKind::Gt {
+            self.idx = save;
+            return None;
+        }
+        self.idx += 1; // consume '>'
+        if *self.peek() != TokenKind::LParen {
+            self.idx = save;
+            return None;
+        }
+        Some(args)
     }
 
     fn primary(&mut self) -> Result<Expr, ParseError> {

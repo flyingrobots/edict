@@ -172,12 +172,66 @@ pub enum Stmt {
         name: String,
         ty: Option<TypeRef>,
         value: Expr,
+        /// Optional effect-failure mapping when the rhs is an imported effect.
+        els: Option<ObstructionHandler>,
+        span: Span,
+    },
+    /// A bare imported-effect call statement, e.g. `ref.replace(x) else Obs;`.
+    Effect {
+        call: Expr,
+        els: Option<ObstructionHandler>,
+        span: Span,
+    },
+    /// `require predicate else Obstruction;` (always carries `else`).
+    Require {
+        predicate: Expr,
+        obstruction: ObstructionTarget,
+        span: Span,
+    },
+    /// `guarantee predicate [else Obstruction];` (`else` for precommit checks).
+    Guarantee {
+        predicate: Expr,
+        obstruction: Option<ObstructionTarget>,
+        span: Span,
+    },
+    /// `assert predicate;` (proof-only, never carries `else`).
+    Assert {
+        predicate: Expr,
         span: Span,
     },
     Return {
         value: Expr,
         span: Span,
     },
+}
+
+/// How an effect's failures map to typed domain obstructions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ObstructionHandler {
+    /// Single-obstruction shorthand: `else rope.Missing` / `else rope.X({...})`.
+    Single(ObstructionTarget),
+    /// Full mapping: `else { mismatch(f) => rope.X({...}), ... }`.
+    Map(Vec<ObstructionArm>),
+}
+
+/// One arm of an obstruction map.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObstructionArm {
+    /// The low-level failure coordinate (map key), e.g. `mismatch`.
+    pub failure: String,
+    /// Optional binder for the low-level failure value: `mismatch(f) => ...`.
+    pub binder: Option<String>,
+    pub target: ObstructionTarget,
+    pub span: Span,
+}
+
+/// A domain obstruction constructor: a coordinate plus optional payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObstructionTarget {
+    pub coordinate: Vec<String>,
+    /// `rope.X({ expected: ..., observed: ... })` payload expression, if any.
+    pub payload: Option<Expr>,
+    pub span: Span,
 }
 
 /// A binary operator.
@@ -226,6 +280,13 @@ pub enum Expr {
     Field {
         base: Box<Expr>,
         field: String,
+        span: Span,
+    },
+    /// A call: `callee(args)` or `callee<TypeArgs>(args)`.
+    Call {
+        callee: Box<Expr>,
+        type_args: Vec<TypeRef>,
+        args: Vec<Expr>,
         span: Span,
     },
     Unary {

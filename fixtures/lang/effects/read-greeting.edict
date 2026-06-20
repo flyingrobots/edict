@@ -1,0 +1,21 @@
+package examples.greeting@1;
+
+use shape "schemas/greeting.graphql" as shape;
+use lawpack greeting.optics@1 digest "sha256:0000000000000000000000000000000000000000000000000000000000000000" as greetingLaw;
+use target echo.dpo@1 digest "sha256:1111111111111111111111111111111111111111111111111111111111111111" as echo;
+
+intent readGreeting(input: shape.ReadGreetingInput)
+  returns shape.GreetingReading
+  profile echo.readOnly
+  basis input.greetingId
+  budget <= greetingLaw.readGreetingBudget
+{
+  let greetingRef = echo.ref<shape.Greeting>(input.greetingId);
+  let greeting = greetingRef.read()
+    else greetingLaw.GreetingMissing;
+
+  return {
+    greetingId: input.greetingId,
+    message: greeting.message,
+  };
+}
