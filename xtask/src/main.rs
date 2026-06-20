@@ -119,13 +119,15 @@ fn check_topic(
     let mut covered_requirements = BTreeSet::new();
 
     for case in cases.values() {
-        if !requirement_ids.contains(case.requirement.as_str()) {
-            return Err(format!(
-                "{} references unknown requirement {}",
-                case.id, case.requirement
-            ));
+        for requirement in split_cell_list(&case.requirement) {
+            if !requirement_ids.contains(requirement) {
+                return Err(format!(
+                    "{} references unknown requirement {}",
+                    case.id, requirement
+                ));
+            }
+            covered_requirements.insert(requirement.to_owned());
         }
-        covered_requirements.insert(case.requirement.as_str());
         if case.oracle.trim().is_empty() || case.oracle.trim() == "-" {
             return Err(format!("{} is missing a mandatory oracle", case.id));
         }
@@ -155,7 +157,7 @@ fn check_topic(
     }
 
     for requirement in requirements.keys() {
-        if !covered_requirements.contains(requirement.as_str()) {
+        if !covered_requirements.contains(requirement) {
             return Err(format!("{requirement} has no planned or implemented case"));
         }
     }
@@ -165,7 +167,7 @@ fn check_topic(
         .copied()
         .collect::<BTreeSet<_>>();
     for id in bracket_ids(&(chapter + "\n" + &plan)) {
-        if id.starts_with("SYNTAX-") && !all_topic_ids.contains(id.as_str()) {
+        if (is_requirement_id(&id) || is_case_id(&id)) && !all_topic_ids.contains(id.as_str()) {
             return Err(format!("topic references unknown ID `{id}`"));
         }
         if id.starts_with("EDICT-") && !requirement_registry.contains(&id) {
@@ -181,10 +183,7 @@ fn parse_requirement_rows(plan: &str) -> Result<BTreeMap<String, String>, String
     let mut out = BTreeMap::new();
     for line in plan.lines() {
         let cells = table_cells(line);
-        if cells
-            .first()
-            .is_some_and(|cell| cell.starts_with("SYNTAX-REQ-"))
-        {
+        if cells.first().is_some_and(|cell| is_requirement_id(cell)) {
             if cells.len() < 4 {
                 return Err(format!("malformed requirement row: {line}"));
             }
@@ -200,10 +199,7 @@ fn parse_case_rows(plan: &str) -> Result<BTreeMap<String, CaseRow>, String> {
     let mut out = BTreeMap::new();
     for line in plan.lines() {
         let cells = table_cells(line);
-        if cells
-            .first()
-            .is_some_and(|cell| cell.starts_with("SYNTAX-TP-"))
-        {
+        if cells.first().is_some_and(|cell| is_case_id(cell)) {
             if cells.len() < 8 {
                 return Err(format!("malformed case row: {line}"));
             }
@@ -306,12 +302,24 @@ fn bracket_ids(text: &str) -> BTreeSet<String> {
             break;
         };
         let id = &rest[..end];
-        if id.starts_with("SYNTAX-") || id.starts_with("EDICT-") {
+        if is_requirement_id(id) || is_case_id(id) || id.starts_with("EDICT-") {
             out.insert(id.to_owned());
         }
         rest = &rest[end + 1..];
     }
     out
+}
+
+fn is_requirement_id(s: &str) -> bool {
+    s.contains("-REQ-")
+        && s.chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '-')
+}
+
+fn is_case_id(s: &str) -> bool {
+    s.contains("-TP-")
+        && s.chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '-')
 }
 
 fn split_cell_list(cell: &str) -> impl Iterator<Item = &str> {

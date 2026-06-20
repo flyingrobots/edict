@@ -27,5 +27,7 @@ cargo xtask verify
 
 ## Topics
 
+- [Semantic Validation](./semantic-validation/README.md): Phase 2 source-AST
+  semantic validation contract and verification matrix.
 - [Syntax](./syntax/README.md): Phase 1 `edict-syntax` lexer/parser contract and
   verification matrix.

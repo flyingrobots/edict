@@ -1,0 +1,59 @@
+# Semantic Validation Topic
+
+Status: current HEAD contract.
+
+This chapter describes the Phase 2 semantic validation surface that exists
+today. It is intentionally narrower than issue #10: this pass validates only
+source-AST constraints that do not require import resolution, type checking,
+target profile data, lawpack ABI data, or Core IR.
+
+## Public Surface
+
+The public validation entry point is `validate_module`:
+
+```rust
+use edict_syntax::{parse_module, validate_module, SemanticErrorKind};
+
+let module = parse_module(
+    "package examples.hello@1;\n\
+     type HelloInput = { name: String, };\n",
+)
+.expect("source parses");
+
+let errors = validate_module(&module).expect_err("unbounded String rejects");
+assert_eq!(errors[0].kind, SemanticErrorKind::UnboundedScalar);
+```
+
+Validation accepts a parsed source AST and returns either `Ok(())` or all
+source-level semantic errors found in source order. Tests assert structured
+`SemanticErrorKind` values, not message prose. [SEMVAL-REQ-001]
+
+## Current Contract
+
+- Runtime `String` and `Bytes` type references must carry explicit bounds. The
+  pass checks nested type references recursively, including `Option`, `List`,
+  `Map`, `CapabilityRef`, variant payloads, intent parameters, intent returns,
+  typed `let` declarations, and expression type arguments. [SEMVAL-REQ-002]
+- Every intent must declare at least one operation mode: `profile` or
+  `implements`. An intent may declare both. [SEMVAL-REQ-003]
+- Every intent must declare a `budget` clause. [SEMVAL-REQ-004]
+- Every intent must declare a `basis` clause. This pass cannot yet resolve
+  profile- or lawpack-supplied basis templates, so the current source-level
+  contract requires an explicit source clause. [SEMVAL-REQ-005]
+- Singleton intent clauses reject duplicates for `profile`, `implements`,
+  `basis`, `footprint`, and `budget`. [SEMVAL-REQ-006]
+
+## Deferred
+
+The following issue #10 items are not implemented in this first Phase 2 slice:
+
+- shadowing and name-resolution checks;
+- import/package/type/prelude collision checks;
+- type checking and integer contextual-width validation;
+- loop bound provability;
+- target/lawpack failure taxonomy and obstruction exhaustiveness;
+- read-only inference;
+- Core IR relapse-zoo fixtures and golden artifacts.
+
+Those checks require later semantic environments, target/lawpack facts, or Core
+IR and are tracked as planned cases in [test-plan.md](./test-plan.md).

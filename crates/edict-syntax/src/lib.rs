@@ -16,13 +16,18 @@
 
 pub mod ast;
 pub mod parser;
+pub mod semantic;
 pub mod token;
 
 pub use parser::{parse_module, ParseError, ParseErrorKind};
+pub use semantic::{validate_module, SemanticError, SemanticErrorKind};
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
 
 #[cfg(doctest)]
 mod topic_shelf_doctests {
+    #[doc = include_str!("../../../docs/topics/semantic-validation/README.md")]
+    pub struct SemanticValidationTopicDocs;
+
     #[doc = include_str!("../../../docs/topics/syntax/README.md")]
     pub struct SyntaxTopicDocs;
 }
