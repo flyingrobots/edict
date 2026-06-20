@@ -43,6 +43,17 @@ impl IntSuffix {
             _ => None,
         }
     }
+
+    /// The source spelling of this suffix.
+    #[must_use]
+    pub fn lexeme(self) -> &'static str {
+        match self {
+            Self::I32 => "i32",
+            Self::I64 => "i64",
+            Self::U32 => "u32",
+            Self::U64 => "u64",
+        }
+    }
 }
 
 /// The lexical category of a token.
@@ -51,7 +62,10 @@ pub enum TokenKind {
     /// Any bare word `[A-Za-z_][A-Za-z0-9_]*` (keywords included).
     Ident(String),
     /// Integer literal: raw digits (underscores stripped) plus optional suffix.
-    Int { value: String, suffix: Option<IntSuffix> },
+    Int {
+        value: String,
+        suffix: Option<IntSuffix>,
+    },
     /// String literal contents (without the surrounding quotes), not normalized.
     Str(String),
 
@@ -133,7 +147,10 @@ struct Lexer<'a> {
 
 impl<'a> Lexer<'a> {
     fn new(src: &'a str) -> Self {
-        Self { src: src.as_bytes(), pos: 0 }
+        Self {
+            src: src.as_bytes(),
+            pos: 0,
+        }
     }
 
     fn run(mut self) -> Result<Vec<Token>, LexError> {
@@ -142,16 +159,22 @@ impl<'a> Lexer<'a> {
             self.skip_trivia()?;
             let start = self.pos;
             let Some(c) = self.peek() else {
-                out.push(Token { kind: TokenKind::Eof, span: Span::new(start, start) });
+                out.push(Token {
+                    kind: TokenKind::Eof,
+                    span: Span::new(start, start),
+                });
                 return Ok(out);
             };
             let kind = match c {
                 b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.ident(),
-                b'0'..=b'9' => self.number(),
+                b'0'..=b'9' => self.number()?,
                 b'"' => self.string()?,
                 _ => self.punct()?,
             };
-            out.push(Token { kind, span: Span::new(start, self.pos) });
+            out.push(Token {
+                kind,
+                span: Span::new(start, self.pos),
+            });
         }
     }
 
@@ -209,7 +232,10 @@ impl<'a> Lexer<'a> {
 
     fn ident(&mut self) -> TokenKind {
         let start = self.pos;
-        while matches!(self.peek(), Some(b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_')) {
+        while matches!(
+            self.peek(),
+            Some(b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'_')
+        ) {
             self.pos += 1;
         }
         let text = std::str::from_utf8(&self.src[start..self.pos])
@@ -217,17 +243,34 @@ impl<'a> Lexer<'a> {
         TokenKind::Ident(text.to_string())
     }
 
-    fn number(&mut self) -> TokenKind {
+    fn number(&mut self) -> Result<TokenKind, LexError> {
         let mut value = String::new();
-        // digits with internal underscores
-        while let Some(c) = self.peek() {
-            match c {
-                b'0'..=b'9' => {
+        // Digits with underscores allowed only *between* digits (SPEC Lexical
+        // Rules): never leading, trailing, or adjacent.
+        let mut last_was_digit = false;
+        loop {
+            match self.peek() {
+                Some(c @ b'0'..=b'9') => {
                     value.push(char::from(c));
                     self.pos += 1;
+                    last_was_digit = true;
                 }
-                b'_' => {
-                    self.pos += 1;
+                Some(b'_') => {
+                    let us = self.pos;
+                    if !last_was_digit {
+                        return Err(LexError {
+                            message: "underscore must follow a digit".into(),
+                            span: Span::new(us, us + 1),
+                        });
+                    }
+                    self.pos += 1; // consume '_'
+                    if !matches!(self.peek(), Some(b'0'..=b'9')) {
+                        return Err(LexError {
+                            message: "underscore must be between digits".into(),
+                            span: Span::new(us, self.pos),
+                        });
+                    }
+                    last_was_digit = false;
                 }
                 _ => break,
             }
@@ -248,36 +291,43 @@ impl<'a> Lexer<'a> {
             self.pos = suffix_start;
             None
         };
-        TokenKind::Int { value, suffix }
+        Ok(TokenKind::Int { value, suffix })
     }
 
     fn string(&mut self) -> Result<TokenKind, LexError> {
         let open = self.pos;
         self.pos += 1; // opening quote
-        let mut out = String::new();
+                       // Accumulate raw bytes so multi-byte UTF-8 sequences survive intact,
+                       // then decode once at the close quote (String decodes to Unicode scalar
+                       // values; SPEC - Edict Language v1, Core Types).
+        let mut buf: Vec<u8> = Vec::new();
         loop {
             match self.peek() {
                 Some(b'"') => {
                     self.pos += 1;
-                    return Ok(TokenKind::Str(out));
+                    let s = String::from_utf8(buf).map_err(|_| LexError {
+                        message: "string literal is not valid UTF-8".into(),
+                        span: Span::new(open, self.pos),
+                    })?;
+                    return Ok(TokenKind::Str(s));
                 }
                 Some(b'\\') => {
                     self.pos += 1;
                     match self.peek() {
                         Some(b'"') => {
-                            out.push('"');
+                            buf.push(b'"');
                             self.pos += 1;
                         }
                         Some(b'\\') => {
-                            out.push('\\');
+                            buf.push(b'\\');
                             self.pos += 1;
                         }
                         Some(b'n') => {
-                            out.push('\n');
+                            buf.push(b'\n');
                             self.pos += 1;
                         }
                         Some(b't') => {
-                            out.push('\t');
+                            buf.push(b'\t');
                             self.pos += 1;
                         }
                         _ => {
@@ -288,9 +338,9 @@ impl<'a> Lexer<'a> {
                         }
                     }
                 }
-                Some(_) => {
-                    // copy one UTF-8 byte; multi-byte chars pass through intact
-                    out.push(char::from(self.bump()));
+                Some(byte) => {
+                    buf.push(byte);
+                    self.pos += 1;
                 }
                 None => {
                     return Err(LexError {
@@ -383,7 +433,11 @@ mod tests {
     use super::*;
 
     fn kinds(src: &str) -> Vec<TokenKind> {
-        lex(src).expect("lex ok").into_iter().map(|t| t.kind).collect()
+        lex(src)
+            .expect("lex ok")
+            .into_iter()
+            .map(|t| t.kind)
+            .collect()
     }
 
     #[test]
@@ -397,7 +451,10 @@ mod tests {
                 TokenKind::Dot,
                 TokenKind::Ident("hello".into()),
                 TokenKind::At,
-                TokenKind::Int { value: "1".into(), suffix: None },
+                TokenKind::Int {
+                    value: "1".into(),
+                    suffix: None
+                },
                 TokenKind::Semi,
                 TokenKind::Eof,
             ]
@@ -414,7 +471,10 @@ mod tests {
                 TokenKind::Lt,
                 TokenKind::Ident("max".into()),
                 TokenKind::Eq,
-                TokenKind::Int { value: "256".into(), suffix: None },
+                TokenKind::Int {
+                    value: "256".into(),
+                    suffix: None
+                },
                 TokenKind::Gt,
                 TokenKind::Le,
                 TokenKind::Ne,
@@ -431,9 +491,18 @@ mod tests {
         assert_eq!(
             k,
             vec![
-                TokenKind::Int { value: "1".into(), suffix: Some(IntSuffix::U64) },
-                TokenKind::Int { value: "64000".into(), suffix: Some(IntSuffix::I64) },
-                TokenKind::Int { value: "7".into(), suffix: None },
+                TokenKind::Int {
+                    value: "1".into(),
+                    suffix: Some(IntSuffix::U64)
+                },
+                TokenKind::Int {
+                    value: "64000".into(),
+                    suffix: Some(IntSuffix::I64)
+                },
+                TokenKind::Int {
+                    value: "7".into(),
+                    suffix: None
+                },
                 TokenKind::Eof,
             ]
         );
@@ -442,10 +511,7 @@ mod tests {
     #[test]
     fn skips_comments_and_keeps_strings() {
         let k = kinds("// line\n/* block */ \"hello, \"");
-        assert_eq!(
-            k,
-            vec![TokenKind::Str("hello, ".into()), TokenKind::Eof]
-        );
+        assert_eq!(k, vec![TokenKind::Str("hello, ".into()), TokenKind::Eof]);
     }
 
     #[test]
@@ -459,5 +525,31 @@ mod tests {
     #[test]
     fn unterminated_string_errors() {
         assert!(lex("\"oops").is_err());
+    }
+
+    #[test]
+    fn integer_underscores_only_between_digits() {
+        assert_eq!(
+            kinds("1_000"),
+            vec![
+                TokenKind::Int {
+                    value: "1000".into(),
+                    suffix: None
+                },
+                TokenKind::Eof
+            ]
+        );
+        assert!(lex("1_").is_err(), "trailing underscore rejects");
+        assert!(lex("1__0").is_err(), "adjacent underscores reject");
+    }
+
+    #[test]
+    fn multibyte_utf8_string_is_not_corrupted() {
+        // "café — naïve 🦀" exercises 2-, 3-, and 4-byte UTF-8 sequences.
+        let s = "\"café — naïve 🦀\"";
+        assert_eq!(
+            kinds(s),
+            vec![TokenKind::Str("café — naïve 🦀".into()), TokenKind::Eof]
+        );
     }
 }

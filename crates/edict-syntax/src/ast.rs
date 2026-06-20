@@ -15,7 +15,7 @@ pub struct PackageRef {
 }
 
 /// A source module: one package, then imports, then declarations.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Module {
     pub package: PackageRef,
     pub imports: Vec<Import>,
@@ -48,7 +48,7 @@ pub struct Import {
 }
 
 /// A top-level declaration.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decl {
     Type(TypeDecl),
     Intent(IntentDecl),
@@ -99,15 +99,25 @@ pub enum BoundRef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeRef {
     /// `qual.ident` with optional `<type-args>`.
-    Named { path: Vec<String>, args: Vec<TypeRef> },
+    Named {
+        path: Vec<String>,
+        args: Vec<TypeRef>,
+    },
     /// `String` / `String<max=N[, canonical=x]>`.
     StringTy(Option<ScalarRefine>),
     /// `Bytes` / `Bytes<max=N>` (max-only; no canonicalization).
     BytesTy(Option<u64>),
     Option(Box<TypeRef>),
     CapabilityRef(Box<TypeRef>),
-    List { elem: Box<TypeRef>, max: BoundRef },
-    Map { key: Box<TypeRef>, value: Box<TypeRef>, max: BoundRef },
+    List {
+        elem: Box<TypeRef>,
+        max: BoundRef,
+    },
+    Map {
+        key: Box<TypeRef>,
+        value: Box<TypeRef>,
+        max: BoundRef,
+    },
 }
 
 /// A refined `String` bound: `max=` plus optional `canonical=`.
@@ -118,7 +128,7 @@ pub struct ScalarRefine {
 }
 
 /// `intent name(params) returns Ty <clauses> { body }`
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntentDecl {
     pub name: String,
     pub params: Vec<Param>,
@@ -137,7 +147,7 @@ pub struct Param {
 }
 
 /// An intent clause (order-independent).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IntentClause {
     Profile(Vec<String>),
     Implements(Vec<String>),
@@ -149,17 +159,25 @@ pub enum IntentClause {
 }
 
 /// A `{ ... }` statement block.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
     pub span: Span,
 }
 
 /// A statement inside an intent body (minimal-v1 subset).
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
-    Let { name: String, ty: Option<TypeRef>, value: Expr, span: Span },
-    Return { value: Expr, span: Span },
+    Let {
+        name: String,
+        ty: Option<TypeRef>,
+        value: Expr,
+        span: Span,
+    },
+    Return {
+        value: Expr,
+        span: Span,
+    },
 }
 
 /// A binary operator.
@@ -188,22 +206,48 @@ pub enum UnOp {
 }
 
 /// An expression.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Expr {
     /// A single bare identifier (local/parameter).
-    Ident { name: String, span: Span },
-    Int { value: String, suffix: Option<IntSuffix>, span: Span },
-    Str { value: String, span: Span },
+    Ident {
+        name: String,
+        span: Span,
+    },
+    Int {
+        value: String,
+        suffix: Option<IntSuffix>,
+        span: Span,
+    },
+    Str {
+        value: String,
+        span: Span,
+    },
     /// `expr.field` member access.
-    Field { base: Box<Expr>, field: String, span: Span },
-    Unary { op: UnOp, operand: Box<Expr>, span: Span },
-    Binary { op: BinOp, lhs: Box<Expr>, rhs: Box<Expr>, span: Span },
+    Field {
+        base: Box<Expr>,
+        field: String,
+        span: Span,
+    },
+    Unary {
+        op: UnOp,
+        operand: Box<Expr>,
+        span: Span,
+    },
+    Binary {
+        op: BinOp,
+        lhs: Box<Expr>,
+        rhs: Box<Expr>,
+        span: Span,
+    },
     /// A record literal `{ a: x, b, ...spread }`.
-    Record { entries: Vec<RecordEntry>, span: Span },
+    Record {
+        entries: Vec<RecordEntry>,
+        span: Span,
+    },
 }
 
 /// One entry in a record literal.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordEntry {
     /// `name: value`
     Field { name: String, value: Expr },

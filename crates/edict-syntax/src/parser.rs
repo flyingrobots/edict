@@ -4,9 +4,9 @@
 //! text so they remain usable as member names after `.`.
 
 use crate::ast::{
-    BinOp, BoundRef, Block, Decl, Expr, FieldConstraint, FieldDecl, Import, ImportKind, IntentClause,
-    IntentDecl, Module, Param, PackageRef, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr,
-    TypeRef, UnOp,
+    BinOp, Block, BoundRef, Decl, Expr, FieldConstraint, FieldDecl, Import, ImportKind,
+    IntentClause, IntentDecl, Module, PackageRef, Param, RecordEntry, ScalarRefine, Stmt, TypeDecl,
+    TypeExpr, TypeRef, UnOp,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -19,7 +19,11 @@ pub struct ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "parse error at {}..{}: {}", self.span.start, self.span.end, self.message)
+        write!(
+            f,
+            "parse error at {}..{}: {}",
+            self.span.start, self.span.end, self.message
+        )
     }
 }
 
@@ -30,7 +34,10 @@ impl std::error::Error for ParseError {}
 /// # Errors
 /// Returns a [`ParseError`] on the first lexing or grammar violation.
 pub fn parse_module(src: &str) -> Result<Module, ParseError> {
-    let tokens = lex(src).map_err(|e| ParseError { message: e.message, span: e.span })?;
+    let tokens = lex(src).map_err(|e| ParseError {
+        message: e.message,
+        span: e.span,
+    })?;
     Parser::new(tokens).module()
 }
 
@@ -55,7 +62,11 @@ impl Parser {
     }
 
     fn prev_end(&self) -> usize {
-        if self.idx == 0 { 0 } else { self.tokens[self.idx - 1].span.end }
+        if self.idx == 0 {
+            0
+        } else {
+            self.tokens[self.idx - 1].span.end
+        }
     }
 
     fn at_eof(&self) -> bool {
@@ -63,7 +74,10 @@ impl Parser {
     }
 
     fn err<T>(&self, message: impl Into<String>) -> Result<T, ParseError> {
-        Err(ParseError { message: message.into(), span: self.peek_span() })
+        Err(ParseError {
+            message: message.into(),
+            span: self.peek_span(),
+        })
     }
 
     /// Match a punctuation token (no payload) and consume it on success.
@@ -148,25 +162,55 @@ impl Parser {
         while !self.at_eof() {
             decls.push(self.decl()?);
         }
-        Ok(Module { package, imports, decls })
+        Ok(Module {
+            package,
+            imports,
+            decls,
+        })
     }
 
     fn package_ref(&mut self) -> Result<PackageRef, ParseError> {
         let start = self.peek_span().start;
         let path = self.path()?;
         self.expect(&TokenKind::At)?;
-        let version = match self.peek().clone() {
-            TokenKind::Int { value, .. } => {
-                self.idx += 1;
-                value
+        let version = self.version()?;
+        Ok(PackageRef {
+            path,
+            version,
+            span: Span::new(start, self.prev_end()),
+        })
+    }
+
+    /// A package version: starts with a digit, then a run of digit / `.` / `-` /
+    /// identifier segments that are *adjacent* (no intervening whitespace).
+    /// Whitespace terminates the version (SPEC grammar `version`).
+    fn version(&mut self) -> Result<String, ParseError> {
+        if !matches!(self.peek(), TokenKind::Int { .. }) {
+            return self.err("expected package version (must start with a digit)");
+        }
+        let mut s = String::new();
+        let mut last_end: Option<usize> = None;
+        loop {
+            let span = self.peek_span();
+            if last_end.is_some_and(|end| span.start != end) {
+                break; // whitespace gap ends the version
             }
-            TokenKind::Ident(s) => {
-                self.idx += 1;
-                s
+            match self.peek().clone() {
+                TokenKind::Int { value, suffix } => {
+                    s.push_str(&value);
+                    if let Some(suf) = suffix {
+                        s.push_str(suf.lexeme());
+                    }
+                }
+                TokenKind::Dot => s.push('.'),
+                TokenKind::Minus => s.push('-'),
+                TokenKind::Ident(t) => s.push_str(&t),
+                _ => break,
             }
-            other => return self.err(format!("expected package version, found {other:?}")),
-        };
-        Ok(PackageRef { path, version, span: Span::new(start, self.prev_end()) })
+            last_end = Some(span.end);
+            self.idx += 1;
+        }
+        Ok(s)
     }
 
     fn package_decl(&mut self) -> Result<PackageRef, ParseError> {
@@ -199,12 +243,23 @@ impl Parser {
             (Some(self.package_ref()?), None)
         };
 
-        let digest = if self.eat_kw("digest") { Some(self.string()?) } else { None };
+        let digest = if self.eat_kw("digest") {
+            Some(self.string()?)
+        } else {
+            None
+        };
 
         self.expect_kw("as")?;
         let alias = self.ident()?;
         self.expect(&TokenKind::Semi)?;
-        Ok(Import { kind, package, shape_path, digest, alias, span: Span::new(start, self.prev_end()) })
+        Ok(Import {
+            kind,
+            package,
+            shape_path,
+            digest,
+            alias,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     fn decl(&mut self) -> Result<Decl, ParseError> {
@@ -213,7 +268,10 @@ impl Parser {
         } else if self.at_kw("intent") {
             Ok(Decl::Intent(self.intent_decl()?))
         } else {
-            self.err(format!("expected `type` or `intent` declaration, found {:?}", self.peek()))
+            self.err(format!(
+                "expected `type` or `intent` declaration, found {:?}",
+                self.peek()
+            ))
         }
     }
 
@@ -238,7 +296,12 @@ impl Parser {
             TypeExpr::Ref(self.type_ref()?)
         };
         self.expect(&TokenKind::Semi)?;
-        Ok(TypeDecl { name, params, body, span: Span::new(start, self.prev_end()) })
+        Ok(TypeDecl {
+            name,
+            params,
+            body,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     fn record_type(&mut self) -> Result<Vec<FieldDecl>, ParseError> {
@@ -250,7 +313,12 @@ impl Parser {
             self.expect(&TokenKind::Colon)?;
             let ty = self.type_ref()?;
             let constraints = self.field_constraints()?;
-            fields.push(FieldDecl { name, ty, constraints, span: Span::new(start, self.prev_end()) });
+            fields.push(FieldDecl {
+                name,
+                ty,
+                constraints,
+                span: Span::new(start, self.prev_end()),
+            });
             if !self.eat(&TokenKind::Comma) {
                 break;
             }
@@ -284,13 +352,18 @@ impl Parser {
         match self.peek().clone() {
             TokenKind::Int { value, .. } => {
                 self.idx += 1;
-                value.parse::<u64>().map(BoundRef::Int).map_err(|_| ParseError {
-                    message: format!("invalid integer bound `{value}`"),
-                    span: self.peek_span(),
-                })
+                value
+                    .parse::<u64>()
+                    .map(BoundRef::Int)
+                    .map_err(|_| ParseError {
+                        message: format!("invalid integer bound `{value}`"),
+                        span: self.peek_span(),
+                    })
             }
             TokenKind::Ident(_) => Ok(BoundRef::Coord(self.path()?)),
-            other => self.err(format!("expected bound (integer or coordinate), found {other:?}")),
+            other => self.err(format!(
+                "expected bound (integer or coordinate), found {other:?}"
+            )),
         }
     }
 
@@ -319,7 +392,10 @@ impl Parser {
                 self.expect(&TokenKind::Eq)?;
                 let max = self.bound_ref()?;
                 self.expect(&TokenKind::Gt)?;
-                Ok(TypeRef::List { elem: Box::new(elem), max })
+                Ok(TypeRef::List {
+                    elem: Box::new(elem),
+                    max,
+                })
             }
             "Map" => {
                 self.expect(&TokenKind::Lt)?;
@@ -331,7 +407,11 @@ impl Parser {
                 self.expect(&TokenKind::Eq)?;
                 let max = self.bound_ref()?;
                 self.expect(&TokenKind::Gt)?;
-                Ok(TypeRef::Map { key: Box::new(key), value: Box::new(value), max })
+                Ok(TypeRef::Map {
+                    key: Box::new(key),
+                    value: Box::new(value),
+                    max,
+                })
             }
             _ => {
                 // qualified name with optional generic type-args
@@ -400,7 +480,11 @@ impl Parser {
             let pname = self.ident()?;
             self.expect(&TokenKind::Colon)?;
             let ty = self.type_ref()?;
-            params.push(Param { name: pname, ty, span: Span::new(pstart, self.prev_end()) });
+            params.push(Param {
+                name: pname,
+                ty,
+                span: Span::new(pstart, self.prev_end()),
+            });
             if !self.eat(&TokenKind::Comma) {
                 break;
             }
@@ -445,7 +529,14 @@ impl Parser {
         }
 
         let body = self.block()?;
-        Ok(IntentDecl { name, params, returns, clauses, body, span: Span::new(start, self.prev_end()) })
+        Ok(IntentDecl {
+            name,
+            params,
+            returns,
+            clauses,
+            body,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     fn block(&mut self) -> Result<Block, ParseError> {
@@ -456,24 +547,42 @@ impl Parser {
             stmts.push(self.stmt()?);
         }
         self.expect(&TokenKind::RBrace)?;
-        Ok(Block { stmts, span: Span::new(start, self.prev_end()) })
+        Ok(Block {
+            stmts,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     fn stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span().start;
         if self.eat_kw("let") {
             let name = self.ident()?;
-            let ty = if self.eat(&TokenKind::Colon) { Some(self.type_ref()?) } else { None };
+            let ty = if self.eat(&TokenKind::Colon) {
+                Some(self.type_ref()?)
+            } else {
+                None
+            };
             self.expect(&TokenKind::Eq)?;
             let value = self.expr()?;
             self.expect(&TokenKind::Semi)?;
-            Ok(Stmt::Let { name, ty, value, span: Span::new(start, self.prev_end()) })
+            Ok(Stmt::Let {
+                name,
+                ty,
+                value,
+                span: Span::new(start, self.prev_end()),
+            })
         } else if self.eat_kw("return") {
             let value = self.expr()?;
             self.expect(&TokenKind::Semi)?;
-            Ok(Stmt::Return { value, span: Span::new(start, self.prev_end()) })
+            Ok(Stmt::Return {
+                value,
+                span: Span::new(start, self.prev_end()),
+            })
         } else {
-            self.err(format!("expected statement (`let`/`return`), found {:?}", self.peek()))
+            self.err(format!(
+                "expected statement (`let`/`return`), found {:?}",
+                self.peek()
+            ))
         }
     }
 
@@ -517,7 +626,10 @@ impl Parser {
     }
 
     fn equality(&mut self) -> Result<Expr, ParseError> {
-        self.binop_left(Self::relational, &[(TokenKind::EqEq, BinOp::Eq), (TokenKind::Ne, BinOp::Ne)])
+        self.binop_left(
+            Self::relational,
+            &[(TokenKind::EqEq, BinOp::Eq), (TokenKind::Ne, BinOp::Ne)],
+        )
     }
 
     fn relational(&mut self) -> Result<Expr, ParseError> {
@@ -533,13 +645,23 @@ impl Parser {
     }
 
     fn additive(&mut self) -> Result<Expr, ParseError> {
-        self.binop_left(Self::multiplicative, &[(TokenKind::Plus, BinOp::Add), (TokenKind::Minus, BinOp::Sub)])
+        self.binop_left(
+            Self::multiplicative,
+            &[
+                (TokenKind::Plus, BinOp::Add),
+                (TokenKind::Minus, BinOp::Sub),
+            ],
+        )
     }
 
     fn multiplicative(&mut self) -> Result<Expr, ParseError> {
         self.binop_left(
             Self::unary,
-            &[(TokenKind::Star, BinOp::Mul), (TokenKind::Slash, BinOp::Div), (TokenKind::Percent, BinOp::Rem)],
+            &[
+                (TokenKind::Star, BinOp::Mul),
+                (TokenKind::Slash, BinOp::Div),
+                (TokenKind::Percent, BinOp::Rem),
+            ],
         )
     }
 
@@ -553,7 +675,11 @@ impl Parser {
         if let Some(op) = op {
             self.idx += 1;
             let operand = self.unary()?;
-            Ok(Expr::Unary { op, operand: Box::new(operand), span: Span::new(start, self.prev_end()) })
+            Ok(Expr::Unary {
+                op,
+                operand: Box::new(operand),
+                span: Span::new(start, self.prev_end()),
+            })
         } else {
             self.postfix()
         }
@@ -565,7 +691,11 @@ impl Parser {
         while *self.peek() == TokenKind::Dot {
             self.idx += 1;
             let field = self.ident()?;
-            e = Expr::Field { base: Box::new(e), field, span: Span::new(start, self.prev_end()) };
+            e = Expr::Field {
+                base: Box::new(e),
+                field,
+                span: Span::new(start, self.prev_end()),
+            };
         }
         Ok(e)
     }
@@ -575,7 +705,11 @@ impl Parser {
         match self.peek().clone() {
             TokenKind::Int { value, suffix } => {
                 self.idx += 1;
-                Ok(Expr::Int { value, suffix, span })
+                Ok(Expr::Int {
+                    value,
+                    suffix,
+                    span,
+                })
             }
             TokenKind::Str(value) => {
                 self.idx += 1;
@@ -607,7 +741,10 @@ impl Parser {
                 let espan = self.peek_span();
                 let name = self.ident()?;
                 if self.eat(&TokenKind::Colon) {
-                    entries.push(RecordEntry::Field { name, value: self.expr()? });
+                    entries.push(RecordEntry::Field {
+                        name,
+                        value: self.expr()?,
+                    });
                 } else {
                     entries.push(RecordEntry::Shorthand { name, span: espan });
                 }
@@ -617,6 +754,9 @@ impl Parser {
             }
         }
         self.expect(&TokenKind::RBrace)?;
-        Ok(Expr::Record { entries, span: Span::new(start, self.prev_end()) })
+        Ok(Expr::Record {
+            entries,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 }
