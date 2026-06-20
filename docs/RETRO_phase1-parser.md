@@ -32,7 +32,7 @@ Parsed surface, by grammar production:
 
 **Conformance fixtures** (`fixtures/lang/`): `bounds/bounded-hello`,
 `effects/read-greeting`, `effects/conditional-blob`, `types/color-match`, plus a
-negative parse-reject corpus. **34 tests green**; `cargo fmt --check` clean;
+negative parse-reject corpus. **39 tests green**; `cargo fmt --check` clean;
 `clippy` clean under deny-all + pedantic; CI (`fmt` · `clippy -D warnings` ·
 `test`) guards every push.
 

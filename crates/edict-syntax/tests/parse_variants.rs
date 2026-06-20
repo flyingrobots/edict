@@ -4,6 +4,8 @@
 //! Grammar: `enum-decl`, `variant-type`, `variant-lit`, `match-expr`
 //! (SPEC Edict Language v1).
 
+mod common;
+use common::parse_ok;
 use edict_syntax::ast::{Decl, Expr, Stmt, TypeExpr};
 use edict_syntax::parse_module;
 
@@ -38,8 +40,7 @@ fn variant_type_with_and_without_payloads_parses() {
 }
 
 fn first_let_value(src: &str) -> Expr {
-    let m = parse_module(src).expect("module parses");
-    let Decl::Intent(intent) = m.decls.into_iter().next().expect("a decl") else {
+    let Decl::Intent(intent) = parse_ok(src).decls.into_iter().next().expect("a decl") else {
         panic!("decl 0 is an intent");
     };
     let Stmt::Let { value, .. } = intent.body.stmts.into_iter().next().expect("a stmt") else {

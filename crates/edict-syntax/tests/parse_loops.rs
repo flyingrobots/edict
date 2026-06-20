@@ -4,24 +4,21 @@
 //! Grammar: `for-stmt = "for" ident "in" expr "bounded" bound-ref block`
 //! (SPEC Edict Language v1; every loop carries a provable maximum count).
 
-use edict_syntax::ast::{BoundRef, Decl, Stmt};
+mod common;
+use common::{body, parse_ok};
+use edict_syntax::ast::{BoundRef, Stmt};
 use edict_syntax::parse_module;
 
-fn body(stmts: &str) -> String {
-    format!(
-        "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out basis none budget <= p.b {{\n\
-         {stmts}\n\
-         }}"
-    )
-}
-
 fn first_stmt(src: &str) -> Stmt {
-    let m = parse_module(src).expect("module parses");
-    let Decl::Intent(intent) = m.decls.into_iter().next().expect("a decl") else {
-        panic!("decl 0 is an intent");
-    };
-    intent.body.stmts.into_iter().next().expect("a statement")
+    parse_ok(src)
+        .decls
+        .into_iter()
+        .next()
+        .and_then(|d| match d {
+            edict_syntax::ast::Decl::Intent(i) => i.body.stmts.into_iter().next(),
+            _ => panic!("decl 0 is an intent"),
+        })
+        .expect("a statement")
 }
 
 #[test]

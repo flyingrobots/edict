@@ -24,7 +24,7 @@ pub fn parse_ok(src: &str) -> Module {
 }
 
 /// The first declaration as an intent.
-pub fn intent(m: &Module) -> &IntentDecl {
+pub fn intent_of(m: &Module) -> &IntentDecl {
     let Decl::Intent(intent) = &m.decls[0] else {
         panic!("decl 0 is an intent");
     };

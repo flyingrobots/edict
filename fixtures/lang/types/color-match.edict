@@ -8,6 +8,7 @@ enum Channel { Red, Green, Blue }
 type Paint = variant {
   Solid(shape.Rgb),
   Named(shape.Name),
+  Tinted(Channel),
   Transparent,
 };
 

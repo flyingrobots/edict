@@ -19,10 +19,12 @@ released implementation.
   type-calls (`echo.ref<T>(...)`); effect statements with single- and
   map-form `else` obstruction handlers; `require`/`guarantee`/`assert`; the full
   `if` family (ternary `if … then … else …`, effectful branch-yield in
-  `let`-rhs, and `if`/`else if`/`else` control flow); bounded `for … in … bounded
-  …` loops; variant-literal constructors (`Qual.Type::Case(payload)`); and
-  `match` expressions. Conformance fixtures under `fixtures/lang/`; 34 tests
-  green under `cargo fmt --check`, `clippy` deny-all + pedantic, and CI. See
+  `let`-rhs, and `if`/`else if`/`else` control flow); bounded
+  `for … in … bounded …` loops; variant-literal constructors
+  (`Qual.Type::Case(payload)`); and `match` expressions. Keywords are reserved
+  as bare identifiers but remain legal as member names after `.` (§1510-1511).
+  Conformance fixtures under `fixtures/lang/`; 39 tests green under
+  `cargo fmt --check`, `clippy` deny-all + pedantic, and CI. See
   `docs/RETRO_phase1-parser.md`.
 - `SPEC_edict-lawpack-abi-v1.md`: the Lawpack ABI (manifest, dependency graph,
   exported types/constants, pure helper and semantic effect signatures,

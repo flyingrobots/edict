@@ -127,13 +127,13 @@ sequenceDiagram
     participant Lexer as token::lex
     participant Parser as parser::Parser
     participant AST as ast::Module
-    
+
     Developer->>Lexer: Send Source String
     activate Lexer
     Note over Lexer: Scan characters, match tokens, skip comments, decode string escapes
     Lexer-->>Parser: Return Vec<Token>
     deactivate Lexer
-    
+
     activate Parser
     Parser->>Parser: package_decl()
     Parser->>Parser: import() loops
@@ -558,7 +558,7 @@ During the creation of Edict minimal-v1, the architecture made explicit design c
 When analyzing computer languages in general, systems engineers evaluate them across three taxonomic axes: Generality, State Paradigm, and Authority Model. Under this framework, Edict represents a distinct design point:
 
 ### Domain-Specific vs. General Purpose Languages (DSLs vs. GPLs)
-Traditional General-Purpose Languages (GPLs) like Rust, Go, or Python are **Turing-complete** by design. They support arbitrary computation, unbounded loops, dynamic memory allocation, and indirect system calls. In contrast, Domain-Specific Languages (DSLs) restrict execution semantics to solve specific systemic problems efficiently. 
+Traditional General-Purpose Languages (GPLs) like Rust, Go, or Python are **Turing-complete** by design. They support arbitrary computation, unbounded loops, dynamic memory allocation, and indirect system calls. In contrast, Domain-Specific Languages (DSLs) restrict execution semantics to solve specific systemic problems efficiently.
 
 Edict is a highly specialized DSL. By design, Edict lacks Turing completeness in its source language: it prohibits arbitrary iterative loops and unbounded recursion. This is not a limitation but a deliberate security feature. It ensures that the Execution Halting Problem is mitigated statically. Every Edict intent can have its cost calculated and capped before execution starts.
 
