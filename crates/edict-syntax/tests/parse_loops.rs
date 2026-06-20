@@ -31,7 +31,13 @@ fn for_with_integer_bound_parses() {
         panic!("stmt 0 is a for");
     };
     assert_eq!(var, "item");
-    assert_eq!(bound, BoundRef::Int(100));
+    assert_eq!(
+        bound,
+        BoundRef::Int {
+            value: 100,
+            suffix: None,
+        }
+    );
     assert_eq!(body.stmts.len(), 1, "one assert in the loop body");
 }
 

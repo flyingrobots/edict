@@ -24,7 +24,7 @@ released implementation.
   (`Qual.Type::Case(payload)`); boolean and `digest("sha256:…")` literals; and
   `match` expressions. Keywords are reserved as bare identifiers but remain
   legal as member names after `.` (§1510-1511). Conformance fixtures under
-  `fixtures/lang/`; 50 tests green under
+  `fixtures/lang/`; 55 tests green under
   `cargo fmt --check`, `clippy` deny-all + pedantic, and CI. See
   `docs/RETRO_phase1-parser.md`.
 - `SPEC_edict-lawpack-abi-v1.md`: the Lawpack ABI (manifest, dependency graph,

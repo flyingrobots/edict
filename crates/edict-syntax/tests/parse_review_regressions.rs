@@ -6,6 +6,7 @@
 mod common;
 use common::{body, intent_of};
 use edict_syntax::ast::{BinOp, BoundRef, Decl, Expr, Stmt, TypeExpr, TypeRef};
+use edict_syntax::token::IntSuffix;
 use edict_syntax::{parse_module, ParseErrorKind};
 
 const ZERO_DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
@@ -28,6 +29,33 @@ fn first_let_value(src: &str) -> Expr {
 fn package_versions_preserve_underscores() {
     let m = parse_module("package a.b@1_2.3-beta;").expect("package parses");
     assert_eq!(m.package.version, "1_2.3-beta");
+
+    let m = parse_module("package a.b@1_beta;").expect("package version label parses");
+    assert_eq!(m.package.version, "1_beta");
+}
+
+#[test]
+fn import_versions_preserve_underscore_labels() {
+    let src =
+        format!("package a.b@1;\nuse lawpack pkg.lib@1_beta digest \"{ZERO_DIGEST}\" as lib;");
+    let m = parse_module(&src).expect("import version label parses");
+    let package = m.imports[0]
+        .package
+        .as_ref()
+        .expect("lawpack import has a package ref");
+    assert_eq!(package.version, "1_beta");
+}
+
+#[test]
+fn reserved_keywords_are_rejected_as_import_aliases() {
+    reject_kind(
+        "package a.b@1;\nuse lawpack x.y@1 as return;",
+        ParseErrorKind::ReservedKeyword,
+    );
+    reject_kind(
+        "package a.b@1;\nuse target x.y@1 as if;",
+        ParseErrorKind::ReservedKeyword,
+    );
 }
 
 #[test]
@@ -66,6 +94,48 @@ fn bytes_accept_coordinate_bounds() {
             "limits".into(),
             "maxBytes".into()
         ])))
+    );
+}
+
+#[test]
+fn bound_integer_suffixes_are_preserved() {
+    let m = parse_module("package a.b@1;\ntype T = { name: String<max=1u32>, bytes: Bytes<max=2i64>, items: List<shape.Item, max=3i32>, };")
+        .expect("suffixed integer bounds parse");
+    let Decl::Type(t) = &m.decls[0] else {
+        panic!("decl 0 is type");
+    };
+    let TypeExpr::Record(fields) = &t.body else {
+        panic!("T is a record");
+    };
+
+    let TypeRef::StringTy(Some(string_refine)) = &fields[0].ty else {
+        panic!("name is a refined string");
+    };
+    assert_eq!(
+        string_refine.max,
+        BoundRef::Int {
+            value: 1,
+            suffix: Some(IntSuffix::U32)
+        }
+    );
+
+    assert_eq!(
+        fields[1].ty,
+        TypeRef::BytesTy(Some(BoundRef::Int {
+            value: 2,
+            suffix: Some(IntSuffix::I64)
+        }))
+    );
+
+    let TypeRef::List { max, .. } = &fields[2].ty else {
+        panic!("items is a list");
+    };
+    assert_eq!(
+        *max,
+        BoundRef::Int {
+            value: 3,
+            suffix: Some(IntSuffix::I32)
+        }
     );
 }
 
@@ -125,6 +195,44 @@ fn reserved_words_are_rejected_in_all_binder_positions() {
     );
     reject_kind(
         &body("  target.effect() else { mismatch(return) => domain.Oops };\n  return { input };"),
+        ParseErrorKind::ReservedKeyword,
+    );
+    reject_kind(
+        &body("  let true = input.x;\n  return { input };"),
+        ParseErrorKind::ReservedKeyword,
+    );
+    reject_kind(
+        "package a.b@1;\nintent t(false: shape.In) returns shape.Out basis none budget <= p.b { return { false }; }",
+        ParseErrorKind::ReservedKeyword,
+    );
+    reject_kind(
+        &body("  for false in input.items bounded 1 { }\n  return { input };"),
+        ParseErrorKind::ReservedKeyword,
+    );
+    reject_kind(
+        &body("  target.effect() else { mismatch(false) => domain.Oops };\n  return { input };"),
+        ParseErrorKind::ReservedKeyword,
+    );
+}
+
+#[test]
+fn reserved_words_are_rejected_as_record_shorthand() {
+    reject_kind(
+        &body("  return { return };"),
+        ParseErrorKind::ReservedKeyword,
+    );
+    parse_module(&body("  return { returnValue: input.x };"))
+        .expect("reserved-looking field label with explicit value is legal");
+}
+
+#[test]
+fn reserved_words_are_rejected_as_coordinate_roots() {
+    reject_kind(
+        &body("  for x in input.items bounded return {}\n  return { input };"),
+        ParseErrorKind::ReservedKeyword,
+    );
+    reject_kind(
+        &body("  require input.ok else if.Blocked;\n  return { input };"),
         ParseErrorKind::ReservedKeyword,
     );
 }

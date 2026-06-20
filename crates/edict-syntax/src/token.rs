@@ -270,9 +270,10 @@ impl<'a> Lexer<'a> {
                     }
                     raw.push('_');
                     self.pos += 1; // consume '_'
-                    if !matches!(self.peek(), Some(b'0'..=b'9')) {
+                    if !matches!(self.peek(), Some(b'0'..=b'9' | b'a'..=b'z' | b'A'..=b'Z')) {
                         return Err(LexError {
-                            message: "underscore must be between digits".into(),
+                            message: "underscore must be followed by a digit or version label"
+                                .into(),
                             span: Span::new(us, self.pos),
                         });
                     }

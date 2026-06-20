@@ -41,7 +41,10 @@ fn bounded_hello_parses() {
     assert_eq!(
         fields[0].ty,
         TypeRef::StringTy(Some(ScalarRefine {
-            max: BoundRef::Int(256),
+            max: BoundRef::Int {
+                value: 256,
+                suffix: None,
+            },
             canonical: None
         }))
     );

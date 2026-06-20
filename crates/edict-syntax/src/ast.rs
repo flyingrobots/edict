@@ -111,7 +111,10 @@ pub enum FieldConstraint {
 /// A literal-or-digest-locked bound (`max=128` or `max=rope.maxLeaves`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoundRef {
-    Int(u64),
+    Int {
+        value: u64,
+        suffix: Option<IntSuffix>,
+    },
     Coord(Vec<String>),
 }
 

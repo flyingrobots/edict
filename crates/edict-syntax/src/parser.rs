@@ -77,7 +77,9 @@ pub fn parse_module(src: &str) -> Result<Module, ParseError> {
 /// - the import **kinds** `shape`/`lawpack`/`target`/`core`/`capability`, which
 ///   are idiomatically reused as the import alias (`use shape "…" as shape;`);
 /// - the prelude value words `none` (also the `basis none` marker), `some`,
-///   `len`, `hash` and the built-in type constructors, so `none<T>()` parses;
+///   `len`, `hash` and the built-in type constructors, so `none<T>()` parses.
+///   Boolean literal words are included because they do not introduce usable
+///   identifiers in value position;
 /// - `record`/`map`/`unit`/`migration`/`projection`, whose productions are not
 ///   yet parsed — they will join this set when their syntax lands.
 fn is_keyword(s: &str) -> bool {
@@ -113,6 +115,8 @@ fn is_keyword(s: &str) -> bool {
             | "digest"
             | "fn"
             | "const"
+            | "true"
+            | "false"
     )
 }
 
@@ -346,7 +350,7 @@ impl Parser {
 
     /// A dotted coordinate: `a.b.c`.
     fn path(&mut self) -> Result<Vec<String>, ParseError> {
-        let mut parts = vec![self.ident()?];
+        let mut parts = vec![self.non_keyword_ident()?];
         while *self.peek() == TokenKind::Dot {
             self.idx += 1;
             parts.push(self.ident()?);
@@ -457,7 +461,7 @@ impl Parser {
         };
 
         self.expect_kw("as")?;
-        let alias = self.ident()?;
+        let alias = self.non_keyword_ident()?;
         self.expect(&TokenKind::Semi)?;
         Ok(Import {
             kind,
@@ -616,12 +620,12 @@ impl Parser {
 
     fn bound_ref(&mut self) -> Result<BoundRef, ParseError> {
         match self.peek().clone() {
-            TokenKind::Int { value, .. } => {
+            TokenKind::Int { value, suffix, .. } => {
                 let span = self.peek_span();
                 self.idx += 1;
                 value
                     .parse::<u64>()
-                    .map(BoundRef::Int)
+                    .map(|value| BoundRef::Int { value, suffix })
                     .map_err(|_| ParseError {
                         kind: ParseErrorKind::InvalidInteger,
                         message: format!("invalid integer bound `{value}`"),
@@ -1444,6 +1448,13 @@ impl Parser {
                         value: self.expr()?,
                     });
                 } else {
+                    if is_keyword(&name) {
+                        return Self::err_at(
+                            ParseErrorKind::ReservedKeyword,
+                            format!("keyword `{name}` is reserved and cannot be used as shorthand"),
+                            espan,
+                        );
+                    }
                     entries.push(RecordEntry::Shorthand { name, span: espan });
                 }
             }
