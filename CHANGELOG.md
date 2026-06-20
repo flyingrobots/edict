@@ -10,6 +10,20 @@ released implementation.
 
 ### Added
 
+- **Phase 1 — first executable slice (`crates/edict-syntax`).** A standalone,
+  std-only Rust workspace with a hand-written deterministic lexer and a
+  recursive-descent parser for the `edict.implementation/minimal-v1` surface.
+  Now parses: package/imports (shape/lawpack/target/core, optional `digest`);
+  `type` records and refined scalars; `enum` declarations; `variant` types with
+  optional payloads; `intent`s with their clauses; `let`/`return`; calls and
+  type-calls (`echo.ref<T>(...)`); effect statements with single- and
+  map-form `else` obstruction handlers; `require`/`guarantee`/`assert`; the full
+  `if` family (ternary `if … then … else …`, effectful branch-yield in
+  `let`-rhs, and `if`/`else if`/`else` control flow); bounded `for … in … bounded
+  …` loops; variant-literal constructors (`Qual.Type::Case(payload)`); and
+  `match` expressions. Conformance fixtures under `fixtures/lang/`; 34 tests
+  green under `cargo fmt --check`, `clippy` deny-all + pedantic, and CI. See
+  `docs/RETRO_phase1-parser.md`.
 - `SPEC_edict-lawpack-abi-v1.md`: the Lawpack ABI (manifest, dependency graph,
   exported types/constants, pure helper and semantic effect signatures,
   `executionClass` × `writeClass` classification, typed obstruction payloads,
