@@ -11,9 +11,33 @@ use crate::ast::{
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
-/// A parse failure: a message plus the source span where it was detected.
+/// Stable parser error categories used by deterministic negative tests.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseErrorKind {
+    Lex,
+    ExpectedToken,
+    ExpectedKeyword,
+    ExpectedIdentifier,
+    ExpectedExpression,
+    InvalidInteger,
+    InvalidDigest,
+    InvalidVersion,
+    ReservedKeyword,
+    UnsupportedSyntax,
+    InvalidName,
+    EmptyEnum,
+    EmptyObstructionMap,
+    EmptyMatch,
+    NonCallEffect,
+    ReturnInYieldBlock,
+    InvalidTypeCall,
+}
+
+/// A parse failure: a stable kind, message, plus the source span where it was
+/// detected.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseError {
+    pub kind: ParseErrorKind,
     pub message: String,
     pub span: Span,
 }
@@ -36,6 +60,7 @@ impl std::error::Error for ParseError {}
 /// Returns a [`ParseError`] on the first lexing or grammar violation.
 pub fn parse_module(src: &str) -> Result<Module, ParseError> {
     let tokens = lex(src).map_err(|e| ParseError {
+        kind: ParseErrorKind::Lex,
         message: e.message,
         span: e.span,
     })?;
@@ -91,6 +116,46 @@ fn is_keyword(s: &str) -> bool {
     )
 }
 
+fn is_upper_ident(s: &str) -> bool {
+    s.as_bytes().first().is_some_and(u8::is_ascii_uppercase)
+}
+
+fn is_digest_lit(s: &str) -> bool {
+    let Some(hex) = s.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn is_call_expr(e: &Expr) -> bool {
+    matches!(e, Expr::Call { .. })
+}
+
+fn block_contains_return(block: &Block) -> bool {
+    block.stmts.iter().any(stmt_contains_return)
+}
+
+fn stmt_contains_return(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Return { .. } => true,
+        Stmt::If {
+            then_block, els, ..
+        } => {
+            block_contains_return(then_block)
+                || els.as_deref().is_some_and(|clause| match clause {
+                    ElseClause::Block(block) => block_contains_return(block),
+                    ElseClause::If(stmt) => stmt_contains_return(stmt),
+                })
+        }
+        Stmt::For { body, .. } => block_contains_return(body),
+        Stmt::Let { .. }
+        | Stmt::Effect { .. }
+        | Stmt::Require { .. }
+        | Stmt::Guarantee { .. }
+        | Stmt::Assert { .. } => false,
+    }
+}
+
 struct Parser {
     tokens: Vec<Token>,
     idx: usize,
@@ -111,6 +176,12 @@ impl Parser {
         self.tokens[self.idx].span
     }
 
+    fn next_is(&self, k: &TokenKind) -> bool {
+        self.tokens
+            .get(self.idx + 1)
+            .is_some_and(|token| &token.kind == k)
+    }
+
     fn prev_end(&self) -> usize {
         if self.idx == 0 {
             0
@@ -124,9 +195,30 @@ impl Parser {
     }
 
     fn err<T>(&self, message: impl Into<String>) -> Result<T, ParseError> {
+        self.err_kind(ParseErrorKind::ExpectedToken, message)
+    }
+
+    fn err_kind<T>(
+        &self,
+        kind: ParseErrorKind,
+        message: impl Into<String>,
+    ) -> Result<T, ParseError> {
         Err(ParseError {
+            kind,
             message: message.into(),
             span: self.peek_span(),
+        })
+    }
+
+    fn err_at<T>(
+        kind: ParseErrorKind,
+        message: impl Into<String>,
+        span: Span,
+    ) -> Result<T, ParseError> {
+        Err(ParseError {
+            kind,
+            message: message.into(),
+            span,
         })
     }
 
@@ -165,7 +257,10 @@ impl Parser {
         if self.eat_kw(kw) {
             Ok(())
         } else {
-            self.err(format!("expected keyword `{kw}`, found {:?}", self.peek()))
+            self.err_kind(
+                ParseErrorKind::ExpectedKeyword,
+                format!("expected keyword `{kw}`, found {:?}", self.peek()),
+            )
         }
     }
 
@@ -176,21 +271,44 @@ impl Parser {
                 self.idx += 1;
                 Ok(s)
             }
-            other => self.err(format!("expected identifier, found {other:?}")),
+            other => self.err_kind(
+                ParseErrorKind::ExpectedIdentifier,
+                format!("expected identifier, found {other:?}"),
+            ),
         }
+    }
+
+    fn non_keyword_ident(&mut self) -> Result<String, ParseError> {
+        let span = self.peek_span();
+        let name = self.ident()?;
+        if is_keyword(&name) {
+            return Self::err_at(
+                ParseErrorKind::ReservedKeyword,
+                format!("keyword `{name}` is reserved and cannot be used here"),
+                span,
+            );
+        }
+        Ok(name)
+    }
+
+    fn upper_ident(&mut self) -> Result<String, ParseError> {
+        let span = self.peek_span();
+        let name = self.ident()?;
+        if !is_upper_ident(&name) {
+            return Self::err_at(
+                ParseErrorKind::InvalidName,
+                format!("expected upper-ident, found `{name}`"),
+                span,
+            );
+        }
+        Ok(name)
     }
 
     /// Read a *binder* identifier — a name being introduced (a `let`/parameter
     /// name). Unlike [`Self::ident`], a reserved keyword is rejected here, since
     /// a binder is a bare identifier (SPEC §1510).
     fn binder(&mut self) -> Result<String, ParseError> {
-        let name = self.ident()?;
-        if is_keyword(&name) {
-            return self.err(format!(
-                "keyword `{name}` is reserved and cannot be used as a name"
-            ));
-        }
-        Ok(name)
+        self.non_keyword_ident()
     }
 
     fn string(&mut self) -> Result<String, ParseError> {
@@ -200,6 +318,29 @@ impl Parser {
                 Ok(s)
             }
             other => self.err(format!("expected string literal, found {other:?}")),
+        }
+    }
+
+    fn digest_lit(&mut self) -> Result<String, ParseError> {
+        let span = self.peek_span();
+        match self.peek().clone() {
+            TokenKind::Str(s) => {
+                self.idx += 1;
+                if is_digest_lit(&s) {
+                    Ok(s)
+                } else {
+                    Self::err_at(
+                        ParseErrorKind::InvalidDigest,
+                        "expected digest literal `sha256:` plus 64 hex characters",
+                        span,
+                    )
+                }
+            }
+            other => Self::err_at(
+                ParseErrorKind::ExpectedToken,
+                format!("expected digest literal string, found {other:?}"),
+                span,
+            ),
         }
     }
 
@@ -259,8 +400,8 @@ impl Parser {
                 break; // whitespace gap ends the version
             }
             match self.peek().clone() {
-                TokenKind::Int { value, suffix } => {
-                    s.push_str(&value);
+                TokenKind::Int { raw, suffix, .. } => {
+                    s.push_str(&raw);
                     if let Some(suf) = suffix {
                         s.push_str(suf.lexeme());
                     }
@@ -295,9 +436,12 @@ impl Parser {
         } else if self.eat_kw("core") {
             ImportKind::Core
         } else if self.eat_kw("capability") {
-            ImportKind::Capability
+            return self.err_kind(
+                ParseErrorKind::UnsupportedSyntax,
+                "`use capability` is not accepted in Edict v1",
+            );
         } else {
-            return self.err("expected import kind (shape|lawpack|target|core|capability)");
+            return self.err("expected import kind (shape|lawpack|target|core)");
         };
 
         let (package, shape_path) = if kind == ImportKind::Shape {
@@ -307,7 +451,7 @@ impl Parser {
         };
 
         let digest = if self.eat_kw("digest") {
-            Some(self.string()?)
+            Some(self.digest_lit()?)
         } else {
             None
         };
@@ -344,14 +488,20 @@ impl Parser {
     fn enum_decl(&mut self) -> Result<EnumDecl, ParseError> {
         let start = self.peek_span().start;
         self.expect_kw("enum")?;
-        let name = self.ident()?;
+        let name = self.upper_ident()?;
         self.expect(&TokenKind::LBrace)?;
         let mut cases = Vec::new();
         while *self.peek() != TokenKind::RBrace {
-            cases.push(self.ident()?);
+            cases.push(self.upper_ident()?);
             if !self.eat(&TokenKind::Comma) {
                 break;
             }
+        }
+        if cases.is_empty() {
+            return self.err_kind(
+                ParseErrorKind::EmptyEnum,
+                "enum declaration must contain at least one case",
+            );
         }
         self.expect(&TokenKind::RBrace)?;
         Ok(EnumDecl {
@@ -366,7 +516,7 @@ impl Parser {
     fn type_decl(&mut self) -> Result<TypeDecl, ParseError> {
         let start = self.peek_span().start;
         self.expect_kw("type")?;
-        let name = self.ident()?;
+        let name = self.upper_ident()?;
         let mut params = Vec::new();
         if self.eat(&TokenKind::Lt) {
             params.push(self.ident()?);
@@ -422,7 +572,7 @@ impl Parser {
         let mut cases = Vec::new();
         while *self.peek() != TokenKind::RBrace {
             let start = self.peek_span().start;
-            let name = self.ident()?;
+            let name = self.upper_ident()?;
             let payload = if self.eat(&TokenKind::LParen) {
                 let ty = self.type_ref()?;
                 self.expect(&TokenKind::RParen)?;
@@ -467,13 +617,15 @@ impl Parser {
     fn bound_ref(&mut self) -> Result<BoundRef, ParseError> {
         match self.peek().clone() {
             TokenKind::Int { value, .. } => {
+                let span = self.peek_span();
                 self.idx += 1;
                 value
                     .parse::<u64>()
                     .map(BoundRef::Int)
                     .map_err(|_| ParseError {
+                        kind: ParseErrorKind::InvalidInteger,
                         message: format!("invalid integer bound `{value}`"),
-                        span: self.peek_span(),
+                        span,
                     })
             }
             TokenKind::Ident(_) => Ok(BoundRef::Coord(self.path()?)),
@@ -567,18 +719,13 @@ impl Parser {
         Ok(Some(ScalarRefine { max, canonical }))
     }
 
-    fn maybe_bytes_refine(&mut self) -> Result<Option<u64>, ParseError> {
+    fn maybe_bytes_refine(&mut self) -> Result<Option<BoundRef>, ParseError> {
         if !self.eat(&TokenKind::Lt) {
             return Ok(None);
         }
         self.expect_kw("max")?;
         self.expect(&TokenKind::Eq)?;
-        let max = match self.bound_ref()? {
-            BoundRef::Int(n) => n,
-            BoundRef::Coord(_) => {
-                return self.err("Bytes max must be an integer or digest-locked bound ref");
-            }
-        };
+        let max = self.bound_ref()?;
         self.expect(&TokenKind::Gt)?;
         Ok(Some(max))
     }
@@ -681,6 +828,12 @@ impl Parser {
             self.expect(&TokenKind::Eq)?;
             let value = self.let_rhs()?;
             let els = self.maybe_else_handler()?;
+            if els.is_some() && !is_call_expr(&value) {
+                return self.err_kind(
+                    ParseErrorKind::NonCallEffect,
+                    "`let ... else` is only valid when the right-hand side is a call",
+                );
+            }
             self.expect(&TokenKind::Semi)?;
             Ok(Stmt::Let {
                 name,
@@ -733,6 +886,12 @@ impl Parser {
         } else {
             // effect statement: an imported-effect call with optional `else`.
             let call = self.expr()?;
+            if !is_call_expr(&call) {
+                return self.err_kind(
+                    ParseErrorKind::NonCallEffect,
+                    "effect statements must be call expressions",
+                );
+            }
             let els = self.maybe_else_handler()?;
             self.expect(&TokenKind::Semi)?;
             Ok(Stmt::Effect {
@@ -780,7 +939,14 @@ impl Parser {
             if *self.peek() == TokenKind::RBrace {
                 return self.err("effect branch block must end with `yield <expr>;`");
             }
-            stmts.push(self.stmt()?);
+            let stmt = self.stmt()?;
+            if stmt_contains_return(&stmt) {
+                return self.err_kind(
+                    ParseErrorKind::ReturnInYieldBlock,
+                    "`return` is not legal inside an effect-yield block",
+                );
+            }
+            stmts.push(stmt);
         }
         self.expect_kw("yield")?;
         let value = self.expr()?;
@@ -820,7 +986,7 @@ impl Parser {
     fn for_stmt(&mut self) -> Result<Stmt, ParseError> {
         let start = self.peek_span().start;
         self.expect_kw("for")?;
-        let var = self.ident()?;
+        let var = self.binder()?;
         self.expect_kw("in")?;
         let iter = self.expr()?;
         self.expect_kw("bounded")?;
@@ -874,9 +1040,9 @@ impl Parser {
         let mut arms = Vec::new();
         while *self.peek() != TokenKind::RBrace {
             let start = self.peek_span().start;
-            let failure = self.ident()?;
+            let failure = self.non_keyword_ident()?;
             let binder = if self.eat(&TokenKind::LParen) {
-                let b = self.ident()?;
+                let b = self.binder()?;
                 self.expect(&TokenKind::RParen)?;
                 Some(b)
             } else {
@@ -893,6 +1059,12 @@ impl Parser {
             if !self.eat(&TokenKind::Comma) {
                 break;
             }
+        }
+        if arms.is_empty() {
+            return self.err_kind(
+                ParseErrorKind::EmptyObstructionMap,
+                "obstruction map must contain at least one arm",
+            );
         }
         self.expect(&TokenKind::RBrace)?;
         Ok(arms)
@@ -1046,11 +1218,12 @@ impl Parser {
                     // Variant literal: `<qual-ident>::Case` with optional payload.
                     // The preceding expression must be a pure dotted path.
                     let ty_path = Self::expr_to_path(&e).ok_or_else(|| ParseError {
+                        kind: ParseErrorKind::ExpectedExpression,
                         message: "`::` must follow a type path (a variant constructor)".into(),
                         span: self.peek_span(),
                     })?;
                     self.idx += 1; // consume `::`
-                    let case = self.ident()?;
+                    let case = self.upper_ident()?;
                     let payload = if self.eat(&TokenKind::LParen) {
                         let p = self.expr()?;
                         self.expect(&TokenKind::RParen)?;
@@ -1131,9 +1304,9 @@ impl Parser {
         let mut arms = Vec::new();
         while *self.peek() != TokenKind::RBrace {
             let astart = self.peek_span().start;
-            let case = self.ident()?;
+            let case = self.upper_ident()?;
             let binder = if self.eat(&TokenKind::LParen) {
-                let b = self.ident()?;
+                let b = self.binder()?;
                 self.expect(&TokenKind::RParen)?;
                 Some(b)
             } else {
@@ -1153,7 +1326,10 @@ impl Parser {
         }
         // Check before consuming `}` so the error points at the empty body.
         if arms.is_empty() {
-            return self.err("`match` must have at least one arm");
+            return self.err_kind(
+                ParseErrorKind::EmptyMatch,
+                "`match` must have at least one arm",
+            );
         }
         self.expect(&TokenKind::RBrace)?;
         Ok(Expr::Match {
@@ -1186,17 +1362,31 @@ impl Parser {
             return None;
         }
         self.idx += 1; // consume '>'
-        if *self.peek() != TokenKind::LParen {
+        if *self.peek() != TokenKind::LParen
+            || self.tokens[self.idx - 1].span.end != self.peek_span().start
+        {
             self.idx = save;
             return None;
         }
         Some(args)
     }
 
+    fn digest_value_lit(&mut self) -> Result<Expr, ParseError> {
+        let start = self.peek_span().start;
+        self.expect_kw("digest")?;
+        self.expect(&TokenKind::LParen)?;
+        let value = self.digest_lit()?;
+        self.expect(&TokenKind::RParen)?;
+        Ok(Expr::Digest {
+            value,
+            span: Span::new(start, self.prev_end()),
+        })
+    }
+
     fn primary(&mut self) -> Result<Expr, ParseError> {
         let span = self.peek_span();
         match self.peek().clone() {
-            TokenKind::Int { value, suffix } => {
+            TokenKind::Int { value, suffix, .. } => {
                 self.idx += 1;
                 Ok(Expr::Int {
                     value,
@@ -1208,10 +1398,21 @@ impl Parser {
                 self.idx += 1;
                 Ok(Expr::Str { value, span })
             }
+            TokenKind::Ident(name) if name == "true" || name == "false" => {
+                self.idx += 1;
+                Ok(Expr::Bool {
+                    value: name == "true",
+                    span,
+                })
+            }
+            TokenKind::Ident(name) if name == "digest" && self.next_is(&TokenKind::LParen) => {
+                self.digest_value_lit()
+            }
             TokenKind::Ident(kw) if kw == "match" => self.match_expr(),
-            TokenKind::Ident(name) if is_keyword(&name) => self.err(format!(
-                "keyword `{name}` is reserved and cannot be used as a bare identifier"
-            )),
+            TokenKind::Ident(name) if is_keyword(&name) => self.err_kind(
+                ParseErrorKind::ReservedKeyword,
+                format!("keyword `{name}` is reserved and cannot be used as a bare identifier"),
+            ),
             TokenKind::Ident(name) => {
                 self.idx += 1;
                 Ok(Expr::Ident { name, span })

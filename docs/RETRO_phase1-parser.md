@@ -22,17 +22,17 @@ A hand-written, `std`-only, deterministic frontend:
 Parsed surface, by grammar production:
 
 | Area | Productions parsed |
-|---|---|
+| --- | --- |
 | Module | `package`, `use shape/lawpack/target/core` (+ optional `digest`) |
 | Types | `type` records, refined `String`/`Bytes`, `Option`/`List`/`Map`/`CapabilityRef`, `enum`, `variant` (with payloads) |
 | Intents | params, `returns`, `profile`/`implements`/`basis`/`footprint`/`budget`/`where` clauses |
 | Statements | `let` (+ effect-`else`), `return`, `require`, `guarantee`, `assert`, `if`/`else if`/`else`, bounded `for`, effect statements |
-| Expressions | full precedence chain; calls + type-calls; field access; records (incl. shorthand + spread); ternary `if … then … else`; branch-yield; variant literals (`::`); `match` |
+| Expressions | full precedence chain; calls + type-calls; field access; records (incl. shorthand + spread); booleans; digest literals; ternary `if … then … else`; branch-yield; variant literals (`::`); `match` |
 | Obstructions | single-target and full map-form `else { failure(binder) => target, … }` |
 
 **Conformance fixtures** (`fixtures/lang/`): `bounds/bounded-hello`,
 `effects/read-greeting`, `effects/conditional-blob`, `types/color-match`, plus a
-negative parse-reject corpus. **39 tests green**; `cargo fmt --check` clean;
+negative parse-reject corpus. **50 tests green**; `cargo fmt --check` clean;
 `clippy` clean under deny-all + pedantic; CI (`fmt` · `clippy -D warnings` ·
 `test`) guards every push.
 
@@ -76,7 +76,7 @@ minimal-v1's grammar is larger than this phase. Still unparsed, by design:
 - `const` and `fn` (pure-block) declarations;
 - `record` semantic-effect statements;
 - `list-lit` (`[ … ]`) and `map-lit` (`map<K,V>{ … }`) literals;
-- `bool`/`unit`/`digest(...)` literal forms;
+- `unit` literal forms;
 - **all semantic validation** — naked unbounded `String`/`Bytes`, clause
   requiredness, `migration`/`projection` as *reserved* words, read-only proofs,
   exhaustive `match`/obstruction coverage, integer-width resolution, loop-bound
