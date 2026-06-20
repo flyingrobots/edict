@@ -2,6 +2,13 @@
 
 The current specification set is:
 
+- [Topic Shelves](./topics/README.md): current reference chapters and
+  verification plans for landed subsystems. A topic shelf is a contract graph,
+  not a proposal: `README.md` says what is true in HEAD, `test-plan.md` says how
+  it is verified and where gaps remain, and optional `architecture.md` /
+  `rationale.md` files explain machinery and still-relevant tradeoffs.
+- [Syntax Topic](./topics/syntax/): current contract and verification matrix for
+  the Phase 1 `edict-syntax` lexer/parser.
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type
   system, effect rules, Core IR, and language-level canonical value semantics.
 - [SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md): lawpack

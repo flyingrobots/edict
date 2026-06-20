@@ -10,6 +10,11 @@ released implementation.
 
 ### Added
 
+- **Topic shelf pilot (`docs/topics/syntax/`).** Added the first current-truth
+  topic chapter and verification matrix for the Phase 1 syntax front end,
+  library-hosted doctest coverage for the external Markdown example, and
+  `cargo xtask verify` / `cargo xtask contract-check` as the local contract
+  graph gate.
 - **Phase 1 — first executable slice (`crates/edict-syntax`).** A standalone,
   std-only Rust workspace with a hand-written deterministic lexer and a
   recursive-descent parser for the `edict.implementation/minimal-v1` surface.
