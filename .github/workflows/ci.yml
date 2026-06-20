@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: rust ${{ matrix.rust-version }} (fmt · clippy · test)
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        rust-version: ["1.85.0", stable]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: |
+          rustup toolchain install "${{ matrix.rust-version }}" \
+            --profile minimal \
+            --component rustfmt \
+            --component clippy
+      - name: Format
+        run: cargo +"${{ matrix.rust-version }}" fmt --all --check
+      - name: Clippy (warnings as errors)
+        run: cargo +"${{ matrix.rust-version }}" clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo +"${{ matrix.rust-version }}" test --workspace --all-features

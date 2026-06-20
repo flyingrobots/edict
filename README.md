@@ -1,9 +1,21 @@
-# Edict: An Introduction
+# Edict: Safe, Statically Verifiable Operations for Autonomous Runtimes
 
-> **TL;DR** — Edict lets you write operations whose actual capabilities are
-> statically verifiable and cryptographically sealed. No more **FIDLAR**
-> *(Footprints Ignored; Developer Lies About Risk)*: the gap between what your
-> code claims to do and what it's actually authorized to do.
+**Edict is a secure programming language (DSL) that guarantees what your code is allowed to do is verified by the compiler—not left to trust.**
+
+Unlike general-purpose runtimes where code has unrestricted access to the filesystem, network, or database, Edict isolates operations at the compiler level. If an operation tries to access unauthorized state, mutate a forbidden table, or exceed its execution budget, it fails to compile.
+
+## Edict in 10 Seconds
+
+```mermaid
+flowchart LR
+    A["1. Write Intent\n(Declare inputs, outputs, & budgets)"] -->|Compile & Prove| B["2. Cryptographic Seal\n(Core IR + Hash-Locked Manifest)"]
+    B -->|Submit Bundle| C["3. Participant Admission\n(Inspect 'Nutrition Label')"]
+    C -->|Execute Safely| D["4. WASM Sandbox\n(Enforced limits & auto-rollback)"]
+```
+
+## Why it Matters
+
+Traditional security runs at the boundary (firewalls, sandboxes). But if you hand an AI agent a tool, it inherits the permissions of the parent process. Edict makes the code *declare* and *prove* its capabilities beforehand, preventing malicious prompt injections or library updates from causing harm.
 
 ---
 
@@ -261,7 +273,7 @@ Every contract bundle carries what the design calls a *nutrition label*: a
 human-readable (and machine-readable) summary of what the operation is declared
 to do:
 
-```
+```text
 Contract Bundle: examples.greeting@1 / readGreeting
 ────────────────────────────────────────────────────
 Profile:      echo.readOnly
@@ -360,7 +372,7 @@ The FAQ in the reference docs is long because this question comes up a lot. Shor
 version:
 
 | "Is this just...?" | Why not |
-|---|---|
+| --- | --- |
 | GraphQL | GraphQL describes surface shape. Edict describes the bounded lawful operation *behind* that surface. |
 | SQL / graph queries | Those choose a storage model. Edict doesn't. It lowers to a target profile that owns the storage model. |
 | OPA/Rego | Policy asks "is this allowed?" Edict describes *what the operation actually does* so policy has something real to evaluate. |

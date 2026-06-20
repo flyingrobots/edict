@@ -1,0 +1,27 @@
+package examples.blob@1;
+
+use shape "schemas/blob.graphql" as shape;
+use lawpack rope.optics@1 digest "sha256:0000000000000000000000000000000000000000000000000000000000000000" as rope;
+use target echo.dpo@1 digest "sha256:1111111111111111111111111111111111111111111111111111111111111111" as echo;
+
+intent storeBlob(input: shape.StoreBlobInput)
+  returns shape.MaybeBlob
+  profile echo.readWrite
+  basis input.initialBytes
+  budget <= rope.storeBudget
+{
+  let initialBytes = input.initialBytes;
+  let initialBlob = if len(initialBytes) == 0 {
+    yield none<shape.TextBlob>();
+  } else {
+    let blobRef = echo.ref<shape.TextBlob>(rope.textBlobId(initialBytes));
+    let blob = blobRef.ensure({
+      blobId: rope.textBlobId(initialBytes),
+      encoding: shape.TextEncoding.UTF8,
+      byteLength: len(initialBytes),
+      contentHash: hash("TextBlob", initialBytes),
+    }) else rope.TextBlobHashConflict;
+    yield some(blob);
+  };
+  return { blob: initialBlob };
+}
