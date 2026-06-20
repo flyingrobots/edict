@@ -206,6 +206,16 @@ pub enum Stmt {
         els: Option<Box<ElseClause>>,
         span: Span,
     },
+    /// `for var in iter bounded <bound> { ... }` — a statically bounded loop.
+    For {
+        var: String,
+        iter: Expr,
+        /// The mandatory cardinality bound (`EDICT-LANG-BOUNDS`): every loop
+        /// must carry a provable maximum iteration count.
+        bound: BoundRef,
+        body: Block,
+        span: Span,
+    },
     Return {
         value: Expr,
         span: Span,

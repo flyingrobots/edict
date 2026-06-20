@@ -613,6 +613,8 @@ impl Parser {
             })
         } else if self.at_kw("if") {
             self.if_stmt()
+        } else if self.at_kw("for") {
+            self.for_stmt()
         } else {
             // effect statement: an imported-effect call with optional `else`.
             let call = self.expr()?;
@@ -703,6 +705,25 @@ impl Parser {
             cond,
             then_block,
             els,
+            span: Span::new(start, self.prev_end()),
+        })
+    }
+
+    /// `for ident in expr bounded bound-ref block` — a statically bounded loop.
+    fn for_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.peek_span().start;
+        self.expect_kw("for")?;
+        let var = self.ident()?;
+        self.expect_kw("in")?;
+        let iter = self.expr()?;
+        self.expect_kw("bounded")?;
+        let bound = self.bound_ref()?;
+        let body = self.block()?;
+        Ok(Stmt::For {
+            var,
+            iter,
+            bound,
+            body,
             span: Span::new(start, self.prev_end()),
         })
     }
