@@ -3,7 +3,7 @@
 
 mod common;
 use common::body;
-use edict_syntax::parse_module;
+use edict_syntax::{parse_module, ParseErrorKind};
 
 #[test]
 fn keywords_are_rejected_as_bare_values() {
@@ -12,10 +12,8 @@ fn keywords_are_rejected_as_bare_values() {
         "assert", "intent", "type", "enum",
     ] {
         let src = body(&format!("  let x = {kw};\n  return {{ x }};"));
-        assert!(
-            parse_module(&src).is_err(),
-            "keyword `{kw}` must be rejected as a bare value identifier",
-        );
+        let err = parse_module(&src).expect_err("keyword must reject as bare value");
+        assert_eq!(err.kind, ParseErrorKind::ReservedKeyword, "keyword `{kw}`");
     }
 }
 
@@ -24,10 +22,8 @@ fn keywords_are_rejected_as_let_binder_names() {
     // A binder is a bare identifier; `let match = …;` must not bind a keyword.
     for kw in ["match", "for", "return", "yield"] {
         let src = body(&format!("  let {kw} = input.a;\n  return {{ x }};"));
-        assert!(
-            parse_module(&src).is_err(),
-            "keyword `{kw}` must be rejected as a let binder name",
-        );
+        let err = parse_module(&src).expect_err("keyword must reject as let binder");
+        assert_eq!(err.kind, ParseErrorKind::ReservedKeyword, "keyword `{kw}`");
     }
 }
 
@@ -37,10 +33,8 @@ fn ternary_is_not_a_bare_operand() {
     // operand when parenthesized; a bare `a + if …` must reject (and no longer
     // silently swallow `if` as an identifier).
     let bare = body("  let x = a + if c then b else d;\n  return { x };");
-    assert!(
-        parse_module(&bare).is_err(),
-        "bare ternary operand must reject"
-    );
+    let err = parse_module(&bare).expect_err("bare ternary operand must reject");
+    assert_eq!(err.kind, ParseErrorKind::ReservedKeyword);
 
     let parenthesized = body("  let x = a + (if c then b else d);\n  return { x };");
     parse_module(&parenthesized).expect("parenthesized ternary is a valid operand");

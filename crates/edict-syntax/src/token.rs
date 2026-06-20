@@ -61,9 +61,12 @@ impl IntSuffix {
 pub enum TokenKind {
     /// Any bare word `[A-Za-z_][A-Za-z0-9_]*` (keywords included).
     Ident(String),
-    /// Integer literal: raw digits (underscores stripped) plus optional suffix.
+    /// Integer literal: raw digits plus optional suffix. `raw` preserves digit
+    /// separators for source-sensitive package versions; `value` strips them
+    /// for numeric consumers.
     Int {
         value: String,
+        raw: String,
         suffix: Option<IntSuffix>,
     },
     /// String literal contents (without the surrounding quotes), not normalized.
@@ -245,6 +248,7 @@ impl<'a> Lexer<'a> {
 
     fn number(&mut self) -> Result<TokenKind, LexError> {
         let mut value = String::new();
+        let mut raw = String::new();
         // Digits with underscores allowed only *between* digits (SPEC Lexical
         // Rules): never leading, trailing, or adjacent.
         let mut last_was_digit = false;
@@ -252,6 +256,7 @@ impl<'a> Lexer<'a> {
             match self.peek() {
                 Some(c @ b'0'..=b'9') => {
                     value.push(char::from(c));
+                    raw.push(char::from(c));
                     self.pos += 1;
                     last_was_digit = true;
                 }
@@ -263,6 +268,7 @@ impl<'a> Lexer<'a> {
                             span: Span::new(us, us + 1),
                         });
                     }
+                    raw.push('_');
                     self.pos += 1; // consume '_'
                     if !matches!(self.peek(), Some(b'0'..=b'9')) {
                         return Err(LexError {
@@ -291,7 +297,7 @@ impl<'a> Lexer<'a> {
             self.pos = suffix_start;
             None
         };
-        Ok(TokenKind::Int { value, suffix })
+        Ok(TokenKind::Int { value, raw, suffix })
     }
 
     fn string(&mut self) -> Result<TokenKind, LexError> {
@@ -453,6 +459,7 @@ mod tests {
                 TokenKind::At,
                 TokenKind::Int {
                     value: "1".into(),
+                    raw: "1".into(),
                     suffix: None
                 },
                 TokenKind::Semi,
@@ -473,6 +480,7 @@ mod tests {
                 TokenKind::Eq,
                 TokenKind::Int {
                     value: "256".into(),
+                    raw: "256".into(),
                     suffix: None
                 },
                 TokenKind::Gt,
@@ -493,14 +501,17 @@ mod tests {
             vec![
                 TokenKind::Int {
                     value: "1".into(),
+                    raw: "1".into(),
                     suffix: Some(IntSuffix::U64)
                 },
                 TokenKind::Int {
                     value: "64000".into(),
+                    raw: "64_000".into(),
                     suffix: Some(IntSuffix::I64)
                 },
                 TokenKind::Int {
                     value: "7".into(),
+                    raw: "7".into(),
                     suffix: None
                 },
                 TokenKind::Eof,
@@ -534,6 +545,7 @@ mod tests {
             vec![
                 TokenKind::Int {
                     value: "1000".into(),
+                    raw: "1_000".into(),
                     suffix: None
                 },
                 TokenKind::Eof

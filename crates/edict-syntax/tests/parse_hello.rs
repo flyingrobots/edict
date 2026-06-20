@@ -7,7 +7,7 @@ use edict_syntax::ast::{
     BoundRef, Decl, Expr, ImportKind, IntentClause, RecordEntry, ScalarRefine, Stmt, TypeExpr,
     TypeRef,
 };
-use edict_syntax::parse_module;
+use edict_syntax::{parse_module, ParseErrorKind};
 
 const HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
 
@@ -89,7 +89,12 @@ fn bounded_hello_parses() {
 #[test]
 fn missing_semicolon_is_a_parse_error() {
     let bad = "package examples.hello@1\n";
-    assert!(parse_module(bad).is_err());
+    let err = parse_module(bad).expect_err("missing package semicolon must reject");
+    assert_eq!(err.kind, ParseErrorKind::ExpectedToken);
+    assert!(
+        err.message.contains("Semi"),
+        "diagnostic should identify the missing semicolon: {err}"
+    );
 }
 
 #[test]

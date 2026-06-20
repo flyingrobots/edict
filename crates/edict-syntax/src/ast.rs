@@ -126,7 +126,7 @@ pub enum TypeRef {
     /// `String` / `String<max=N[, canonical=x]>`.
     StringTy(Option<ScalarRefine>),
     /// `Bytes` / `Bytes<max=N>` (max-only; no canonicalization).
-    BytesTy(Option<u64>),
+    BytesTy(Option<BoundRef>),
     Option(Box<TypeRef>),
     CapabilityRef(Box<TypeRef>),
     List {
@@ -318,6 +318,15 @@ pub enum Expr {
         span: Span,
     },
     Str {
+        value: String,
+        span: Span,
+    },
+    Bool {
+        value: bool,
+        span: Span,
+    },
+    /// `digest("sha256:...")` value literal.
+    Digest {
         value: String,
         span: Span,
     },

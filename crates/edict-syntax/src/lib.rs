@@ -18,5 +18,5 @@ pub mod ast;
 pub mod parser;
 pub mod token;
 
-pub use parser::{parse_module, ParseError};
+pub use parser::{parse_module, ParseError, ParseErrorKind};
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
