@@ -4,9 +4,10 @@
 //! text so they remain usable as member names after `.`.
 
 use crate::ast::{
-    BinOp, Block, BoundRef, Decl, Expr, FieldConstraint, FieldDecl, Import, ImportKind,
+    BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldConstraint, FieldDecl, Import, ImportKind,
     IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget,
     PackageRef, Param, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp,
+    YieldBlock,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -563,7 +564,7 @@ impl Parser {
                 None
             };
             self.expect(&TokenKind::Eq)?;
-            let value = self.expr()?;
+            let value = self.let_rhs()?;
             let els = self.maybe_else_handler()?;
             self.expect(&TokenKind::Semi)?;
             Ok(Stmt::Let {
@@ -610,6 +611,8 @@ impl Parser {
                 predicate,
                 span: Span::new(start, self.prev_end()),
             })
+        } else if self.at_kw("if") {
+            self.if_stmt()
         } else {
             // effect statement: an imported-effect call with optional `else`.
             let call = self.expr()?;
@@ -621,6 +624,87 @@ impl Parser {
                 span: Span::new(start, self.prev_end()),
             })
         }
+    }
+
+    /// The right-hand side of a `let`: either an ordinary expression, or the
+    /// effectful branch-yield form (legal *only* here). Both start with `if`,
+    /// so we disambiguate on what follows the predicate: `then` is the pure
+    /// ternary; `{` is the branch-yield.
+    fn let_rhs(&mut self) -> Result<Expr, ParseError> {
+        if !self.at_kw("if") {
+            return self.expr();
+        }
+        let start = self.peek_span().start;
+        self.expect_kw("if")?;
+        let pred = self.expr()?;
+        if self.eat_kw("then") {
+            let then = self.expr()?;
+            self.expect_kw("else")?;
+            let els = self.expr()?;
+            Ok(Expr::If {
+                cond: Box::new(pred),
+                then: Box::new(then),
+                els: Box::new(els),
+                span: Span::new(start, self.prev_end()),
+            })
+        } else if *self.peek() == TokenKind::LBrace {
+            let then_block = self.yield_block()?;
+            self.expect_kw("else")?;
+            let else_block = self.yield_block()?;
+            Ok(Expr::IfYield {
+                pred: Box::new(pred),
+                then_block,
+                else_block,
+                span: Span::new(start, self.prev_end()),
+            })
+        } else {
+            self.err("expected `then` (conditional expression) or `{` (effect branch) after `if` predicate")
+        }
+    }
+
+    /// An effect-yield block: `{ statement* yield expr; }`.
+    fn yield_block(&mut self) -> Result<YieldBlock, ParseError> {
+        let start = self.peek_span().start;
+        self.expect(&TokenKind::LBrace)?;
+        let mut stmts = Vec::new();
+        while !self.at_kw("yield") {
+            if *self.peek() == TokenKind::RBrace {
+                return self.err("effect branch block must end with `yield <expr>;`");
+            }
+            stmts.push(self.stmt()?);
+        }
+        self.expect_kw("yield")?;
+        let value = self.expr()?;
+        self.expect(&TokenKind::Semi)?;
+        self.expect(&TokenKind::RBrace)?;
+        Ok(YieldBlock {
+            stmts,
+            value: Box::new(value),
+            span: Span::new(start, self.prev_end()),
+        })
+    }
+
+    /// `if predicate block (else (block | if-stmt))?` control flow.
+    fn if_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let start = self.peek_span().start;
+        self.expect_kw("if")?;
+        let cond = self.expr()?;
+        let then_block = self.block()?;
+        let els = if self.eat_kw("else") {
+            if self.at_kw("if") {
+                Some(Box::new(ElseClause::If(Box::new(self.if_stmt()?))))
+            } else {
+                Some(Box::new(ElseClause::Block(self.block()?)))
+            }
+        } else {
+            None
+        };
+        Ok(Stmt::If {
+            cond,
+            then_block,
+            els,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     /// Parse an optional `else <obstruction-handler>` clause.
@@ -689,7 +773,31 @@ impl Parser {
     // --- expressions (precedence climbing) ---
 
     fn expr(&mut self) -> Result<Expr, ParseError> {
+        // `if-expr` sits at the top of the precedence chain: a leading `if` in
+        // expression position is the pure ternary (`if p then a else b`). The
+        // effectful branch-yield form is *not* a general expression — it is
+        // handled separately in `let_rhs`.
+        if self.at_kw("if") {
+            return self.if_ternary();
+        }
         self.logic_or()
+    }
+
+    /// Pure conditional expression: `if predicate then expr else expr`.
+    fn if_ternary(&mut self) -> Result<Expr, ParseError> {
+        let start = self.peek_span().start;
+        self.expect_kw("if")?;
+        let cond = self.expr()?;
+        self.expect_kw("then")?;
+        let then = self.expr()?;
+        self.expect_kw("else")?;
+        let els = self.expr()?;
+        Ok(Expr::If {
+            cond: Box::new(cond),
+            then: Box::new(then),
+            els: Box::new(els),
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     fn binop_left(

@@ -199,10 +199,25 @@ pub enum Stmt {
         predicate: Expr,
         span: Span,
     },
+    /// `if cond { ... } [else { ... } | else if ...]` control flow.
+    If {
+        cond: Expr,
+        then_block: Block,
+        els: Option<Box<ElseClause>>,
+        span: Span,
+    },
     Return {
         value: Expr,
         span: Span,
     },
+}
+
+/// The `else` arm of an `if` statement: a block, or a chained `else if`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ElseClause {
+    Block(Block),
+    /// Always a [`Stmt::If`].
+    If(Box<Stmt>),
 }
 
 /// How an effect's failures map to typed domain obstructions.
@@ -305,6 +320,29 @@ pub enum Expr {
         entries: Vec<RecordEntry>,
         span: Span,
     },
+    /// Pure ternary: `if cond then a else b`.
+    If {
+        cond: Box<Expr>,
+        then: Box<Expr>,
+        els: Box<Expr>,
+        span: Span,
+    },
+    /// Branch-yield conditional effect (legal only as a `let` rhs):
+    /// `if pred { ...; yield a; } else { ...; yield b; }`.
+    IfYield {
+        pred: Box<Expr>,
+        then_block: YieldBlock,
+        else_block: YieldBlock,
+        span: Span,
+    },
+}
+
+/// A `{ stmt* yield expr; }` block: statements followed by a single `yield`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct YieldBlock {
+    pub stmts: Vec<Stmt>,
+    pub value: Box<Expr>,
+    pub span: Span,
 }
 
 /// One entry in a record literal.
