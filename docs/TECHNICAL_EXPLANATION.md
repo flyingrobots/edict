@@ -1,19 +1,21 @@
 # Table of Contents
 
-- [1. Domain Dictionary (Glossary)](#1-domain-dictionary-glossary) — Line 55
-- [2. High-Level Architecture Overview](#2-high-level-architecture-overview) — Line 75
-- [3. Bootstrapping vs. Runtime Execution](#3-bootstrapping-vs-runtime-execution) — Line 85
-- [4. The Entry Point: Compilation Lifecycle](#4-the-entry-point-compilation-lifecycle) — Line 103
-- [5. Lexical Analysis (token.rs)](#5-lexical-analysis-tokenrs) — Line 147
-- [6. Syntactic Analysis & Precedence Climbing (parser.rs)](#6-syntactic-analysis--precedence-climbing-parserrs) — Line 214
-- [7. Anatomy of a Payload: AST Transformations](#7-anatomy-of-a-payload-ast-transformations) — Line 308
-- [8. Unhappy Paths & Error Handling](#8-unhappy-paths--error-handling) — Line 475
-- [9. Security Boundaries: SHA-Locks & Sandbox Isolation](#9-security-boundaries-sha-locks--sandbox-isolation) — Line 503
-- [10. Concurrency, Parallelism, and Determinism](#10-concurrency-parallelism-and-determinism) — Line 513
-- [11. External Dependencies & Boundaries](#11-external-dependencies--boundaries) — Line 523
-- [12. Design Rationale & Trade-offs](#12-design-rationale--trade-offs) — Line 533
-- [13. Computer Languages: A Comparative Taxonomic Overview](#13-computer-languages-a-comparative-taxonomic-overview) — Line 554
-- [14. Novel Language Quirks, Features, and Design Rationales](#14-novel-language-quirks-features-and-design-rationales) — Line 578
+- [1. Domain Dictionary (Glossary)](#1-domain-dictionary-glossary) — Line 57
+- [2. High-Level Architecture Overview](#2-high-level-architecture-overview) — Line 77
+- [3. Bootstrapping vs. Runtime Execution](#3-bootstrapping-vs-runtime-execution) — Line 87
+- [4. The Entry Point: Compilation Lifecycle](#4-the-entry-point-compilation-lifecycle) — Line 105
+- [5. Lexical Analysis (token.rs)](#5-lexical-analysis-tokenrs) — Line 149
+- [6. Syntactic Analysis & Precedence Climbing (parser.rs)](#6-syntactic-analysis--precedence-climbing-parserrs) — Line 216
+- [7. Anatomy of a Payload: AST Transformations](#7-anatomy-of-a-payload-ast-transformations) — Line 310
+- [8. Unhappy Paths & Error Handling](#8-unhappy-paths--error-handling) — Line 477
+- [9. Security Boundaries: SHA-Locks & Sandbox Isolation](#9-security-boundaries-sha-locks--sandbox-isolation) — Line 505
+- [10. Concurrency, Parallelism, and Determinism](#10-concurrency-parallelism-and-determinism) — Line 515
+- [11. External Dependencies & Boundaries](#11-external-dependencies--boundaries) — Line 525
+- [12. Design Rationale & Trade-offs](#12-design-rationale--trade-offs) — Line 535
+- [13. Computer Languages: A Comparative Taxonomic Overview](#13-computer-languages-a-comparative-taxonomic-overview) — Line 556
+- [14. Novel Language Quirks, Features, and Design Rationales](#14-novel-language-quirks-features-and-design-rationales) — Line 580
+- [15. High-Assurance Platform Mechanics: HOLMES, Moriarty, and the Two-Lowerer Trial](#15-high-assurance-platform-mechanics-holmes-moriarty-and-the-two-lowerer-trial) — Line 602
+- [16. Cryptographic State Separation: Why Core IR Excludes Source Spans](#16-cryptographic-state-separation-why-core-ir-excludes-source-spans) — Line 617
 
 ```mermaid
 mindmap
@@ -594,3 +596,35 @@ Edict incorporates several specific syntactic and behavioral designs that differ
 ### Quirk D: Constrained Scalar Types (`String<max=256>`)
 * **Quirk**: Basic types are parameterized directly in type signatures with bounds (e.g., `String<max=256>` or `Bytes<max=1024>`).
 * **Why We Did It This Way**: GPLs allow dynamically sized strings, allocating memory from a heap as needed. In high-assurance sandboxes, dynamic heap allocation can lead to denial-of-service memory exhaustion attacks. Integrating length bounds directly into the type definition allows the Edict compiler to compute the maximum memory footprint of an intent before admission.
+
+---
+
+## 15. High-Assurance Platform Mechanics: HOLMES, Moriarty, and the Two-Lowerer Trial
+
+Edict is designed not just as a syntax parser, but as the compiler front-end of a global cryptographic platform. The downstream validation pipelines rely on unique security mechanisms:
+
+### HOLMES (Evidence Attestation Logs)
+During compiled artifact check, the platform's **HOLMES** engine collects attestation evidence. Instead of verifying raw Rust code or running complex verification trees at admission time, HOLMES digests the compile-time outputs and creates a structured evidence record. This record acts as a "nutrition label" detailing exactly what security permissions (footprints) the contract claims and what mathematical proofs support those claims. The signature of HOLMES seals the contract bundle, making it immutable.
+
+### Moriarty (Relapse Fuzzing)
+Codebases are prone to "relapses" — where subsequent changes or optimizer enhancements accidentally introduce non-deterministic features (e.g., exposing a host clock, file path leak, or dynamic memory leaks). The **Moriarty** agent runs automated fuzzing across admitted target profiles and lawpacks. It attempts to breach the WASM sandbox or find cost calculation mismatches. Any discrepancy found immediately suspends the target profile version from Continuum admission ledger.
+
+### The Two-Lowerer Trial
+A critical vector in compiler security is **Lowerer Exploitation**. If a single compiler backend converts Core IR to Wasm bytecode, a bug or malicious insert in that compiler backend could produce unsafe bytecode while the verifier reports success. Edict mitigates this by mandating the **Two-Lowerer Trial**. Core IR is compiled through two independently written, separate lowerer pipelines. The system generates bytecode hashes for both compilation targets and compares them. If the resulting structures diverge by a single byte, admission is rejected, neutralizing compiler-vector exploits.
+
+---
+
+## 16. Cryptographic State Separation: Why Core IR Excludes Source Spans
+
+In traditional language compilers, debug configurations preserve source locations (`Span` coordinates referencing filename, line number, and column numbers) to populate stack traces. Edict explicitly strips source spans during the lowering phase to Core IR.
+
+### The Formatting Identity Hazard
+Edict contract bundles are identified by the cryptographic hash of their compiled Core IR. If source coordinates were preserved inside the Core IR:
+1. Adding a single comment, space, or running a code reformatter (like `rustfmt`) would shift source spans.
+2. Shifting source spans would change the compiled Core IR byte representation.
+3. The cryptographic hash of the intent would mutate, changing its identity.
+
+As a result, a developer who merely cleaned up whitespace or comments would create a "new" contract in the eyes of the Continuum admission engine. This would invalidate prior HOLMES attestations and audit approvals.
+
+### The Solution: Lexical Spans as Transient Metadata
+Edict separates developer diagnostics from execution semantics. The `Span` struct is a compiler-frontend concept: it is captured in the tokenization and recursive-descent parsing phases to render beautiful, clickable error messages to the developer. However, during the lowering phase to Core IR, all span data is stripped. The resulting Core IR is a purely semantic tree, guaranteeing that formatting changes have zero impact on the contract's cryptographic hash identity.
