@@ -51,7 +51,17 @@ pub struct Import {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decl {
     Type(TypeDecl),
+    Enum(EnumDecl),
     Intent(IntentDecl),
+}
+
+/// `enum Name { CASE, CASE, ... }` — a closed set of payload-free cases.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnumDecl {
+    pub name: String,
+    /// Case names, in source order. Enum cases carry no payload.
+    pub cases: Vec<String>,
+    pub span: Span,
 }
 
 /// `type Name = <type-expr>;`
@@ -67,7 +77,17 @@ pub struct TypeDecl {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeExpr {
     Record(Vec<FieldDecl>),
+    /// `variant { Case, Case(Payload), ... }` — a tagged union.
+    Variant(Vec<VariantCase>),
     Ref(TypeRef),
+}
+
+/// One case of a `variant` type: a tag with an optional payload type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariantCase {
+    pub name: String,
+    pub payload: Option<TypeRef>,
+    pub span: Span,
 }
 
 /// A record field with optional field-level constraints.
@@ -345,6 +365,30 @@ pub enum Expr {
         else_block: YieldBlock,
         span: Span,
     },
+    /// A variant constructor: `qual.Type::Case` or `qual.Type::Case(payload)`.
+    VariantLit {
+        ty_path: Vec<String>,
+        case: String,
+        payload: Option<Box<Expr>>,
+        span: Span,
+    },
+    /// `match scrutinee { Case (binder)? => expr, ... }`.
+    Match {
+        scrutinee: Box<Expr>,
+        arms: Vec<MatchArm>,
+        span: Span,
+    },
+}
+
+/// One arm of a `match` expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MatchArm {
+    /// The bare case name (enum case or variant tag).
+    pub case: String,
+    /// Optional payload binder for variant cases: `Case(binder) => ...`.
+    pub binder: Option<String>,
+    pub body: Expr,
+    pub span: Span,
 }
 
 /// A `{ stmt* yield expr; }` block: statements followed by a single `yield`.

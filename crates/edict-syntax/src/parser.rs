@@ -4,10 +4,10 @@
 //! text so they remain usable as member names after `.`.
 
 use crate::ast::{
-    BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldConstraint, FieldDecl, Import, ImportKind,
-    IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget,
-    PackageRef, Param, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp,
-    YieldBlock,
+    BinOp, Block, BoundRef, Decl, ElseClause, EnumDecl, Expr, FieldConstraint, FieldDecl, Import,
+    ImportKind, IntentClause, IntentDecl, MatchArm, Module, ObstructionArm, ObstructionHandler,
+    ObstructionTarget, PackageRef, Param, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr,
+    TypeRef, UnOp, VariantCase, YieldBlock,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -266,14 +266,37 @@ impl Parser {
     fn decl(&mut self) -> Result<Decl, ParseError> {
         if self.at_kw("type") {
             Ok(Decl::Type(self.type_decl()?))
+        } else if self.at_kw("enum") {
+            Ok(Decl::Enum(self.enum_decl()?))
         } else if self.at_kw("intent") {
             Ok(Decl::Intent(self.intent_decl()?))
         } else {
             self.err(format!(
-                "expected `type` or `intent` declaration, found {:?}",
+                "expected `type`, `enum`, or `intent` declaration, found {:?}",
                 self.peek()
             ))
         }
+    }
+
+    /// `enum Name { CASE, CASE, ... }` — payload-free closed case set.
+    fn enum_decl(&mut self) -> Result<EnumDecl, ParseError> {
+        let start = self.peek_span().start;
+        self.expect_kw("enum")?;
+        let name = self.ident()?;
+        self.expect(&TokenKind::LBrace)?;
+        let mut cases = Vec::new();
+        while *self.peek() != TokenKind::RBrace {
+            cases.push(self.ident()?);
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Ok(EnumDecl {
+            name,
+            cases,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     // --- types ---
@@ -293,6 +316,8 @@ impl Parser {
         self.expect(&TokenKind::Eq)?;
         let body = if *self.peek() == TokenKind::LBrace {
             TypeExpr::Record(self.record_type()?)
+        } else if self.at_kw("variant") {
+            TypeExpr::Variant(self.variant_type()?)
         } else {
             TypeExpr::Ref(self.type_ref()?)
         };
@@ -326,6 +351,34 @@ impl Parser {
         }
         self.expect(&TokenKind::RBrace)?;
         Ok(fields)
+    }
+
+    /// `variant { Case, Case(PayloadType), ... }`.
+    fn variant_type(&mut self) -> Result<Vec<VariantCase>, ParseError> {
+        self.expect_kw("variant")?;
+        self.expect(&TokenKind::LBrace)?;
+        let mut cases = Vec::new();
+        while *self.peek() != TokenKind::RBrace {
+            let start = self.peek_span().start;
+            let name = self.ident()?;
+            let payload = if self.eat(&TokenKind::LParen) {
+                let ty = self.type_ref()?;
+                self.expect(&TokenKind::RParen)?;
+                Some(ty)
+            } else {
+                None
+            };
+            cases.push(VariantCase {
+                name,
+                payload,
+                span: Span::new(start, self.prev_end()),
+            });
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        Ok(cases)
     }
 
     fn field_constraints(&mut self) -> Result<Vec<FieldConstraint>, ParseError> {
@@ -928,6 +981,29 @@ impl Parser {
                         span: Span::new(start, self.prev_end()),
                     };
                 }
+                TokenKind::ColonColon => {
+                    // Variant literal: `<qual-ident>::Case` with optional payload.
+                    // The preceding expression must be a pure dotted path.
+                    let ty_path = Self::expr_to_path(&e).ok_or_else(|| ParseError {
+                        message: "`::` must follow a type path (a variant constructor)".into(),
+                        span: self.peek_span(),
+                    })?;
+                    self.idx += 1; // consume `::`
+                    let case = self.ident()?;
+                    let payload = if self.eat(&TokenKind::LParen) {
+                        let p = self.expr()?;
+                        self.expect(&TokenKind::RParen)?;
+                        Some(Box::new(p))
+                    } else {
+                        None
+                    };
+                    e = Expr::VariantLit {
+                        ty_path,
+                        case,
+                        payload,
+                        span: Span::new(start, self.prev_end()),
+                    };
+                }
                 TokenKind::LParen => {
                     let args = self.call_args()?;
                     e = Expr::Call {
@@ -969,6 +1045,60 @@ impl Parser {
         }
         self.expect(&TokenKind::RParen)?;
         Ok(args)
+    }
+
+    /// Flatten an `Ident`/`Field` chain into a dotted path, or `None` if the
+    /// expression is anything else (used to validate a variant constructor head).
+    fn expr_to_path(e: &Expr) -> Option<Vec<String>> {
+        match e {
+            Expr::Ident { name, .. } => Some(vec![name.clone()]),
+            Expr::Field { base, field, .. } => {
+                let mut path = Self::expr_to_path(base)?;
+                path.push(field.clone());
+                Some(path)
+            }
+            _ => None,
+        }
+    }
+
+    /// `match scrutinee { Case (binder)? => expr, ... }` (at least one arm).
+    fn match_expr(&mut self) -> Result<Expr, ParseError> {
+        let start = self.peek_span().start;
+        self.expect_kw("match")?;
+        let scrutinee = self.expr()?;
+        self.expect(&TokenKind::LBrace)?;
+        let mut arms = Vec::new();
+        while *self.peek() != TokenKind::RBrace {
+            let astart = self.peek_span().start;
+            let case = self.ident()?;
+            let binder = if self.eat(&TokenKind::LParen) {
+                let b = self.ident()?;
+                self.expect(&TokenKind::RParen)?;
+                Some(b)
+            } else {
+                None
+            };
+            self.expect(&TokenKind::FatArrow)?;
+            let body = self.expr()?;
+            arms.push(MatchArm {
+                case,
+                binder,
+                body,
+                span: Span::new(astart, self.prev_end()),
+            });
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
+        }
+        self.expect(&TokenKind::RBrace)?;
+        if arms.is_empty() {
+            return self.err("`match` must have at least one arm");
+        }
+        Ok(Expr::Match {
+            scrutinee: Box::new(scrutinee),
+            arms,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     /// Try to parse `<type-args>` that is immediately followed by `(` (a
@@ -1016,6 +1146,7 @@ impl Parser {
                 self.idx += 1;
                 Ok(Expr::Str { value, span })
             }
+            TokenKind::Ident(kw) if kw == "match" => self.match_expr(),
             TokenKind::Ident(name) => {
                 self.idx += 1;
                 Ok(Expr::Ident { name, span })

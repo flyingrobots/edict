@@ -1,0 +1,30 @@
+package examples.palette@1;
+
+use shape "schemas/palette.graphql" as shape;
+use lawpack palette.optics@1 digest "sha256:0000000000000000000000000000000000000000000000000000000000000000" as palette;
+
+enum Channel { Red, Green, Blue }
+
+type Paint = variant {
+  Solid(shape.Rgb),
+  Named(shape.Name),
+  Transparent,
+};
+
+intent describe(input: shape.DescribeInput)
+  returns shape.Description
+  profile palette.readOnly
+  basis input.paint
+  budget <= palette.describeBudget
+{
+  let label = match input.paint {
+    Solid(rgb) => rgb.hex,
+    Named(name) => name.text,
+    Transparent => input.fallback,
+  };
+  let recolored = shape.Paint::Solid(input.rgb);
+  return {
+    label: label,
+    paint: recolored,
+  };
+}
