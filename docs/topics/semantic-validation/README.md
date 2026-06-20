@@ -25,7 +25,8 @@ assert_eq!(errors[0].kind, SemanticErrorKind::UnboundedScalar);
 ```
 
 Validation accepts a parsed source AST and returns either `Ok(())` or all
-source-level semantic errors found in source order. Tests assert structured
+source-level semantic errors found by a deterministic source-AST traversal. Exact
+error ordering is not part of the Phase 2 contract. Tests assert structured
 `SemanticErrorKind` values, not message prose. [SEMVAL-REQ-001]
 
 ## Current Contract
@@ -42,6 +43,10 @@ source-level semantic errors found in source order. Tests assert structured
   contract requires an explicit source clause. [SEMVAL-REQ-005]
 - Singleton intent clauses reject duplicates for `profile`, `implements`,
   `basis`, `footprint`, and `budget`. [SEMVAL-REQ-006]
+
+Semantic errors carry source spans. Clause-level duplicate diagnostics currently
+report the enclosing intent span because the parser's `IntentClause` AST does
+not yet retain per-clause spans. [SEMVAL-REQ-001]
 
 ## Deferred
 

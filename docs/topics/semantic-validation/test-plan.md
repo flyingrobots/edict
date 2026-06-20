@@ -22,7 +22,7 @@ Out of scope for this first slice:
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| SEMVAL-REQ-001 | implemented | Validation returns structured semantic errors with stable kinds and source spans. | crates/edict-syntax/src/semantic.rs |
+| SEMVAL-REQ-001 | implemented | Validation returns structured semantic errors with stable kinds and source span payloads. | crates/edict-syntax/src/semantic.rs |
 | SEMVAL-REQ-002 | implemented | Runtime `String` and `Bytes` type references must be explicitly bounded. | EDICT-LANG-BOUNDS-001 |
 | SEMVAL-REQ-003 | implemented | Each intent must declare at least one operation mode: `profile` or `implements`. | EDICT-LANG-INTENT-CLAUSES-001 |
 | SEMVAL-REQ-004 | implemented | Each intent must declare a `budget` clause. | EDICT-LANG-INTENT-CLAUSES-001 |
@@ -47,10 +47,10 @@ Out of scope for this first slice:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SEMVAL-TP-001 | implemented | Golden path | SEMVAL-REQ-001 | Valid Phase 1 fixtures return `Ok(())`. | phase1_fixtures_validate_semantically | fixtures/lang/bounds/bounded-hello.edict, fixtures/lang/effects/read-greeting.edict, fixtures/lang/effects/conditional-blob.edict | Source-AST validator only. |
-| SEMVAL-TP-002 | implemented | Error handling | SEMVAL-REQ-002 | Nested unbounded scalars produce `UnboundedScalar` for each occurrence. | unbounded_runtime_scalars_are_rejected_recursively | - | Recurses through `Option` and `List`. |
+| SEMVAL-TP-002 | implemented | Error handling | SEMVAL-REQ-002 | Nested unbounded scalars produce `UnboundedScalar` for each occurrence. | unbounded_runtime_scalars_are_rejected_recursively, unbounded_runtime_scalars_are_rejected_in_declaration_type_surfaces, unbounded_runtime_scalars_are_rejected_in_intent_and_expression_surfaces | - | Covers `Option`, `List`, `Map`, `CapabilityRef`, variant payloads, intent params/returns, typed `let`, and expression type args. |
 | SEMVAL-TP-003 | implemented | Error handling | SEMVAL-REQ-003, SEMVAL-REQ-004, SEMVAL-REQ-005 | Missing required intent clauses produce `MissingOperationMode`, `MissingBudget`, and `MissingBasis`. | intent_required_clauses_are_validated | - | Does not require import resolution. |
 | SEMVAL-TP-004 | implemented | Golden path | SEMVAL-REQ-003 | Either `profile` or `implements` satisfies operation mode. | profile_or_implements_satisfies_operation_mode | - | Both remain legal. |
-| SEMVAL-TP-005 | implemented | Error handling | SEMVAL-REQ-006 | Duplicate singleton clauses produce `DuplicateIntentClause`. | duplicate_singleton_intent_clauses_are_rejected | - | Covers profile, basis, and budget duplicates. |
+| SEMVAL-TP-005 | implemented | Error handling | SEMVAL-REQ-006 | Duplicate singleton clauses produce `DuplicateIntentClause`. | duplicate_singleton_intent_clauses_are_rejected, duplicate_implements_and_footprint_clauses_are_rejected | - | Covers `profile`, `implements`, `basis`, `footprint`, and `budget` duplicates. |
 | SEMVAL-TP-006 | planned | Error handling | SEMVAL-REQ-007 | Shadowing produces stable semantic error kinds. | - | - | Requires symbol table. |
 | SEMVAL-TP-007 | planned | Error handling | SEMVAL-REQ-008 | Integer suffix/context mismatch produces stable semantic error kind. | - | - | Requires contextual typing. |
 | SEMVAL-TP-008 | planned | Error handling | SEMVAL-REQ-009 | Unprovable loop bound produces stable semantic error kind. | - | - | Requires cardinality reasoning. |
@@ -61,6 +61,8 @@ Out of scope for this first slice:
 
 - Semantic tests inspect returned `SemanticErrorKind` values and AST validation
   state.
+- Exact error ordering is not a Phase 2 contract; tests may normalize errors when
+  a case is about identity rather than traversal order.
 - Tests do not inspect stdout, stderr, logs, or diagnostic prose.
 - Source inputs are inline strings or checked-in fixtures.
 - The contract graph is checked by `cargo xtask contract-check`.
@@ -72,3 +74,5 @@ Out of scope for this first slice:
 - Cardinality proof machinery for loop bounds.
 - Target/lawpack facts for obstruction exhaustiveness.
 - Core relapse-zoo fixtures after Core IR exists.
+- Clause-level diagnostic spans; duplicate singleton diagnostics currently report
+  at the enclosing intent span because intent clauses do not retain spans.

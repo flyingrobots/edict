@@ -1,14 +1,16 @@
-//! `edict-syntax`: the Edict language front end (Phase 1).
+//! `edict-syntax`: the Edict language front end.
 //!
 //! Scope is `edict.implementation/minimal-v1` (see SPEC - Edict Language v1).
-//! The front end currently parses: package and imports; `type` records and
-//! refined scalars; `enum` declarations and `variant` types; `intent`s with
-//! their clauses; `let`/`return`/`require`/`guarantee`/`assert`; the `if`
-//! family (ternary, branch-yield conditional effects, and `if`/`else if`/`else`
-//! control flow); bounded `for`; calls and type-calls; variant-literal
-//! constructors; and `match`. Pure `fn`/`const` declarations, `record`
-//! semantic-effect statements, list/map/unit literals, and the entire
-//! semantic-validation layer are deferred (see `docs/RETRO_phase1-parser.md`).
+//! Phase 1 parses: package and imports; `type` records and refined scalars;
+//! `enum` declarations and `variant` types; `intent`s with their clauses;
+//! `let`/`return`/`require`/`guarantee`/`assert`; the `if` family; bounded
+//! `for`; calls and type-calls; variant-literal constructors; and `match`.
+//! Phase 2 currently validates source-AST constraints that do not require import
+//! resolution or Core IR: bounded runtime `String`/`Bytes`, required intent
+//! operation-mode/budget/basis clauses, and duplicate singleton intent clauses.
+//! Pure `fn`/`const` declarations, `record` semantic-effect statements,
+//! list/map/unit expression literals, import resolution, resolved type checking,
+//! shadow checks, and Core IR validation are deferred.
 //!
 //! Assurance tooling (HOLMES / Watson / Moriarty) is shared platform machinery
 //! in `flyingrobots/wesley`; it operates on bundles and evidence, downstream of

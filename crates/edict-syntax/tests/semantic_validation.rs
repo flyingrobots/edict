@@ -43,6 +43,48 @@ fn unbounded_runtime_scalars_are_rejected_recursively() {
 }
 
 #[test]
+fn unbounded_runtime_scalars_are_rejected_in_declaration_type_surfaces() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         type T = { entries: Map<String, Bytes, max=3>, };\n\
+         type V = variant { Raw(Bytes), Label(String) };\n",
+    );
+    assert_eq!(
+        kinds,
+        vec![
+            SemanticErrorKind::UnboundedScalar,
+            SemanticErrorKind::UnboundedScalar,
+            SemanticErrorKind::UnboundedScalar,
+            SemanticErrorKind::UnboundedScalar,
+        ]
+    );
+}
+
+#[test]
+fn unbounded_runtime_scalars_are_rejected_in_intent_and_expression_surfaces() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         intent t(input: String) returns Bytes\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           let value: String = echo.make<CapabilityRef<Bytes>, shape.Box<String>>(input);\n\
+           return value;\n\
+         }",
+    );
+    assert_eq!(
+        kinds,
+        vec![
+            SemanticErrorKind::UnboundedScalar,
+            SemanticErrorKind::UnboundedScalar,
+            SemanticErrorKind::UnboundedScalar,
+            SemanticErrorKind::UnboundedScalar,
+            SemanticErrorKind::UnboundedScalar,
+        ]
+    );
+}
+
+#[test]
 fn intent_required_clauses_are_validated() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
@@ -56,6 +98,30 @@ fn intent_required_clauses_are_validated() {
             SemanticErrorKind::MissingBasis,
             SemanticErrorKind::MissingBudget,
             SemanticErrorKind::MissingOperationMode,
+        ]
+    );
+}
+
+#[test]
+fn duplicate_implements_and_footprint_clauses_are_rejected() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         intent t(input: shape.In) returns shape.Out\n\
+           profile shape.readOnly\n\
+           implements shape.reader\n\
+           implements shape.writer\n\
+           basis none\n\
+           footprint <= shape.small\n\
+           footprint <= shape.large\n\
+           budget <= shape.tinyBudget {\n\
+           return { input };\n\
+         }",
+    );
+    assert_eq!(
+        kinds,
+        vec![
+            SemanticErrorKind::DuplicateIntentClause,
+            SemanticErrorKind::DuplicateIntentClause,
         ]
     );
 }

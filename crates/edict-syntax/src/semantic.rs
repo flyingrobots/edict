@@ -40,7 +40,8 @@ impl std::error::Error for SemanticError {}
 /// resolution and Core lowering.
 ///
 /// # Errors
-/// Returns all semantic errors found in source order.
+/// Returns all semantic errors found by a deterministic source-AST traversal.
+/// Exact ordering is not a public contract for this first validation slice.
 pub fn validate_module(module: &Module) -> Result<(), Vec<SemanticError>> {
     let mut errors = Vec::new();
     for decl in &module.decls {
@@ -126,6 +127,8 @@ fn record_singleton(
     errors: &mut Vec<SemanticError>,
 ) {
     if slot.replace(()).is_some() {
+        // Intent clauses do not currently preserve their own spans, so duplicate
+        // clause diagnostics report at intent granularity.
         errors.push(error(
             SemanticErrorKind::DuplicateIntentClause,
             format!("intent contains duplicate `{name}` clause"),

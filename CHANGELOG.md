@@ -3,8 +3,8 @@
 All notable changes to the Edict specifications are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Edict is in Phase 0 (design only); versions track specification maturity, not a
-released implementation.
+Edict now has executable Rust implementation slices alongside the design specs;
+versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
