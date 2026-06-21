@@ -1,5 +1,7 @@
 //! Source-AST semantic validation for checks that do not require Core IR.
 
+use std::collections::BTreeSet;
+
 use crate::ast::{
     Block, Decl, ElseClause, Expr, IntentClause, IntentDecl, Module, ObstructionHandler,
     ObstructionTarget, RecordEntry, Stmt, TypeExpr, TypeRef, YieldBlock,
@@ -14,6 +16,8 @@ pub enum SemanticErrorKind {
     MissingBudget,
     MissingBasis,
     DuplicateIntentClause,
+    DuplicateName,
+    ShadowedName,
 }
 
 /// A semantic validation failure with a stable kind and source span.
@@ -44,11 +48,17 @@ impl std::error::Error for SemanticError {}
 /// Exact ordering is not a public contract for this first validation slice.
 pub fn validate_module(module: &Module) -> Result<(), Vec<SemanticError>> {
     let mut errors = Vec::new();
+    let module_names = collect_module_names(module, &mut errors);
+    let protected_names = protected_names(&module_names);
+
     for decl in &module.decls {
         match decl {
             Decl::Type(decl) => validate_type_expr(&decl.body, decl.span, &mut errors),
             Decl::Enum(_) => {}
-            Decl::Intent(intent) => validate_intent(intent, &mut errors),
+            Decl::Intent(intent) => {
+                let mut names = NameEnv::new(protected_names.clone());
+                validate_intent(intent, &mut names, &mut errors);
+            }
         }
     }
     if errors.is_empty() {
@@ -58,12 +68,110 @@ pub fn validate_module(module: &Module) -> Result<(), Vec<SemanticError>> {
     }
 }
 
-fn validate_intent(intent: &IntentDecl, errors: &mut Vec<SemanticError>) {
+fn collect_module_names(module: &Module, errors: &mut Vec<SemanticError>) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for import in &module.imports {
+        record_module_name(&mut names, &import.alias, import.span, errors);
+    }
+    for decl in &module.decls {
+        match decl {
+            Decl::Type(decl) => record_module_name(&mut names, &decl.name, decl.span, errors),
+            Decl::Enum(decl) => record_module_name(&mut names, &decl.name, decl.span, errors),
+            Decl::Intent(decl) => record_module_name(&mut names, &decl.name, decl.span, errors),
+        }
+    }
+    names
+}
+
+fn record_module_name(
+    names: &mut BTreeSet<String>,
+    name: &str,
+    span: Span,
+    errors: &mut Vec<SemanticError>,
+) {
+    if !names.insert(name.to_owned()) {
+        errors.push(error(
+            SemanticErrorKind::DuplicateName,
+            format!("module name `{name}` is already bound"),
+            span,
+        ));
+    }
+}
+
+fn protected_names(module_names: &BTreeSet<String>) -> BTreeSet<String> {
+    let mut names = module_names.clone();
+    names.extend(PRELUDE_NAMES.iter().map(|name| (*name).to_owned()));
+    names
+}
+
+const PRELUDE_NAMES: &[&str] = &[
+    "Bytes",
+    "CapabilityRef",
+    "List",
+    "Map",
+    "Option",
+    "String",
+    "digest",
+    "false",
+    "hash",
+    "len",
+    "none",
+    "some",
+    "true",
+];
+
+#[derive(Debug, Clone)]
+struct NameEnv {
+    protected: BTreeSet<String>,
+    scopes: Vec<BTreeSet<String>>,
+}
+
+impl NameEnv {
+    fn new(protected: BTreeSet<String>) -> Self {
+        Self {
+            protected,
+            scopes: Vec::new(),
+        }
+    }
+
+    fn push_scope(&mut self) {
+        self.scopes.push(BTreeSet::new());
+    }
+
+    fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn bind(&mut self, name: &str, span: Span, errors: &mut Vec<SemanticError>) {
+        if self.is_visible(name) {
+            errors.push(error(
+                SemanticErrorKind::ShadowedName,
+                format!("name `{name}` shadows an existing binding"),
+                span,
+            ));
+            return;
+        }
+        if let Some(scope) = self.scopes.last_mut() {
+            scope.insert(name.to_owned());
+        }
+    }
+
+    fn is_visible(&self, name: &str) -> bool {
+        self.protected.contains(name) || self.scopes.iter().rev().any(|scope| scope.contains(name))
+    }
+}
+
+fn validate_intent(intent: &IntentDecl, names: &mut NameEnv, errors: &mut Vec<SemanticError>) {
     let mut profile = None;
     let mut implements = None;
     let mut basis = None;
     let mut footprint = None;
     let mut budget = None;
+
+    names.push_scope();
+    for param in &intent.params {
+        names.bind(&param.name, param.span, errors);
+    }
 
     for clause in &intent.clauses {
         match clause {
@@ -76,7 +184,7 @@ fn validate_intent(intent: &IntentDecl, errors: &mut Vec<SemanticError>) {
             IntentClause::Basis(expr) => {
                 record_singleton("basis", intent.span, &mut basis, errors);
                 if let Some(expr) = expr {
-                    validate_expr(expr, errors);
+                    validate_expr(expr, names, errors);
                 }
             }
             IntentClause::Footprint(_) => {
@@ -85,7 +193,7 @@ fn validate_intent(intent: &IntentDecl, errors: &mut Vec<SemanticError>) {
             IntentClause::Budget(_) => record_singleton("budget", intent.span, &mut budget, errors),
             IntentClause::Where(predicates) => {
                 for predicate in predicates {
-                    validate_expr(predicate, errors);
+                    validate_expr(predicate, names, errors);
                 }
             }
         }
@@ -117,7 +225,8 @@ fn validate_intent(intent: &IntentDecl, errors: &mut Vec<SemanticError>) {
         validate_type_ref(&param.ty, param.span, errors);
     }
     validate_type_ref(&intent.returns, intent.span, errors);
-    validate_block(&intent.body, errors);
+    validate_block(&intent.body, names, errors);
+    names.pop_scope();
 }
 
 fn record_singleton(
@@ -184,33 +293,36 @@ fn validate_type_ref(ty: &TypeRef, span: Span, errors: &mut Vec<SemanticError>) 
     }
 }
 
-fn validate_block(block: &Block, errors: &mut Vec<SemanticError>) {
+fn validate_block(block: &Block, names: &mut NameEnv, errors: &mut Vec<SemanticError>) {
+    names.push_scope();
     for stmt in &block.stmts {
-        validate_stmt(stmt, errors);
+        validate_stmt(stmt, names, errors);
     }
+    names.pop_scope();
 }
 
-fn validate_stmt(stmt: &Stmt, errors: &mut Vec<SemanticError>) {
+fn validate_stmt(stmt: &Stmt, names: &mut NameEnv, errors: &mut Vec<SemanticError>) {
     match stmt {
         Stmt::Let {
+            name,
             ty,
             value,
             els,
             span,
-            ..
         } => {
+            names.bind(name, *span, errors);
             if let Some(ty) = ty {
                 validate_type_ref(ty, *span, errors);
             }
-            validate_expr(value, errors);
+            validate_expr(value, names, errors);
             if let Some(els) = els {
-                validate_obstruction_handler(els, errors);
+                validate_obstruction_handler(els, names, errors);
             }
         }
         Stmt::Effect { call, els, .. } => {
-            validate_expr(call, errors);
+            validate_expr(call, names, errors);
             if let Some(els) = els {
-                validate_obstruction_handler(els, errors);
+                validate_obstruction_handler(els, names, errors);
             }
         }
         Stmt::Require {
@@ -218,24 +330,24 @@ fn validate_stmt(stmt: &Stmt, errors: &mut Vec<SemanticError>) {
             obstruction,
             ..
         } => {
-            validate_expr(predicate, errors);
-            validate_obstruction_target(obstruction, errors);
+            validate_expr(predicate, names, errors);
+            validate_obstruction_target(obstruction, names, errors);
         }
         Stmt::Guarantee {
             predicate,
             obstruction,
             ..
         } => {
-            validate_expr(predicate, errors);
+            validate_expr(predicate, names, errors);
             if let Some(obstruction) = obstruction {
-                validate_obstruction_target(obstruction, errors);
+                validate_obstruction_target(obstruction, names, errors);
             }
         }
         Stmt::Assert { predicate, .. }
         | Stmt::Return {
             value: predicate, ..
         } => {
-            validate_expr(predicate, errors);
+            validate_expr(predicate, names, errors);
         }
         Stmt::If {
             cond,
@@ -243,70 +355,94 @@ fn validate_stmt(stmt: &Stmt, errors: &mut Vec<SemanticError>) {
             els,
             ..
         } => {
-            validate_expr(cond, errors);
-            validate_block(then_block, errors);
+            validate_expr(cond, names, errors);
+            validate_block(then_block, names, errors);
             if let Some(els) = els.as_deref() {
                 match els {
-                    ElseClause::Block(block) => validate_block(block, errors),
-                    ElseClause::If(stmt) => validate_stmt(stmt, errors),
+                    ElseClause::Block(block) => validate_block(block, names, errors),
+                    ElseClause::If(stmt) => validate_stmt(stmt, names, errors),
                 }
             }
         }
-        Stmt::For { iter, body, .. } => {
-            validate_expr(iter, errors);
-            validate_block(body, errors);
+        Stmt::For {
+            var,
+            iter,
+            body,
+            span,
+            ..
+        } => {
+            validate_expr(iter, names, errors);
+            names.push_scope();
+            names.bind(var, *span, errors);
+            validate_block(body, names, errors);
+            names.pop_scope();
         }
     }
 }
 
-fn validate_obstruction_handler(handler: &ObstructionHandler, errors: &mut Vec<SemanticError>) {
+fn validate_obstruction_handler(
+    handler: &ObstructionHandler,
+    names: &mut NameEnv,
+    errors: &mut Vec<SemanticError>,
+) {
     match handler {
-        ObstructionHandler::Single(target) => validate_obstruction_target(target, errors),
+        ObstructionHandler::Single(target) => validate_obstruction_target(target, names, errors),
         ObstructionHandler::Map(arms) => {
             for arm in arms {
-                validate_obstruction_target(&arm.target, errors);
+                names.push_scope();
+                if let Some(binder) = &arm.binder {
+                    names.bind(binder, arm.span, errors);
+                }
+                validate_obstruction_target(&arm.target, names, errors);
+                names.pop_scope();
             }
         }
     }
 }
 
-fn validate_obstruction_target(target: &ObstructionTarget, errors: &mut Vec<SemanticError>) {
+fn validate_obstruction_target(
+    target: &ObstructionTarget,
+    names: &mut NameEnv,
+    errors: &mut Vec<SemanticError>,
+) {
     if let Some(payload) = &target.payload {
-        validate_expr(payload, errors);
+        validate_expr(payload, names, errors);
     }
 }
 
-fn validate_expr(expr: &Expr, errors: &mut Vec<SemanticError>) {
+fn validate_expr(expr: &Expr, names: &mut NameEnv, errors: &mut Vec<SemanticError>) {
     match expr {
         Expr::Ident { .. }
         | Expr::Int { .. }
         | Expr::Str { .. }
         | Expr::Bool { .. }
         | Expr::Digest { .. } => {}
-        Expr::Field { base, .. } | Expr::Unary { operand: base, .. } => validate_expr(base, errors),
+        Expr::Field { base, .. } | Expr::Unary { operand: base, .. } => {
+            validate_expr(base, names, errors);
+        }
         Expr::Call {
             callee,
             type_args,
             args,
             span,
         } => {
-            validate_expr(callee, errors);
+            validate_expr(callee, names, errors);
             for ty in type_args {
                 validate_type_ref(ty, *span, errors);
             }
             for arg in args {
-                validate_expr(arg, errors);
+                validate_expr(arg, names, errors);
             }
         }
         Expr::Binary { lhs, rhs, .. } => {
-            validate_expr(lhs, errors);
-            validate_expr(rhs, errors);
+            validate_expr(lhs, names, errors);
+            validate_expr(rhs, names, errors);
         }
         Expr::Record { entries, .. } => {
             for entry in entries {
                 match entry {
                     RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
-                        validate_expr(value, errors);
+                        validate_expr(value, names, errors);
                     }
                     RecordEntry::Shorthand { .. } => {}
                 }
@@ -315,9 +451,9 @@ fn validate_expr(expr: &Expr, errors: &mut Vec<SemanticError>) {
         Expr::If {
             cond, then, els, ..
         } => {
-            validate_expr(cond, errors);
-            validate_expr(then, errors);
-            validate_expr(els, errors);
+            validate_expr(cond, names, errors);
+            validate_expr(then, names, errors);
+            validate_expr(els, names, errors);
         }
         Expr::IfYield {
             pred,
@@ -325,31 +461,38 @@ fn validate_expr(expr: &Expr, errors: &mut Vec<SemanticError>) {
             else_block,
             ..
         } => {
-            validate_expr(pred, errors);
-            validate_yield_block(then_block, errors);
-            validate_yield_block(else_block, errors);
+            validate_expr(pred, names, errors);
+            validate_yield_block(then_block, names, errors);
+            validate_yield_block(else_block, names, errors);
         }
         Expr::VariantLit { payload, .. } => {
             if let Some(payload) = payload {
-                validate_expr(payload, errors);
+                validate_expr(payload, names, errors);
             }
         }
         Expr::Match {
             scrutinee, arms, ..
         } => {
-            validate_expr(scrutinee, errors);
+            validate_expr(scrutinee, names, errors);
             for arm in arms {
-                validate_expr(&arm.body, errors);
+                names.push_scope();
+                if let Some(binder) = &arm.binder {
+                    names.bind(binder, arm.span, errors);
+                }
+                validate_expr(&arm.body, names, errors);
+                names.pop_scope();
             }
         }
     }
 }
 
-fn validate_yield_block(block: &YieldBlock, errors: &mut Vec<SemanticError>) {
+fn validate_yield_block(block: &YieldBlock, names: &mut NameEnv, errors: &mut Vec<SemanticError>) {
+    names.push_scope();
     for stmt in &block.stmts {
-        validate_stmt(stmt, errors);
+        validate_stmt(stmt, names, errors);
     }
-    validate_expr(&block.value, errors);
+    validate_expr(&block.value, names, errors);
+    names.pop_scope();
 }
 
 fn error(kind: SemanticErrorKind, message: impl Into<String>, span: Span) -> SemanticError {

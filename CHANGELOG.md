@@ -14,7 +14,8 @@ versions still track specification maturity rather than a released product.
   `validate_module`, stable `SemanticErrorKind` categories, deterministic tests,
   and a semantic-validation topic shelf for checks that do not require Core IR:
   bounded runtime `String`/`Bytes`, intent operation-mode/budget/basis
-  requiredness, and duplicate singleton intent clauses.
+  requiredness, duplicate singleton intent clauses, module namespace collision
+  checks, and scoped binder shadowing checks.
 - **Topic shelf pilot (`docs/topics/syntax/`).** Added the first current-truth
   topic chapter and verification matrix for the Phase 1 syntax front end,
   library-hosted doctest coverage for the external Markdown example, and
