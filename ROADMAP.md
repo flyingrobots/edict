@@ -227,7 +227,7 @@ design to stop moving underneath it.
 Milestones:
 
 - `v0.1.0-alpha.1`: #16
-- `v0.2.0-alpha.1`: #3, #19
+- `v0.2.0-alpha.1`: #3, #19, #28
 - `v0.3.0-alpha.1`: #10, #20, #21, #22
 - `v0.4.0-alpha.1`: #1, #5
 - `v0.5.0-alpha.1`: #6, #11

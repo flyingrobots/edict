@@ -714,6 +714,28 @@ mod tests {
     }
 
     #[test]
+    fn v0_2_release_notes_state_core_boundary() {
+        let root = repo_root().expect("repo root");
+        let notes = fs::read_to_string(root.join("docs/releases/v0.2.0-alpha.1.md"))
+            .expect("v0.2 release notes");
+        for required in [
+            "Normative `edict.core/v1` CDDL schema",
+            "Core semantic model coverage",
+            "No source-to-Core lowering.",
+            "No canonical Core encoder.",
+            "No golden Core bytes.",
+            "No exact Core digests.",
+            "No target lowerers.",
+            "No bundle/admission tooling.",
+        ] {
+            assert!(
+                notes.contains(required),
+                "v0.2 release notes missing boundary statement: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn core_cddl_declares_v1_semantic_model() {
         let root = repo_root().expect("repo root");
         let cddl =
