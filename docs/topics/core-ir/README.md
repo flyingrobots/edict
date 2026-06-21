@@ -42,6 +42,9 @@ golden bytes, exact Core digests, target IR, or admission bundles.
 - Intents state the required operation profile as `requiredOperationProfile`.
   Verifier reports and target/admission decisions are external to Core.
   [COREIR-REQ-009] [EDICT-CORE-VERIFIED-EXTERNAL-001]
+- Edict-authored lawpack pure helper bodies use `core-fn-body`, a pure function
+  body shape. They do not reuse the effect-capable `core-block` node algebra.
+  [COREIR-REQ-011]
 - Schema-shape fixtures prove minimal accepted Core module/intent shapes and
   rejected missing or external-evidence fields against the CDDL declarations.
   [COREIR-REQ-010]

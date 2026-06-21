@@ -1,0 +1,6 @@
+# Pure helper bodies cannot expose effect-capable node lists.
+expect reject
+shape core-fn-body
+field body
+field nodes
+field params

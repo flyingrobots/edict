@@ -727,6 +727,7 @@ mod tests {
             "core-node =",
             "core-expr =",
             "core-predicate =",
+            "core-fn-body =",
             "input-constraint =",
             "local-ref =",
             "alphaName:",

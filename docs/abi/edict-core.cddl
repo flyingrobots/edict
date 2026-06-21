@@ -111,6 +111,26 @@ core-capability-value = {
   receipt: sha256-digest,
 }
 
+; Edict-authored pure helpers use a pure Core function body. The body can bind
+; pure expressions and return an expression, but it cannot contain Core effect,
+; guard, branch, loop, match-node, or proof-obligation nodes.
+core-fn-body = {
+  params: [* local-ref],
+  body: core-pure-block,
+}
+
+core-pure-block = {
+  locals: [* local-ref],
+  bindings: [* pure-let-node],
+  result: core-expr,
+}
+
+pure-let-node = {
+  kind: "let",
+  binding: local-ref,
+  value: core-expr,
+}
+
 ; --- expressions and predicates -----------------------------------------
 
 core-expr = local-expr / const-expr / record-expr / field-expr /
