@@ -37,7 +37,7 @@ Out of scope:
 | SYNTAX-REQ-008 | implemented | Expression syntax includes precedence, records, literals, conditionals, variants, and match. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-009 | implemented | Reserved keywords reject in bare-name positions while remaining legal after `.`. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-010 | implemented | Negative tests assert stable error kinds, not diagnostic prose or incidental output. | crates/edict-syntax/src/parser.rs |
-| SYNTAX-REQ-011 | planned | Semantic validation rejects shadowing, missing required clauses, unproved bounds, unresolved coordinates, and type mismatches. | issue #10 |
+| SYNTAX-REQ-011 | planned | Additional semantic validation rejects shadowing, unproved bounds, unresolved coordinates, and type mismatches. | issue #10 |
 | SYNTAX-REQ-012 | planned | Core lowering emits canonical Core IR with byte-stable golden artifacts. | issue #3 |
 
 ## Fixtures
@@ -73,7 +73,7 @@ Out of scope:
 | SYNTAX-TP-018 | implemented | Error handling | SYNTAX-REQ-009 | Import aliases, coordinate roots, and record shorthand reject reserved keywords. | reserved_keywords_are_rejected_as_import_aliases, reserved_words_are_rejected_as_coordinate_roots, reserved_words_are_rejected_as_record_shorthand | - | Dotted members remain legal. |
 | SYNTAX-TP-019 | implemented | Golden path | SYNTAX-REQ-009 | Keywords after `.` and prelude constructors remain legal. | keywords_are_legal_as_member_names, prelude_constructors_are_not_reserved | - | Contextual keyword oracle. |
 | SYNTAX-TP-020 | implemented | Error handling | SYNTAX-REQ-010 | Negative cases assert stable `ParseErrorKind` identities. | reserved_future_decls_are_rejected_at_top_level, missing_package_is_rejected, bytes_rejects_canonical_policy, unterminated_string_is_rejected | - | No stdout/stderr scraping. |
-| SYNTAX-TP-021 | planned | Semantic validation | SYNTAX-REQ-011 | Semantic validator returns stable diagnostic kinds for shadowing and missing required clauses. | - | - | Owned by issue #10. |
+| SYNTAX-TP-021 | planned | Semantic validation | SYNTAX-REQ-011 | Semantic validator returns stable diagnostic kinds for shadowing, unproved bounds, unresolved coordinates, and type mismatches. | - | - | Extends the landed source-AST semantic-validation shelf. |
 | SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Core lowering emits byte-stable canonical artifacts. | - | - | Owned by issue #3. |
 
 ## Determinism Obligations

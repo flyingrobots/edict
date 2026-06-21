@@ -62,10 +62,11 @@ programs, prove bounds, or lower to Core IR. [SYNTAX-REQ-001]
 
 ## Deferred
 
-These are deliberately not part of the current contract:
+These are deliberately not part of the syntax parser contract:
 
-- semantic validation: shadow checks, import resolution, type checking, clause
-  requiredness, and bound proofs;
+- semantic checks beyond parsing. The landed source-AST subset is documented in
+  [semantic-validation](../semantic-validation/); import resolution, resolved
+  type checking, shadow checks, and bound proofs remain deferred;
 - Core IR lowering, CDDL, canonical encoding, and golden Core fixtures;
 - pure `fn` and `const` declarations;
 - `record` semantic-effect statements;

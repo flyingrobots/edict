@@ -118,14 +118,20 @@ fn check_topic(
     let case_ids: BTreeSet<&str> = cases.keys().map(String::as_str).collect();
     let mut covered_requirements = BTreeSet::new();
 
+    for (id, requirement) in &requirements {
+        check_requirement_sources(root, id, &requirement.source, requirement_registry)?;
+    }
+
     for case in cases.values() {
-        if !requirement_ids.contains(case.requirement.as_str()) {
-            return Err(format!(
-                "{} references unknown requirement {}",
-                case.id, case.requirement
-            ));
+        for requirement in split_cell_list(&case.requirement) {
+            if !requirement_ids.contains(requirement) {
+                return Err(format!(
+                    "{} references unknown requirement {}",
+                    case.id, requirement
+                ));
+            }
+            covered_requirements.insert(requirement.to_owned());
         }
-        covered_requirements.insert(case.requirement.as_str());
         if case.oracle.trim().is_empty() || case.oracle.trim() == "-" {
             return Err(format!("{} is missing a mandatory oracle", case.id));
         }
@@ -155,7 +161,7 @@ fn check_topic(
     }
 
     for requirement in requirements.keys() {
-        if !covered_requirements.contains(requirement.as_str()) {
+        if !covered_requirements.contains(requirement) {
             return Err(format!("{requirement} has no planned or implemented case"));
         }
     }
@@ -165,10 +171,10 @@ fn check_topic(
         .copied()
         .collect::<BTreeSet<_>>();
     for id in bracket_ids(&(chapter + "\n" + &plan)) {
-        if id.starts_with("SYNTAX-") && !all_topic_ids.contains(id.as_str()) {
+        if (is_requirement_id(&id) || is_case_id(&id)) && !all_topic_ids.contains(id.as_str()) {
             return Err(format!("topic references unknown ID `{id}`"));
         }
-        if id.starts_with("EDICT-") && !requirement_registry.contains(&id) {
+        if id.starts_with("EDICT-") && !registry_has_id(requirement_registry, &id) {
             return Err(format!("topic references unknown registry ID `{id}`"));
         }
     }
@@ -177,18 +183,19 @@ fn check_topic(
     Ok(())
 }
 
-fn parse_requirement_rows(plan: &str) -> Result<BTreeMap<String, String>, String> {
+fn parse_requirement_rows(plan: &str) -> Result<BTreeMap<String, RequirementRow>, String> {
     let mut out = BTreeMap::new();
     for line in plan.lines() {
         let cells = table_cells(line);
-        if cells
-            .first()
-            .is_some_and(|cell| cell.starts_with("SYNTAX-REQ-"))
-        {
+        if cells.first().is_some_and(|cell| is_requirement_id(cell)) {
             if cells.len() < 4 {
                 return Err(format!("malformed requirement row: {line}"));
             }
-            if out.insert(cells[0].clone(), cells[1].clone()).is_some() {
+            let row = RequirementRow {
+                id: cells[0].clone(),
+                source: cells[3].clone(),
+            };
+            if out.insert(row.id.clone(), row).is_some() {
                 return Err(format!("duplicate requirement ID {}", cells[0]));
             }
         }
@@ -200,10 +207,7 @@ fn parse_case_rows(plan: &str) -> Result<BTreeMap<String, CaseRow>, String> {
     let mut out = BTreeMap::new();
     for line in plan.lines() {
         let cells = table_cells(line);
-        if cells
-            .first()
-            .is_some_and(|cell| cell.starts_with("SYNTAX-TP-"))
-        {
+        if cells.first().is_some_and(|cell| is_case_id(cell)) {
             if cells.len() < 8 {
                 return Err(format!("malformed case row: {line}"));
             }
@@ -221,6 +225,27 @@ fn parse_case_rows(plan: &str) -> Result<BTreeMap<String, CaseRow>, String> {
         }
     }
     Ok(out)
+}
+
+fn check_requirement_sources(
+    root: &Path,
+    id: &str,
+    source_cell: &str,
+    requirement_registry: &str,
+) -> Result<(), String> {
+    for source in split_cell_list(source_cell) {
+        if source == "-" {
+            return Err(format!("{id} has no requirement source"));
+        }
+        if source.starts_with("EDICT-") {
+            if !registry_has_id(requirement_registry, source) {
+                return Err(format!("{id} unknown registry source ID `{source}`"));
+            }
+        } else if !is_external_requirement_source(source) && !root.join(source).is_file() {
+            return Err(format!("{id} source `{source}` does not resolve"));
+        }
+    }
+    Ok(())
 }
 
 fn check_fixture_table(root: &Path, plan: &str) -> Result<(), String> {
@@ -242,6 +267,8 @@ fn check_links(root: &Path, doc: &Path) -> Result<(), String> {
     let base = doc
         .parent()
         .ok_or_else(|| format!("{} has no parent", doc.display()))?;
+    let canonical_root =
+        fs::canonicalize(root).map_err(|err| format!("canonicalize {}: {err}", root.display()))?;
     let mut rest = text.as_str();
     while let Some(start) = rest.find("](") {
         rest = &rest[start + 2..];
@@ -261,12 +288,27 @@ fn check_links(root: &Path, doc: &Path) -> Result<(), String> {
         if path_part.is_empty() {
             continue;
         }
-        let resolved = normalize_path(root, &base.join(path_part));
+        let path = Path::new(path_part);
+        if path.is_absolute() {
+            return Err(format!(
+                "{} has absolute local link `{target}`",
+                doc.display()
+            ));
+        }
+        let resolved = base.join(path);
         if !resolved.exists() {
             return Err(format!(
                 "{} has broken link `{target}` resolved to {}",
                 doc.display(),
                 resolved.display()
+            ));
+        }
+        let canonical_resolved = fs::canonicalize(&resolved)
+            .map_err(|err| format!("canonicalize {}: {err}", resolved.display()))?;
+        if !canonical_resolved.starts_with(&canonical_root) {
+            return Err(format!(
+                "{} link `{target}` escapes repository root",
+                doc.display()
             ));
         }
     }
@@ -306,7 +348,7 @@ fn bracket_ids(text: &str) -> BTreeSet<String> {
             break;
         };
         let id = &rest[..end];
-        if id.starts_with("SYNTAX-") || id.starts_with("EDICT-") {
+        if is_requirement_id(id) || is_case_id(id) || id.starts_with("EDICT-") {
             out.insert(id.to_owned());
         }
         rest = &rest[end + 1..];
@@ -314,11 +356,35 @@ fn bracket_ids(text: &str) -> BTreeSet<String> {
     out
 }
 
+fn is_requirement_id(s: &str) -> bool {
+    s.contains("-REQ-")
+        && s.chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '-')
+}
+
+fn is_case_id(s: &str) -> bool {
+    s.contains("-TP-")
+        && s.chars()
+            .all(|ch| ch.is_ascii_uppercase() || ch.is_ascii_digit() || ch == '-')
+}
+
 fn split_cell_list(cell: &str) -> impl Iterator<Item = &str> {
     cell.split(',')
         .map(str::trim)
         .map(|s| s.trim_matches('`'))
         .filter(|s| !s.is_empty())
+}
+
+fn registry_has_id(requirement_registry: &str, id: &str) -> bool {
+    requirement_registry.lines().any(|line| {
+        table_cells(line)
+            .first()
+            .is_some_and(|cell| cell.as_str() == id)
+    })
+}
+
+fn is_external_requirement_source(source: &str) -> bool {
+    source.starts_with("issue #") || source.starts_with("http://") || source.starts_with("https://")
 }
 
 fn table_cells(line: &str) -> Vec<String> {
@@ -383,14 +449,6 @@ fn read_to_string(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))
 }
 
-fn normalize_path(root: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_owned()
-    } else {
-        root.join(path)
-    }
-}
-
 fn repo_root() -> Result<PathBuf, String> {
     let mut dir = env::current_dir().map_err(|err| format!("current dir: {err}"))?;
     loop {
@@ -401,6 +459,12 @@ fn repo_root() -> Result<PathBuf, String> {
             return Err("could not find repository root".into());
         }
     }
+}
+
+#[derive(Debug)]
+struct RequirementRow {
+    id: String,
+    source: String,
 }
 
 #[derive(Debug)]
@@ -415,10 +479,72 @@ struct CaseRow {
 
 #[cfg(test)]
 mod tests {
-    use super::{contract_check, repo_root};
+    use std::collections::BTreeSet;
+    use std::fs;
+    use std::path::PathBuf;
+
+    use super::{check_topic, contract_check, repo_root};
 
     #[test]
     fn contract_graph_is_valid() {
         contract_check(&repo_root().expect("repo root")).expect("contract graph is valid");
+    }
+
+    #[test]
+    fn contract_graph_rejects_unknown_registry_source_ids() {
+        let root = temp_root("unknown-registry-source");
+        let topic = root.join("docs/topics/example");
+        fs::create_dir_all(&topic).expect("topic directory");
+        fs::write(topic.join("README.md"), "# Example\n\n[EXAMPLE-REQ-001]\n").expect("chapter");
+        fs::write(
+            topic.join("test-plan.md"),
+            "# Example Test Plan\n\n\
+             | ID | Status | Requirement | Source |\n\
+             | --- | --- | --- | --- |\n\
+             | EXAMPLE-REQ-001 | implemented | Example requirement. | EDICT-NOT-A-REAL-ID |\n\n\
+             | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |\n\
+             | --- | --- | --- | --- | --- | --- | --- | --- |\n\
+             | EXAMPLE-TP-001 | implemented | Golden path | EXAMPLE-REQ-001 | exact state | evidence_test | - | fixture-free |\n",
+        )
+        .expect("test plan");
+
+        let tests = BTreeSet::from(["evidence_test".to_owned()]);
+        let err = check_topic(&root, &topic, &tests, "EDICT-KNOWN-ID")
+            .expect_err("unknown registry Source ID must fail");
+        assert!(
+            err.contains("unknown registry source ID `EDICT-NOT-A-REAL-ID`"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn link_check_rejects_local_links_outside_repo() {
+        let root = temp_root("repo-escaping-link");
+        let outside = temp_root("repo-escaping-link-outside").join("outside.md");
+        fs::write(&outside, "# Outside\n").expect("outside file");
+        let doc = root.join("docs/topics/example/README.md");
+        fs::create_dir_all(doc.parent().expect("doc parent")).expect("doc directory");
+        fs::write(&doc, format!("# Example\n\n[bad]({})\n", outside.display())).expect("chapter");
+
+        let err = super::check_links(&root, &doc).expect_err("absolute local links must reject");
+        assert!(
+            err.contains("absolute local link"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_dir_all(root).ok();
+        if let Some(parent) = outside.parent() {
+            fs::remove_dir_all(parent).ok();
+        }
+    }
+
+    fn temp_root(name: &str) -> PathBuf {
+        let mut dir = std::env::temp_dir();
+        dir.push(format!("edict-xtask-{name}-{}", std::process::id()));
+        fs::remove_dir_all(&dir).ok();
+        fs::create_dir_all(&dir).expect("temp root");
+        dir
     }
 }
