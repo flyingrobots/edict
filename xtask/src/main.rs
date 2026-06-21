@@ -558,6 +558,47 @@ mod tests {
     }
 
     #[test]
+    fn contract_graph_rejects_truncated_registry_bracket_ids() {
+        let root = temp_root("truncated-registry-bracket-id");
+        let topic = root.join("docs/topics/example");
+        fs::create_dir_all(&topic).expect("topic directory");
+        fs::write(
+            topic.join("README.md"),
+            "# Example\n\n[EDICT-LANG-RECORD]\n",
+        )
+        .expect("chapter");
+        fs::write(
+            topic.join("test-plan.md"),
+            "# Example Test Plan\n\n\
+             | ID | Status | Requirement | Source |\n\
+             | --- | --- | --- | --- |\n\
+             | EXAMPLE-REQ-001 | implemented | Example requirement. | docs/REQUIREMENTS.md |\n\n\
+             | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |\n\
+             | --- | --- | --- | --- | --- | --- | --- | --- |\n\
+             | EXAMPLE-TP-001 | implemented | Golden path | EXAMPLE-REQ-001 | exact state | evidence_test | - | fixture-free |\n",
+        )
+        .expect("test plan");
+        fs::create_dir_all(root.join("docs")).expect("docs directory");
+        fs::write(
+            root.join("docs/REQUIREMENTS.md"),
+            "| ID | Requirement |\n\
+             | --- | --- |\n\
+             | EDICT-LANG-RECORD-SHORTHAND-001 | exact longer ID |\n",
+        )
+        .expect("requirements");
+
+        let tests = BTreeSet::from(["evidence_test".to_owned()]);
+        let err = check_topic(&root, &topic, &tests, "EDICT-LANG-RECORD-SHORTHAND-001")
+            .expect_err("truncated registry ID must fail");
+        assert!(
+            err.contains("unknown registry ID `EDICT-LANG-RECORD`"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn contract_graph_requires_implemented_evidence_for_implemented_requirements() {
         let root = temp_root("implemented-requirement-without-evidence");
         let topic = root.join("docs/topics/example");
