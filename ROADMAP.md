@@ -174,7 +174,7 @@ Milestones:
 - `v0.5.0-alpha.1`: #7
 - `v2-design`: #4
 
-Release labels:
+Alpha-train release labels:
 
 - `release:front-end`
 - `release:core-ir`
@@ -183,6 +183,10 @@ Release labels:
 - `release:admission`
 - `release:developer-tools`
 - `release:v2-design`
+
+Related cross-repo label retained on #11:
+
+- `release:continuum-stack`
 
 ## Scheduling Rules
 
