@@ -32,7 +32,6 @@ Out of scope for this first slice:
 | SEMVAL-REQ-008 | planned | Integer literal suffixes must agree with contextual integer types. | EDICT-LANG-INTLIT-002 |
 | SEMVAL-REQ-009 | planned | Loop bounds must be provable against list cardinality. | EDICT-LANG-LOOP-001 |
 | SEMVAL-REQ-010 | planned | Obstruction maps must be exhaustive over domain-mappable failure coordinates. | EDICT-LANG-OBSTRUCT-EXHAUST-001 |
-| SEMVAL-REQ-011 | planned | Core/assurance relapse-zoo fixtures reject graph nouns, ambient clocks, randomness, host callbacks, unbounded closures, hidden appends, and related non-lawful constructs. | issue #10 |
 
 ## Fixtures
 
@@ -57,7 +56,6 @@ Out of scope for this first slice:
 | SEMVAL-TP-009 | planned | Error handling | SEMVAL-REQ-008 | Integer suffix/context mismatch produces stable semantic error kind. | - | - | Requires contextual typing. |
 | SEMVAL-TP-010 | planned | Error handling | SEMVAL-REQ-009 | Unprovable loop bound produces stable semantic error kind. | - | - | Requires cardinality reasoning. |
 | SEMVAL-TP-011 | planned | Error handling | SEMVAL-REQ-010 | Missing obstruction arm produces stable semantic error kind. | - | - | Requires target/lawpack failure facts. |
-| SEMVAL-TP-012 | planned | Relapse zoo | SEMVAL-REQ-011 | Relapse fixtures reject non-lawful Core/assurance constructs with stable kinds or golden negative artifacts. | - | - | Requires Core IR and issue #3 artifacts. |
 
 ## Determinism Obligations
 
@@ -74,6 +72,7 @@ Out of scope for this first slice:
 - Contextual typing for integer suffix checks.
 - Cardinality proof machinery for loop bounds.
 - Target/lawpack facts for obstruction exhaustiveness.
-- Core relapse-zoo fixtures after Core IR exists.
+- Core/assurance relapse-zoo fixtures belong to downstream Core/admission topic
+  shelves after Core IR and canonical artifacts exist.
 - Clause-level diagnostic spans; duplicate singleton diagnostics currently report
   at the enclosing intent span because intent clauses do not retain spans.

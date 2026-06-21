@@ -82,6 +82,12 @@ No changes yet.
 
 ### Changed
 
+- Roadmap correction: inserted the explicit compiler-spine milestone between
+  Core schema work and target/admission work, split the Core IR issue scope
+  across schema, compiler-spine, encoder, and golden-digest artifacts, and moved
+  developer tooling to `v0.6.0-alpha.1`.
+- Updated the `edict-syntax` package description to include source-level
+  semantic validation, not only the Phase 1 lexer/parser.
 - Purified Core IR: removed the Core self-hash (now `canonicalizationProfile`);
   removed lowerer/verifier digests and packaging fields from the preimage; moved
   `verifiedOperationMode` to the verifier report (Core keeps

@@ -21,6 +21,8 @@ Every release cut must satisfy these gates on the release commit:
   claim.
 - No target, Core, admission, or bundle-integrity claim is made before the
   release that owns the corresponding contract.
+- No canonical digest is frozen from a paper encoding plan. Meaning freezes
+  before bytes; bytes freeze before hashes; hashes freeze before admission.
 
 The crate remains `publish = false` until package policy and API stability are
 deliberately changed.
@@ -56,81 +58,136 @@ Non-goals:
 - No canonical Core hash goldens.
 - No target lowerers or admission tooling.
 
-## v0.2.0-alpha.1 - Core IR Contract Alpha
+## v0.2.0-alpha.1 - Core Semantic Model And Normative Schema
 
 Target date: 2026-07-01
 
 Milestone: `v0.2.0-alpha.1`
 
-Primary issue: #3
+Primary issues: #3, #19
 
 Release labels: `release:core-ir`
 
 Scope:
 
-- `edict.core/v1` CDDL for Core expressions, predicates, types, and blocks.
-- Canonical encoding plan for the Core contract.
-- Golden fixture scaffolding for future byte-stable artifacts.
+- Core semantic algebra and invariants: expressions, predicates, types,
+  blocks/nodes, input constraints, and local-reference normalization.
+- Normative `edict.core/v1` CDDL/schema validation for that algebra.
+- Topic shelf and test-plan evidence for what is normative versus scaffolding.
 
 Exit gates:
 
-- #3 lands or has a reviewed release-scope split.
-- Core schema and fixture locations are documented.
-- The release notes state which artifacts are golden and which are scaffolding.
+- #3 and #19 land or have reviewed release-scope splits.
+- Core meaning and schema boundaries are documented.
+- Release notes explicitly state that no canonical bytes or digests are frozen.
 
-## v0.3.0-alpha.1 - Semantic Closure And Lowerability Alpha
+Non-goals:
+
+- No source-to-Core compiler spine.
+- No canonical encoder.
+- No golden bytes.
+- No exact Core digests.
+
+## v0.3.0-alpha.1 - Compiler Spine Alpha
 
 Target date: 2026-07-15
 
 Milestone: `v0.3.0-alpha.1`
 
-Primary issues: #10, #5
+Primary issues: #10, #20, #21, #22
 
-Release labels: `release:semantic-validation`, `release:lowerability`
+Release labels: `release:semantic-validation`, `release:compiler-spine`,
+`release:core-ir`
 
 Scope:
 
-- Remaining source-AST semantic validation planned in the semantic-validation
-  topic shelf.
-- Relapse-zoo fixture path for unlawful or unsupported constructs.
-- `edict explain lowerability` and profile check-requirements surface.
+- Keep source/surface validation, resolution, typing, Core lowering, and
+  canonicalization as explicit compiler stages:
+
+  ```text
+  parse
+    -> validate_surface
+    -> resolve
+    -> type_check
+    -> lower_core
+    -> canonicalize
+  ```
+
+- First executable resolver and typed representation boundary.
+- Source-to-Core lowering for the initial executable subset.
+- Reference canonical encoder.
+- First reviewed Core golden bytes and exact digest fixtures.
 
 Exit gates:
 
-- #10 and #5 land or have reviewed release-scope splits.
-- Negative semantic coverage asserts stable error kinds or contractual
-  artifacts, not diagnostic prose.
-- Lowerability output is documented as a contract or explicitly marked
-  experimental.
+- #10, #20, #21, and #22 land or have reviewed release-scope splits.
+- Tests prove the stage boundaries do not collapse into one semantic pass.
+- Golden Core bytes are produced by an executable encoder, not a prose plan.
+- Golden tests cover alpha-renaming invariance where applicable, map-order
+  independence, encode/decode stability, mutation sensitivity, and platform
+  independence.
 
-## v0.4.0-alpha.1 - Artifact Admission Alpha
+Non-goals:
+
+- No target lowering.
+- No bundle/admission claim.
+
+## v0.4.0-alpha.1 - Target Profile And Lowerability Alpha
 
 Target date: 2026-07-29
 
 Milestone: `v0.4.0-alpha.1`
 
-Primary issues: #1, #6, #11
+Primary issues: #1, #5
+
+Release labels: `release:admission`, `release:lowerability`
+
+Scope:
+
+- Runtime-neutral target-profile and assurance flow.
+- Direct-only v1 target adaptation facts.
+- Typed `LoweringRequirements` contract and fixture-driven explanation model.
+- `edict explain lowerability` and profile check-requirements surface, if the
+  CLI boundary is ready.
+
+Exit gates:
+
+- #1 and #5 land or have reviewed release-scope splits.
+- The release reconciles lowerability with the v1 direct-adapter rule.
+- Any `composite` or chained-adapter behavior is explicitly deferred to
+  `v2-design`.
+- Lowerability output is documented as a contract or explicitly marked
+  experimental.
+
+## v0.5.0-alpha.1 - Bundle And Admission Alpha
+
+Target date: 2026-08-12
+
+Milestone: `v0.5.0-alpha.1`
+
+Primary issues: #6, #11
 
 Release labels: `release:admission`
 
 Scope:
 
-- Runtime-neutral target-profile and assurance flow.
 - Edict-owned Continuum participation boundary.
 - Gate C artifact admission contract and evidence expectations.
+- Bundle/admission fixtures that consume compiler-spine artifacts rather than
+  paper-only sketches.
 
 Exit gates:
 
-- #1, #6, and #11 land or have reviewed release-scope splits.
+- #6 and #11 land or have reviewed release-scope splits.
 - Admission claims are backed by fixtures, schema, or topic-shelf evidence.
 - Release notes distinguish Edict-owned artifacts from Continuum-owned
   participant policy.
 
-## v0.5.0-alpha.1 - Developer Tooling Alpha
+## v0.6.0-alpha.1 - Developer Tooling Alpha
 
-Target date: 2026-08-12
+Target date: 2026-08-26
 
-Milestone: `v0.5.0-alpha.1`
+Milestone: `v0.6.0-alpha.1`
 
 Primary issue: #7
 
@@ -139,7 +196,7 @@ Release labels: `release:developer-tools`
 Scope:
 
 - Editor syntax-highlighting plan and first supported grammar artifacts.
-- Differential grammar fixture path after the Core grammar stabilizes.
+- Differential grammar fixture path after the compiler/Core spine stabilizes.
 - Tooling documentation for VS Code, Vim, Zed, jedit, or the first supported
   subset.
 
@@ -170,10 +227,11 @@ design to stop moving underneath it.
 Milestones:
 
 - `v0.1.0-alpha.1`: #16
-- `v0.2.0-alpha.1`: #3
-- `v0.3.0-alpha.1`: #10, #5
-- `v0.4.0-alpha.1`: #1, #6, #11
-- `v0.5.0-alpha.1`: #7
+- `v0.2.0-alpha.1`: #3, #19
+- `v0.3.0-alpha.1`: #10, #20, #21, #22
+- `v0.4.0-alpha.1`: #1, #5
+- `v0.5.0-alpha.1`: #6, #11
+- `v0.6.0-alpha.1`: #7
 - `v2-design`: #4
 
 Alpha-train release labels:
@@ -181,6 +239,7 @@ Alpha-train release labels:
 - `release:front-end`
 - `release:core-ir`
 - `release:semantic-validation`
+- `release:compiler-spine`
 - `release:lowerability`
 - `release:admission`
 - `release:developer-tools`
