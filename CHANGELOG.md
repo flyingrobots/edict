@@ -8,6 +8,10 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+No changes yet.
+
+## [v0.1.0-alpha.1] - 2026-06-24
+
 ### Added
 
 - **Release roadmap.** Added `ROADMAP.md` as the scheduled alpha-release plan,
