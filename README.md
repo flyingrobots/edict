@@ -471,6 +471,7 @@ What exists today:
 - Design rationale and research anchors
 - Phase 1 `edict-syntax` lexer/parser for the landed source-AST subset
 - Phase 2 source-AST semantic validation for checks that do not require Core IR
+- `edict.core/v1` semantic model and normative CDDL schema
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
 - Release roadmap and GitHub milestone schedule in
   [`ROADMAP.md`](./ROADMAP.md)
@@ -486,13 +487,13 @@ What doesn't exist yet:
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next implementation milestones are to finish the remaining source-AST
-semantic checks, define `edict.core/v1` CDDL plus canonical Core golden fixtures,
-and then build Core lowering, target-profile conformance, and admission evidence
-on top of that stable Core contract.
+The next implementation milestones are to turn the Core semantic contract into
+an executable compiler spine: resolution, typed representation, source-to-Core
+lowering, a canonical encoder, reviewed Core golden fixtures, target-profile
+conformance, and admission evidence.
 
-The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The first
-planned release is `v0.1.0-alpha.1`, a front-end milestone that does not claim
+The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
+published `v0.1.0-alpha.1` release is a front-end milestone that does not claim
 Core IR lowering, target lowerers, or admission tooling.
 
 ---

@@ -105,9 +105,8 @@ component-pure-function = {
   implementation: executable-component,
 }
 
-; The Core function body. Its full schema is edict.core/v1 (issue #3); until
-; that CDDL lands this is an opaque-but-present canonical value.
-core-fn-body = any
+; core-fn-body is defined by edict-core.cddl and assembled with this lawpack
+; schema. It is a pure Core function body, not an effect-capable core-block.
 
 semantic-effect = {
   coordinate: tstr,

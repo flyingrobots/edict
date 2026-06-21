@@ -1,0 +1,9 @@
+# Required fields for a minimal Core intent shape.
+expect accept
+shape core-intent
+field body
+field coreEvaluationBudget
+field input
+field inputConstraints
+field output
+field requiredOperationProfile

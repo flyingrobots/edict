@@ -1,0 +1,8 @@
+# Core modules must declare the intent map.
+expect reject
+shape core-module
+field apiVersion
+field coordinate
+field imports
+field requiredCoreCapabilities
+field types

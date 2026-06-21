@@ -1,0 +1,9 @@
+# Required fields for a minimal Core module shape.
+expect accept
+shape core-module
+field apiVersion
+field coordinate
+field imports
+field intents
+field requiredCoreCapabilities
+field types

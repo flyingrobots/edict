@@ -1,0 +1,5 @@
+# Required fields for an Edict-authored pure helper body.
+expect accept
+shape core-fn-body
+field body
+field params

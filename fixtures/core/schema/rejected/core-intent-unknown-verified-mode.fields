@@ -1,0 +1,10 @@
+# `verifiedOperationMode` is verifier/admission evidence, not a Core field.
+expect reject
+shape core-intent
+field body
+field coreEvaluationBudget
+field input
+field inputConstraints
+field output
+field requiredOperationProfile
+field verifiedOperationMode

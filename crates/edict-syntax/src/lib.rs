@@ -7,10 +7,11 @@
 //! `for`; calls and type-calls; variant-literal constructors; and `match`.
 //! Phase 2 currently validates source-AST constraints that do not require import
 //! resolution or Core IR: bounded runtime `String`/`Bytes`, required intent
-//! operation-mode/budget/basis clauses, and duplicate singleton intent clauses.
+//! operation-mode/budget/basis clauses, duplicate singleton intent clauses,
+//! module namespace collisions, and source binder shadowing.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, import resolution, resolved type checking,
-//! shadow checks, and Core IR validation are deferred.
+//! and Core IR validation are deferred.
 //!
 //! Assurance tooling (HOLMES / Watson / Moriarty) is shared platform machinery
 //! in `flyingrobots/wesley`; it operates on bundles and evidence, downstream of
@@ -27,6 +28,9 @@ pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
 
 #[cfg(doctest)]
 mod topic_shelf_doctests {
+    #[doc = include_str!("../../../docs/topics/core-ir/README.md")]
+    pub struct CoreIrTopicDocs;
+
     #[doc = include_str!("../../../docs/topics/semantic-validation/README.md")]
     pub struct SemanticValidationTopicDocs;
 

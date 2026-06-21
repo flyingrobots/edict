@@ -5,8 +5,8 @@
 ;     core-type-ref: assembled with edict-target-profile.cddl and
 ;     edict-lawpack.cddl by the build; those schemas do not redefine them.
 ;   - operation-profile, optic-template, aperture-requirement and their refs:
-;     consumed by the Core/optic layer (the forthcoming edict.core/v1 CDDL,
-;     issue #3) and referenced by the language/target-profile specs.
+;     consumed by the Core/optic layer (edict-core.cddl) and referenced by the
+;     language/target-profile specs.
 ; Authoritative byte encoding: edict.canonical-cbor/v1.
 
 ; A normative subcomponent referenced by identity plus digest. Manifests never
