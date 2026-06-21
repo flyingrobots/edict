@@ -39,10 +39,17 @@ tags to paper over workflow mistakes. The stable recovery policy is captured in
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
-- [`v0.2.0-alpha.1`](../../releases/v0.2.0-alpha.1.md): prepared Core semantic
+- [`v0.2.0-alpha.1`](../../releases/v0.2.0-alpha.1.md): published Core semantic
   model and normative schema alpha notes.
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
+
+The `v0.2.0-alpha.1` release is published as a GitHub prerelease:
+
+- GitHub release:
+  <https://github.com/flyingrobots/edict/releases/tag/v0.2.0-alpha.1>
+- Release issue: <https://github.com/flyingrobots/edict/issues/28>
+- Tag target: `029f43435fae9639a18c0288793dd47dda6f8946`
 
 The `v0.1.0-alpha.1` release is published as a GitHub prerelease:
 
