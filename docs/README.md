@@ -7,6 +7,8 @@ The current specification set is:
   not a proposal: `README.md` says what is true in HEAD, `test-plan.md` says how
   it is verified and where gaps remain, and optional `architecture.md` /
   `rationale.md` files explain machinery and still-relevant tradeoffs.
+- [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
+  and the GitHub issue/milestone map.
 - [Syntax Topic](./topics/syntax/): current contract and verification matrix for
   the Phase 1 `edict-syntax` lexer/parser.
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type

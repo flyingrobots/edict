@@ -472,6 +472,8 @@ What exists today:
 - Phase 1 `edict-syntax` lexer/parser for the landed source-AST subset
 - Phase 2 source-AST semantic validation for checks that do not require Core IR
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
+- Release roadmap and GitHub milestone schedule in
+  [`ROADMAP.md`](./ROADMAP.md)
 
 What doesn't exist yet:
 
@@ -489,6 +491,10 @@ semantic checks, define `edict.core/v1` CDDL plus canonical Core golden fixtures
 and then build Core lowering, target-profile conformance, and admission evidence
 on top of that stable Core contract.
 
+The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The first
+planned release is `v0.1.0-alpha.1`, a front-end milestone that does not claim
+Core IR lowering, target lowerers, or admission tooling.
+
 ---
 
 ## Where To Go Next
@@ -503,6 +509,8 @@ on top of that stable Core contract.
   the participant-neutral bundle format, artifact graph, and canonical hash framing.
 - **[GUIDE — Assurance and Transparency](./docs/GUIDE_edict-assurance-transparency.md)** —
   HOLMES, Watson, Moriarty, nutrition labels, and the hash-impact matrix.
+- **[ROADMAP](./ROADMAP.md)** — scheduled alpha milestones, release gates, and
+  the GitHub artifact map.
 - **[AION](https://github.com/flyingrobots/aion)** — the theory source: Observer
   Geometry, WARP graphs, causal optics, and the formal foundations that motivated
   Edict's design. Not required reading to use Edict; required reading to
