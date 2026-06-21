@@ -9,8 +9,10 @@ The current specification set is:
   `rationale.md` files explain machinery and still-relevant tradeoffs.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
   and the GitHub issue/milestone map.
-- [Release Notes](./releases/v0.1.0-alpha.1.md): draft notes for the first
+- [Release Notes](./releases/v0.1.0-alpha.1.md): published notes for the first
   front-end alpha milestone.
+- [Release Process Topic](./topics/release-process/): tag-triggered GitHub
+  Release publication contract and verification matrix.
 - [Syntax Topic](./topics/syntax/): current contract and verification matrix for
   the Phase 1 `edict-syntax` lexer/parser.
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type

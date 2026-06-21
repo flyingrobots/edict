@@ -27,6 +27,8 @@ cargo xtask verify
 
 ## Topics
 
+- [Release Process](./release-process/README.md): tag-triggered GitHub Release
+  publication contract and verification matrix.
 - [Semantic Validation](./semantic-validation/README.md): Phase 2 source-AST
   semantic validation contract and verification matrix.
 - [Syntax](./syntax/README.md): Phase 1 `edict-syntax` lexer/parser contract and

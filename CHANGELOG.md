@@ -8,7 +8,17 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
-No changes yet.
+### Added
+
+- Added a repo-local `AGENTS.md` topic-shelf policy and a release-process topic
+  shelf covering tag-triggered GitHub Release publication.
+
+### Changed
+
+- Extended `cargo xtask contract-check` evidence discovery to include `xtask`
+  tests, so workflow/process shelves can cite executable `xtask` regressions.
+- Relaxed Markdown heading duplication checks to allow changelog section
+  headings to repeat across different release versions.
 
 ## [v0.1.0-alpha.1] - 2026-06-24
 
