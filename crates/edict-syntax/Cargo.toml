@@ -1,7 +1,7 @@
 [package]
 name = "edict-syntax"
 version = "0.1.0-alpha.1"
-description = "Edict language lexer, tokens, AST, and parser (Phase 1)"
+description = "Edict language lexer, parser, source AST, and source-level semantic validation"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true

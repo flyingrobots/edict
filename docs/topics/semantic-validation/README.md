@@ -65,8 +65,10 @@ The following issue #10 items are not implemented in this first Phase 2 slice:
 - loop bound provability;
 - target/lawpack failure taxonomy and obstruction exhaustiveness;
 - read-only inference;
-- Core IR relapse-zoo fixtures and golden artifacts.
+- Core IR lowering, canonical artifacts, and downstream assurance relapse
+  fixtures.
 
 Those checks require contextual typing, cardinality proof machinery,
-target/lawpack facts, or Core IR and are tracked as planned cases in
-[test-plan.md](./test-plan.md).
+target/lawpack facts, or Core IR and are tracked by the roadmap issues for the
+compiler spine, lowerability, and admission stages. They are not part of the
+source-AST `validate_module(&Module)` contract.
