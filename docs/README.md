@@ -13,6 +13,8 @@ The current specification set is:
   front-end alpha milestone.
 - [Release Process Topic](./topics/release-process/): tag-triggered GitHub
   Release publication contract and verification matrix.
+- [Core IR Topic](./topics/core-ir/): current contract and verification matrix
+  for the `edict.core/v1` semantic model and CDDL schema.
 - [Syntax Topic](./topics/syntax/): current contract and verification matrix for
   the Phase 1 `edict-syntax` lexer/parser.
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type

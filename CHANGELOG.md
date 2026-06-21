@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the `edict.core/v1` Core IR topic shelf and normative CDDL schema for
+  the `v0.2.0-alpha.1` Core semantic-model milestone, with local `xtask`
+  regressions proving required schema declarations and the explicit no-byte/hash
+  freeze boundary.
 - Added a repo-local `AGENTS.md` topic-shelf policy, a release-process topic
   shelf, and a structured release-tag recovery policy covering tag-triggered
   GitHub Release publication.

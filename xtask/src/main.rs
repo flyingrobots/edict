@@ -520,7 +520,7 @@ struct CaseRow {
 mod tests {
     use std::collections::BTreeSet;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use super::{check_topic, contract_check, repo_root};
 
@@ -710,6 +710,218 @@ mod tests {
                 policy.contains(needle),
                 "release policy missing structured field: {needle}"
             );
+        }
+    }
+
+    #[test]
+    fn core_cddl_declares_v1_semantic_model() {
+        let root = repo_root().expect("repo root");
+        let cddl =
+            fs::read_to_string(root.join("docs/abi/edict-core.cddl")).expect("Core schema exists");
+        for needle in [
+            "core-module =",
+            "apiVersion: \"edict.core/v1\"",
+            "core-type =",
+            "core-intent =",
+            "core-block =",
+            "core-node =",
+            "core-expr =",
+            "core-predicate =",
+            "input-constraint =",
+            "local-ref =",
+            "alphaName:",
+            "requiredOperationProfile:",
+        ] {
+            assert!(cddl.contains(needle), "Core CDDL missing {needle}");
+        }
+    }
+
+    #[test]
+    fn core_cddl_has_no_digest_freeze_fields() {
+        let root = repo_root().expect("repo root");
+        let cddl =
+            fs::read_to_string(root.join("docs/abi/edict-core.cddl")).expect("Core schema exists");
+        for forbidden in [
+            "coreDigest",
+            "canonicalCoreDigest",
+            "canonicalBytes",
+            "goldenBytes",
+            "exactDigest",
+        ] {
+            assert!(
+                !cddl.contains(forbidden),
+                "v0.2 Core schema must not freeze byte/hash field `{forbidden}`"
+            );
+        }
+    }
+
+    #[test]
+    fn core_schema_shape_fixtures_match_cddl() {
+        let root = repo_root().expect("repo root");
+        let cddl =
+            fs::read_to_string(root.join("docs/abi/edict-core.cddl")).expect("Core schema exists");
+        let fixture_root = root.join("fixtures/core/schema");
+        let mut checked = 0usize;
+
+        for expectation in [FixtureExpectation::Accept, FixtureExpectation::Reject] {
+            let dir = fixture_root.join(expectation.dir_name());
+            for entry in fs::read_dir(&dir).unwrap_or_else(|err| {
+                panic!(
+                    "read Core schema fixture directory {}: {err}",
+                    dir.display()
+                )
+            }) {
+                let path = entry.expect("fixture entry").path();
+                if path.extension().and_then(|ext| ext.to_str()) != Some("fields") {
+                    continue;
+                }
+                let fixture = parse_core_schema_fixture(&path);
+                assert_eq!(
+                    fixture.expectation,
+                    expectation,
+                    "{} expectation disagrees with directory name",
+                    path.display()
+                );
+                let shape = core_shape_fields(&cddl, &fixture.shape);
+                let missing = shape
+                    .required
+                    .difference(&fixture.fields)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                let unknown = fixture
+                    .fields
+                    .difference(&shape.allowed)
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                let valid = missing.is_empty() && unknown.is_empty();
+                match expectation {
+                    FixtureExpectation::Accept => assert!(
+                        valid,
+                        "{} should be accepted; missing {:?}, unknown {:?}",
+                        path.display(),
+                        missing,
+                        unknown
+                    ),
+                    FixtureExpectation::Reject => assert!(
+                        !valid,
+                        "{} should be rejected by schema shape validation",
+                        path.display()
+                    ),
+                }
+                checked += 1;
+            }
+        }
+
+        assert!(checked >= 5, "expected at least 5 Core schema fixtures");
+    }
+
+    #[derive(Debug)]
+    struct CoreShapeFields {
+        allowed: BTreeSet<String>,
+        required: BTreeSet<String>,
+    }
+
+    #[derive(Debug)]
+    struct CoreSchemaFixture {
+        expectation: FixtureExpectation,
+        fields: BTreeSet<String>,
+        shape: String,
+    }
+
+    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+    enum FixtureExpectation {
+        Accept,
+        Reject,
+    }
+
+    impl FixtureExpectation {
+        fn dir_name(self) -> &'static str {
+            match self {
+                Self::Accept => "accepted",
+                Self::Reject => "rejected",
+            }
+        }
+    }
+
+    fn core_shape_fields(cddl: &str, shape: &str) -> CoreShapeFields {
+        let start = format!("{shape} = {{");
+        let mut in_shape = false;
+        let mut fields = CoreShapeFields {
+            allowed: BTreeSet::new(),
+            required: BTreeSet::new(),
+        };
+        for raw in cddl.lines() {
+            let line = raw.split_once(';').map_or(raw, |(before, _)| before).trim();
+            if !in_shape {
+                if line == start {
+                    in_shape = true;
+                }
+                continue;
+            }
+            if line.starts_with('}') {
+                break;
+            }
+            let Some((field, _)) = line
+                .strip_suffix(',')
+                .unwrap_or(line)
+                .strip_prefix("? ")
+                .unwrap_or(line)
+                .split_once(':')
+            else {
+                continue;
+            };
+            let field = field.trim();
+            if field.is_empty() || field.contains(char::is_whitespace) {
+                continue;
+            }
+            fields.allowed.insert(field.to_owned());
+            if !line.starts_with("? ") {
+                fields.required.insert(field.to_owned());
+            }
+        }
+        assert!(
+            !fields.allowed.is_empty(),
+            "no fields parsed for Core shape {shape}"
+        );
+        fields
+    }
+
+    fn parse_core_schema_fixture(path: &Path) -> CoreSchemaFixture {
+        let text = fs::read_to_string(path)
+            .unwrap_or_else(|err| panic!("read Core schema fixture {}: {err}", path.display()));
+        let mut expectation = None;
+        let mut shape = None;
+        let mut fields = BTreeSet::new();
+        for raw in text.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once(' ') else {
+                panic!("{} has malformed line `{line}`", path.display());
+            };
+            match key {
+                "expect" => {
+                    expectation = Some(match value {
+                        "accept" => FixtureExpectation::Accept,
+                        "reject" => FixtureExpectation::Reject,
+                        other => panic!("{} has invalid expectation `{other}`", path.display()),
+                    });
+                }
+                "field" => {
+                    fields.insert(value.to_owned());
+                }
+                "shape" => {
+                    shape = Some(value.to_owned());
+                }
+                other => panic!("{} has unknown directive `{other}`", path.display()),
+            }
+        }
+        CoreSchemaFixture {
+            expectation: expectation
+                .unwrap_or_else(|| panic!("{} missing expectation", path.display())),
+            fields,
+            shape: shape.unwrap_or_else(|| panic!("{} missing shape", path.display())),
         }
     }
 

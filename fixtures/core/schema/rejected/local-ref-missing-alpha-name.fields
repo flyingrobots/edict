@@ -1,0 +1,5 @@
+# Local references must carry alpha-stable normalized names.
+expect reject
+shape local-ref
+field id
+field type

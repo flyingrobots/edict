@@ -38,7 +38,7 @@ Out of scope:
 | SYNTAX-REQ-009 | implemented | Reserved keywords reject in bare-name positions while remaining legal after `.`. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-010 | implemented | Negative tests assert stable error kinds, not diagnostic prose or incidental output. | crates/edict-syntax/src/parser.rs |
 | SYNTAX-REQ-011 | planned | Additional semantic validation rejects shadowing, unproved bounds, unresolved coordinates, and type mismatches. | issue #10 |
-| SYNTAX-REQ-012 | planned | Core lowering emits canonical Core IR with byte-stable golden artifacts. | issue #3 |
+| SYNTAX-REQ-012 | planned | Core lowering emits canonical Core IR with byte-stable golden artifacts. | issue #21, issue #22 |
 
 ## Fixtures
 
@@ -74,7 +74,7 @@ Out of scope:
 | SYNTAX-TP-019 | implemented | Golden path | SYNTAX-REQ-009 | Keywords after `.` and prelude constructors remain legal. | keywords_are_legal_as_member_names, prelude_constructors_are_not_reserved | - | Contextual keyword oracle. |
 | SYNTAX-TP-020 | implemented | Error handling | SYNTAX-REQ-010 | Negative cases assert stable `ParseErrorKind` identities. | reserved_future_decls_are_rejected_at_top_level, missing_package_is_rejected, bytes_rejects_canonical_policy, unterminated_string_is_rejected | - | No stdout/stderr scraping. |
 | SYNTAX-TP-021 | planned | Semantic validation | SYNTAX-REQ-011 | Semantic validator returns stable diagnostic kinds for shadowing, unproved bounds, unresolved coordinates, and type mismatches. | - | - | Extends the landed source-AST semantic-validation shelf. |
-| SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Core lowering emits byte-stable canonical artifacts. | - | - | Owned by issue #3. |
+| SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Core lowering emits byte-stable canonical artifacts. | - | - | Owned by issues #21 and #22. |
 
 ## Determinism Obligations
 
@@ -95,8 +95,8 @@ deterministic regression cases in `crates/edict-syntax/tests/`.
 ## Open Gaps
 
 - `SYNTAX-REQ-011`: semantic validation is planned for issue #10.
-- `SYNTAX-REQ-012`: Core IR lowering and golden artifacts are planned for issue
-  #3.
+- `SYNTAX-REQ-012`: Core IR lowering and golden artifacts are planned for issues
+  #21 and #22.
 - Fixture coverage is not exhaustive across every `EDICT-LANG-*` row in
   `docs/REQUIREMENTS.md`; this shelf covers the landed Phase 1 syntax parser
   only.

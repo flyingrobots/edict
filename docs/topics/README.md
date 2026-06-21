@@ -27,6 +27,8 @@ cargo xtask verify
 
 ## Topics
 
+- [Core IR](./core-ir/README.md): `edict.core/v1` semantic model and normative
+  CDDL schema boundary for the Core contract.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract and verification matrix.
 - [Semantic Validation](./semantic-validation/README.md): Phase 2 source-AST
