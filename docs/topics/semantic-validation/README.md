@@ -2,17 +2,23 @@
 
 Status: current HEAD contract.
 
-This chapter describes the Phase 2 semantic validation surface that exists
-today. It is intentionally narrower than issue #10: this pass validates only
-source-AST constraints that do not require import resolution, type checking,
-target profile data, lawpack ABI data, or Core IR.
+This chapter describes the source/surface validation stage that exists today. It
+is the first named compiler-spine stage after parsing:
+
+```text
+parse -> validate_surface -> resolve -> type_check -> lower_core -> canonicalize
+```
+
+This pass validates only source-AST constraints that do not require import
+resolution, resolved typing, target profile data, lawpack ABI data, Core IR, or
+canonicalization.
 
 ## Public Surface
 
-The public validation entry point is `validate_module`:
+The public validation entry point is `validate_surface`:
 
 ```rust
-use edict_syntax::{parse_module, validate_module, SemanticErrorKind};
+use edict_syntax::{parse_module, validate_surface, SemanticErrorKind};
 
 let module = parse_module(
     "package examples.hello@1;\n\
@@ -20,9 +26,13 @@ let module = parse_module(
 )
 .expect("source parses");
 
-let errors = validate_module(&module).expect_err("unbounded String rejects");
+let errors = validate_surface(&module).expect_err("unbounded String rejects");
 assert_eq!(errors[0].kind, SemanticErrorKind::UnboundedScalar);
 ```
+
+`validate_module` remains a compatibility alias for the same stage, but new code
+should call `validate_surface` so stage ownership stays explicit.
+[SEMVAL-REQ-008]
 
 Validation accepts a parsed source AST and returns either `Ok(())` or all
 source-level semantic errors found by a deterministic source-AST traversal. Exact
@@ -52,6 +62,11 @@ error ordering is not part of the Phase 2 contract. Tests assert structured
   blocks, and branch-yield blocks. [SEMVAL-REQ-007]
 - Branch, loop, match-arm, obstruction-map, and branch-yield scopes are
   deterministic and do not leak into sibling or outer scopes. [SEMVAL-REQ-007]
+- The pass deliberately accepts unresolved import aliases, unresolved named
+  types, unresolved callees, unresolved field paths, contextual integer
+  mismatches, unproved loop cardinality, and incomplete obstruction maps when no
+  source/surface rule is otherwise violated. Those checks belong to later
+  compiler-spine stages. [SEMVAL-REQ-009] [SEMVAL-REQ-010]
 
 Semantic errors carry source spans. Clause-level duplicate diagnostics currently
 report the enclosing intent span because the parser's `IntentClause` AST does
@@ -59,7 +74,8 @@ not yet retain per-clause spans. [SEMVAL-REQ-001]
 
 ## Deferred
 
-The following issue #10 items are not implemented in this first Phase 2 slice:
+The following issue #10-adjacent checks are intentionally not part of
+`validate_surface`:
 
 - type checking and integer contextual-width validation;
 - loop bound provability;
@@ -71,4 +87,4 @@ The following issue #10 items are not implemented in this first Phase 2 slice:
 Those checks require contextual typing, cardinality proof machinery,
 target/lawpack facts, or Core IR and are tracked by the roadmap issues for the
 compiler spine, lowerability, and admission stages. They are not part of the
-source-AST `validate_module(&Module)` contract.
+source/surface `validate_surface(&Module)` contract.

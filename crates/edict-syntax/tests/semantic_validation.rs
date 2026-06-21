@@ -1,6 +1,6 @@
 //! Semantic validation tests for source-AST checks that do not require Core IR.
 
-use edict_syntax::{parse_module, validate_module, SemanticErrorKind};
+use edict_syntax::{parse_module, validate_module, validate_surface, SemanticErrorKind};
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
 const CONDITIONAL_BLOB: &str =
@@ -9,7 +9,7 @@ const READ_GREETING: &str = include_str!("../../../fixtures/lang/effects/read-gr
 
 fn semantic_kinds(src: &str) -> Vec<SemanticErrorKind> {
     let module = parse_module(src).expect("source parses");
-    let mut kinds = validate_module(&module)
+    let mut kinds = validate_surface(&module)
         .expect_err("source must fail semantic validation")
         .into_iter()
         .map(|err| err.kind)
@@ -22,8 +22,72 @@ fn semantic_kinds(src: &str) -> Vec<SemanticErrorKind> {
 fn phase1_fixtures_validate_semantically() {
     for src in [BOUNDED_HELLO, CONDITIONAL_BLOB, READ_GREETING] {
         let module = parse_module(src).expect("fixture parses");
-        validate_module(&module).expect("fixture is semantically valid");
+        validate_surface(&module).expect("fixture is semantically valid");
     }
+}
+
+#[test]
+fn validate_module_remains_surface_stage_compatibility_alias() {
+    let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
+    validate_surface(&module).expect("surface validation accepts fixture");
+    validate_module(&module).expect("compatibility alias accepts fixture");
+}
+
+#[test]
+fn surface_validation_defers_import_and_name_resolution() {
+    let module = parse_module(
+        "package a.b@1;\n\
+         intent t(input: missing.Input) returns missing.Output\n\
+           profile missing.readOnly\n\
+           basis input.id\n\
+           budget <= missing.budget {\n\
+           let projected: missing.Box = unknown.helper<missing.Unchecked>(input);\n\
+           return { projected };\n\
+         }",
+    )
+    .expect("source parses");
+
+    validate_surface(&module).expect("surface validation does not resolve imports or names");
+}
+
+#[test]
+fn surface_validation_defers_contextual_typing_and_loop_bound_proof() {
+    let module = parse_module(
+        "package a.b@1;\n\
+         intent t(input: shape.In) returns shape.Out\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           let value: shape.U64 = 1i32;\n\
+           for item in input.items bounded shape.maxItems {\n\
+             let current = item;\n\
+           }\n\
+           return { value };\n\
+         }",
+    )
+    .expect("source parses");
+
+    validate_surface(&module).expect("surface validation does not type-check or prove loop bounds");
+}
+
+#[test]
+fn surface_validation_defers_obstruction_exhaustiveness() {
+    let module = parse_module(
+        "package a.b@1;\n\
+         intent t(input: shape.In) returns shape.Out\n\
+           profile shape.readWrite\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           echo.write(input) else {\n\
+             unavailable => shape.Unavailable({ input }),\n\
+           };\n\
+           return { input };\n\
+         }",
+    )
+    .expect("source parses");
+
+    validate_surface(&module)
+        .expect("surface validation does not prove obstruction exhaustiveness");
 }
 
 #[test]
@@ -139,7 +203,7 @@ fn profile_or_implements_satisfies_operation_mode() {
              }}"
         );
         let module = parse_module(&src).expect("source parses");
-        validate_module(&module).expect("operation mode is present");
+        validate_surface(&module).expect("operation mode is present");
     }
 }
 
@@ -234,7 +298,7 @@ fn branch_and_loop_binders_are_scoped() {
          }",
     )
     .expect("source parses");
-    validate_module(&module).expect("block-local names do not leak");
+    validate_surface(&module).expect("block-local names do not leak");
 }
 
 #[test]
@@ -257,7 +321,7 @@ fn branch_yield_binders_are_scoped() {
          }",
     )
     .expect("source parses");
-    validate_module(&module).expect("branch-yield locals do not leak");
+    validate_surface(&module).expect("branch-yield locals do not leak");
 }
 
 #[test]

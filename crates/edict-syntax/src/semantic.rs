@@ -1,4 +1,5 @@
-//! Source-AST semantic validation for checks that do not require Core IR.
+//! Source/surface semantic validation for checks that do not require import
+//! resolution, resolved typing, target/lawpack facts, or Core IR.
 
 use std::collections::BTreeSet;
 
@@ -40,13 +41,16 @@ impl std::fmt::Display for SemanticError {
 
 impl std::error::Error for SemanticError {}
 
-/// Validate source-level semantic constraints that are independent of import
-/// resolution and Core lowering.
+/// Validate the source/surface stage.
+///
+/// This stage is intentionally context-free over the parsed source AST. It does
+/// not resolve imports or names, infer contextual types, prove loop cardinality,
+/// inspect target/lawpack failure facts, lower to Core IR, or canonicalize.
 ///
 /// # Errors
 /// Returns all semantic errors found by a deterministic source-AST traversal.
 /// Exact ordering is not a public contract for this first validation slice.
-pub fn validate_module(module: &Module) -> Result<(), Vec<SemanticError>> {
+pub fn validate_surface(module: &Module) -> Result<(), Vec<SemanticError>> {
     let mut errors = Vec::new();
     let module_names = collect_module_names(module, &mut errors);
     let protected_names = protected_names(&module_names);
@@ -66,6 +70,17 @@ pub fn validate_module(module: &Module) -> Result<(), Vec<SemanticError>> {
     } else {
         Err(errors)
     }
+}
+
+/// Compatibility alias for the current source/surface validation stage.
+///
+/// New code should call [`validate_surface`] to make the compiler-spine boundary
+/// explicit. This alias remains so existing Phase 2 callers keep compiling.
+///
+/// # Errors
+/// Returns the same errors as [`validate_surface`].
+pub fn validate_module(module: &Module) -> Result<(), Vec<SemanticError>> {
+    validate_surface(module)
 }
 
 fn collect_module_names(module: &Module, errors: &mut Vec<SemanticError>) -> BTreeSet<String> {
