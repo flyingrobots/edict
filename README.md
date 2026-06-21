@@ -469,7 +469,7 @@ What exists today:
 - Contract bundle and admission specifications
 - Assurance and transparency guidance (HOLMES, Watson, Moriarty)
 - Design rationale and research anchors
-- Phase 1 `edict-syntax` lexer/parser for the current minimal-v1 source surface
+- Phase 1 `edict-syntax` lexer/parser for the landed source-AST subset
 - Phase 2 source-AST semantic validation for checks that do not require Core IR
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
 
@@ -478,6 +478,8 @@ What doesn't exist yet:
 - A canonical Core encoder
 - Core IR lowering from the source AST
 - A compiler CLI
+- Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
+  expression literals)
 - Target profile conformance fixtures
 - Echo or KV/CAS target lowerers
 - Admission tooling
