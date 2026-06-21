@@ -267,6 +267,8 @@ fn check_links(root: &Path, doc: &Path) -> Result<(), String> {
     let base = doc
         .parent()
         .ok_or_else(|| format!("{} has no parent", doc.display()))?;
+    let canonical_root =
+        fs::canonicalize(root).map_err(|err| format!("canonicalize {}: {err}", root.display()))?;
     let mut rest = text.as_str();
     while let Some(start) = rest.find("](") {
         rest = &rest[start + 2..];
@@ -286,12 +288,27 @@ fn check_links(root: &Path, doc: &Path) -> Result<(), String> {
         if path_part.is_empty() {
             continue;
         }
-        let resolved = normalize_path(root, &base.join(path_part));
+        let path = Path::new(path_part);
+        if path.is_absolute() {
+            return Err(format!(
+                "{} has absolute local link `{target}`",
+                doc.display()
+            ));
+        }
+        let resolved = base.join(path);
         if !resolved.exists() {
             return Err(format!(
                 "{} has broken link `{target}` resolved to {}",
                 doc.display(),
                 resolved.display()
+            ));
+        }
+        let canonical_resolved = fs::canonicalize(&resolved)
+            .map_err(|err| format!("canonicalize {}: {err}", resolved.display()))?;
+        if !canonical_resolved.starts_with(&canonical_root) {
+            return Err(format!(
+                "{} link `{target}` escapes repository root",
+                doc.display()
             ));
         }
     }
@@ -432,14 +449,6 @@ fn read_to_string(path: &Path) -> Result<String, String> {
     fs::read_to_string(path).map_err(|err| format!("read {}: {err}", path.display()))
 }
 
-fn normalize_path(root: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_owned()
-    } else {
-        root.join(path)
-    }
-}
-
 fn repo_root() -> Result<PathBuf, String> {
     let mut dir = env::current_dir().map_err(|err| format!("current dir: {err}"))?;
     loop {
@@ -508,6 +517,27 @@ mod tests {
         );
 
         fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn link_check_rejects_local_links_outside_repo() {
+        let root = temp_root("repo-escaping-link");
+        let outside = temp_root("repo-escaping-link-outside").join("outside.md");
+        fs::write(&outside, "# Outside\n").expect("outside file");
+        let doc = root.join("docs/topics/example/README.md");
+        fs::create_dir_all(doc.parent().expect("doc parent")).expect("doc directory");
+        fs::write(&doc, format!("# Example\n\n[bad]({})\n", outside.display())).expect("chapter");
+
+        let err = super::check_links(&root, &doc).expect_err("absolute local links must reject");
+        assert!(
+            err.contains("absolute local link"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_dir_all(root).ok();
+        if let Some(parent) = outside.parent() {
+            fs::remove_dir_all(parent).ok();
+        }
     }
 
     fn temp_root(name: &str) -> PathBuf {
