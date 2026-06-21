@@ -100,7 +100,8 @@ fn contract_check(root: &Path) -> Result<(), String> {
     let docs = root.join("docs");
     let topics = docs.join("topics");
     let requirement_registry = read_to_string(&docs.join("REQUIREMENTS.md"))?;
-    let tests = collect_rust_test_names(&root.join("crates"))?;
+    let mut tests = collect_rust_test_names(&root.join("crates"))?;
+    tests.extend(collect_rust_test_names(&root.join("xtask"))?);
 
     let mut topic_count = 0usize;
     for topic in dirs(&topics)? {
@@ -680,10 +681,34 @@ mod tests {
             "docs/releases/${TAG}.md",
             "release create",
             "--verify-tag",
+            "--prerelease",
+            "prerelease=true",
         ] {
             assert!(
                 workflow.contains(needle),
                 "release workflow missing expected guard/action: {needle}"
+            );
+        }
+        assert!(
+            !workflow.contains("cargo publish"),
+            "release workflow must not publish crates"
+        );
+    }
+
+    #[test]
+    fn release_tag_recovery_policy_is_structured() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for needle in [
+            "[release_tags]",
+            "mutation = \"forbidden\"",
+            "recovery = \"publish_existing_valid_tag\"",
+            "requires_main_reachable_target = true",
+        ] {
+            assert!(
+                policy.contains(needle),
+                "release policy missing structured field: {needle}"
             );
         }
     }
