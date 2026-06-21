@@ -6,7 +6,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::{Command, ExitCode, Stdio};
 
 fn main() -> ExitCode {
     match run() {
@@ -50,7 +50,8 @@ fn verify(root: &Path) -> Result<(), String> {
         ["test", "--workspace", "--doc", "--all-features"],
     )?;
     contract_check(root)?;
-    run_cmd(root, "git", ["diff", "--check", "origin/main...HEAD"])?;
+    let base = diff_check_base(root)?;
+    run_cmd(root, "git", ["diff", "--check", &format!("{base}...HEAD")])?;
     Ok(())
 }
 
@@ -67,6 +68,32 @@ fn run_cmd<const N: usize>(root: &Path, program: &str, args: [&str; N]) -> Resul
     } else {
         Err(format!("command failed: {program} {rendered}"))
     }
+}
+
+fn diff_check_base(root: &Path) -> Result<String, String> {
+    choose_diff_check_base(|candidate| git_ref_exists(root, candidate))
+}
+
+fn choose_diff_check_base(
+    mut exists: impl FnMut(&str) -> Result<bool, String>,
+) -> Result<String, String> {
+    for candidate in ["origin/main", "main", "HEAD^"] {
+        if exists(candidate)? {
+            return Ok(candidate.to_owned());
+        }
+    }
+    Err("could not find diff-check base (tried origin/main, main, HEAD^)".into())
+}
+
+fn git_ref_exists(root: &Path, candidate: &str) -> Result<bool, String> {
+    let status = Command::new("git")
+        .args(["rev-parse", "--verify", "--quiet", candidate])
+        .current_dir(root)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|err| format!("failed to inspect git ref `{candidate}`: {err}"))?;
+    Ok(status.success())
 }
 
 fn contract_check(root: &Path) -> Result<(), String> {
@@ -538,6 +565,22 @@ mod tests {
         if let Some(parent) = outside.parent() {
             fs::remove_dir_all(parent).ok();
         }
+    }
+
+    #[test]
+    fn diff_check_base_selection_falls_back_without_origin_main() {
+        let refs = BTreeSet::from(["HEAD^"]);
+        let base = super::choose_diff_check_base(|candidate| Ok(refs.contains(candidate)))
+            .expect("fallback diff base");
+        assert_eq!(base, "HEAD^");
+    }
+
+    #[test]
+    fn diff_check_base_selection_prefers_origin_main() {
+        let refs = BTreeSet::from(["origin/main", "main", "HEAD^"]);
+        let base = super::choose_diff_check_base(|candidate| Ok(refs.contains(candidate)))
+            .expect("preferred diff base");
+        assert_eq!(base, "origin/main");
     }
 
     fn temp_root(name: &str) -> PathBuf {
