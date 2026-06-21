@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- **Release roadmap.** Added `ROADMAP.md` as the scheduled alpha-release plan,
+  linked it from the README/docs index, and mapped GitHub milestones, release
+  labels, and issue #16 for the `v0.1.0-alpha.1` release-prep checklist.
 - **Phase 2 — source-AST semantic validation (`edict-syntax`).** Added
   `validate_module`, stable `SemanticErrorKind` categories, deterministic tests,
   and a semantic-validation topic shelf for checks that do not require Core IR:
