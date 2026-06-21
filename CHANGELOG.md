@@ -10,6 +10,12 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the first executable compiler-spine slice for `v0.3.0-alpha.1`:
+  explicit `resolve_module`, `type_check`, `lower_core`, and `compile_to_core`
+  APIs; deterministic `CompilerContext` profile/budget facts; a typed module
+  boundary distinct from source AST; and in-memory Core IR lowering for the
+  initial pure local-record subset. The slice intentionally makes no canonical
+  byte, exact digest, target lowering, or admission claim.
 - Added `validate_surface` as the explicit source/surface semantic-validation
   compiler stage, with deterministic tests proving that import/name resolution,
   contextual typing, loop-bound proof, and target/lawpack obstruction

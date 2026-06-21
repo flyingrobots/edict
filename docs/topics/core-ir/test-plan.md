@@ -15,7 +15,7 @@ In scope:
 
 Out of scope:
 
-- source-to-Core lowering;
+- full source-to-Core language coverage;
 - canonical encoder implementation;
 - golden Core bytes;
 - exact Core digests;
@@ -56,7 +56,7 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | COREIR-TP-001 | implemented | Golden path | COREIR-REQ-001, COREIR-REQ-002, COREIR-REQ-003, COREIR-REQ-004, COREIR-REQ-005, COREIR-REQ-006, COREIR-REQ-008, COREIR-REQ-009, COREIR-REQ-011 | `edict-core.cddl` contains the required module, type, intent, block, node, expression, predicate, function-body, input-constraint, local-ref, alpha-name, and operation-profile declarations. | core_cddl_declares_v1_semantic_model | docs/abi/edict-core.cddl | Static schema contract regression. |
-| COREIR-TP-002 | implemented | Boundary guard | COREIR-REQ-007 | `edict-core.cddl` contains no fields that freeze Core byte or digest artifacts in `v0.2`. | core_cddl_has_no_digest_freeze_fields | docs/abi/edict-core.cddl | Encoding/hash work is owned by the compiler-spine milestone. |
+| COREIR-TP-002 | implemented | Boundary guard | COREIR-REQ-007 | `edict-core.cddl` contains no fields that freeze Core byte or digest artifacts in `v0.2`. | core_cddl_has_no_digest_freeze_fields | docs/abi/edict-core.cddl | Encoding/hash work is owned by #21 and #22. |
 | COREIR-TP-003 | implemented | Contract graph | COREIR-REQ-001, COREIR-REQ-002, COREIR-REQ-003, COREIR-REQ-004, COREIR-REQ-005, COREIR-REQ-006, COREIR-REQ-007, COREIR-REQ-008, COREIR-REQ-009, COREIR-REQ-010, COREIR-REQ-011 | The topic shelf resolves requirement IDs, case IDs, sources, evidence test names, fixtures, and local links. | contract_graph_is_valid | docs/abi/edict-core.cddl | Executed by `cargo xtask contract-check` and `cargo xtask verify`. |
 | COREIR-TP-004 | implemented | Schema validation | COREIR-REQ-008, COREIR-REQ-010, COREIR-REQ-011 | Accepted and rejected Core field-shape fixtures validate against the required and allowed fields extracted from `edict-core.cddl`. | core_schema_shape_fixtures_match_cddl | fixtures/core/schema/accepted/core-module-minimal.fields, fixtures/core/schema/accepted/core-intent-minimal.fields, fixtures/core/schema/accepted/core-fn-body-minimal.fields, fixtures/core/schema/rejected/core-module-missing-intents.fields, fixtures/core/schema/rejected/local-ref-missing-alpha-name.fields, fixtures/core/schema/rejected/core-intent-unknown-verified-mode.fields, fixtures/core/schema/rejected/core-fn-body-effect-node-field.fields | Lightweight schema-shape validation, not full CDDL instance validation. |
 | COREIR-TP-005 | planned | Schema validation | COREIR-REQ-008 | Accepted and rejected Core instance fixtures validate against the CDDL through a complete CDDL validator. | - | - | Deferred until the validator harness exists. |
@@ -75,6 +75,7 @@ Out of scope:
 ## Open Gaps
 
 - Full CDDL instance validation fixtures still require a validation harness.
-- Source-to-Core lowering is not implemented.
+- Initial source-to-in-memory-Core lowering exists in the compiler-spine shelf;
+  full source language coverage is still open.
 - Canonical encoding, golden bytes, exact digest fixtures, and platform
   independence tests belong to the compiler-spine milestone.

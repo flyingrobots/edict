@@ -18,8 +18,8 @@ In scope:
 
 Out of scope:
 
-- semantic validation;
-- Core IR lowering and canonical encodings;
+- semantic validation beyond parser-owned syntax shape;
+- compiler-spine lowering and canonical encodings;
 - type resolution across imports;
 - target/lawpack ABI validation.
 
@@ -74,7 +74,7 @@ Out of scope:
 | SYNTAX-TP-019 | implemented | Golden path | SYNTAX-REQ-009 | Keywords after `.` and prelude constructors remain legal. | keywords_are_legal_as_member_names, prelude_constructors_are_not_reserved | - | Contextual keyword oracle. |
 | SYNTAX-TP-020 | implemented | Error handling | SYNTAX-REQ-010 | Negative cases assert stable `ParseErrorKind` identities. | reserved_future_decls_are_rejected_at_top_level, missing_package_is_rejected, bytes_rejects_canonical_policy, unterminated_string_is_rejected | - | No stdout/stderr scraping. |
 | SYNTAX-TP-021 | implemented | Semantic validation | SYNTAX-REQ-011 | The source/surface validator returns stable diagnostic kinds for context-free source errors and accepts unresolved downstream facts. | validate_module_remains_surface_stage_compatibility_alias, surface_validation_defers_import_and_name_resolution, surface_validation_defers_contextual_typing_and_loop_bound_proof, surface_validation_defers_obstruction_exhaustiveness | - | Owned by the semantic-validation shelf. |
-| SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Core lowering emits byte-stable canonical artifacts. | - | - | Owned by issues #21 and #22. |
+| SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Core lowering emits byte-stable canonical artifacts. | - | - | Initial in-memory lowering exists in compiler-spine; canonical bytes are owned by issues #21 and #22. |
 
 ## Determinism Obligations
 
@@ -94,9 +94,11 @@ deterministic regression cases in `crates/edict-syntax/tests/`.
 
 ## Open Gaps
 
-- `SYNTAX-REQ-011`: semantic validation is planned for issue #10.
-- `SYNTAX-REQ-012`: Core IR lowering and golden artifacts are planned for issues
-  #21 and #22.
+- `SYNTAX-REQ-011`: semantic validation is implemented by the
+  [semantic-validation](../semantic-validation/) shelf.
+- `SYNTAX-REQ-012`: initial in-memory Core lowering is implemented by the
+  [compiler-spine](../compiler-spine/) shelf; canonical Core encoding and golden
+  artifacts are planned for #21 and #22.
 - Fixture coverage is not exhaustive across every `EDICT-LANG-*` row in
   `docs/REQUIREMENTS.md`; this shelf covers the landed Phase 1 syntax parser
   only.
