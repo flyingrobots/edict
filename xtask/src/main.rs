@@ -696,20 +696,19 @@ mod tests {
     }
 
     #[test]
-    fn agents_topic_shelf_policy_is_present() {
+    fn release_tag_recovery_policy_is_structured() {
         let root = repo_root().expect("repo root");
-        let agents = fs::read_to_string(root.join("AGENTS.md")).expect("AGENTS.md");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
         for needle in [
-            "## Topic Shelves",
-            "`docs/topics/` contains the living contract graph",
-            "Update `test-plan.md` before or alongside tests",
-            "Release, CI, and publication workflows count as behavior",
-            "cargo xtask verify",
-            "NEVER force any git operation",
+            "[release_tags]",
+            "mutation = \"forbidden\"",
+            "recovery = \"publish_existing_valid_tag\"",
+            "requires_main_reachable_target = true",
         ] {
             assert!(
-                agents.contains(needle),
-                "AGENTS.md missing topic-shelf policy text: {needle}"
+                policy.contains(needle),
+                "release policy missing structured field: {needle}"
             );
         }
     }

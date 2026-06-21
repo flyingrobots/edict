@@ -29,20 +29,21 @@ Out of scope:
 | RELEASE-REQ-003 | implemented | Release notes are loaded by full tag name from `docs/releases/${TAG}.md`. | .github/workflows/release.yml |
 | RELEASE-REQ-004 | implemented | SemVer prerelease tags publish as GitHub prereleases. | .github/workflows/release.yml |
 | RELEASE-REQ-005 | implemented | The current release workflow does not publish crates or other package artifacts. | .github/workflows/release.yml |
-| RELEASE-REQ-006 | implemented | Pushed release tags are durable; recovery must not move, delete, or recreate release tags. | AGENTS.md |
+| RELEASE-REQ-006 | implemented | Pushed release tags are durable; recovery must not move, delete, or recreate release tags. | docs/topics/release-process/policy.toml |
 
 ## Fixtures
 
 | Fixture | Purpose | Oracle |
 | --- | --- | --- |
 | docs/releases/v0.1.0-alpha.1.md | Published release notes for the first front-end alpha. | The release workflow looks up this file by full tag name. |
+| docs/topics/release-process/policy.toml | Structured release-tag recovery policy. | Tag mutation is forbidden and recovery publishes the existing valid tag. |
 
 ## Test Cases
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | RELEASE-TP-001 | implemented | Golden path | RELEASE-REQ-001, RELEASE-REQ-002, RELEASE-REQ-003, RELEASE-REQ-004, RELEASE-REQ-005 | The workflow contains the tag trigger, main reachability guard, full-tag release-notes path, verified GitHub Release creation, prerelease flag, and no package publish command. | release_workflow_publishes_only_main_reachable_tags | docs/releases/v0.1.0-alpha.1.md | Static workflow contract regression. |
-| RELEASE-TP-002 | implemented | Policy guard | RELEASE-REQ-006 | Repository instructions forbid force operations, so release recovery cannot rely on moving or recreating pushed tags. | agents_topic_shelf_policy_is_present | - | Policy evidence in `AGENTS.md`. |
+| RELEASE-TP-002 | implemented | Policy guard | RELEASE-REQ-006 | Structured policy forbids tag mutation and names existing-valid-tag publication as recovery. | release_tag_recovery_policy_is_structured | docs/topics/release-process/policy.toml | Policy evidence is structured, not prose. |
 
 ## Determinism Obligations
 

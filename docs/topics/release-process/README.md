@@ -31,7 +31,8 @@ remain `publish = false`, and the release workflow only creates GitHub releases.
 Release tags are durable once pushed. If a release workflow fails after a signed
 tag is created, the recovery path is to fix the workflow or publish the GitHub
 release against the existing valid tag. Do not move, delete, or recreate release
-tags to paper over workflow mistakes. [RELEASE-REQ-006]
+tags to paper over workflow mistakes. The stable recovery policy is captured in
+[`policy.toml`](./policy.toml). [RELEASE-REQ-006]
 
 ## Current Release
 

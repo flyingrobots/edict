@@ -10,8 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
-- Added a repo-local `AGENTS.md` topic-shelf policy and a release-process topic
-  shelf covering tag-triggered GitHub Release publication.
+- Added a repo-local `AGENTS.md` topic-shelf policy, a release-process topic
+  shelf, and a structured release-tag recovery policy covering tag-triggered
+  GitHub Release publication.
 
 ### Changed
 

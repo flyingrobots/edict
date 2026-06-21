@@ -1,0 +1,4 @@
+[release_tags]
+mutation = "forbidden"
+recovery = "publish_existing_valid_tag"
+requires_main_reachable_target = true
