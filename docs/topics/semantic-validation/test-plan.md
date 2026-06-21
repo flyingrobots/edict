@@ -17,7 +17,7 @@ Out of scope for this first slice:
 
 - resolved type checking;
 - import/lawpack/target profile validation;
-- Core IR lowering and relapse-zoo golden artifacts;
+- full Core IR lowering and relapse-zoo golden artifacts;
 - participant/runtime admission checks.
 
 ## Requirements
@@ -77,6 +77,6 @@ Out of scope for this first slice:
 - Target/lawpack facts for obstruction exhaustiveness belong after import and
   target/lawpack resolution.
 - Core/assurance relapse-zoo fixtures belong to downstream Core/admission topic
-  shelves after Core IR and canonical artifacts exist.
+  shelves after full Core lowering and canonical artifacts exist.
 - Clause-level diagnostic spans; duplicate singleton diagnostics currently report
   at the enclosing intent span because intent clauses do not retain spans.

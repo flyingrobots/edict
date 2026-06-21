@@ -29,7 +29,7 @@ assert_eq!(err.kind, ParseErrorKind::ReservedKeyword);
 
 `parse_module` returns a source AST. It preserves source order and surface
 spelling needed by later lowering. It does not resolve imports, type-check
-programs, prove bounds, or lower to Core IR. [SYNTAX-REQ-001]
+programs, prove bounds, or itself lower to Core IR. [SYNTAX-REQ-001]
 
 ## Current Contract
 
@@ -66,10 +66,11 @@ These are deliberately not part of the syntax parser contract:
 
 - semantic checks beyond parsing. The landed source/surface validation stage is
   documented in [semantic-validation](../semantic-validation/); import
-  resolution, resolved type checking, contextual bound proofs, and
-  target/lawpack-dependent checks remain deferred;
-- Core IR lowering, canonical encoding, and golden Core fixtures. The landed
-  Core semantic schema is documented in [core-ir](../core-ir/);
+  resolution, resolved type checking, and initial in-memory Core lowering are
+  documented in [compiler-spine](../compiler-spine/). Contextual bound proofs
+  and target/lawpack-dependent checks remain deferred;
+- canonical encoding and golden Core fixtures. The landed Core semantic schema
+  is documented in [core-ir](../core-ir/);
 - pure `fn` and `const` declarations;
 - `record` semantic-effect statements;
 - list, map, and unit expression literals;

@@ -81,7 +81,7 @@ The following issue #10-adjacent checks are intentionally not part of
 - loop bound provability;
 - target/lawpack failure taxonomy and obstruction exhaustiveness;
 - read-only inference;
-- Core IR lowering, canonical artifacts, and downstream assurance relapse
+- full Core IR lowering, canonical artifacts, and downstream assurance relapse
   fixtures.
 
 Those checks require contextual typing, cardinality proof machinery,

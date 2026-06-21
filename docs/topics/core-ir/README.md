@@ -2,9 +2,10 @@
 
 Status: current HEAD contract.
 
-This chapter describes the Core IR contract that exists today for the
-`v0.2.0-alpha.1` milestone. It is a semantic model and schema contract, not a
-compiler-spine or hashing claim.
+This chapter describes the Core IR contract that exists today. It began as the
+`v0.2.0-alpha.1` semantic model and schema contract; the compiler-spine topic
+now owns the initial source-to-in-memory-Core lowerer. This shelf is still not a
+canonical encoding or hashing claim.
 
 ## Public Surface
 
@@ -12,10 +13,10 @@ The machine-readable Core schema is [`docs/abi/edict-core.cddl`](../../abi/edict
 Its top-level artifact is `core-module`, and every Core module declares
 `apiVersion: "edict.core/v1"`. [COREIR-REQ-001] [COREIR-REQ-008]
 
-Core is downstream of the source AST and upstream of later compiler-spine work.
-The source parser still returns source AST, not Core. The `v0.2` contract freezes
-Core meaning and schema shape only; it does not freeze canonical encodings,
-golden bytes, exact Core digests, target IR, or admission bundles.
+Core is downstream of the source AST. The source parser still returns source
+AST, not Core; the compiler-spine shelf owns the initial executable lowering
+from source AST to in-memory Core. The Core contract does not freeze canonical
+encodings, golden bytes, exact Core digests, target IR, or admission bundles.
 [COREIR-REQ-007]
 
 ## Current Contract
@@ -51,10 +52,10 @@ golden bytes, exact Core digests, target IR, or admission bundles.
 
 ## Deferred
 
-The following are not implemented by the `v0.2` Core contract:
+The following are not implemented by the Core IR contract:
 
-- source-to-Core lowering;
 - import resolution and resolved type checking;
+- full source-to-Core language coverage;
 - full CDDL instance validation;
 - canonical encoder implementation;
 - golden Core bytes and exact digest fixtures;

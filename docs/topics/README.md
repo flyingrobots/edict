@@ -27,6 +27,8 @@ cargo xtask verify
 
 ## Topics
 
+- [Compiler Spine](./compiler-spine/README.md): executable source-AST to
+  in-memory Core IR stage contract for the initial lowerable subset.
 - [Core IR](./core-ir/README.md): `edict.core/v1` semantic model and normative
   CDDL schema boundary for the Core contract.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
