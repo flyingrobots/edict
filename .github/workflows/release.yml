@@ -33,7 +33,7 @@ jobs:
 
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          NOTES="docs/releases/${VERSION}.md"
+          NOTES="docs/releases/${TAG}.md"
           TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
 
           if ! git merge-base --is-ancestor "${TAG_COMMIT}" origin/main; then

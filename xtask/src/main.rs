@@ -677,7 +677,7 @@ mod tests {
             "contents: write",
             "git merge-base --is-ancestor",
             "origin/main",
-            "docs/releases/${VERSION}.md",
+            "docs/releases/${TAG}.md",
             "release create",
             "--verify-tag",
         ] {
