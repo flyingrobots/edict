@@ -14,12 +14,16 @@ concurrency:
 
 jobs:
   rust:
-    name: rust ${{ matrix.rust-version }} (fmt · clippy · test)
+    name: rust ${{ matrix.rust-label }} (fmt · clippy · test)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        rust-version: ["1.85.0", stable]
+        include:
+          - rust-version: "1.85.0"
+            rust-label: "msrv 1.85.0"
+          - rust-version: stable
+            rust-label: "stable"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
