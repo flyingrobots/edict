@@ -721,12 +721,13 @@ mod tests {
         for required in [
             "Normative `edict.core/v1` CDDL schema",
             "Core semantic model coverage",
-            "No source-to-Core lowering.",
-            "No canonical Core encoder.",
-            "No golden Core bytes.",
-            "No exact Core digests.",
-            "No target lowerers.",
-            "No bundle/admission tooling.",
+            "explicitly does not include:",
+            "source-to-Core lowering;",
+            "a canonical Core encoder;",
+            "golden Core bytes;",
+            "exact Core digests;",
+            "target lowerers;",
+            "bundle/admission tooling.",
         ] {
             assert!(
                 notes.contains(required),
