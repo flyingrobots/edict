@@ -3,13 +3,23 @@
 All notable changes to the Edict specifications are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Edict is in Phase 0 (design only); versions track specification maturity, not a
-released implementation.
+Edict now has executable Rust implementation slices alongside the design specs;
+versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
 ### Added
 
+- **Phase 2 — source-AST semantic validation (`edict-syntax`).** Added
+  `validate_module`, stable `SemanticErrorKind` categories, deterministic tests,
+  and a semantic-validation topic shelf for checks that do not require Core IR:
+  bounded runtime `String`/`Bytes`, intent operation-mode/budget/basis
+  requiredness, and duplicate singleton intent clauses.
+- **Topic shelf pilot (`docs/topics/syntax/`).** Added the first current-truth
+  topic chapter and verification matrix for the Phase 1 syntax front end,
+  library-hosted doctest coverage for the external Markdown example, and
+  `cargo xtask verify` / `cargo xtask contract-check` as the local contract
+  graph gate.
 - **Phase 1 — first executable slice (`crates/edict-syntax`).** A standalone,
   std-only Rust workspace with a hand-written deterministic lexer and a
   recursive-descent parser for the `edict.implementation/minimal-v1` surface.
