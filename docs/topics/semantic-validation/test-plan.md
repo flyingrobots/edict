@@ -6,9 +6,11 @@ Status: current verification design for source-AST semantic validation.
 
 In scope:
 
-- `edict_syntax::validate_module`;
+- `edict_syntax::validate_surface`;
+- `edict_syntax::validate_module` as a compatibility alias for the same stage;
 - stable `SemanticErrorKind` identities;
-- source-AST checks independent of import resolution and Core IR;
+- source-AST checks independent of import resolution, resolved typing,
+  target/lawpack facts, and Core IR;
 - deterministic fixture and oracle mapping.
 
 Out of scope for this first slice:
@@ -29,17 +31,17 @@ Out of scope for this first slice:
 | SEMVAL-REQ-005 | implemented | Each intent must declare a `basis` clause until template resolution exists. | EDICT-LANG-INTENT-CLAUSES-001 |
 | SEMVAL-REQ-006 | implemented | Singleton intent clauses reject duplicates. | docs/SPEC_edict-language-v1.md |
 | SEMVAL-REQ-007 | implemented | Source binders must not shadow visible module/prelude names, parameters, or earlier locals; module-scope import/declaration names cannot collide. | EDICT-LANG-NOSHADOW-001 |
-| SEMVAL-REQ-008 | planned | Integer literal suffixes must agree with contextual integer types. | EDICT-LANG-INTLIT-002 |
-| SEMVAL-REQ-009 | planned | Loop bounds must be provable against list cardinality. | EDICT-LANG-LOOP-001 |
-| SEMVAL-REQ-010 | planned | Obstruction maps must be exhaustive over domain-mappable failure coordinates. | EDICT-LANG-OBSTRUCT-EXHAUST-001 |
+| SEMVAL-REQ-008 | implemented | The source/surface validator is an explicit `validate_surface` compiler stage; `validate_module` remains a compatibility alias. | issue #10 |
+| SEMVAL-REQ-009 | implemented | Surface validation does not require import resolution, named type resolution, callee resolution, or target/lawpack facts. | issue #10 |
+| SEMVAL-REQ-010 | implemented | Contextual integer typing, loop-bound proof, and obstruction exhaustiveness are deferred to later compiler-spine stages. | issue #10 |
 
 ## Fixtures
 
 | Fixture | Purpose | Oracle |
 | --- | --- | --- |
-| fixtures/lang/bounds/bounded-hello.edict | Positive bounded scalar and required-clause fixture. | `validate_module` returns `Ok(())`. |
-| fixtures/lang/effects/read-greeting.edict | Positive effect body and obstruction fixture. | `validate_module` returns `Ok(())`. |
-| fixtures/lang/effects/conditional-blob.edict | Positive branch-yield fixture. | `validate_module` returns `Ok(())`. |
+| fixtures/lang/bounds/bounded-hello.edict | Positive bounded scalar and required-clause fixture. | `validate_surface` returns `Ok(())`. |
+| fixtures/lang/effects/read-greeting.edict | Positive effect body and obstruction fixture. | `validate_surface` returns `Ok(())`. |
+| fixtures/lang/effects/conditional-blob.edict | Positive branch-yield fixture. | `validate_surface` returns `Ok(())`. |
 
 ## Test Cases
 
@@ -53,9 +55,10 @@ Out of scope for this first slice:
 | SEMVAL-TP-006 | implemented | Error handling | SEMVAL-REQ-007 | Module-scope declaration and import aliases cannot collide in the same namespace. | module_namespace_collisions_are_rejected | - | Source-AST environment only. |
 | SEMVAL-TP-007 | implemented | Error handling | SEMVAL-REQ-007 | Intent parameters and local binders cannot shadow module names, parameters, or earlier locals. | local_binders_cannot_shadow_visible_names | - | Source-AST environment only. |
 | SEMVAL-TP-008 | implemented | Edge/scope | SEMVAL-REQ-007 | Branch, loop, match, obstruction-map, and branch-yield binders are scoped deterministically and do not leak into sibling or outer scopes. | branch_and_loop_binders_are_scoped, branch_yield_binders_are_scoped, clause_expression_binders_see_parameters, expression_binders_cannot_shadow_visible_names, obstruction_map_binders_cannot_shadow_visible_names | - | Source-AST environment only. |
-| SEMVAL-TP-009 | planned | Error handling | SEMVAL-REQ-008 | Integer suffix/context mismatch produces stable semantic error kind. | - | - | Requires contextual typing. |
-| SEMVAL-TP-010 | planned | Error handling | SEMVAL-REQ-009 | Unprovable loop bound produces stable semantic error kind. | - | - | Requires cardinality reasoning. |
-| SEMVAL-TP-011 | planned | Error handling | SEMVAL-REQ-010 | Missing obstruction arm produces stable semantic error kind. | - | - | Requires target/lawpack failure facts. |
+| SEMVAL-TP-009 | implemented | Stage boundary | SEMVAL-REQ-008 | `validate_surface` accepts known-good fixtures and `validate_module` remains equivalent for compatibility. | validate_module_remains_surface_stage_compatibility_alias | fixtures/lang/bounds/bounded-hello.edict | Keeps the stage name explicit without breaking existing callers. |
+| SEMVAL-TP-010 | implemented | Boundary guard | SEMVAL-REQ-009 | Unresolved imports, named types, callees, and field paths do not fail surface validation when no source/surface rule is violated. | surface_validation_defers_import_and_name_resolution | - | Resolution belongs to the resolver stage. |
+| SEMVAL-TP-011 | implemented | Boundary guard | SEMVAL-REQ-010 | Contextual integer mismatch and unresolved loop cardinality do not fail surface validation. | surface_validation_defers_contextual_typing_and_loop_bound_proof | - | Type checking and cardinality proof are downstream. |
+| SEMVAL-TP-012 | implemented | Boundary guard | SEMVAL-REQ-010 | A partial-looking obstruction map does not fail surface validation without target/lawpack failure facts. | surface_validation_defers_obstruction_exhaustiveness | - | Exhaustiveness belongs after target/lawpack facts exist. |
 
 ## Determinism Obligations
 
@@ -69,9 +72,10 @@ Out of scope for this first slice:
 
 ## Open Gaps
 
-- Contextual typing for integer suffix checks.
-- Cardinality proof machinery for loop bounds.
-- Target/lawpack facts for obstruction exhaustiveness.
+- Contextual typing for integer suffix checks belongs to `type_check`.
+- Cardinality proof machinery for loop bounds belongs after resolution.
+- Target/lawpack facts for obstruction exhaustiveness belong after import and
+  target/lawpack resolution.
 - Core/assurance relapse-zoo fixtures belong to downstream Core/admission topic
   shelves after Core IR and canonical artifacts exist.
 - Clause-level diagnostic spans; duplicate singleton diagnostics currently report

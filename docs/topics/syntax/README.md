@@ -64,9 +64,10 @@ programs, prove bounds, or lower to Core IR. [SYNTAX-REQ-001]
 
 These are deliberately not part of the syntax parser contract:
 
-- semantic checks beyond parsing. The landed source-AST subset is documented in
-  [semantic-validation](../semantic-validation/); import resolution, resolved
-  type checking, shadow checks, and bound proofs remain deferred;
+- semantic checks beyond parsing. The landed source/surface validation stage is
+  documented in [semantic-validation](../semantic-validation/); import
+  resolution, resolved type checking, contextual bound proofs, and
+  target/lawpack-dependent checks remain deferred;
 - Core IR lowering, canonical encoding, and golden Core fixtures. The landed
   Core semantic schema is documented in [core-ir](../core-ir/);
 - pure `fn` and `const` declarations;

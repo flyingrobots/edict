@@ -8,6 +8,16 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added `validate_surface` as the explicit source/surface semantic-validation
+  compiler stage, with deterministic tests proving that import/name resolution,
+  contextual typing, loop-bound proof, and target/lawpack obstruction
+  exhaustiveness remain downstream of this pass. `validate_module` remains a
+  compatibility alias for the same stage.
+- Added the repository rule that issue-closing PRs must include GitHub
+  auto-close text such as `Closes #123` in the pull request body.
+
 ## [v0.2.0-alpha.1] - 2026-07-01
 
 ### Added

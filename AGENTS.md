@@ -14,6 +14,9 @@ NEVER create draft pull requests.
 
 NEVER use a `codex` prefix in branch names, PR titles, or commit messages.
 
+Pull request bodies for issue work MUST include GitHub auto-close text such as
+`Closes #123` for every issue the PR is intended to close.
+
 ## Think
 
 Think is durable memory for cross-session coordination.
