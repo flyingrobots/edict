@@ -144,6 +144,7 @@ fn check_topic(
     let requirement_ids: BTreeSet<&str> = requirements.keys().map(String::as_str).collect();
     let case_ids: BTreeSet<&str> = cases.keys().map(String::as_str).collect();
     let mut covered_requirements = BTreeSet::new();
+    let mut implemented_requirements = BTreeSet::new();
 
     for (id, requirement) in &requirements {
         check_requirement_sources(root, id, &requirement.source, requirement_registry)?;
@@ -176,6 +177,9 @@ fn check_topic(
                         ));
                     }
                 }
+                for requirement in split_cell_list(&case.requirement) {
+                    implemented_requirements.insert(requirement.to_owned());
+                }
             }
             "planned" | "gap" => {}
             other => return Err(format!("{} has invalid status `{other}`", case.id)),
@@ -187,9 +191,14 @@ fn check_topic(
         }
     }
 
-    for requirement in requirements.keys() {
-        if !covered_requirements.contains(requirement) {
-            return Err(format!("{requirement} has no planned or implemented case"));
+    for (id, requirement) in &requirements {
+        if !covered_requirements.contains(id) {
+            return Err(format!("{id} has no planned or implemented case"));
+        }
+        if requirement.status == "implemented" && !implemented_requirements.contains(id) {
+            return Err(format!(
+                "implemented requirement {id} has no implemented case"
+            ));
         }
     }
 
@@ -220,6 +229,7 @@ fn parse_requirement_rows(plan: &str) -> Result<BTreeMap<String, RequirementRow>
             }
             let row = RequirementRow {
                 id: cells[0].clone(),
+                status: cells[1].clone(),
                 source: cells[3].clone(),
             };
             if out.insert(row.id.clone(), row).is_some() {
@@ -491,6 +501,7 @@ fn repo_root() -> Result<PathBuf, String> {
 #[derive(Debug)]
 struct RequirementRow {
     id: String,
+    status: String,
     source: String,
 }
 
@@ -540,6 +551,37 @@ mod tests {
             .expect_err("unknown registry Source ID must fail");
         assert!(
             err.contains("unknown registry source ID `EDICT-NOT-A-REAL-ID`"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn contract_graph_requires_implemented_evidence_for_implemented_requirements() {
+        let root = temp_root("implemented-requirement-without-evidence");
+        let topic = root.join("docs/topics/example");
+        fs::create_dir_all(root.join("docs")).expect("docs directory");
+        fs::create_dir_all(&topic).expect("topic directory");
+        fs::write(root.join("docs/REQUIREMENTS.md"), "# Requirements\n").expect("requirements");
+        fs::write(topic.join("README.md"), "# Example\n\n[EXAMPLE-REQ-001]\n").expect("chapter");
+        fs::write(
+            topic.join("test-plan.md"),
+            "# Example Test Plan\n\n\
+             | ID | Status | Requirement | Source |\n\
+             | --- | --- | --- | --- |\n\
+             | EXAMPLE-REQ-001 | implemented | Example requirement. | docs/REQUIREMENTS.md |\n\n\
+             | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |\n\
+             | --- | --- | --- | --- | --- | --- | --- | --- |\n\
+             | EXAMPLE-TP-001 | planned | Golden path | EXAMPLE-REQ-001 | exact state | - | - | planned only |\n",
+        )
+        .expect("test plan");
+
+        let tests = BTreeSet::new();
+        let err = check_topic(&root, &topic, &tests, "EDICT-KNOWN-ID")
+            .expect_err("implemented requirement without implemented case must fail");
+        assert!(
+            err.contains("implemented requirement EXAMPLE-REQ-001 has no implemented case"),
             "unexpected error: {err}"
         );
 
