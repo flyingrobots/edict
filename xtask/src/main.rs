@@ -666,6 +666,28 @@ mod tests {
         assert_eq!(base, "origin/main");
     }
 
+    #[test]
+    fn release_workflow_publishes_only_main_reachable_tags() {
+        let root = repo_root().expect("repo root");
+        let workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        for needle in [
+            "tags:",
+            "\"v*\"",
+            "contents: write",
+            "git merge-base --is-ancestor",
+            "origin/main",
+            "docs/releases/${VERSION}.md",
+            "release create",
+            "--verify-tag",
+        ] {
+            assert!(
+                workflow.contains(needle),
+                "release workflow missing expected guard/action: {needle}"
+            );
+        }
+    }
+
     fn temp_root(name: &str) -> PathBuf {
         let mut dir = std::env::temp_dir();
         dir.push(format!("edict-xtask-{name}-{}", std::process::id()));

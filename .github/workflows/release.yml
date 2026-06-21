@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  github-release:
+    name: publish GitHub release
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify tag target and release notes
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git fetch --force origin main:refs/remotes/origin/main --tags
+
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          NOTES="docs/releases/${VERSION}.md"
+          TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+
+          if ! git merge-base --is-ancestor "${TAG_COMMIT}" origin/main; then
+            echo "::error::Release tags must target commits reachable from origin/main."
+            echo "::error::Tag ${TAG} targets ${TAG_COMMIT}, which is not on origin/main."
+            exit 1
+          fi
+
+          if [[ ! -f "${NOTES}" ]]; then
+            echo "::error::Missing release notes file: ${NOTES}"
+            exit 1
+          fi
+
+          {
+            echo "tag=${TAG}"
+            echo "version=${VERSION}"
+            echo "notes=${NOTES}"
+            if [[ "${VERSION}" == *-* ]]; then
+              echo "prerelease=true"
+            else
+              echo "prerelease=false"
+            fi
+          } >>"${GITHUB_OUTPUT}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.release.outputs.tag }}"
+          NOTES="${{ steps.release.outputs.notes }}"
+          PRERELEASE="${{ steps.release.outputs.prerelease }}"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "::notice::GitHub release ${TAG} already exists; leaving it unchanged."
+            exit 0
+          fi
+
+          args=(
+            release create "${TAG}"
+            --verify-tag
+            --title "${TAG}"
+            --notes-file "${NOTES}"
+          )
+
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+
+          gh "${args[@]}"
