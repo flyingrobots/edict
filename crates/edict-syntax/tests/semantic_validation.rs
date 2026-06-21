@@ -166,3 +166,145 @@ fn duplicate_singleton_intent_clauses_are_rejected() {
         ]
     );
 }
+
+#[test]
+fn module_namespace_collisions_are_rejected() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         use shape \"schemas/a.graphql\" as Input;\n\
+         type Input = { id: String<max=8>, };\n\
+         enum Status { Ready }\n\
+         intent Status(input: shape.In) returns shape.Out\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           return { input };\n\
+         }",
+    );
+    assert_eq!(
+        kinds,
+        vec![
+            SemanticErrorKind::DuplicateName,
+            SemanticErrorKind::DuplicateName,
+        ]
+    );
+}
+
+#[test]
+fn local_binders_cannot_shadow_visible_names() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         use shape \"schemas/a.graphql\" as shape;\n\
+         type Input = { id: String<max=8>, };\n\
+         intent t(shape: Input) returns Input\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           let shape = shape;\n\
+           return { shape };\n\
+         }",
+    );
+    assert_eq!(
+        kinds,
+        vec![
+            SemanticErrorKind::ShadowedName,
+            SemanticErrorKind::ShadowedName,
+        ]
+    );
+}
+
+#[test]
+fn branch_and_loop_binders_are_scoped() {
+    let module = parse_module(
+        "package a.b@1;\n\
+         intent t(input: shape.In) returns shape.Out\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           if input.ready {\n\
+             let branch = input;\n\
+           } else {\n\
+             let branch = input;\n\
+           }\n\
+           for branch in input.items bounded shape.maxItems {\n\
+             let loopValue = branch;\n\
+           }\n\
+           let branch = input;\n\
+           return { branch };\n\
+         }",
+    )
+    .expect("source parses");
+    validate_module(&module).expect("block-local names do not leak");
+}
+
+#[test]
+fn branch_yield_binders_are_scoped() {
+    let module = parse_module(
+        "package a.b@1;\n\
+         intent t(input: shape.In) returns shape.Out\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           let result = if input.ready {\n\
+             let temporary = input;\n\
+             yield temporary;\n\
+           } else {\n\
+             let temporary = input;\n\
+             yield temporary;\n\
+           };\n\
+           let temporary = result;\n\
+           return { temporary };\n\
+         }",
+    )
+    .expect("source parses");
+    validate_module(&module).expect("branch-yield locals do not leak");
+}
+
+#[test]
+fn expression_binders_cannot_shadow_visible_names() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         type Input = { id: String<max=8>, };\n\
+         intent t(input: Input) returns Input\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           let result = match input { Some(input) => input, None => input };\n\
+           return { result };\n\
+         }",
+    );
+    assert_eq!(kinds, vec![SemanticErrorKind::ShadowedName]);
+}
+
+#[test]
+fn clause_expression_binders_see_parameters() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         type Input = { id: String<max=8>, };\n\
+         intent t(input: Input) returns Input\n\
+           profile shape.readOnly\n\
+           basis none\n\
+           budget <= shape.tinyBudget\n\
+           where match input { Some(input) => true, None => true } {\n\
+           return { input };\n\
+         }",
+    );
+    assert_eq!(kinds, vec![SemanticErrorKind::ShadowedName]);
+}
+
+#[test]
+fn obstruction_map_binders_cannot_shadow_visible_names() {
+    let kinds = semantic_kinds(
+        "package a.b@1;\n\
+         intent t(input: shape.In) returns shape.Out\n\
+           profile shape.readWrite\n\
+           basis none\n\
+           budget <= shape.tinyBudget {\n\
+           echo.write(input) else {\n\
+             mismatch(input) => shape.Bad({ observed: input }),\n\
+           };\n\
+           return { input };\n\
+         }",
+    );
+    assert_eq!(kinds, vec![SemanticErrorKind::ShadowedName]);
+}

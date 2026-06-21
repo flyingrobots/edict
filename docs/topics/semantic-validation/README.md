@@ -43,6 +43,15 @@ error ordering is not part of the Phase 2 contract. Tests assert structured
   contract requires an explicit source clause. [SEMVAL-REQ-005]
 - Singleton intent clauses reject duplicates for `profile`, `implements`,
   `basis`, `footprint`, and `budget`. [SEMVAL-REQ-006]
+- Module-scope import aliases, `type` declarations, `enum` declarations, and
+  `intent` declarations share a source-AST namespace and reject duplicate names.
+  [SEMVAL-REQ-007]
+- Source binders reject shadowing of visible module/prelude names, parameters,
+  and earlier local binders. The check covers intent parameters, `let` binders,
+  bounded-`for` binders, match-arm binders, obstruction-map binders, ordinary
+  blocks, and branch-yield blocks. [SEMVAL-REQ-007]
+- Branch, loop, match-arm, obstruction-map, and branch-yield scopes are
+  deterministic and do not leak into sibling or outer scopes. [SEMVAL-REQ-007]
 
 Semantic errors carry source spans. Clause-level duplicate diagnostics currently
 report the enclosing intent span because the parser's `IntentClause` AST does
@@ -52,13 +61,12 @@ not yet retain per-clause spans. [SEMVAL-REQ-001]
 
 The following issue #10 items are not implemented in this first Phase 2 slice:
 
-- shadowing and name-resolution checks;
-- import/package/type/prelude collision checks;
 - type checking and integer contextual-width validation;
 - loop bound provability;
 - target/lawpack failure taxonomy and obstruction exhaustiveness;
 - read-only inference;
 - Core IR relapse-zoo fixtures and golden artifacts.
 
-Those checks require later semantic environments, target/lawpack facts, or Core
-IR and are tracked as planned cases in [test-plan.md](./test-plan.md).
+Those checks require contextual typing, cardinality proof machinery,
+target/lawpack facts, or Core IR and are tracked as planned cases in
+[test-plan.md](./test-plan.md).
