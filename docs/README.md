@@ -9,8 +9,10 @@ The current specification set is:
   `rationale.md` files explain machinery and still-relevant tradeoffs.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
   and the GitHub issue/milestone map.
-- [Release Notes](./releases/v0.1.0-alpha.1.md): published notes for the first
-  front-end alpha milestone.
+- [Release Notes](./releases/v0.2.0-alpha.1.md): prepared notes for the Core
+  semantic model and normative schema alpha.
+- [v0.1 Release Notes](./releases/v0.1.0-alpha.1.md): published notes for the
+  first front-end alpha milestone.
 - [Release Process Topic](./topics/release-process/): tag-triggered GitHub
   Release publication contract and verification matrix.
 - [Core IR Topic](./topics/core-ir/): current contract and verification matrix

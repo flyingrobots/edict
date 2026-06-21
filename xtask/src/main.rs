@@ -714,6 +714,46 @@ mod tests {
     }
 
     #[test]
+    fn v0_2_release_notes_state_core_boundary() {
+        let root = repo_root().expect("repo root");
+        let notes = fs::read_to_string(root.join("docs/releases/v0.2.0-alpha.1.md"))
+            .expect("v0.2 release notes");
+        for required in [
+            "Normative `edict.core/v1` CDDL schema",
+            "Core semantic model coverage",
+            "explicitly does not include:",
+            "source-to-Core lowering;",
+            "a canonical Core encoder;",
+            "golden Core bytes;",
+            "exact Core digests;",
+            "target lowerers;",
+            "bundle/admission tooling.",
+        ] {
+            assert!(
+                notes.contains(required),
+                "v0.2 release notes missing boundary statement: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn v0_2_changelog_date_matches_release_notes_target() {
+        let root = repo_root().expect("repo root");
+        let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
+        let notes = fs::read_to_string(root.join("docs/releases/v0.2.0-alpha.1.md"))
+            .expect("v0.2 release notes");
+        let target = notes
+            .lines()
+            .find_map(|line| line.strip_prefix("Target date: "))
+            .expect("v0.2 release notes target date");
+
+        assert!(
+            changelog.contains(&format!("## [v0.2.0-alpha.1] - {target}")),
+            "v0.2 changelog date must match release notes target date {target}"
+        );
+    }
+
+    #[test]
     fn core_cddl_declares_v1_semantic_model() {
         let root = repo_root().expect("repo root");
         let cddl =

@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.2.0-alpha.1] - 2026-07-01
+
 ### Added
 
 - Added the `edict.core/v1` Core IR topic shelf and normative CDDL schema for
