@@ -464,7 +464,7 @@ admission stack.
 
 What exists today:
 
-- Complete language specification (syntax, type system, effects, Core IR)
+- Language specification and ABI specs for the current design baseline
 - Target profile ABI specification
 - Contract bundle and admission specifications
 - Assurance and transparency guidance (HOLMES, Watson, Moriarty)
