@@ -13,6 +13,8 @@ Every release cut must satisfy these gates on the release commit:
 
 - `cargo xtask verify` passes locally.
 - The available GitHub Actions checks for `main` are green.
+- Publication is triggered by pushing a `v*` tag whose target commit is reachable
+  from `origin/main`; release tags must not target unmerged branch commits.
 - `CHANGELOG.md` has a dated section for the release.
 - The GitHub milestone has no open issue that blocks the release scope.
 - Release notes state exactly what the release claims and what it does not
