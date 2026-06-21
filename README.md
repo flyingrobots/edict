@@ -458,28 +458,36 @@ That's the gap Edict fills.
 
 ## Current Status
 
-Edict is in Phase 0: design and specification, no working implementation yet.
+Edict now has executable Rust implementation slices alongside the design specs.
+The current implementation is a front-end slice, not a complete compiler or
+admission stack.
 
 What exists today:
 
-- Complete language specification (syntax, type system, effects, Core IR)
+- Language specification and ABI specs for the current design baseline
 - Target profile ABI specification
-- Contract bundle and admission specifications  
+- Contract bundle and admission specifications
 - Assurance and transparency guidance (HOLMES, Watson, Moriarty)
 - Design rationale and research anchors
+- Phase 1 `edict-syntax` lexer/parser for the landed source-AST subset
+- Phase 2 source-AST semantic validation for checks that do not require Core IR
+- Topic shelves and local contract-graph verification via `cargo xtask verify`
 
 What doesn't exist yet:
 
-- A parser
 - A canonical Core encoder
+- Core IR lowering from the source AST
 - A compiler CLI
+- Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
+  expression literals)
 - Target profile conformance fixtures
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next milestone is Phase 0 fixtures: example intents that parse (and ones
-that should be rejected), golden canonicalization cases, and hash-impact
-regression cases. The first argument happens with a parser.
+The next implementation milestones are to finish the remaining source-AST
+semantic checks, define `edict.core/v1` CDDL plus canonical Core golden fixtures,
+and then build Core lowering, target-profile conformance, and admission evidence
+on top of that stable Core contract.
 
 ---
 
