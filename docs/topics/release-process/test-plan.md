@@ -31,6 +31,7 @@ Out of scope:
 | RELEASE-REQ-005 | implemented | The current release workflow does not publish crates or other package artifacts. | .github/workflows/release.yml |
 | RELEASE-REQ-006 | implemented | Pushed release tags are durable; recovery must not move, delete, or recreate release tags. | docs/topics/release-process/policy.toml |
 | RELEASE-REQ-007 | implemented | `v0.2.0-alpha.1` release notes state the Core schema scope and explicit non-goals. | docs/releases/v0.2.0-alpha.1.md |
+| RELEASE-REQ-008 | implemented | A prepared release changelog date matches the release notes target date until publication. | CHANGELOG.md, docs/releases/v0.2.0-alpha.1.md |
 
 ## Fixtures
 
@@ -38,6 +39,7 @@ Out of scope:
 | --- | --- | --- |
 | docs/releases/v0.1.0-alpha.1.md | Published release notes for the first front-end alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.2.0-alpha.1.md | Prepared release notes for the Core semantic model and schema alpha. | The notes state included scope and explicit non-goals. |
+| CHANGELOG.md | Release history prepared for the next alpha. | Prepared release sections use the matching release target date. |
 | docs/topics/release-process/policy.toml | Structured release-tag recovery policy. | Tag mutation is forbidden and recovery publishes the existing valid tag. |
 
 ## Test Cases
@@ -47,6 +49,7 @@ Out of scope:
 | RELEASE-TP-001 | implemented | Golden path | RELEASE-REQ-001, RELEASE-REQ-002, RELEASE-REQ-003, RELEASE-REQ-004, RELEASE-REQ-005 | The workflow contains the tag trigger, main reachability guard, full-tag release-notes path, verified GitHub Release creation, prerelease flag, and no package publish command. | release_workflow_publishes_only_main_reachable_tags | docs/releases/v0.1.0-alpha.1.md | Static workflow contract regression. |
 | RELEASE-TP-002 | implemented | Policy guard | RELEASE-REQ-006 | Structured policy forbids tag mutation and names existing-valid-tag publication as recovery. | release_tag_recovery_policy_is_structured | docs/topics/release-process/policy.toml | Policy evidence is structured, not prose. |
 | RELEASE-TP-003 | implemented | Boundary guard | RELEASE-REQ-007 | v0.2 notes include Core schema scope and all explicit non-goals for lowering, encoder, bytes, digests, targets, and admission. | v0_2_release_notes_state_core_boundary | docs/releases/v0.2.0-alpha.1.md | Prevents release notes from overclaiming the Core milestone. |
+| RELEASE-TP-004 | implemented | Consistency guard | RELEASE-REQ-008 | The v0.2 changelog section date equals the `Target date` in the v0.2 release notes. | v0_2_changelog_date_matches_release_notes_target | CHANGELOG.md, docs/releases/v0.2.0-alpha.1.md | Prevents release chronology drift before the tag is published. |
 
 ## Determinism Obligations
 
