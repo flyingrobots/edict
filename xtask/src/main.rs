@@ -185,7 +185,7 @@ fn check_topic(
                     implemented_requirements.insert(requirement.to_owned());
                 }
             }
-            "planned" | "gap" | "policy" => {}
+            status if is_known_test_plan_status(status) => {}
             other => return Err(format!("{} has invalid status `{other}`", case.id)),
         }
         for fixture in split_cell_list(&case.fixtures) {
