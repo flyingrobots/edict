@@ -69,6 +69,6 @@ Out of scope:
 ## Open Gaps
 
 - No `docs/catalog.yaml` exists yet.
-- No automated coverage checker maps public surfaces to page types.
-- No executable tutorial harness exists because Edict has no user-facing CLI
-  surface yet.
+- Automated coverage checking does not yet map public surfaces to page types.
+- Executable tutorial harnesses are deferred until Edict has a user-facing CLI
+  surface.
