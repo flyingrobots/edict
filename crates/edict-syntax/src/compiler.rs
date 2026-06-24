@@ -567,7 +567,7 @@ impl<'a> TypeChecker<'a> {
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
         let input_binding = LocalRef {
-            id: param.name.clone(),
+            id: "arg.0".to_owned(),
             alpha_name: "$arg0".to_owned(),
             ty: input_shape.coord.clone(),
         };

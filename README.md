@@ -477,13 +477,14 @@ What exists today:
   `compile_to_core` for the first pure local-record subset
 - Reference `edict.canonical-cbor/v1` Core encoder and canonical byte validation
   path for the current in-memory Core module model
+- Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for
+  the initial pure local-record Core artifact
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
 - Release roadmap and GitHub milestone schedule in
   [`ROADMAP.md`](./ROADMAP.md)
 
 What doesn't exist yet:
 
-- Reviewed Core golden bytes and exact digest fixtures
 - Full source-language lowering beyond the initial pure local-record subset
 - A compiler CLI
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
@@ -492,9 +493,8 @@ What doesn't exist yet:
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next implementation milestone is reviewed Core golden bytes and exact digest
-fixtures for v0.3, followed by target-profile conformance and admission
-evidence.
+The next implementation milestone is v0.3 release preparation, followed by
+target-profile conformance and admission evidence.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone, and

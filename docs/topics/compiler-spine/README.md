@@ -42,20 +42,18 @@ before the resolver can produce Core-ready metadata. [CSPINE-REQ-005]
   diagnostic prose. [CSPINE-REQ-007]
 - The lowerer output carries no embedded canonical bytes, exact digest, target
   IR, or admission fields. Canonical encoding is a separate Core IR surface, and
-  reviewed golden bytes and exact digests remain separate release artifacts.
+  reviewed golden bytes and exact digests are separate Core IR artifacts.
   [CSPINE-REQ-008]
 
 ## Deferred
 
 The following are not implemented by this compiler-spine slice:
 
-- reviewed golden Core bytes and exact digest fixtures;
 - target-profile lowering;
 - obstruction exhaustiveness against target/lawpack failure facts;
 - shape/lawpack schema loading;
 - full source language lowering.
 
-Those items remain assigned to the v0.3 golden issue and later
-lowerability/admission milestones.
+Those items remain assigned to later lowerability/admission milestones.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).

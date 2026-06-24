@@ -34,9 +34,10 @@ fixtures/
 
 ## Status
 
-Empty pending the Phase 0 fixture campaign. The first fixtures to land are the
-canonicalization golden cases and the relapse zoo (see the assurance guide), per
-the Language spec implementation plan, Phase 0.
+The first Core canonical fixture lives in
+[`core/canonical/`](./core/canonical/). Additional source coverage, relapse-zoo
+cases, target fixtures, and admission fixtures remain planned as their owning
+implementation slices land.
 
 **Placeholder digests:** prose in the README/specs writes `sha256:...` as a
 human ellipsis, which is **not lexable** — the grammar's `digest-lit` requires
