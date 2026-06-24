@@ -76,11 +76,11 @@ fn failure_kinds(report: &LowerabilityReport) -> Vec<LowerabilityFailureKind> {
 }
 
 fn assert_single_failure(
-    requirements: LoweringRequirements,
-    facts: TargetProfileFacts,
+    requirements: &LoweringRequirements,
+    facts: &TargetProfileFacts,
     kind: LowerabilityFailureKind,
 ) {
-    let report = check_lowerability(&requirements, &facts);
+    let report = check_lowerability(requirements, facts);
 
     assert_eq!(report.status, LowerabilityStatus::Unsupported);
     assert_eq!(failure_kinds(&report), vec![kind]);
@@ -118,8 +118,8 @@ fn missing_operation_profile_reports_stable_failure_kind() {
     facts.operation_profiles.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::MissingOperationProfile,
     );
 }
@@ -130,8 +130,8 @@ fn unsupported_required_write_class_reports_stable_failure_kind() {
     facts.write_classes.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::UnsupportedWriteClass,
     );
 }
@@ -142,8 +142,8 @@ fn unsupported_global_guard_reports_stable_failure_kind() {
     facts.guard_kinds.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::UnsupportedGuard,
     );
 }
@@ -154,8 +154,8 @@ fn unsupported_atomicity_reports_stable_failure_kind() {
     facts.atomicity.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::UnsupportedAtomicity,
     );
 }
@@ -166,8 +166,8 @@ fn unsupported_postcondition_reports_stable_failure_kind() {
     facts.postcondition_support = false;
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::UnsupportedPostcondition,
     );
 }
@@ -178,8 +178,8 @@ fn missing_obstruction_reports_stable_failure_kind() {
     facts.obstruction_coordinates.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::MissingObstruction,
     );
 }
@@ -190,8 +190,8 @@ fn missing_footprint_obligation_reports_stable_failure_kind() {
     facts.footprint_obligations.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::MissingFootprintObligation,
     );
 }
@@ -202,8 +202,8 @@ fn missing_cost_obligation_reports_stable_failure_kind() {
     facts.cost_obligations.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::MissingCostObligation,
     );
 }
@@ -214,8 +214,8 @@ fn unsupported_optic_contract_reports_stable_failure_kind() {
     facts.optic_contracts.clear();
 
     assert_single_failure(
-        read_requirements(),
-        facts,
+        &read_requirements(),
+        &facts,
         LowerabilityFailureKind::UnsupportedOpticContract,
     );
 }
