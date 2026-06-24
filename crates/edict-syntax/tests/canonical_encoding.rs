@@ -116,6 +116,37 @@ fn canonical_core_bytes_ignore_import_alias_spelling() {
 }
 
 #[test]
+fn canonical_core_bytes_normalize_digest_hex_case() {
+    let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
+    let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
+    let mut changed = core.clone();
+    changed
+        .imports
+        .first_mut()
+        .expect("fixture has an import")
+        .resource
+        .digest =
+        Some("sha256:ABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD".to_owned());
+    let mut normalized = changed.clone();
+    normalized
+        .imports
+        .first_mut()
+        .expect("fixture has an import")
+        .resource
+        .digest =
+        Some("sha256:abcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd".to_owned());
+
+    assert_eq!(
+        encode_core_module(&changed).expect("canonical encoding succeeds"),
+        encode_core_module(&normalized).expect("canonical encoding succeeds")
+    );
+    assert_ne!(
+        encode_core_module(&core).expect("canonical encoding succeeds"),
+        encode_core_module(&normalized).expect("canonical encoding succeeds")
+    );
+}
+
+#[test]
 fn canonical_core_bytes_are_independent_of_import_order() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let mut core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");

@@ -40,6 +40,8 @@ versions still track specification maturity rather than a released product.
 - Canonicalized `requiredCoreCapabilities` as a sorted set before encoding.
 - Rejected oversized CBOR declared lengths before allocation in the canonical
   decode validation path.
+- Normalized uppercase SHA-256 hex review forms to the same canonical digest
+  bytes as lowercase hex.
 
 ## [v0.2.0-alpha.1] - 2026-07-01
 

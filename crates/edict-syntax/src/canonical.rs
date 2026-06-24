@@ -223,9 +223,10 @@ fn hex_value(byte: u8) -> Result<u8, CanonicalError> {
     match byte {
         b'0'..=b'9' => Ok(byte - b'0'),
         b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
         _ => Err(CanonicalError::new(
             CanonicalErrorKind::InvalidDigest,
-            "sha256 digest must be lowercase hex",
+            "sha256 digest must contain hex characters",
         )),
     }
 }
