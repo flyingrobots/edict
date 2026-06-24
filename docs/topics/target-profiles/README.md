@@ -34,7 +34,8 @@ The canonical artifact shape for `edict.target-profile/v1` is named in
   require Echo, graph, database, event-log, repository, or storage runtime
   nouns. [TPROF-REQ-002]
 - Every normative manifest component reference must carry a non-empty
-  coordinate and digest. [TPROF-REQ-003]
+  coordinate and valid `sha256:<64 hex>` digest review rendering.
+  [TPROF-REQ-003]
 - A conforming profile must accept `edict.core/v1`. [TPROF-REQ-004]
 - `acceptedLawpackAdapterAbi` remains empty in v1 until the byte-level
   `edict.lawpack-adapter/v1` ABI is specified. [TPROF-REQ-005]

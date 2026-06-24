@@ -218,12 +218,12 @@ fn check_digest_locked_resource(
     resource: &ResourceRef,
     failures: &mut Vec<TargetProfileConformanceFailure>,
 ) {
-    if resource.coordinate.is_empty() || resource.digest.as_ref().is_none_or(String::is_empty) {
+    if !resource.is_digest_locked() {
         push_failure(
             failures,
             TargetProfileConformanceFailureKind::NonDigestLockedResource,
             field,
-            "non-empty coordinate and digest",
+            "non-empty coordinate and sha256 digest",
         );
     }
 }

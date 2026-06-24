@@ -54,6 +54,20 @@ pub struct ResourceRef {
     pub digest: Option<String>,
 }
 
+impl ResourceRef {
+    #[must_use]
+    pub(crate) fn is_digest_locked(&self) -> bool {
+        !self.coordinate.is_empty() && self.digest.as_deref().is_some_and(is_sha256_review_digest)
+    }
+}
+
+pub(crate) fn is_sha256_review_digest(digest: &str) -> bool {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
 /// Core type model for the initial compiler-spine subset.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreType {

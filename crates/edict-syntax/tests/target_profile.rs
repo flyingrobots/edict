@@ -103,6 +103,21 @@ fn missing_digest_on_normative_manifest_slot_is_rejected() {
 }
 
 #[test]
+fn malformed_digest_on_normative_manifest_slot_is_rejected() {
+    let mut profile = echo_profile();
+    profile.verifier.digest = Some("not-a-digest".to_owned());
+
+    let report = validate_target_profile_manifest(&profile);
+
+    assert_eq!(report.status, TargetProfileConformanceStatus::NonConformant);
+    assert_eq!(
+        report.failures[0].kind,
+        TargetProfileConformanceFailureKind::NonDigestLockedResource
+    );
+    assert_eq!(report.failures[0].field, "verifier");
+}
+
+#[test]
 fn accepted_core_abi_must_include_v1_core() {
     let mut profile = echo_profile();
     profile.accepted_core_abi = vec!["edict.core/v2".to_owned()];
