@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the first reference `edict.canonical-cbor/v1` Core encoder for the
+  current in-memory Core module model, plus canonical byte validation through
+  decode/re-encode stability checks. This slice intentionally does not freeze
+  reviewed golden bytes or exact Core digests.
 - Added the first executable compiler-spine slice for `v0.3.0-alpha.1`:
   explicit `resolve_module`, `type_check`, `lower_core`, and `compile_to_core`
   APIs; deterministic `CompilerContext` profile/budget facts; a typed module

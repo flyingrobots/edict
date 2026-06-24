@@ -475,13 +475,14 @@ What exists today:
 - `edict.core/v1` semantic model and normative CDDL schema
 - Initial compiler-spine APIs: `resolve_module`, `type_check`, `lower_core`, and
   `compile_to_core` for the first pure local-record subset
+- Reference `edict.canonical-cbor/v1` Core encoder and canonical byte validation
+  path for the current in-memory Core module model
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
 - Release roadmap and GitHub milestone schedule in
   [`ROADMAP.md`](./ROADMAP.md)
 
 What doesn't exist yet:
 
-- A canonical Core encoder
 - Reviewed Core golden bytes and exact digest fixtures
 - Full source-language lowering beyond the initial pure local-record subset
 - A compiler CLI
@@ -491,8 +492,8 @@ What doesn't exist yet:
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next implementation milestones are the v0.3 canonical encoder and reviewed
-Core golden fixtures, followed by target-profile conformance and admission
+The next implementation milestone is reviewed Core golden bytes and exact digest
+fixtures for v0.3, followed by target-profile conformance and admission
 evidence.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
