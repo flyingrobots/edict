@@ -200,3 +200,24 @@ fn canonical_core_bytes_are_source_alpha_rename_invariant() {
         encode_core_module(&renamed_core).expect("canonical encoding succeeds")
     );
 }
+
+#[test]
+fn canonical_core_bytes_are_parameter_alpha_rename_invariant() {
+    let renamed = BOUNDED_HELLO
+        .replace(
+            "sayHello(input: HelloInput)",
+            "sayHello(person: HelloInput)",
+        )
+        .replace("input.name", "person.name");
+
+    let original = parse_module(BOUNDED_HELLO).expect("fixture parses");
+    let renamed = parse_module(&renamed).expect("renamed source parses");
+    let original_core =
+        compile_to_core(&original, &hello_context()).expect("original compiles to Core");
+    let renamed_core = compile_to_core(&renamed, &hello_context()).expect("renamed compiles");
+
+    assert_eq!(
+        encode_core_module(&original_core).expect("canonical encoding succeeds"),
+        encode_core_module(&renamed_core).expect("canonical encoding succeeds")
+    );
+}

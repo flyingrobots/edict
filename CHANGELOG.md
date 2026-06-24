@@ -35,6 +35,8 @@ versions still track specification maturity rather than a released product.
 - Excluded source-local import alias spelling from Core canonical bytes.
 - Sorted resolved Core imports before canonical encoding so source import order
   does not affect canonical bytes.
+- Excluded local source spelling from canonical local references, leaving the
+  alpha-normalized local name and type as the Core byte identity.
 
 ## [v0.2.0-alpha.1] - 2026-07-01
 
