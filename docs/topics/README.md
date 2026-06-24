@@ -31,9 +31,13 @@ cargo xtask verify
   in-memory Core IR stage contract for the initial lowerable subset.
 - [Core IR](./core-ir/README.md): `edict.core/v1` semantic model and normative
   CDDL schema boundary for the Core contract.
+- [Documentation Standards](./documentation/README.md): reader-task page types,
+  documentation coverage, examples, and docs-impact rules.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract and verification matrix.
 - [Semantic Validation](./semantic-validation/README.md): source/surface
   `validate_surface` stage contract and verification matrix.
 - [Syntax](./syntax/README.md): Phase 1 `edict-syntax` lexer/parser contract and
   verification matrix.
+- [Testing Workflow](./tests/README.md): RED/GREEN development discipline,
+  fixture reuse, and local verification workflow.

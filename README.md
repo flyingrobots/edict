@@ -459,8 +459,9 @@ That's the gap Edict fills.
 ## Current Status
 
 Edict now has executable Rust implementation slices alongside the design specs.
-The current implementation is a front-end slice, not a complete compiler or
-admission stack.
+The current implementation includes the front end, Core semantic schema, and
+the first source-to-in-memory-Core compiler spine. It is not a complete compiler
+or admission stack.
 
 What exists today:
 
@@ -472,6 +473,8 @@ What exists today:
 - Phase 1 `edict-syntax` lexer/parser for the landed source-AST subset
 - Phase 2 source-AST semantic validation for checks that do not require Core IR
 - `edict.core/v1` semantic model and normative CDDL schema
+- Initial compiler-spine APIs: `resolve_module`, `type_check`, `lower_core`, and
+  `compile_to_core` for the first pure local-record subset
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
 - Release roadmap and GitHub milestone schedule in
   [`ROADMAP.md`](./ROADMAP.md)
@@ -479,7 +482,8 @@ What exists today:
 What doesn't exist yet:
 
 - A canonical Core encoder
-- Core IR lowering from the source AST
+- Reviewed Core golden bytes and exact digest fixtures
+- Full source-language lowering beyond the initial pure local-record subset
 - A compiler CLI
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
   expression literals)
@@ -487,14 +491,14 @@ What doesn't exist yet:
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next implementation milestones are to turn the Core semantic contract into
-an executable compiler spine: resolution, typed representation, source-to-Core
-lowering, a canonical encoder, reviewed Core golden fixtures, target-profile
-conformance, and admission evidence.
+The next implementation milestones are the v0.3 canonical encoder and reviewed
+Core golden fixtures, followed by target-profile conformance and admission
+evidence.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
-published `v0.1.0-alpha.1` release is a front-end milestone that does not claim
-Core IR lowering, target lowerers, or admission tooling.
+published `v0.1.0-alpha.1` release is a front-end milestone, and
+`v0.2.0-alpha.1` is a Core semantic model and schema milestone. Neither claims
+target lowerers or admission tooling.
 
 ---
 

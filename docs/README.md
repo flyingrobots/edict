@@ -7,6 +7,10 @@ The current specification set is:
   not a proposal: `README.md` says what is true in HEAD, `test-plan.md` says how
   it is verified and where gaps remain, and optional `architecture.md` /
   `rationale.md` files explain machinery and still-relevant tradeoffs.
+- [Testing Workflow Topic](./topics/tests/): RED/GREEN development discipline,
+  fixture reuse, and local verification workflow.
+- [Documentation Standards Topic](./topics/documentation/): reader-task page
+  types, documentation coverage, examples, and docs-impact rules.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
   and the GitHub issue/milestone map.
 - [v0.2 Release Notes](./releases/v0.2.0-alpha.1.md): published notes for the
