@@ -170,13 +170,7 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
         ),
         (
             "requiredCoreCapabilities",
-            array(
-                module
-                    .required_core_capabilities
-                    .iter()
-                    .map(String::as_str)
-                    .map(text),
-            ),
+            sorted_text_set(module.required_core_capabilities.iter().map(String::as_str)),
         ),
     ]))
 }
@@ -496,6 +490,16 @@ fn string_map_results<'a>(
 
 fn array(entries: impl IntoIterator<Item = CanonicalValue>) -> CanonicalValue {
     CanonicalValue::Array(entries.into_iter().collect())
+}
+
+fn sorted_text_set<'a>(entries: impl IntoIterator<Item = &'a str>) -> CanonicalValue {
+    array(
+        entries
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .map(text),
+    )
 }
 
 fn array_results(

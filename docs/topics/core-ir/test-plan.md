@@ -77,6 +77,7 @@ Out of scope:
 | COREIR-TP-013 | implemented | Canonical encoding | COREIR-REQ-012 | Import alias spelling does not change canonical Core bytes when the resolved coordinate and digest are unchanged. | canonical_core_bytes_ignore_import_alias_spelling | fixtures/lang/bounds/bounded-hello.edict | Tests source-local import alias spelling is excluded from the Core canonical preimage. |
 | COREIR-TP-014 | implemented | Canonical encoding | COREIR-REQ-012 | Reordering the same resolved Core imports does not change canonical bytes. | canonical_core_bytes_are_independent_of_import_order | fixtures/lang/bounds/bounded-hello.edict | Tests import declaration order is excluded from the Core canonical preimage. |
 | COREIR-TP-015 | implemented | Alpha stability | COREIR-REQ-005, COREIR-REQ-012 | Source parameter renaming that preserves Core local identity does not change canonical bytes. | canonical_core_bytes_are_parameter_alpha_rename_invariant | fixtures/lang/bounds/bounded-hello.edict | Tests parameter source spelling does not enter Core identity. |
+| COREIR-TP-016 | implemented | Canonical encoding | COREIR-REQ-012 | Reordering or duplicating the same required Core capability set does not change canonical bytes. | canonical_core_bytes_treat_required_capabilities_as_a_set | fixtures/lang/bounds/bounded-hello.edict | Tests capability flags are encoded as a canonical set. |
 
 ## Determinism Obligations
 

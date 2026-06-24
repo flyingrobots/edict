@@ -37,6 +37,7 @@ versions still track specification maturity rather than a released product.
   does not affect canonical bytes.
 - Excluded local source spelling from canonical local references, leaving the
   alpha-normalized local name and type as the Core byte identity.
+- Canonicalized `requiredCoreCapabilities` as a sorted set before encoding.
 
 ## [v0.2.0-alpha.1] - 2026-07-01
 

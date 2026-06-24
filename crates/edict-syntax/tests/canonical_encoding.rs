@@ -140,6 +140,25 @@ fn canonical_core_bytes_are_independent_of_import_order() {
 }
 
 #[test]
+fn canonical_core_bytes_treat_required_capabilities_as_a_set() {
+    let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
+    let mut core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
+    core.required_core_capabilities = vec![
+        "core.variant/v1".to_owned(),
+        "core.map/v1".to_owned(),
+        "core.map/v1".to_owned(),
+    ];
+    let mut normalized = core.clone();
+    normalized.required_core_capabilities =
+        vec!["core.map/v1".to_owned(), "core.variant/v1".to_owned()];
+
+    assert_eq!(
+        encode_core_module(&core).expect("canonical encoding succeeds"),
+        encode_core_module(&normalized).expect("canonical encoding succeeds")
+    );
+}
+
+#[test]
 fn noncanonical_cbor_bytes_reject_with_stable_error_kind() {
     let err = decode_canonical_cbor(&[0x18, 0x00]).expect_err("non-minimal zero rejects");
 
