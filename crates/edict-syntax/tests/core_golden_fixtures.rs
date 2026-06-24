@@ -80,3 +80,23 @@ fn core_module_digest_changes_when_core_meaning_changes() {
         digest_core_module(&changed).expect("changed Core module digests")
     );
 }
+
+#[test]
+fn core_module_digest_changes_when_local_identity_changes() {
+    let core = bounded_hello_core();
+    let mut changed = core.clone();
+    changed
+        .intents
+        .get_mut("sayHello")
+        .expect("intent exists")
+        .body
+        .locals
+        .first_mut()
+        .expect("input local exists")
+        .id = "arg.changed".to_owned();
+
+    assert_ne!(
+        digest_core_module(&core).expect("Core module digests"),
+        digest_core_module(&changed).expect("changed Core module digests")
+    );
+}

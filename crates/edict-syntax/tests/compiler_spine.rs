@@ -74,7 +74,7 @@ fn bounded_hello_compiles_to_initial_core() {
         CorePredicate::Compare { .. }
     ));
     assert_eq!(intent.body.locals.len(), 2);
-    assert_eq!(intent.body.locals[0].id, "input");
+    assert_eq!(intent.body.locals[0].id, "arg.0");
     assert_eq!(intent.body.locals[0].alpha_name, "$arg0");
     assert_eq!(intent.body.locals[1].id, "local.0");
     assert_eq!(intent.body.locals[1].alpha_name, "$local0");

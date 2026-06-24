@@ -57,6 +57,26 @@ fn canonical_core_bytes_change_when_core_meaning_changes() {
 }
 
 #[test]
+fn canonical_core_bytes_change_when_local_identity_changes() {
+    let core = bounded_hello_core();
+    let mut changed = core.clone();
+    changed
+        .intents
+        .get_mut("sayHello")
+        .expect("intent exists")
+        .body
+        .locals
+        .first_mut()
+        .expect("input local exists")
+        .id = "arg.changed".to_owned();
+
+    assert_ne!(
+        encode_core_module(&core).expect("canonical encoding succeeds"),
+        encode_core_module(&changed).expect("changed Core encoding succeeds")
+    );
+}
+
+#[test]
 fn canonical_core_bytes_decode_and_reencode_stably() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");

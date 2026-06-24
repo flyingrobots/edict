@@ -530,6 +530,7 @@ const fn compare_op_str(op: CompareOp) -> &'static str {
 
 fn local_ref_value(local: &LocalRef) -> CanonicalValue {
     map([
+        ("id", text(&local.id)),
         ("alphaName", text(&local.alpha_name)),
         ("type", text(&local.ty)),
     ])
