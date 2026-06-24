@@ -148,7 +148,7 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
         ("coordinate", text(&module.coordinate)),
         (
             "imports",
-            array_results(module.imports.iter().map(core_import_value))?,
+            sorted_array_results(module.imports.iter().map(core_import_value))?,
         ),
         (
             "types",
@@ -506,6 +506,23 @@ fn array_results(
         .into_iter()
         .collect::<Result<Vec<_>, _>>()
         .map(CanonicalValue::Array)
+}
+
+fn sorted_array_results(
+    entries: impl IntoIterator<Item = Result<CanonicalValue, CanonicalError>>,
+) -> Result<CanonicalValue, CanonicalError> {
+    let mut encoded = entries
+        .into_iter()
+        .map(|entry| {
+            let value = entry?;
+            let bytes = encode_canonical_cbor(&value)?;
+            Ok((bytes, value))
+        })
+        .collect::<Result<Vec<_>, CanonicalError>>()?;
+    encoded.sort_by(|(left, _), (right, _)| left.cmp(right));
+    Ok(CanonicalValue::Array(
+        encoded.into_iter().map(|(_, value)| value).collect(),
+    ))
 }
 
 fn text(value: &str) -> CanonicalValue {

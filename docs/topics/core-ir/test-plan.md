@@ -75,6 +75,7 @@ Out of scope:
 | COREIR-TP-011 | implemented | Platform independence | COREIR-REQ-012 | Canonical integer encodings use fixed CBOR width thresholds and big-endian multi-byte payloads. | canonical_cbor_integer_widths_are_platform_independent | - | Tests primitive encoder behavior, not a Core golden fixture. |
 | COREIR-TP-012 | implemented | Canonical validation | COREIR-REQ-012, COREIR-REQ-013 | Core imports without resolved digests reject before canonical bytes are emitted. | canonical_core_rejects_unresolved_import_digest | fixtures/lang/bounds/bounded-hello.edict | Prevents floating imported semantics from entering the Core canonical preimage. |
 | COREIR-TP-013 | implemented | Canonical encoding | COREIR-REQ-012 | Import alias spelling does not change canonical Core bytes when the resolved coordinate and digest are unchanged. | canonical_core_bytes_ignore_import_alias_spelling | fixtures/lang/bounds/bounded-hello.edict | Tests source-local import alias spelling is excluded from the Core canonical preimage. |
+| COREIR-TP-014 | implemented | Canonical encoding | COREIR-REQ-012 | Reordering the same resolved Core imports does not change canonical bytes. | canonical_core_bytes_are_independent_of_import_order | fixtures/lang/bounds/bounded-hello.edict | Tests import declaration order is excluded from the Core canonical preimage. |
 
 ## Determinism Obligations
 

@@ -7,7 +7,8 @@
 
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, encode_canonical_cbor, encode_core_module,
-    parse_module, CanonicalErrorKind, CanonicalValue, CompilerContext, CoreBudget,
+    parse_module, CanonicalErrorKind, CanonicalValue, CompilerContext, CoreBudget, CoreImport,
+    CoreImportKind, ResourceRef,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -111,6 +112,30 @@ fn canonical_core_bytes_ignore_import_alias_spelling() {
     assert_eq!(
         encode_core_module(&core).expect("canonical encoding succeeds"),
         encode_core_module(&changed).expect("canonical encoding succeeds")
+    );
+}
+
+#[test]
+fn canonical_core_bytes_are_independent_of_import_order() {
+    let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
+    let mut core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
+    core.imports.push(CoreImport {
+        kind: CoreImportKind::Core,
+        resource: ResourceRef {
+            coordinate: "core.collections@1".to_owned(),
+            digest: Some(
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    .to_owned(),
+            ),
+        },
+        alias: Some("collections".to_owned()),
+    });
+    let mut reordered = core.clone();
+    reordered.imports.reverse();
+
+    assert_eq!(
+        encode_core_module(&core).expect("canonical encoding succeeds"),
+        encode_core_module(&reordered).expect("canonical encoding succeeds")
     );
 }
 
