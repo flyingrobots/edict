@@ -5,8 +5,7 @@ Status: current HEAD workflow contract.
 Documentation is a product interface. Its job is to help a specific reader do a
 specific task, not to prove that the repository contains enough Markdown.
 
-This policy adapts the reusable
-`/Users/james/git/DOCUMENTATION_STANDARDS.md` reader-task standard to Edict's
+This policy adapts the reusable reader-task documentation standard to Edict's
 current repository shape. It does not mass-convert existing pages. It gives new
 and changed documentation a direction that fits the topic-shelf, fixture, spec,
 and release workflow already in this repository.
