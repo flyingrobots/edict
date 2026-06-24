@@ -165,6 +165,10 @@ The v1 lowerability checker classifies support as:
 - `unsupported`: at least one obligation is missing, ambiguous, or requires an
   adapter chain/composite discharge.
 
+Native and adapted support must satisfy the semantic effect's required guard
+kinds at the selected effect/intrinsic support fact; global profile support for a
+guard kind is not enough by itself.
+
 The checker does not produce Target IR and does not perform admission.
 
 ## Application Model

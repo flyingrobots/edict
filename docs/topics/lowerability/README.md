@@ -30,10 +30,12 @@ The canonical artifact shape for `edict.lowering-requirements/v1` is named in
   obstruction coordinates, footprint obligations, cost obligations, and optic
   contract. [LOWER-REQ-001]
 - A target is `Native` only when explicit target-profile facts directly support
-  every requirement and every semantic effect. [LOWER-REQ-002]
+  every requirement, every semantic effect, and each effect's required guard
+  kinds. [LOWER-REQ-002] [LOWER-REQ-007]
 - A target is `Adapted` when every non-native semantic effect is discharged by
   exactly one digest-locked direct lawpack adapter and every other requirement
-  is supported. [LOWER-REQ-003]
+  is supported, including each effect's required guard kinds. [LOWER-REQ-003]
+  [LOWER-REQ-007]
 - A target is `Unsupported` when required profile facts, effect support, write
   classes, guards, atomicity, postcondition support, obstruction coordinates,
   footprint obligations, cost obligations, or optic contract facts are missing.

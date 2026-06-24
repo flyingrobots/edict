@@ -40,6 +40,7 @@ fn profile_facts() -> TargetProfileFacts {
             coordinate: "hello.optics@1.readGreeting".to_owned(),
             target_intrinsic: "kv.transactional@1.get".to_owned(),
             write_class: WriteClass::Read,
+            guard_kinds: vec![GuardKind::PrecommitAtomic],
         }],
         direct_adapters: Vec::new(),
         write_classes: vec![WriteClass::Read],
@@ -65,6 +66,7 @@ fn direct_adapter() -> DirectAdapterSupport {
             ),
         },
         write_class: WriteClass::Read,
+        guard_kinds: vec![GuardKind::PrecommitAtomic],
         emits_semantic_effects: Vec::new(),
     }
 }
@@ -131,6 +133,24 @@ fn v1_rejects_floating_direct_adapter_claims() {
             .map(|failure| failure.kind)
             .collect::<Vec<_>>(),
         vec![LowerabilityFailureKind::UndigestedAdapter]
+    );
+}
+
+#[test]
+fn native_effects_must_support_required_per_effect_guards() {
+    let mut facts = profile_facts();
+    facts.native_effects[0].guard_kinds.clear();
+
+    let report = check_lowerability(&read_requirements(), &facts);
+
+    assert_eq!(report.status, LowerabilityStatus::Unsupported);
+    assert_eq!(
+        report
+            .failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>(),
+        vec![LowerabilityFailureKind::UnsupportedEffectGuard]
     );
 }
 

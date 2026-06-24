@@ -14,7 +14,8 @@ versions still track specification maturity rather than a released product.
   `TargetProfileFacts`, `check_lowerability`, native/direct-adapter/unsupported
   classifications, and stable lowerability failure kinds. The checker rejects
   floating adapter references, chained/composite adapter claims, and ambiguous
-  direct adapters, and does not produce Target IR or admission artifacts.
+  direct adapters, checks required guards on selected native/direct support
+  facts, and does not produce Target IR or admission artifacts.
 - Added typed v1 target-profile manifest conformance checks in `edict_syntax`:
   `TargetProfileManifest`, `validate_target_profile_manifest`, runtime-neutral
   Echo/KV profile acceptance, SHA-256 digest-locked component validation, Core

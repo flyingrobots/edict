@@ -68,6 +68,7 @@ pub struct NativeEffectSupport {
     pub coordinate: String,
     pub target_intrinsic: String,
     pub write_class: WriteClass,
+    pub guard_kinds: Vec<GuardKind>,
 }
 
 /// Direct lawpack adapter support for one semantic effect.
@@ -77,6 +78,7 @@ pub struct DirectAdapterSupport {
     pub target_intrinsic: String,
     pub adapter: ResourceRef,
     pub write_class: WriteClass,
+    pub guard_kinds: Vec<GuardKind>,
     pub emits_semantic_effects: Vec<String>,
 }
 
@@ -121,6 +123,7 @@ pub enum LowerabilityFailureKind {
     AmbiguousAdapter,
     ChainedAdapterUnsupported,
     UndigestedAdapter,
+    UnsupportedEffectGuard,
 }
 
 /// One failed lowerability obligation.
@@ -288,9 +291,17 @@ fn classify_effect(
     facts: &TargetProfileFacts,
     failures: &mut Vec<LowerabilityFailure>,
 ) -> LowerabilityEffectResult {
-    if let Some(native) = facts.native_effects.iter().find(|support| {
-        support.coordinate == effect.coordinate && support.write_class == effect.write_class
-    }) {
+    let native_matches = facts
+        .native_effects
+        .iter()
+        .filter(|support| {
+            support.coordinate == effect.coordinate && support.write_class == effect.write_class
+        })
+        .collect::<Vec<_>>();
+    if let Some(native) = native_matches
+        .iter()
+        .find(|support| supports_required_guards(&effect.guard_kinds, &support.guard_kinds))
+    {
         return LowerabilityEffectResult {
             semantic_effect: effect.coordinate.clone(),
             status: LowerabilityEffectStatus::Native {
@@ -310,11 +321,12 @@ fn classify_effect(
 
     match adapters.as_slice() {
         [] => {
-            push_failure(
-                failures,
-                LowerabilityFailureKind::MissingEffectSupport,
-                &effect.coordinate,
-            );
+            let kind = if native_matches.is_empty() {
+                LowerabilityFailureKind::MissingEffectSupport
+            } else {
+                LowerabilityFailureKind::UnsupportedEffectGuard
+            };
+            push_failure(failures, kind, &effect.coordinate);
             LowerabilityEffectResult {
                 semantic_effect: effect.coordinate.clone(),
                 status: LowerabilityEffectStatus::Unsupported,
@@ -324,6 +336,17 @@ fn classify_effect(
             push_failure(
                 failures,
                 LowerabilityFailureKind::UndigestedAdapter,
+                &effect.coordinate,
+            );
+            LowerabilityEffectResult {
+                semantic_effect: effect.coordinate.clone(),
+                status: LowerabilityEffectStatus::Unsupported,
+            }
+        }
+        [adapter] if !supports_required_guards(&effect.guard_kinds, &adapter.guard_kinds) => {
+            push_failure(
+                failures,
+                LowerabilityFailureKind::UnsupportedEffectGuard,
                 &effect.coordinate,
             );
             LowerabilityEffectResult {
@@ -361,6 +384,10 @@ fn classify_effect(
             }
         }
     }
+}
+
+fn supports_required_guards(required: &[GuardKind], supported: &[GuardKind]) -> bool {
+    required.iter().all(|guard| supported.contains(guard))
 }
 
 fn check_effect_obligations(
