@@ -32,15 +32,15 @@ The canonical artifact shape for `edict.lowering-requirements/v1` is named in
 - A target is `Native` only when explicit target-profile facts directly support
   every requirement and every semantic effect. [LOWER-REQ-002]
 - A target is `Adapted` when every non-native semantic effect is discharged by
-  exactly one direct lawpack adapter and every other requirement is supported.
-  [LOWER-REQ-003]
+  exactly one digest-locked direct lawpack adapter and every other requirement
+  is supported. [LOWER-REQ-003]
 - A target is `Unsupported` when required profile facts, effect support, write
   classes, guards, atomicity, postcondition support, obstruction coordinates,
   footprint obligations, cost obligations, or optic contract facts are missing.
   [LOWER-REQ-004]
-- Edict v1 rejects adapter chains and ambiguous adapter choices. General
-  composite / chained adapter legalization belongs to future v2 design work.
-  [LOWER-REQ-005]
+- Edict v1 rejects undigested adapter references, adapter chains, and ambiguous
+  adapter choices. General composite / chained adapter legalization belongs to
+  future v2 design work. [LOWER-REQ-005]
 - Lowerability checks stop before Target IR, verifier reports, contract bundles,
   and admission receipts. [LOWER-REQ-006]
 

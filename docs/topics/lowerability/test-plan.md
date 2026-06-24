@@ -32,9 +32,9 @@ Out of scope:
 | --- | --- | --- | --- |
 | LOWER-REQ-001 | implemented | `LoweringRequirements` is a typed contract containing operation profile, semantic effects, write classes, guards, atomicity, postcondition support, obstruction coordinates, footprint obligations, cost obligations, and optic contract. | issue #5, docs/abi/edict-target-profile.cddl |
 | LOWER-REQ-002 | implemented | `check_lowerability` classifies requirements as `Native` only when explicit target-profile facts directly support every requirement and semantic effect. | issue #5 |
-| LOWER-REQ-003 | implemented | `check_lowerability` classifies requirements as `Adapted` only when each non-native semantic effect is discharged by exactly one direct adapter and all other requirements are supported. | issue #5, EDICT-LAWPACK-ADAPTER-DIRECT-001 |
+| LOWER-REQ-003 | implemented | `check_lowerability` classifies requirements as `Adapted` only when each non-native semantic effect is discharged by exactly one digest-locked direct adapter and all other requirements are supported. | issue #5, EDICT-LAWPACK-ADAPTER-DIRECT-001 |
 | LOWER-REQ-004 | implemented | Missing operation-profile or semantic-effect support returns `Unsupported` with stable failure kinds. | issue #5 |
-| LOWER-REQ-005 | implemented | Chained/composite adapter claims and ambiguous direct adapters return `Unsupported`; v1 does not perform adapter-chain search. | issue #5, EDICT-LAWPACK-ADAPTER-DIRECT-001 |
+| LOWER-REQ-005 | implemented | Undigested adapter references, chained/composite adapter claims, and ambiguous direct adapters return `Unsupported`; v1 does not perform adapter-chain search. | issue #5, EDICT-LAWPACK-ADAPTER-DIRECT-001 |
 | LOWER-REQ-006 | implemented | Lowerability checks do not create Target IR, verifier reports, bundles, admission requests, or admission receipts. | ROADMAP.md |
 
 ## Fixtures
@@ -50,8 +50,9 @@ Out of scope:
 | LOWER-TP-001 | implemented | Golden path | LOWER-REQ-001, LOWER-REQ-002, LOWER-REQ-006 | Explicit native target facts classify as `LowerabilityStatus::Native`, return no failures, and select a native per-effect result without Target IR or admission artifacts. | native_target_facts_satisfy_lowering_requirements | crates/edict-syntax/tests/lowerability.rs | Tests structured values only. |
 | LOWER-TP-002 | implemented | Golden path | LOWER-REQ-003, LOWER-REQ-006 | Removing native support and adding exactly one direct adapter classifies as `LowerabilityStatus::Adapted` and records the adapter coordinate. | one_direct_adapter_satisfies_v1_lowering_requirements | crates/edict-syntax/tests/lowerability.rs | Direct adapter, not chain search. |
 | LOWER-TP-003 | implemented | Error handling | LOWER-REQ-004 | Removing native support without adding an adapter classifies as `Unsupported` with `MissingEffectSupport`. | missing_native_or_adapter_support_is_unsupported | crates/edict-syntax/tests/lowerability.rs | Stable failure kind, not diagnostic prose. |
-| LOWER-TP-004 | implemented | Boundary guard | LOWER-REQ-005 | A direct adapter that emits unresolved semantic effects classifies as `Unsupported` with `ChainedAdapterUnsupported`. | v1_rejects_chained_adapter_claims | crates/edict-syntax/tests/lowerability.rs | Keeps v2 adapter composition out of v1. |
-| LOWER-TP-005 | implemented | Boundary guard | LOWER-REQ-005 | Two direct adapters for the same semantic effect classify as `Unsupported` with `AmbiguousAdapter`. | v1_rejects_ambiguous_direct_adapters | crates/edict-syntax/tests/lowerability.rs | Exactly-one adapter rule. |
+| LOWER-TP-004 | implemented | Boundary guard | LOWER-REQ-005 | A direct adapter without a digest-lock classifies as `Unsupported` with `UndigestedAdapter`. | v1_rejects_floating_direct_adapter_claims | crates/edict-syntax/tests/lowerability.rs | Prevents floating lawpack adapter references. |
+| LOWER-TP-005 | implemented | Boundary guard | LOWER-REQ-005 | A direct adapter that emits unresolved semantic effects classifies as `Unsupported` with `ChainedAdapterUnsupported`. | v1_rejects_chained_adapter_claims | crates/edict-syntax/tests/lowerability.rs | Keeps v2 adapter composition out of v1. |
+| LOWER-TP-006 | implemented | Boundary guard | LOWER-REQ-005 | Two direct adapters for the same semantic effect classify as `Unsupported` with `AmbiguousAdapter`. | v1_rejects_ambiguous_direct_adapters | crates/edict-syntax/tests/lowerability.rs | Exactly-one adapter rule. |
 
 ## Determinism Obligations
 

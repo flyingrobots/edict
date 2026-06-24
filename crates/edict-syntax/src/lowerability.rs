@@ -120,6 +120,7 @@ pub enum LowerabilityFailureKind {
     MissingEffectSupport,
     AmbiguousAdapter,
     ChainedAdapterUnsupported,
+    UndigestedAdapter,
 }
 
 /// One failed lowerability obligation.
@@ -312,6 +313,17 @@ fn classify_effect(
             push_failure(
                 failures,
                 LowerabilityFailureKind::MissingEffectSupport,
+                &effect.coordinate,
+            );
+            LowerabilityEffectResult {
+                semantic_effect: effect.coordinate.clone(),
+                status: LowerabilityEffectStatus::Unsupported,
+            }
+        }
+        [adapter] if !adapter.adapter.is_digest_locked() => {
+            push_failure(
+                failures,
+                LowerabilityFailureKind::UndigestedAdapter,
                 &effect.coordinate,
             );
             LowerabilityEffectResult {

@@ -114,6 +114,27 @@ fn missing_native_or_adapter_support_is_unsupported() {
 }
 
 #[test]
+fn v1_rejects_floating_direct_adapter_claims() {
+    let mut facts = profile_facts();
+    facts.native_effects.clear();
+    let mut adapter = direct_adapter();
+    adapter.adapter.digest = None;
+    facts.direct_adapters.push(adapter);
+
+    let report = check_lowerability(&read_requirements(), &facts);
+
+    assert_eq!(report.status, LowerabilityStatus::Unsupported);
+    assert_eq!(
+        report
+            .failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>(),
+        vec![LowerabilityFailureKind::UndigestedAdapter]
+    );
+}
+
+#[test]
 fn v1_rejects_chained_adapter_claims() {
     let mut facts = profile_facts();
     facts.native_effects.clear();
