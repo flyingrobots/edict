@@ -182,14 +182,10 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
 }
 
 fn core_import_value(import: &CoreImport) -> Result<CanonicalValue, CanonicalError> {
-    let mut entries = vec![
+    Ok(map([
         ("kind", text(import.kind.as_str())),
         ("ref", resource_ref_value(&import.resource)?),
-    ];
-    if let Some(alias) = &import.alias {
-        entries.push(("alias", text(alias)));
-    }
-    Ok(map(entries))
+    ]))
 }
 
 fn resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {

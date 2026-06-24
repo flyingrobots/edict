@@ -32,6 +32,7 @@ versions still track specification maturity rather than a released product.
 
 - Rejected Core canonical encoding when an import resource digest is unresolved,
   preventing floating imports from entering the canonical preimage.
+- Excluded source-local import alias spelling from Core canonical bytes.
 
 ## [v0.2.0-alpha.1] - 2026-07-01
 
