@@ -921,6 +921,7 @@ mod tests {
             "[release_notes.v0_3_0_alpha_1]",
             "tag = \"v0.3.0-alpha.1\"",
             "target_date = \"2026-07-15\"",
+            "status = \"publish_ready\"",
             "compiler_spine",
             "surface_validation_split",
             "canonical_core_encoder",

@@ -45,14 +45,15 @@ capture evidence. The structured runbook contract is captured in
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
-- [`v0.3.0-alpha.1`](../../releases/v0.3.0-alpha.1.md): prepared compiler-spine,
-  canonical Core encoder, reviewed golden bytes, and exact digest alpha notes.
+- [`v0.3.0-alpha.1`](../../releases/v0.3.0-alpha.1.md): publish-ready
+  compiler-spine, canonical Core encoder, reviewed golden bytes, and exact
+  digest alpha notes.
 - [`v0.2.0-alpha.1`](../../releases/v0.2.0-alpha.1.md): published Core semantic
   model and normative schema alpha notes.
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
 
-The `v0.3.0-alpha.1` release notes are prepared but not yet published:
+The `v0.3.0-alpha.1` release notes are publish-ready:
 
 - Release issue: <https://github.com/flyingrobots/edict/issues/35>
 - Required tag after release-prep merge: `v0.3.0-alpha.1`

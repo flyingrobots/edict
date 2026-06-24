@@ -44,7 +44,7 @@ Out of scope:
 | docs/releases/v0.1.0-alpha.1.md | Published release notes for the first front-end alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.2.0-alpha.1.md | Published release notes for the Core semantic model and schema alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.3.0-alpha.1.md | Prepared release notes for the compiler-spine and canonical Core alpha. | The release workflow will look up this file by full tag name after tagging. |
-| CHANGELOG.md | Release history for published and prepared alpha releases. | Scheduled alpha release sections use the matching release target date. |
+| CHANGELOG.md | Release history for published and publish-ready alpha releases. | Scheduled alpha release sections use the matching release target date. |
 | docs/topics/release-process/policy.toml | Structured release-tag, runbook, and alpha boundary policy. | Tag mutation is forbidden, runbook phases are named, and release scope/non-goals are structured. |
 | docs/topics/release-process/runbook.md | Operator steps for preparing, tagging, publishing, and recovering releases. | The structured policy names the phases and checks the runbook must cover. |
 

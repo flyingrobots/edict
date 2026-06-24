@@ -479,8 +479,8 @@ What exists today:
   path for the current in-memory Core module model
 - Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for
   the initial pure local-record Core artifact
-- Prepared `v0.3.0-alpha.1` release notes and release runbook for the
-  compiler-spine alpha
+- `v0.3.0-alpha.1` release notes and release runbook for the compiler-spine
+  alpha
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
 - Release roadmap and GitHub milestone schedule in
   [`ROADMAP.md`](./ROADMAP.md)
@@ -495,15 +495,14 @@ What doesn't exist yet:
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next release step is to verify `main` and tag `v0.3.0-alpha.1`; the next
-implementation milestone after that is target-profile conformance, followed by
+The next implementation milestone is target-profile conformance, followed by
 admission evidence.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.2.0-alpha.1` is a Core semantic model and schema milestone, and the
-prepared `v0.3.0-alpha.1` release is a compiler-spine/canonical-Core milestone.
-None of these releases claims target lowerers or admission tooling.
+`v0.3.0-alpha.1` is a compiler-spine/canonical-Core milestone. None of these
+releases claims target lowerers or admission tooling.
 
 ---
 

@@ -30,9 +30,9 @@ versions still track specification maturity rather than a released product.
   contextual typing, loop-bound proof, and target/lawpack obstruction
   exhaustiveness remain downstream of this pass. `validate_module` remains a
   compatibility alias for the same stage.
-- Added v0.3 release notes, repeatable release runbook, and structured release
-  policy metadata for alpha release preparation, tagging, publication, and
-  non-mutating tag recovery.
+- Added publish-ready v0.3 release notes, repeatable release runbook, and
+  structured release policy metadata for alpha release preparation, tagging,
+  publication, and non-mutating tag recovery.
 - Added the repository rule that issue-closing PRs must include GitHub
   auto-close text such as `Closes #123` in the pull request body.
 
