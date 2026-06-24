@@ -183,6 +183,19 @@ fn canonical_cbor_rejects_duplicate_map_keys_on_encode() {
 }
 
 #[test]
+fn oversized_cbor_array_length_returns_error_without_panicking() {
+    let result = std::panic::catch_unwind(|| {
+        decode_canonical_cbor(&[0x9b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff])
+    });
+
+    let err = result
+        .expect("decoder returns an error instead of panicking")
+        .expect_err("declared array length exceeds available input");
+
+    assert_eq!(err.kind(), CanonicalErrorKind::UnexpectedEof);
+}
+
+#[test]
 fn canonical_cbor_integer_widths_are_platform_independent() {
     assert_eq!(
         encode_canonical_cbor(&CanonicalValue::Integer(23)).expect("integer encodes"),

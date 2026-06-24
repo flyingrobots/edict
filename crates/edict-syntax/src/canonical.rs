@@ -754,12 +754,19 @@ impl<'a> Decoder<'a> {
     }
 
     fn length(&mut self, additional: u8) -> Result<usize, CanonicalError> {
-        usize::try_from(self.argument(additional)?).map_err(|_| {
+        let len = usize::try_from(self.argument(additional)?).map_err(|_| {
             CanonicalError::new(
                 CanonicalErrorKind::UnsupportedCbor,
                 "CBOR collection length does not fit usize",
             )
-        })
+        })?;
+        if len > self.remaining() {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnexpectedEof,
+                "CBOR declared length exceeds remaining input",
+            ));
+        }
+        Ok(len)
     }
 
     fn byte(&mut self) -> Result<u8, CanonicalError> {
