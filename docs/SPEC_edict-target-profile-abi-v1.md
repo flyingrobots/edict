@@ -137,6 +137,29 @@ target ceiling only. It never receives a participant-admitted budget; admission
 is external by design, so target IR and verifier artifacts stay
 participant-neutral bundle inputs (`EDICT-TARGET-NEUTRAL-LOWERING-001`).
 
+## Lowering Requirements
+
+`lowering-requirements` is the typed pre-lowering question for v1 lowerability.
+Its canonical shape is defined in
+[`abi/edict-target-profile.cddl`](./abi/edict-target-profile.cddl) and is encoded
+as `edict.lowering-requirements/v1`.
+
+The artifact records the required operation profile, semantic effects, write
+classes, guard kinds, atomicity, postcondition support, obstruction
+coordinates, footprint obligations, cost obligations, and optic contract. Watson
+or an agent may propose this artifact from prose, but the compiler checks the
+artifact, not the prose.
+
+The v1 lowerability checker classifies support as:
+
+- `native`: explicit target-profile facts directly support every obligation;
+- `adapted`: every non-native semantic effect is discharged by exactly one
+  direct lawpack adapter for the selected target profile;
+- `unsupported`: at least one obligation is missing, ambiguous, or requires an
+  adapter chain/composite discharge.
+
+The checker does not produce Target IR and does not perform admission.
+
 ## Application Model
 
 A lawful-autonomous v1 operation lowers to one target-owned atomic application

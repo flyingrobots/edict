@@ -13,9 +13,13 @@
 //! Phase 3 begins the executable compiler spine with `resolve_module`,
 //! `type_check`, `lower_core`, and `compile_to_core`, currently covering the
 //! initial pure local-record subset and producing in-memory Core IR only.
+//! The crate also exposes typed v1 lowerability checks for
+//! `LoweringRequirements` against explicit target-profile facts. These checks
+//! classify support as native, directly adapted, or unsupported; they do not
+//! produce Target IR or admission artifacts.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, target
-//! lowering, and admission artifacts are deferred. The crate also exposes the
+//! lowering, and admission artifacts are deferred. The crate exposes the
 //! reference canonical Core encoder for `edict.canonical-cbor/v1` and the
 //! domain-separated `edict.core.module/v1` Core digest used by reviewed golden
 //! fixtures.
@@ -28,6 +32,7 @@ pub mod ast;
 pub mod canonical;
 pub mod compiler;
 pub mod core_ir;
+pub mod lowerability;
 pub mod parser;
 pub mod semantic;
 pub mod token;
@@ -47,6 +52,12 @@ pub use core_ir::{
     CoreNode, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
     ResourceRef,
 };
+pub use lowerability::{
+    check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,
+    LowerabilityEffectResult, LowerabilityEffectStatus, LowerabilityFailure,
+    LowerabilityFailureKind, LowerabilityReport, LowerabilityStatus, LoweringRequirements,
+    NativeEffectSupport, SemanticEffectRequirement, TargetProfileFacts, WriteClass,
+};
 pub use parser::{parse_module, ParseError, ParseErrorKind};
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
@@ -58,6 +69,9 @@ mod topic_shelf_doctests {
 
     #[doc = include_str!("../../../docs/topics/compiler-spine/README.md")]
     pub struct CompilerSpineTopicDocs;
+
+    #[doc = include_str!("../../../docs/topics/lowerability/README.md")]
+    pub struct LowerabilityTopicDocs;
 
     #[doc = include_str!("../../../docs/topics/semantic-validation/README.md")]
     pub struct SemanticValidationTopicDocs;

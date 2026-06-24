@@ -312,13 +312,11 @@ guard, obstruction, footprint obligation, cost obligation, atomicity
 requirement, optic-preservation requirement, and postcondition is either
 natively supported by the target or lawfully discharged by a direct adapter.
 
-A successful lowering is classified as:
+A v1 lowering is classified as:
 
 - `native`: the target profile directly realizes the operation;
 - `adapted`: one or more lawpack adapters lower semantic effects directly into
   target intrinsics;
-- `composite`: one composite target profile owns the complete application and
-  coordination model;
 - `unsupported`: at least one obligation cannot be discharged.
 
 Unsupported lowering is a compiler/lowering error. The compiler must not silently
@@ -326,6 +324,10 @@ approximate semantics, weaken guards, collapse obstruction classes, widen
 authority, erase evidence loss, or fall back to ambient host execution. This is a
 distinct failure class from admission rejection (a participant decision) and from
 a runtime obstruction (a domain result at execution time); see I-012.
+
+General `composite` / chained adapter classification is future v2 design work.
+Edict v1 lowerability accepts native target support or exactly one direct
+adapter for a semantic effect; unresolved adapter chains remain `unsupported`.
 
 ## Threat Model
 

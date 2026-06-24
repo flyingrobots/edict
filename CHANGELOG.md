@@ -8,6 +8,22 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added typed v1 lowerability checks in `edict_syntax`: `LoweringRequirements`,
+  `TargetProfileFacts`, `check_lowerability`, native/direct-adapter/unsupported
+  classifications, and stable lowerability failure kinds. The checker rejects
+  chained/composite adapter claims and ambiguous direct adapters, and does not
+  produce Target IR or admission artifacts.
+- Added the lowerability topic shelf and the `edict.lowering-requirements/v1`
+  CDDL shape in the target-profile ABI.
+
+### Changed
+
+- Clarified the language and target-profile specs so v1 lowerability uses only
+  native support, exactly one direct adapter, or unsupported. General composite
+  adapter-chain search remains future v2 design work.
+
 ## [v0.3.0-alpha.1] - 2026-07-15
 
 ### Added
