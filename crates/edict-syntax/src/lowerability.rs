@@ -366,24 +366,26 @@ fn classify_adapter_effect(
                 && adapter.write_class == effect.write_class
         })
         .collect::<Vec<_>>();
+    let guarded_adapters = adapters
+        .iter()
+        .copied()
+        .filter(|adapter| supports_required_guards(&effect.guard_kinds, &adapter.guard_kinds))
+        .collect::<Vec<_>>();
 
-    match adapters.as_slice() {
+    match guarded_adapters.as_slice() {
         [] => {
-            push_failure(failures, missing_support_kind, &effect.coordinate);
+            let kind = if adapters.is_empty() {
+                missing_support_kind
+            } else {
+                LowerabilityFailureKind::UnsupportedEffectGuard
+            };
+            push_failure(failures, kind, &effect.coordinate);
             unsupported_effect(effect)
         }
         [adapter] if !adapter.adapter.is_digest_locked() => {
             push_failure(
                 failures,
                 LowerabilityFailureKind::UndigestedAdapter,
-                &effect.coordinate,
-            );
-            unsupported_effect(effect)
-        }
-        [adapter] if !supports_required_guards(&effect.guard_kinds, &adapter.guard_kinds) => {
-            push_failure(
-                failures,
-                LowerabilityFailureKind::UnsupportedEffectGuard,
                 &effect.coordinate,
             );
             unsupported_effect(effect)

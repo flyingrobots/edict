@@ -389,3 +389,23 @@ fn v1_rejects_ambiguous_direct_adapters() {
         vec![LowerabilityFailureKind::AmbiguousAdapter]
     );
 }
+
+#[test]
+fn guard_incompatible_adapter_does_not_make_compatible_adapter_ambiguous() {
+    let mut facts = profile_facts();
+    facts.native_effects.clear();
+    let mut incompatible = direct_adapter();
+    incompatible.adapter.coordinate = "hello.optics@1.unguarded.adapter/v1".to_owned();
+    incompatible.guard_kinds.clear();
+    facts.direct_adapters.push(incompatible);
+    facts.direct_adapters.push(direct_adapter());
+
+    let report = check_lowerability(&read_requirements(), &facts);
+
+    assert_eq!(report.status, LowerabilityStatus::Adapted);
+    assert!(report.failures.is_empty());
+    assert_eq!(
+        report.effect_results[0].adapter_coordinate(),
+        Some("hello.optics@1.kv.transactional.adapter/v1")
+    );
+}
