@@ -310,6 +310,22 @@ fn native_effects_must_support_required_per_effect_guards() {
 }
 
 #[test]
+fn direct_adapter_can_satisfy_guard_when_native_intrinsic_cannot() {
+    let mut facts = profile_facts();
+    facts.native_effects[0].guard_kinds.clear();
+    facts.direct_adapters.push(direct_adapter());
+
+    let report = check_lowerability(&read_requirements(), &facts);
+
+    assert_eq!(report.status, LowerabilityStatus::Adapted);
+    assert!(report.failures.is_empty());
+    assert_eq!(
+        report.effect_results[0].adapter_coordinate(),
+        Some("hello.optics@1.kv.transactional.adapter/v1")
+    );
+}
+
+#[test]
 fn v1_rejects_ambiguous_native_support() {
     let mut facts = profile_facts();
     let mut second = facts.native_effects[0].clone();

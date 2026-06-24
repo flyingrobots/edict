@@ -178,6 +178,12 @@ pub struct LowerabilityReport {
     pub failures: Vec<LowerabilityFailure>,
 }
 
+enum NativeEffectSelection {
+    Selected(LowerabilityEffectResult),
+    NoNativeMatch,
+    NativeGuardMismatch,
+}
+
 /// Check typed lowering requirements against explicit target-profile facts.
 ///
 /// The v1 checker supports native target facts and exactly one direct adapter
@@ -292,18 +298,28 @@ fn classify_effect(
     facts: &TargetProfileFacts,
     failures: &mut Vec<LowerabilityFailure>,
 ) -> LowerabilityEffectResult {
-    if let Some(native_result) = classify_native_effect(effect, facts, failures) {
-        return native_result;
+    match classify_native_effect(effect, facts, failures) {
+        NativeEffectSelection::Selected(native_result) => native_result,
+        NativeEffectSelection::NoNativeMatch => classify_adapter_effect(
+            effect,
+            facts,
+            LowerabilityFailureKind::MissingEffectSupport,
+            failures,
+        ),
+        NativeEffectSelection::NativeGuardMismatch => classify_adapter_effect(
+            effect,
+            facts,
+            LowerabilityFailureKind::UnsupportedEffectGuard,
+            failures,
+        ),
     }
-
-    classify_adapter_effect(effect, facts, failures)
 }
 
 fn classify_native_effect(
     effect: &SemanticEffectRequirement,
     facts: &TargetProfileFacts,
     failures: &mut Vec<LowerabilityFailure>,
-) -> Option<LowerabilityEffectResult> {
+) -> NativeEffectSelection {
     let native_matches = facts
         .native_effects
         .iter()
@@ -317,16 +333,9 @@ fn classify_native_effect(
         .filter(|support| supports_required_guards(&effect.guard_kinds, &support.guard_kinds))
         .collect::<Vec<_>>();
     match guarded_native_matches.as_slice() {
-        [] if native_matches.is_empty() => None,
-        [] => {
-            push_failure(
-                failures,
-                LowerabilityFailureKind::UnsupportedEffectGuard,
-                &effect.coordinate,
-            );
-            Some(unsupported_effect(effect))
-        }
-        [native] => Some(LowerabilityEffectResult {
+        [] if native_matches.is_empty() => NativeEffectSelection::NoNativeMatch,
+        [] => NativeEffectSelection::NativeGuardMismatch,
+        [native] => NativeEffectSelection::Selected(LowerabilityEffectResult {
             semantic_effect: effect.coordinate.clone(),
             status: LowerabilityEffectStatus::Native {
                 target_intrinsic: native.target_intrinsic.clone(),
@@ -338,7 +347,7 @@ fn classify_native_effect(
                 LowerabilityFailureKind::AmbiguousNativeSupport,
                 &effect.coordinate,
             );
-            Some(unsupported_effect(effect))
+            NativeEffectSelection::Selected(unsupported_effect(effect))
         }
     }
 }
@@ -346,6 +355,7 @@ fn classify_native_effect(
 fn classify_adapter_effect(
     effect: &SemanticEffectRequirement,
     facts: &TargetProfileFacts,
+    missing_support_kind: LowerabilityFailureKind,
     failures: &mut Vec<LowerabilityFailure>,
 ) -> LowerabilityEffectResult {
     let adapters = facts
@@ -359,11 +369,7 @@ fn classify_adapter_effect(
 
     match adapters.as_slice() {
         [] => {
-            push_failure(
-                failures,
-                LowerabilityFailureKind::MissingEffectSupport,
-                &effect.coordinate,
-            );
+            push_failure(failures, missing_support_kind, &effect.coordinate);
             unsupported_effect(effect)
         }
         [adapter] if !adapter.adapter.is_digest_locked() => {
