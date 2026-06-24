@@ -28,12 +28,12 @@ Out of scope:
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| DOCS-REQ-001 | gap | Documentation pages have one primary reader job and use the local page type vocabulary. | docs/topics/documentation/README.md |
-| DOCS-REQ-002 | gap | Topic shelves remain contributor/evidence material and do not replace user-facing tutorials or task guides. | AGENTS.md, docs/topics/README.md |
-| DOCS-REQ-003 | gap | Edict tracks documentation coverage by capability and reader need. | docs/topics/documentation/README.md |
-| DOCS-REQ-004 | gap | Examples distinguish runnable, illustrative, and abridged use; copyable shell commands omit prompts. | docs/topics/documentation/README.md, fixtures/README.md |
-| DOCS-REQ-005 | gap | Contract-bearing changes update affected docs or declare `docs-impact: none`; changed documentation preserves page type. | AGENTS.md, CONTRIBUTING.md, docs/topics/documentation/README.md |
-| DOCS-REQ-006 | gap | Documentation quality uses deterministic checks for software facts and human review for reader-task success. | docs/topics/documentation/README.md, xtask/src/main.rs |
+| DOCS-REQ-001 | policy | Documentation pages have one primary reader job and use the local page type vocabulary. | docs/topics/documentation/README.md |
+| DOCS-REQ-002 | policy | Topic shelves remain contributor/evidence material and do not replace user-facing tutorials or task guides. | AGENTS.md, docs/topics/README.md |
+| DOCS-REQ-003 | policy | Edict tracks documentation coverage by capability and reader need. | docs/topics/documentation/README.md |
+| DOCS-REQ-004 | policy | Examples distinguish runnable, illustrative, and abridged use; copyable shell commands omit prompts. | docs/topics/documentation/README.md, fixtures/README.md |
+| DOCS-REQ-005 | policy | Contract-bearing changes update affected docs or declare `docs-impact: none`; changed documentation preserves page type. | AGENTS.md, CONTRIBUTING.md, docs/topics/documentation/README.md |
+| DOCS-REQ-006 | policy | Documentation quality uses deterministic checks for software facts and human review for reader-task success. | docs/topics/documentation/README.md, xtask/src/main.rs |
 
 ## Fixtures
 
@@ -51,11 +51,11 @@ Out of scope:
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| DOCS-TP-001 | gap | Contract discovery | DOCS-REQ-001, DOCS-REQ-002 | Review confirms the documentation standards policy is discoverable from contributor, agent, and docs entry points. | - | AGENTS.md, CONTRIBUTING.md, docs/README.md, docs/topics/README.md | Documentation detail; do not encode as a Rust test. |
-| DOCS-TP-002 | gap | Page type policy | DOCS-REQ-001, DOCS-REQ-002 | Review confirms the documentation shelf names the reader-task model and local page types. | - | docs/topics/documentation/README.md | Policy detail; do not encode as a Rust test. |
-| DOCS-TP-003 | gap | Coverage policy | DOCS-REQ-003 | Review confirms the documentation shelf contains an Edict coverage matrix. | - | docs/topics/documentation/README.md | Policy detail; do not encode as a Rust test. |
-| DOCS-TP-004 | gap | Example and impact policy | DOCS-REQ-004, DOCS-REQ-005 | Review confirms the documentation shelf states runnable example rules, copyable shell command rules, `docs-impact: none`, and page-type preservation. | - | docs/topics/documentation/README.md, docs/topics/documentation/test-plan.md | Policy detail; do not encode as a Rust test. |
-| DOCS-TP-005 | gap | Local gate policy | DOCS-REQ-006 | Review confirms deterministic checks are described as fact checks and behavior tests, with prose quality left to human review. | - | docs/topics/documentation/README.md, docs/topics/documentation/test-plan.md | Tool behavior is covered by existing `contract_graph_*` tests. |
+| DOCS-TP-001 | policy | Contract discovery | DOCS-REQ-001, DOCS-REQ-002 | Review confirms the documentation standards policy is discoverable from contributor, agent, and docs entry points. | - | AGENTS.md, CONTRIBUTING.md, docs/README.md, docs/topics/README.md | Documentation detail; do not encode as a Rust test. |
+| DOCS-TP-002 | policy | Page type policy | DOCS-REQ-001, DOCS-REQ-002 | Review confirms the documentation shelf names the reader-task model and local page types. | - | docs/topics/documentation/README.md | Policy detail; do not encode as a Rust test. |
+| DOCS-TP-003 | policy | Coverage policy | DOCS-REQ-003 | Review confirms the documentation shelf contains an Edict coverage matrix. | - | docs/topics/documentation/README.md | Policy detail; do not encode as a Rust test. |
+| DOCS-TP-004 | policy | Example and impact policy | DOCS-REQ-004, DOCS-REQ-005 | Review confirms the documentation shelf states runnable example rules, copyable shell command rules, `docs-impact: none`, and page-type preservation. | - | docs/topics/documentation/README.md, docs/topics/documentation/test-plan.md | Policy detail; do not encode as a Rust test. |
+| DOCS-TP-005 | policy | Local gate policy | DOCS-REQ-006 | Review confirms deterministic checks are described as fact checks and behavior tests, with prose quality left to human review. | - | docs/topics/documentation/README.md, docs/topics/documentation/test-plan.md | Tool behavior is covered by existing `contract_graph_*` tests. |
 
 ## Determinism Obligations
 

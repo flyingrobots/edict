@@ -74,6 +74,8 @@ request body or final report.
 
 - Topic `README.md` files must not describe intended behavior before it lands.
 - `test-plan.md` may include planned cases and known gaps.
+- `policy` rows are for human-review workflow contracts. They must not be used
+  to avoid writing behavior tests for software behavior.
 - Tests assert code behavior and stable contract artifacts, not prose.
 - Negative tests should assert stable error kinds or structured artifacts, not
   merely `is_err()` or diagnostic text.

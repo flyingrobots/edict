@@ -40,6 +40,11 @@ Topic `test-plan.md` files are the planning ledger for tests. A planned row may
 describe intended evidence before code exists, but an implemented row must name
 executable evidence and fixtures that exist in the repository. [TESTS-REQ-003]
 
+Policy-only rows use `policy` status. They record human-review workflow
+contracts that deliberately should not be turned into Rust tests because doing
+so would assert documentation detail rather than software behavior.
+[TESTS-REQ-003] [TESTS-REQ-004]
+
 Tests assert structured behavior and stable artifacts. Negative tests should
 assert stable error kinds or structured values, not `is_err()` alone or
 diagnostic prose. [TESTS-REQ-004]
@@ -71,8 +76,8 @@ For v0.3, the expected sequence is:
 
 ## Verification
 
-`cargo xtask contract-check` validates topic-shelf metadata, local links,
-implemented evidence names, and fixture paths. `cargo xtask verify` runs the
-full local gate. [TESTS-REQ-006]
+`cargo xtask contract-check` validates topic-shelf metadata, status values,
+local links, implemented evidence names, and fixture paths. `cargo xtask verify`
+runs the full local gate. [TESTS-REQ-006]
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).

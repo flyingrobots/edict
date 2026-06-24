@@ -19,6 +19,10 @@ The local contract graph is checked by:
 cargo xtask contract-check
 ```
 
+Test-plan row statuses are `implemented`, `planned`, `gap`, and `policy`.
+`policy` is reserved for human-review workflow contracts; it is not a substitute
+for executable evidence when software behavior is at stake.
+
 The full local gate is:
 
 ```text

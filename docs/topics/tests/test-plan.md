@@ -29,12 +29,12 @@ Out of scope:
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| TESTS-REQ-001 | gap | Agent and contributor entry points reference the testing workflow shelf. | AGENTS.md, CONTRIBUTING.md |
-| TESTS-REQ-002 | gap | Nontrivial contract changes use a visible RED/GREEN cycle before implementation is claimed complete. | AGENTS.md, CONTRIBUTING.md |
-| TESTS-REQ-003 | gap | Topic test plans are the ledger for planned and implemented requirements, cases, oracles, evidence, and fixtures. | AGENTS.md, docs/topics/README.md |
-| TESTS-REQ-004 | gap | Tests assert software behavior and stable artifacts, not implementation details, documentation details, repository structure, diagnostic prose, or incidental output. | AGENTS.md |
-| TESTS-REQ-005 | gap | Fixtures are reused across compatible stages, while executable encoder behavior and reviewed golden bytes remain separate steps. | fixtures/README.md, ROADMAP.md |
-| TESTS-REQ-006 | gap | Local verification includes topic contract checking and the full `cargo xtask verify` gate. | AGENTS.md, xtask/src/main.rs |
+| TESTS-REQ-001 | policy | Agent and contributor entry points reference the testing workflow shelf. | AGENTS.md, CONTRIBUTING.md |
+| TESTS-REQ-002 | policy | Nontrivial contract changes use a visible RED/GREEN cycle before implementation is claimed complete. | AGENTS.md, CONTRIBUTING.md |
+| TESTS-REQ-003 | policy | Topic test plans are the ledger for implemented, planned, gap, and policy requirements, cases, oracles, evidence, and fixtures. | AGENTS.md, docs/topics/README.md |
+| TESTS-REQ-004 | policy | Tests assert software behavior and stable artifacts, not implementation details, documentation details, repository structure, diagnostic prose, or incidental output. | AGENTS.md |
+| TESTS-REQ-005 | policy | Fixtures are reused across compatible stages, while executable encoder behavior and reviewed golden bytes remain separate steps. | fixtures/README.md, ROADMAP.md |
+| TESTS-REQ-006 | policy | Local verification includes topic contract checking and the full `cargo xtask verify` gate. | AGENTS.md, xtask/src/main.rs |
 
 ## Fixtures
 
@@ -51,10 +51,10 @@ Out of scope:
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| TESTS-TP-001 | gap | Policy discovery | TESTS-REQ-001 | Review confirms the workflow policy is discoverable from contributor and agent entry points. | - | AGENTS.md, CONTRIBUTING.md, docs/topics/README.md | Documentation detail; do not encode as a Rust test. |
-| TESTS-TP-002 | gap | Workflow policy | TESTS-REQ-002, TESTS-REQ-003, TESTS-REQ-004 | Review confirms the workflow policy requires RED/GREEN and behavior-level tests only. | - | docs/topics/tests/README.md, docs/topics/tests/test-plan.md | Policy detail; do not encode as a Rust test. |
-| TESTS-TP-003 | gap | Fixture policy | TESTS-REQ-005 | Review confirms the workflow policy keeps executable encoder behavior separate from reviewed golden bytes and exact digests. | - | docs/topics/tests/README.md, ROADMAP.md, fixtures/README.md | Policy detail; do not encode as a Rust test. |
-| TESTS-TP-004 | gap | Local gate policy | TESTS-REQ-006 | Review confirms the local gate is documented; executable tests remain focused on validator behavior. | - | xtask/src/main.rs | Tool behavior is covered by existing `contract_graph_*` tests. |
+| TESTS-TP-001 | policy | Policy discovery | TESTS-REQ-001 | Review confirms the workflow policy is discoverable from contributor and agent entry points. | - | AGENTS.md, CONTRIBUTING.md, docs/topics/README.md | Documentation detail; do not encode as a Rust test. |
+| TESTS-TP-002 | policy | Workflow policy | TESTS-REQ-002, TESTS-REQ-003, TESTS-REQ-004 | Review confirms the workflow policy requires RED/GREEN and behavior-level tests only. | - | docs/topics/tests/README.md, docs/topics/tests/test-plan.md | Policy detail; do not encode as a Rust test. |
+| TESTS-TP-003 | policy | Fixture policy | TESTS-REQ-005 | Review confirms the workflow policy keeps executable encoder behavior separate from reviewed golden bytes and exact digests. | - | docs/topics/tests/README.md, ROADMAP.md, fixtures/README.md | Policy detail; do not encode as a Rust test. |
+| TESTS-TP-004 | policy | Local gate policy | TESTS-REQ-006 | Review confirms the local gate is documented; executable tests remain focused on validator behavior. | - | xtask/src/main.rs | Tool behavior is covered by existing `contract_graph_*` tests. |
 
 ## Determinism Obligations
 

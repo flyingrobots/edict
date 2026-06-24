@@ -105,9 +105,9 @@ when those facts matter. [DOCS-REQ-005]
 ## Deterministic checks and editorial review
 
 The local gate already checks links, topic metadata, evidence names, fixture
-paths, doctests, Rust tests, formatting, and diff whitespace. Markdown lint is
-available for changed Markdown files. These checks block on facts the repo can
-determine reliably. [DOCS-REQ-006]
+paths, status values, doctests, Rust tests, formatting, and diff whitespace.
+Markdown lint is available for changed Markdown files. These checks block on
+facts the repo can determine reliably. [DOCS-REQ-006]
 
 Human review is still required for reader-task quality. A page is not done only
 because Markdown syntax passes. Review should ask whether the intended reader can
