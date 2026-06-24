@@ -2,12 +2,14 @@
 //!
 //! This module implements the `edict.canonical-cbor/v1` subset needed by the
 //! current in-memory Core model. It emits deterministic bytes and can validate
-//! those bytes by decoding to a canonical value and re-encoding. It deliberately
-//! does not compute Core digests or provide reviewed golden fixtures.
+//! those bytes by decoding to a canonical value and re-encoding. It also
+//! computes the reviewed `edict.core.module/v1` SHA-256 digest frame.
 
 use std::collections::BTreeSet;
 use std::fmt;
 use std::str;
+
+use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreIntent, CoreModule, CoreNode,
@@ -17,6 +19,12 @@ use crate::core_ir::{
 
 /// Canonical encoding profile for Core artifacts.
 pub const CORE_CANONICAL_ENCODING: &str = "edict.canonical-cbor/v1";
+
+/// Hash frame prefix for Edict and Continuum artifact digests.
+pub const CORE_DIGEST_FRAME: &str = "edict.digest/v1";
+
+/// Artifact domain label for Core module digests.
+pub const CORE_MODULE_DIGEST_DOMAIN: &str = "edict.core.module/v1";
 
 /// Stable canonical encoding error categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,6 +100,47 @@ pub enum CanonicalValue {
     Map(Vec<(CanonicalValue, CanonicalValue)>),
 }
 
+/// SHA-256 digest for a Core artifact.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct CoreDigest {
+    bytes: [u8; 32],
+}
+
+impl CoreDigest {
+    const fn sha256(bytes: [u8; 32]) -> Self {
+        Self { bytes }
+    }
+
+    /// Return the digest algorithm name.
+    #[must_use]
+    pub const fn algorithm(&self) -> &'static str {
+        "sha256"
+    }
+
+    /// Return the raw SHA-256 digest bytes.
+    #[must_use]
+    pub const fn bytes(&self) -> &[u8; 32] {
+        &self.bytes
+    }
+
+    /// Return the human review rendering `sha256:<64 lowercase hex>`.
+    #[must_use]
+    pub fn to_review_string(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl fmt::Display for CoreDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.algorithm())?;
+        f.write_str(":")?;
+        for byte in self.bytes {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
 /// Encode a Core module as `edict.canonical-cbor/v1`.
 ///
 /// # Errors
@@ -100,6 +149,31 @@ pub enum CanonicalValue {
 /// supported canonical form.
 pub fn encode_core_module(module: &CoreModule) -> Result<Vec<u8>, CanonicalError> {
     encode_canonical_cbor(&core_module_value(module)?)
+}
+
+/// Compute the reviewed digest for a Core module.
+///
+/// The digest is SHA-256 over the canonical CBOR encoding of:
+///
+/// ```text
+/// ["edict.digest/v1", "edict.core.module/v1", <canonical Core module value>]
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if the Core module cannot be represented in the supported
+/// canonical form.
+pub fn digest_core_module(module: &CoreModule) -> Result<CoreDigest, CanonicalError> {
+    let framed = CanonicalValue::Array(vec![
+        text(CORE_DIGEST_FRAME),
+        text(CORE_MODULE_DIGEST_DOMAIN),
+        core_module_value(module)?,
+    ]);
+    let preimage = encode_canonical_cbor(&framed)?;
+    let hash = Sha256::digest(preimage);
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&hash);
+    Ok(CoreDigest::sha256(bytes))
 }
 
 /// Encode a decoded canonical value to canonical CBOR bytes.

@@ -2,34 +2,21 @@
 //!
 //! These tests assert public behavior: deterministic canonical bytes,
 //! canonical-CBOR validation, mutation sensitivity, and alpha-stable source
-//! lowering. They intentionally do not freeze reviewed Core golden fixtures or
-//! exact digest values; that belongs to issue #22.
+//! lowering. Reviewed Core golden bytes and exact digest values are covered by
+//! the `core_golden_fixtures` test target.
 
+mod common;
+
+use common::{bounded_hello_core, hello_context, BOUNDED_HELLO};
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, encode_canonical_cbor, encode_core_module,
-    parse_module, CanonicalErrorKind, CanonicalValue, CompilerContext, CoreBudget, CoreImport,
-    CoreImportKind, CorePredicate, InputConstraint, InputConstraintSource, ResourceRef,
+    parse_module, CanonicalErrorKind, CanonicalValue, CoreImport, CoreImportKind, CorePredicate,
+    InputConstraint, InputConstraintSource, ResourceRef,
 };
-
-const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
-
-fn hello_context() -> CompilerContext {
-    CompilerContext::new()
-        .with_operation_profile("hello.readOnly", "continuum.profile.read-only/v1")
-        .with_budget(
-            "hello.tinyBudget",
-            CoreBudget {
-                max_steps: 64,
-                max_allocated_bytes: 4096,
-                max_output_bytes: 1024,
-            },
-        )
-}
 
 #[test]
 fn canonical_core_bytes_are_independent_of_map_construction_order() {
-    let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
-    let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
+    let core = bounded_hello_core();
 
     let mut reordered = core.clone();
     reordered.types = core

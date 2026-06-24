@@ -38,7 +38,7 @@ Out of scope:
 | SYNTAX-REQ-009 | implemented | Reserved keywords reject in bare-name positions while remaining legal after `.`. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-010 | implemented | Negative tests assert stable error kinds, not diagnostic prose or incidental output. | crates/edict-syntax/src/parser.rs |
 | SYNTAX-REQ-011 | implemented | Source/surface validation rejects context-free semantic errors while deferring resolution, contextual typing, bound proof, and target/lawpack-dependent checks. | issue #10 |
-| SYNTAX-REQ-012 | planned | Core lowering emits canonical Core IR with byte-stable golden artifacts. | issue #21, issue #22 |
+| SYNTAX-REQ-012 | planned | Full source lowering emits canonical Core IR with byte-stable golden artifacts. | issue #21, issue #22 |
 
 ## Fixtures
 
@@ -74,7 +74,7 @@ Out of scope:
 | SYNTAX-TP-019 | implemented | Golden path | SYNTAX-REQ-009 | Keywords after `.` and prelude constructors remain legal. | keywords_are_legal_as_member_names, prelude_constructors_are_not_reserved | - | Contextual keyword oracle. |
 | SYNTAX-TP-020 | implemented | Error handling | SYNTAX-REQ-010 | Negative cases assert stable `ParseErrorKind` identities. | reserved_future_decls_are_rejected_at_top_level, missing_package_is_rejected, bytes_rejects_canonical_policy, unterminated_string_is_rejected | - | No stdout/stderr scraping. |
 | SYNTAX-TP-021 | implemented | Semantic validation | SYNTAX-REQ-011 | The source/surface validator returns stable diagnostic kinds for context-free source errors and accepts unresolved downstream facts. | validate_module_remains_surface_stage_compatibility_alias, surface_validation_defers_import_and_name_resolution, surface_validation_defers_contextual_typing_and_loop_bound_proof, surface_validation_defers_obstruction_exhaustiveness | - | Owned by the semantic-validation shelf. |
-| SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Core lowering emits byte-stable canonical artifacts. | - | - | Initial in-memory lowering exists in compiler-spine; canonical bytes are owned by issues #21 and #22. |
+| SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Full source lowering emits byte-stable canonical artifacts. | - | - | Initial Core golden artifacts exist in the Core IR shelf; full source-language coverage remains planned. |
 
 ## Determinism Obligations
 
@@ -97,8 +97,9 @@ deterministic regression cases in `crates/edict-syntax/tests/`.
 - `SYNTAX-REQ-011`: semantic validation is implemented by the
   [semantic-validation](../semantic-validation/) shelf.
 - `SYNTAX-REQ-012`: initial in-memory Core lowering is implemented by the
-  [compiler-spine](../compiler-spine/) shelf; canonical Core encoding and golden
-  artifacts are planned for #21 and #22.
+  [compiler-spine](../compiler-spine/) shelf, and initial canonical Core golden
+  artifacts are implemented by the [core-ir](../core-ir/) shelf. Full
+  source-language Core artifact coverage remains planned.
 - Fixture coverage is not exhaustive across every `EDICT-LANG-*` row in
   `docs/REQUIREMENTS.md`; this shelf covers the landed Phase 1 syntax parser
   only.

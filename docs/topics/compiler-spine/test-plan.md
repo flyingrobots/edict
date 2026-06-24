@@ -15,7 +15,7 @@ In scope:
 Out of scope:
 
 - canonical Core bytes embedded in lowerer output;
-- exact Core digests;
+- Core digest computation owned by the Core IR shelf;
 - target-profile lowering;
 - admission bundles;
 - full source language coverage.
@@ -57,12 +57,11 @@ Out of scope:
 - Maps use deterministic key ordering.
 - No test reads stdout, stderr, logs, wall-clock time, random values, or
   filesystem ordering.
-- Canonical encoder behavior is verified in the Core IR shelf; reviewed golden
-  byte and digest determinism remains deferred to #22.
+- Canonical encoder behavior, reviewed golden bytes, and digest determinism are
+  verified in the Core IR shelf.
 
 ## Open Gaps
 
-- Golden bytes and exact digest fixtures belong to #22.
 - Target/lawpack/shape artifact loading belongs to later lowerability work.
 - Effectful branches, loops, matches, variants, and obstruction maps are present
   in the source AST and Core schema but outside the first lowerable subset.

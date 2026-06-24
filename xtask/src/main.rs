@@ -8,6 +8,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
+use edict_syntax::{
+    compile_to_core, digest_core_module, encode_core_module, parse_module, CompilerContext,
+    CoreBudget,
+};
+
 fn main() -> ExitCode {
     match run() {
         Ok(()) => ExitCode::SUCCESS,
@@ -22,9 +27,20 @@ fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
         Some("contract-check") => contract_check(&repo_root()?),
+        Some("core-goldens") => {
+            let mode = match args.next().as_deref() {
+                Some("--write") => CoreGoldenMode::Write,
+                Some("--check") | None => CoreGoldenMode::Check,
+                Some(flag) => return Err(format!("unknown core-goldens flag `{flag}`")),
+            };
+            if let Some(extra) = args.next() {
+                return Err(format!("unexpected core-goldens argument `{extra}`"));
+            }
+            core_goldens(&repo_root()?, mode)
+        }
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
-        None => Err("usage: cargo xtask <verify|contract-check>".into()),
+        None => Err("usage: cargo xtask <verify|contract-check|core-goldens>".into()),
     }
 }
 
@@ -49,6 +65,7 @@ fn verify(root: &Path) -> Result<(), String> {
         "cargo",
         ["test", "--workspace", "--doc", "--all-features"],
     )?;
+    core_goldens(root, CoreGoldenMode::Check)?;
     contract_check(root)?;
     let base = diff_check_base(root)?;
     run_cmd(root, "git", ["diff", "--check", &format!("{base}...HEAD")])?;
@@ -120,6 +137,101 @@ fn contract_check(root: &Path) -> Result<(), String> {
 
     println!("contract-check: {topic_count} topic shelf(s) validated");
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CoreGoldenMode {
+    Check,
+    Write,
+}
+
+#[derive(Debug)]
+struct CoreGoldenCase {
+    source: &'static str,
+    bytes: &'static str,
+    digest: &'static str,
+}
+
+const CORE_GOLDEN_CASES: &[CoreGoldenCase] = &[CoreGoldenCase {
+    source: "fixtures/lang/bounds/bounded-hello.edict",
+    bytes: "fixtures/core/canonical/bounded-hello.core.cbor",
+    digest: "fixtures/core/canonical/bounded-hello.core.sha256",
+}];
+
+fn core_goldens(root: &Path, mode: CoreGoldenMode) -> Result<(), String> {
+    for case in CORE_GOLDEN_CASES {
+        check_or_write_core_golden(root, case, mode)?;
+    }
+    println!(
+        "core-goldens: {} case(s) {}",
+        CORE_GOLDEN_CASES.len(),
+        match mode {
+            CoreGoldenMode::Check => "checked",
+            CoreGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
+
+fn check_or_write_core_golden(
+    root: &Path,
+    case: &CoreGoldenCase,
+    mode: CoreGoldenMode,
+) -> Result<(), String> {
+    let source = read_to_string(&root.join(case.source))?;
+    let module = parse_module(&source).map_err(|err| format!("parse {}: {err}", case.source))?;
+    let core = compile_to_core(&module, &core_golden_context())
+        .map_err(|err| format!("compile {} to Core: {err:?}", case.source))?;
+    let bytes = encode_core_module(&core)
+        .map_err(|err| format!("encode {} as canonical Core: {err}", case.source))?;
+    let digest = digest_core_module(&core)
+        .map_err(|err| format!("digest {} as canonical Core: {err}", case.source))?;
+    let digest_text = format!("{digest}\n");
+
+    match mode {
+        CoreGoldenMode::Check => {
+            check_core_golden_file(root, case.bytes, &bytes)?;
+            check_core_golden_file(root, case.digest, digest_text.as_bytes())?;
+        }
+        CoreGoldenMode::Write => {
+            write_core_golden_file(&root.join(case.bytes), &bytes)?;
+            write_core_golden_file(&root.join(case.digest), digest_text.as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
+fn core_golden_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("hello.readOnly", "continuum.profile.read-only/v1")
+        .with_budget(
+            "hello.tinyBudget",
+            CoreBudget {
+                max_steps: 64,
+                max_allocated_bytes: 4096,
+                max_output_bytes: 1024,
+            },
+        )
+}
+
+fn check_core_golden_file(root: &Path, relative: &str, expected: &[u8]) -> Result<(), String> {
+    let path = root.join(relative);
+    let actual = fs::read(&path).map_err(|err| format!("read {}: {err}", path.display()))?;
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} does not match generated Core golden; run `cargo xtask core-goldens --write`",
+            path.display()
+        ))
+    }
+}
+
+fn write_core_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;
+    }
+    fs::write(path, bytes).map_err(|err| format!("write {}: {err}", path.display()))
 }
 
 fn check_topic(

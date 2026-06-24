@@ -20,11 +20,14 @@ from source AST to in-memory Core.
 
 The `edict_syntax` crate exposes `encode_core_module` for
 `edict.canonical-cbor/v1` Core bytes, `decode_canonical_cbor` for canonical byte
-validation, and `encode_canonical_cbor` for decoded canonical values.
-[COREIR-REQ-012] [COREIR-REQ-013]
+validation, `encode_canonical_cbor` for decoded canonical values, and
+`digest_core_module` for the domain-separated `edict.core.module/v1` digest.
+[COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014]
 
-The Core contract does not freeze reviewed golden bytes, exact Core digests,
-target IR, or admission bundles. [COREIR-REQ-007] [COREIR-REQ-014]
+The Core module schema does not embed reviewed golden bytes, exact Core
+digests, target IR, or admission bundles. Reviewed Core artifact fixtures live
+outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
+[COREIR-REQ-014]
 
 ## Current Contract
 
@@ -60,10 +63,16 @@ target IR, or admission bundles. [COREIR-REQ-007] [COREIR-REQ-014]
   from their semantic value tree. Validation decodes canonical bytes and
   requires byte-identical re-encoding, rejecting non-canonical forms such as
   non-minimal integers. [COREIR-REQ-012] [COREIR-REQ-013]
+- Core module digests use SHA-256 over the canonical digest frame
+  `["edict.digest/v1", "edict.core.module/v1", <Core module value>]` and render
+  for review as `sha256:<64 lowercase hex>`. The first reviewed Core golden
+  artifacts cover the `bounded-hello` fixture and are regenerated with
+  `cargo xtask core-goldens --write`. [COREIR-REQ-014]
 - Canonical encoder behavior is covered for map-order independence, mutation
   sensitivity, decode/re-encode stability, primitive integer width stability,
-  and source alpha-renaming invariance. [COREIR-REQ-005] [COREIR-REQ-012]
-  [COREIR-REQ-013]
+  digest stability, digest mutation sensitivity, and source alpha-renaming
+  invariance. [COREIR-REQ-005] [COREIR-REQ-012] [COREIR-REQ-013]
+  [COREIR-REQ-014]
 
 ## Deferred
 
@@ -72,7 +81,6 @@ The following are not implemented by the Core IR contract:
 - import resolution and resolved type checking;
 - full source-to-Core language coverage;
 - full CDDL instance validation;
-- reviewed golden Core bytes and exact digest fixtures;
 - target-profile lowering;
 - bundle/admission artifacts.
 
