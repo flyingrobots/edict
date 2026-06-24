@@ -554,9 +554,14 @@ Traditional programming languages embrace concurrency (multithreading, async que
 
 ## 11. External Dependencies & Boundaries
 
-Edict maintains a strict code boundary. The syntax crate `edict-syntax` prohibits any dependencies beyond the Rust standard library:
+Edict maintains a strict code boundary. The syntax crate `edict-syntax` keeps
+its dependency surface explicit and narrow:
 
-- **Zero-Dependency Core**: The `Cargo.toml` specifies only workspace lint settings. There are no external parsing libraries (e.g., syn, nom, pest, combine).
+- **No Parser Framework Dependency**: Parsing remains hand-written and
+  deterministic. There are no external parsing libraries (e.g., syn, nom, pest,
+  combine).
+- **Explicit Cryptographic Dependency**: Core module digest computation uses the
+  reviewed `sha2` crate for SHA-256 rather than a local hash implementation.
 - **Forbid Unsafe**: The crate defines `unsafe_code = "forbid"`. This prevents raw-pointer manipulations, memory safety violations, or compiler-bypass techniques.
 - **GraphQL Border**: The type layout mappings are kept abstract. The parser handles GraphQL schemas as typed definitions in `use shape "path.graphql"` configurations. The actual resolution of schema fields is handled at the lowering phase, insulating the syntax front-end from schema-validator version changes.
 
