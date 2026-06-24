@@ -120,6 +120,7 @@ pub enum LowerabilityFailureKind {
     MissingCostObligation,
     UnsupportedOpticContract,
     MissingEffectSupport,
+    AmbiguousNativeSupport,
     AmbiguousAdapter,
     ChainedAdapterUnsupported,
     UndigestedAdapter,
@@ -298,15 +299,43 @@ fn classify_effect(
             support.coordinate == effect.coordinate && support.write_class == effect.write_class
         })
         .collect::<Vec<_>>();
-    if let Some(native) = native_matches
+    let guarded_native_matches = native_matches
         .iter()
-        .find(|support| supports_required_guards(&effect.guard_kinds, &support.guard_kinds))
-    {
+        .copied()
+        .filter(|support| supports_required_guards(&effect.guard_kinds, &support.guard_kinds))
+        .collect::<Vec<_>>();
+    match guarded_native_matches.as_slice() {
+        [] => {}
+        [native] => {
+            return LowerabilityEffectResult {
+                semantic_effect: effect.coordinate.clone(),
+                status: LowerabilityEffectStatus::Native {
+                    target_intrinsic: native.target_intrinsic.clone(),
+                },
+            };
+        }
+        _ => {
+            push_failure(
+                failures,
+                LowerabilityFailureKind::AmbiguousNativeSupport,
+                &effect.coordinate,
+            );
+            return LowerabilityEffectResult {
+                semantic_effect: effect.coordinate.clone(),
+                status: LowerabilityEffectStatus::Unsupported,
+            };
+        }
+    }
+
+    if !native_matches.is_empty() {
+        push_failure(
+            failures,
+            LowerabilityFailureKind::UnsupportedEffectGuard,
+            &effect.coordinate,
+        );
         return LowerabilityEffectResult {
             semantic_effect: effect.coordinate.clone(),
-            status: LowerabilityEffectStatus::Native {
-                target_intrinsic: native.target_intrinsic.clone(),
-            },
+            status: LowerabilityEffectStatus::Unsupported,
         };
     }
 

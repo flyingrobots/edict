@@ -155,6 +155,26 @@ fn native_effects_must_support_required_per_effect_guards() {
 }
 
 #[test]
+fn v1_rejects_ambiguous_native_support() {
+    let mut facts = profile_facts();
+    let mut second = facts.native_effects[0].clone();
+    second.target_intrinsic = "kv.transactional@1.get.alt".to_owned();
+    facts.native_effects.push(second);
+
+    let report = check_lowerability(&read_requirements(), &facts);
+
+    assert_eq!(report.status, LowerabilityStatus::Unsupported);
+    assert_eq!(
+        report
+            .failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>(),
+        vec![LowerabilityFailureKind::AmbiguousNativeSupport]
+    );
+}
+
+#[test]
 fn v1_rejects_chained_adapter_claims() {
     let mut facts = profile_facts();
     facts.native_effects.clear();
