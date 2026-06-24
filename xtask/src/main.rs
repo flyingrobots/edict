@@ -148,6 +148,9 @@ fn check_topic(
     let mut implemented_requirements = BTreeSet::new();
 
     for (id, requirement) in &requirements {
+        if !is_known_test_plan_status(&requirement.status) {
+            return Err(format!("{id} has invalid status `{}`", requirement.status));
+        }
         check_requirement_sources(root, id, &requirement.source, requirement_registry)?;
     }
 
@@ -182,7 +185,7 @@ fn check_topic(
                     implemented_requirements.insert(requirement.to_owned());
                 }
             }
-            "planned" | "gap" => {}
+            status if is_known_test_plan_status(status) => {}
             other => return Err(format!("{} has invalid status `{other}`", case.id)),
         }
         for fixture in split_cell_list(&case.fixtures) {
@@ -194,7 +197,7 @@ fn check_topic(
 
     for (id, requirement) in &requirements {
         if !covered_requirements.contains(id) {
-            return Err(format!("{id} has no planned or implemented case"));
+            return Err(format!("{id} has no case"));
         }
         if requirement.status == "implemented" && !implemented_requirements.contains(id) {
             return Err(format!(
@@ -218,6 +221,10 @@ fn check_topic(
 
     check_fixture_table(root, &plan)?;
     Ok(())
+}
+
+fn is_known_test_plan_status(status: &str) -> bool {
+    matches!(status, "implemented" | "planned" | "gap" | "policy")
 }
 
 fn parse_requirement_rows(plan: &str) -> Result<BTreeMap<String, RequirementRow>, String> {
@@ -624,6 +631,63 @@ mod tests {
             .expect_err("implemented requirement without implemented case must fail");
         assert!(
             err.contains("implemented requirement EXAMPLE-REQ-001 has no implemented case"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn contract_graph_accepts_policy_rows_without_rust_evidence() {
+        let root = temp_root("policy-rows-without-rust-evidence");
+        let topic = root.join("docs/topics/example");
+        fs::create_dir_all(root.join("docs")).expect("docs directory");
+        fs::create_dir_all(&topic).expect("topic directory");
+        fs::write(root.join("docs/REQUIREMENTS.md"), "# Requirements\n").expect("requirements");
+        fs::write(topic.join("README.md"), "# Example\n\n[EXAMPLE-REQ-001]\n").expect("chapter");
+        fs::write(
+            topic.join("test-plan.md"),
+            "# Example Test Plan\n\n\
+             | ID | Status | Requirement | Source |\n\
+             | --- | --- | --- | --- |\n\
+             | EXAMPLE-REQ-001 | policy | Example policy. | docs/REQUIREMENTS.md |\n\n\
+             | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |\n\
+             | --- | --- | --- | --- | --- | --- | --- | --- |\n\
+             | EXAMPLE-TP-001 | policy | Review policy | EXAMPLE-REQ-001 | human review records the policy decision | - | - | no executable software behavior |\n",
+        )
+        .expect("test plan");
+
+        let tests = BTreeSet::new();
+        check_topic(&root, &topic, &tests, "").expect("policy rows require no Rust evidence");
+
+        fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn contract_graph_rejects_unknown_requirement_status() {
+        let root = temp_root("unknown-requirement-status");
+        let topic = root.join("docs/topics/example");
+        fs::create_dir_all(root.join("docs")).expect("docs directory");
+        fs::create_dir_all(&topic).expect("topic directory");
+        fs::write(root.join("docs/REQUIREMENTS.md"), "# Requirements\n").expect("requirements");
+        fs::write(topic.join("README.md"), "# Example\n\n[EXAMPLE-REQ-001]\n").expect("chapter");
+        fs::write(
+            topic.join("test-plan.md"),
+            "# Example Test Plan\n\n\
+             | ID | Status | Requirement | Source |\n\
+             | --- | --- | --- | --- |\n\
+             | EXAMPLE-REQ-001 | maybe | Example requirement. | docs/REQUIREMENTS.md |\n\n\
+             | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |\n\
+             | --- | --- | --- | --- | --- | --- | --- | --- |\n\
+             | EXAMPLE-TP-001 | planned | Planned path | EXAMPLE-REQ-001 | exact state | - | - | planned only |\n",
+        )
+        .expect("test plan");
+
+        let tests = BTreeSet::new();
+        let err = check_topic(&root, &topic, &tests, "")
+            .expect_err("unknown requirement status must reject");
+        assert!(
+            err.contains("EXAMPLE-REQ-001 has invalid status `maybe`"),
             "unexpected error: {err}"
         );
 
