@@ -2,3 +2,72 @@
 mutation = "forbidden"
 recovery = "publish_existing_valid_tag"
 requires_main_reachable_target = true
+
+[release_runbook]
+steps = [
+  "prepare_branch",
+  "verify_local",
+  "open_pull_request",
+  "merge_gate",
+  "tag_publish",
+  "watch_workflow",
+  "capture_evidence",
+  "recover_without_tag_mutation",
+]
+required_checks = [
+  "cargo xtask verify",
+  "gh pr checks",
+  "gh release view",
+]
+required_evidence = [
+  "release_issue",
+  "release_prep_pull_request",
+  "main_ci_run",
+  "tag_object",
+  "github_release_url",
+]
+
+[release_notes.v0_2_0_alpha_1]
+tag = "v0.2.0-alpha.1"
+target_date = "2026-07-01"
+status = "published"
+release_issue = 28
+scope = [
+  "core_semantic_model",
+  "normative_core_schema",
+  "core_ir_topic_shelf",
+  "schema_shape_fixtures",
+]
+non_goals = [
+  "no_source_to_core_lowering",
+  "no_canonical_encoder",
+  "no_golden_core_bytes",
+  "no_exact_core_digests",
+  "no_target_lowering",
+  "no_bundle_admission",
+]
+
+[release_notes.v0_3_0_alpha_1]
+tag = "v0.3.0-alpha.1"
+target_date = "2026-07-15"
+status = "publish_ready"
+release_issue = 35
+scope = [
+  "surface_validation_split",
+  "compiler_spine",
+  "typed_module_boundary",
+  "source_to_core_initial_subset",
+  "canonical_core_encoder",
+  "canonical_core_validation",
+  "reviewed_core_golden_fixture",
+  "exact_core_digest_fixture",
+  "release_runbook",
+]
+non_goals = [
+  "no_full_source_language_lowering",
+  "no_compiler_cli",
+  "no_target_profile_conformance",
+  "no_target_lowering",
+  "no_bundle_admission",
+  "no_crates_io_publish",
+]

@@ -13,6 +13,9 @@ The current specification set is:
   types, documentation coverage, examples, and docs-impact rules.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
   and the GitHub issue/milestone map.
+- [v0.3 Release Notes](./releases/v0.3.0-alpha.1.md): publish-ready notes for
+  the compiler-spine, canonical Core encoder, reviewed golden bytes, and exact
+  digest alpha.
 - [v0.2 Release Notes](./releases/v0.2.0-alpha.1.md): published notes for the
   Core semantic model and normative schema alpha.
 - [v0.1 Release Notes](./releases/v0.1.0-alpha.1.md): published notes for the

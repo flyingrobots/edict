@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.3.0-alpha.1] - 2026-07-15
+
 ### Added
 
 - Added the first reference `edict.canonical-cbor/v1` Core encoder for the
@@ -28,6 +30,9 @@ versions still track specification maturity rather than a released product.
   contextual typing, loop-bound proof, and target/lawpack obstruction
   exhaustiveness remain downstream of this pass. `validate_module` remains a
   compatibility alias for the same stage.
+- Added publish-ready v0.3 release notes, repeatable release runbook, and
+  structured release policy metadata for alpha release preparation, tagging,
+  publication, and non-mutating tag recovery.
 - Added the repository rule that issue-closing PRs must include GitHub
   auto-close text such as `Closes #123` in the pull request body.
 
@@ -38,8 +43,9 @@ versions still track specification maturity rather than a released product.
 - Excluded source-local import alias spelling from Core canonical bytes.
 - Sorted resolved Core imports before canonical encoding so source import order
   does not affect canonical bytes.
-- Excluded local source spelling from canonical local references, leaving the
-  alpha-normalized local name and type as the Core byte identity.
+- Excluded source binder spelling from canonical local references while keeping
+  compiler-owned local IDs, normalized `alphaName`, and type references in the
+  Core byte identity.
 - Canonicalized `requiredCoreCapabilities` as a sorted set before encoding.
 - Rejected oversized CBOR declared lengths before allocation in the canonical
   decode validation path.
@@ -47,6 +53,9 @@ versions still track specification maturity rather than a released product.
   bytes as lowercase hex.
 - Sorted Core input constraints before canonical encoding so constraint vector
   order does not affect canonical bytes.
+- Stabilized the compiler-generated input binding ID as `arg.0`, so source
+  parameter renaming stays hash-invariant while Core local identity mutations
+  still change canonical bytes and digests.
 
 ## [v0.2.0-alpha.1] - 2026-07-01
 

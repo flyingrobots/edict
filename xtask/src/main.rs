@@ -890,43 +890,101 @@ mod tests {
     }
 
     #[test]
-    fn v0_2_release_notes_state_core_boundary() {
+    fn release_runbook_policy_is_structured() {
         let root = repo_root().expect("repo root");
-        let notes = fs::read_to_string(root.join("docs/releases/v0.2.0-alpha.1.md"))
-            .expect("v0.2 release notes");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
         for required in [
-            "Normative `edict.core/v1` CDDL schema",
-            "Core semantic model coverage",
-            "explicitly does not include:",
-            "source-to-Core lowering;",
-            "a canonical Core encoder;",
-            "golden Core bytes;",
-            "exact Core digests;",
-            "target lowerers;",
-            "bundle/admission tooling.",
+            "[release_runbook]",
+            "prepare_branch",
+            "merge_gate",
+            "tag_publish",
+            "watch_workflow",
+            "capture_evidence",
+            "cargo xtask verify",
+            "gh pr checks",
+            "gh release view",
         ] {
             assert!(
-                notes.contains(required),
-                "v0.2 release notes missing boundary statement: {required}"
+                policy.contains(required),
+                "release runbook policy missing structured field: {required}"
             );
         }
     }
 
     #[test]
-    fn v0_2_changelog_date_matches_release_notes_target() {
+    fn release_policy_tracks_v0_3_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for required in [
+            "[release_notes.v0_3_0_alpha_1]",
+            "tag = \"v0.3.0-alpha.1\"",
+            "target_date = \"2026-07-15\"",
+            "status = \"publish_ready\"",
+            "compiler_spine",
+            "surface_validation_split",
+            "canonical_core_encoder",
+            "reviewed_core_golden_fixture",
+            "exact_core_digest_fixture",
+            "no_target_lowering",
+            "no_bundle_admission",
+        ] {
+            assert!(
+                policy.contains(required),
+                "v0.3 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
-        let notes = fs::read_to_string(root.join("docs/releases/v0.2.0-alpha.1.md"))
-            .expect("v0.2 release notes");
-        let target = notes
-            .lines()
-            .find_map(|line| line.strip_prefix("Target date: "))
-            .expect("v0.2 release notes target date");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for (tag, target) in [
+            ("v0.2.0-alpha.1", "2026-07-01"),
+            ("v0.3.0-alpha.1", "2026-07-15"),
+        ] {
+            assert!(
+                policy.contains(&format!("tag = \"{tag}\"")),
+                "release policy missing tag {tag}"
+            );
+            assert!(
+                policy.contains(&format!("target_date = \"{target}\"")),
+                "release policy missing target date {target}"
+            );
+            assert!(
+                changelog.contains(&format!("## [{tag}] - {target}")),
+                "{tag} changelog date must match release policy target date {target}"
+            );
+        }
+    }
 
-        assert!(
-            changelog.contains(&format!("## [v0.2.0-alpha.1] - {target}")),
-            "v0.2 changelog date must match release notes target date {target}"
-        );
+    #[test]
+    fn release_policy_tracks_v0_2_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for required in [
+            "[release_notes.v0_2_0_alpha_1]",
+            "tag = \"v0.2.0-alpha.1\"",
+            "target_date = \"2026-07-01\"",
+            "core_semantic_model",
+            "normative_core_schema",
+            "no_source_to_core_lowering",
+            "no_canonical_encoder",
+            "no_golden_core_bytes",
+            "no_exact_core_digests",
+            "no_target_lowering",
+            "no_bundle_admission",
+        ] {
+            assert!(
+                policy.contains(required),
+                "v0.2 release policy missing structured field: {required}"
+            );
+        }
     }
 
     #[test]

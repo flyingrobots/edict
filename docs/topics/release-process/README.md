@@ -34,15 +34,30 @@ release against the existing valid tag. Do not move, delete, or recreate release
 tags to paper over workflow mistakes. The stable recovery policy is captured in
 [`policy.toml`](./policy.toml). [RELEASE-REQ-006]
 
+Release preparation follows the operator runbook in [`runbook.md`](./runbook.md):
+prepare a release branch, refresh release artifacts, verify locally, merge a
+normal pull request to `main`, tag from verified `main`, watch publication, and
+capture evidence. The structured runbook contract is captured in
+[`policy.toml`](./policy.toml). [RELEASE-REQ-009]
+
 ## Release Notes
 
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
+- [`v0.3.0-alpha.1`](../../releases/v0.3.0-alpha.1.md): publish-ready
+  compiler-spine, canonical Core encoder, reviewed golden bytes, and exact
+  digest alpha notes.
 - [`v0.2.0-alpha.1`](../../releases/v0.2.0-alpha.1.md): published Core semantic
   model and normative schema alpha notes.
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
+
+The `v0.3.0-alpha.1` release notes are publish-ready:
+
+- Release issue: <https://github.com/flyingrobots/edict/issues/35>
+- Required tag after release-prep merge: `v0.3.0-alpha.1`
+- Target date: 2026-07-15
 
 The `v0.2.0-alpha.1` release is published as a GitHub prerelease:
 

@@ -38,7 +38,7 @@ cargo xtask verify
 - [Documentation Standards](./documentation/README.md): reader-task page types,
   documentation coverage, examples, and docs-impact rules.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
-  publication contract and verification matrix.
+  publication contract, release runbook, and verification matrix.
 - [Semantic Validation](./semantic-validation/README.md): source/surface
   `validate_surface` stage contract and verification matrix.
 - [Syntax](./syntax/README.md): Phase 1 `edict-syntax` lexer/parser contract and
