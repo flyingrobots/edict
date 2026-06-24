@@ -79,6 +79,38 @@ operation-profiles-document = {
   profiles: { * tstr => operation-profile },
 }
 
+; A typed pre-lowering question that can be proposed by Watson or an agent and
+; checked by the compiler. It is canonical-CBOR encoded under
+; `edict.lowering-requirements/v1`; the compiler checks this artifact, not the
+; prose that produced it.
+lowering-requirements = {
+  apiVersion: "edict.lowering-requirements/v1",
+  operationProfile: tstr,
+  semanticEffects: [* semantic-effect-requirement],
+  requiredWriteClasses: [* write-class],
+  guardKinds: [* guard-kind],
+  atomicity: atomicity-requirement,
+  postconditionSupport: bool,
+  obstructionCoordinates: [* tstr],
+  footprintObligations: [* tstr],
+  costObligations: [* tstr],
+  opticContract: tstr,
+}
+
+semantic-effect-requirement = {
+  coordinate: tstr,
+  writeClass: write-class,
+  guardKinds: [* guard-kind],
+  obstructionCoordinates: [* tstr],
+  footprintObligations: [* tstr],
+  costObligations: [* tstr],
+}
+
+write-class = "none" / "read" / "create" / "ensure" / "append" /
+              "replace" / "delete" / tstr
+guard-kind = "precommit-atomic" / tstr
+atomicity-requirement = "atomic" / tstr
+
 ; A genuine union: pure constructors carry no effect kind or failures; effect
 ; intrinsics must (EDICT-TARGET-INTRINSIC-CLASS-001). The schema enforces this,
 ; not a comment.

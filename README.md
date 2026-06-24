@@ -479,6 +479,11 @@ What exists today:
   path for the current in-memory Core module model
 - Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for
   the initial pure local-record Core artifact
+- Typed v1 target-profile manifest conformance for runtime-neutral profile
+  validation, including `echo.dpo@1` and `kv.transactional@1` shaped profiles
+- Typed v1 lowerability checks for `LoweringRequirements` against explicit
+  target-profile facts, including native, direct-adapter, and unsupported
+  classifications
 - `v0.3.0-alpha.1` release notes and release runbook for the compiler-spine
   alpha
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
@@ -491,17 +496,17 @@ What doesn't exist yet:
 - A compiler CLI
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
   expression literals)
-- Target profile conformance fixtures
+- File-backed target profile manifest loading and conformance fixtures
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next implementation milestone is target-profile conformance, followed by
-admission evidence.
+The next implementation milestone is target-profile file loading and the
+lowerability explanation surface, followed by admission evidence.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.2.0-alpha.1` is a Core semantic model and schema milestone, and the
-`v0.3.0-alpha.1` is a compiler-spine/canonical-Core milestone. None of these
+`v0.3.0-alpha.1` release is a compiler-spine/canonical-Core milestone. None of these
 releases claims target lowerers or admission tooling.
 
 ---

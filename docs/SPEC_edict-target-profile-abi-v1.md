@@ -8,7 +8,7 @@ status: "draft"
 owners:
   - "@flyingrobots"
 created: "2026-06-18"
-updated: "2026-06-18"
+updated: "2026-06-24"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -109,6 +109,13 @@ field is deferred.
 Display metadata is not part of this manifest. Human-facing names, codenames,
 and marketing copy live in sidecar documents keyed by the target profile digest.
 
+The reference `edict_syntax` conformance surface accepts typed manifest values
+only. It validates the profile API version, identity, accepted Core ABI,
+digest-locked component references, canonical encoding rule, deferred
+lawpack-adapter ABI emptiness, and v1 application doctrine. The checker is
+runtime-neutral: Echo and non-Echo profile shapes are accepted or rejected by the
+same obligations.
+
 ## Exchange Types And Plugin Boundary
 
 The component boundary is defined in
@@ -136,6 +143,33 @@ The lowerer compares cost and footprint against the operation's **declared**
 target ceiling only. It never receives a participant-admitted budget; admission
 is external by design, so target IR and verifier artifacts stay
 participant-neutral bundle inputs (`EDICT-TARGET-NEUTRAL-LOWERING-001`).
+
+## Lowering Requirements
+
+`lowering-requirements` is the typed pre-lowering question for v1 lowerability.
+Its canonical shape is defined in
+[`abi/edict-target-profile.cddl`](./abi/edict-target-profile.cddl) and is encoded
+as `edict.lowering-requirements/v1`.
+
+The artifact records the required operation profile, semantic effects, write
+classes, guard kinds, atomicity, postcondition support, obstruction
+coordinates, footprint obligations, cost obligations, and optic contract. Watson
+or an agent may propose this artifact from prose, but the compiler checks the
+artifact, not the prose.
+
+The v1 lowerability checker classifies support as:
+
+- `native`: explicit target-profile facts directly support every obligation;
+- `adapted`: every non-native semantic effect is discharged by exactly one
+  direct lawpack adapter for the selected target profile;
+- `unsupported`: at least one obligation is missing, ambiguous, or requires an
+  adapter chain/composite discharge.
+
+Native and adapted support must satisfy the semantic effect's required guard
+kinds at the selected effect/intrinsic support fact; global profile support for a
+guard kind is not enough by itself.
+
+The checker does not produce Target IR and does not perform admission.
 
 ## Application Model
 

@@ -37,11 +37,15 @@ cargo xtask verify
   CDDL schema boundary for the Core contract.
 - [Documentation Standards](./documentation/README.md): reader-task page types,
   documentation coverage, examples, and docs-impact rules.
+- [Lowerability](./lowerability/README.md): typed v1 lowering requirements,
+  target-profile facts, and direct-only support classification.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract, release runbook, and verification matrix.
 - [Semantic Validation](./semantic-validation/README.md): source/surface
   `validate_surface` stage contract and verification matrix.
 - [Syntax](./syntax/README.md): Phase 1 `edict-syntax` lexer/parser contract and
   verification matrix.
+- [Target Profiles](./target-profiles/README.md): typed v1 target-profile
+  manifest conformance and runtime-neutral profile validation.
 - [Testing Workflow](./tests/README.md): RED/GREEN development discipline,
   fixture reuse, and local verification workflow.

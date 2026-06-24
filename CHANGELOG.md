@@ -8,6 +8,32 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added typed v1 lowerability checks in `edict_syntax`: `LoweringRequirements`,
+  `TargetProfileFacts`, `check_lowerability`, native/direct-adapter/unsupported
+  classifications, and stable lowerability failure kinds. The checker rejects
+  ambiguous native support, floating adapter references, chained/composite
+  adapter claims, and ambiguous direct adapters, checks required guards on
+  selected native/direct support facts, and does not produce Target IR or
+  admission artifacts.
+- Added typed v1 target-profile manifest conformance checks in `edict_syntax`:
+  `TargetProfileManifest`, `validate_target_profile_manifest`, runtime-neutral
+  Echo/KV profile acceptance, SHA-256 digest-locked component validation, Core
+  ABI validation, deferred lawpack-adapter ABI rejection, and atomic
+  application doctrine validation. Composite `multiTarget` profile validation
+  remains deferred, so `multiTarget: true` is rejected in v1 conformance.
+- Added the lowerability topic shelf and the `edict.lowering-requirements/v1`
+  CDDL shape in the target-profile ABI.
+- Added the target-profiles topic shelf for the manifest conformance contract
+  and verification matrix.
+
+### Changed
+
+- Clarified the language and target-profile specs so v1 lowerability uses only
+  native support, exactly one direct adapter, or unsupported. General composite
+  adapter-chain search remains future v2 design work.
+
 ## [v0.3.0-alpha.1] - 2026-07-15
 
 ### Added
