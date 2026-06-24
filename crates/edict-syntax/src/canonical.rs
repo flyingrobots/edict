@@ -290,7 +290,7 @@ fn core_intent_value(intent: &CoreIntent) -> Result<CanonicalValue, CanonicalErr
         ),
         (
             "inputConstraints",
-            array_results(intent.input_constraints.iter().map(input_constraint_value))?,
+            sorted_array_results(intent.input_constraints.iter().map(input_constraint_value))?,
         ),
         (
             "coreEvaluationBudget",

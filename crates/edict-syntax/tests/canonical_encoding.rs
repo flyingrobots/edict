@@ -8,7 +8,7 @@
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, encode_canonical_cbor, encode_core_module,
     parse_module, CanonicalErrorKind, CanonicalValue, CompilerContext, CoreBudget, CoreImport,
-    CoreImportKind, ResourceRef,
+    CoreImportKind, CorePredicate, InputConstraint, InputConstraintSource, ResourceRef,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -186,6 +186,33 @@ fn canonical_core_bytes_treat_required_capabilities_as_a_set() {
     assert_eq!(
         encode_core_module(&core).expect("canonical encoding succeeds"),
         encode_core_module(&normalized).expect("canonical encoding succeeds")
+    );
+}
+
+#[test]
+fn canonical_core_bytes_are_independent_of_input_constraint_order() {
+    let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
+    let mut core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
+    core.intents
+        .get_mut("sayHello")
+        .expect("intent exists")
+        .input_constraints
+        .push(InputConstraint {
+            coordinate: "compiler.0".to_owned(),
+            source: InputConstraintSource::Compiler,
+            predicate: CorePredicate::True,
+        });
+    let mut reordered = core.clone();
+    reordered
+        .intents
+        .get_mut("sayHello")
+        .expect("intent exists")
+        .input_constraints
+        .reverse();
+
+    assert_eq!(
+        encode_core_module(&core).expect("canonical encoding succeeds"),
+        encode_core_module(&reordered).expect("canonical encoding succeeds")
     );
 }
 

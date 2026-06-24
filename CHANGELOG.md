@@ -42,6 +42,8 @@ versions still track specification maturity rather than a released product.
   decode validation path.
 - Normalized uppercase SHA-256 hex review forms to the same canonical digest
   bytes as lowercase hex.
+- Sorted Core input constraints before canonical encoding so constraint vector
+  order does not affect canonical bytes.
 
 ## [v0.2.0-alpha.1] - 2026-07-01
 
