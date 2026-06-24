@@ -67,6 +67,7 @@ pub enum TargetProfileConformanceFailureKind {
     NonDigestLockedResource,
     UnsupportedCanonicalEncoding,
     DeferredLawpackAdapterAbiUnsupported,
+    UnsupportedCompositeProfile,
     UnsupportedApplicationModel,
     UnsupportedReadConsistency,
     UnsupportedGuardEvaluation,
@@ -160,6 +161,14 @@ pub fn validate_target_profile_manifest(
             TargetProfileConformanceFailureKind::DeferredLawpackAdapterAbiUnsupported,
             "accepted_lawpack_adapter_abi",
             "empty until edict.lawpack-adapter/v1 is specified",
+        );
+    }
+    if manifest.multi_target {
+        push_failure(
+            &mut failures,
+            TargetProfileConformanceFailureKind::UnsupportedCompositeProfile,
+            "multi_target",
+            "false until composite profile validation is implemented",
         );
     }
 

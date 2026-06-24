@@ -142,6 +142,17 @@ fn deferred_lawpack_adapter_abi_must_stay_empty_in_v1() {
 }
 
 #[test]
+fn multi_target_profiles_are_rejected_until_composite_validation_exists() {
+    let mut profile = echo_profile();
+    profile.multi_target = true;
+
+    assert_eq!(
+        failure_kinds(&profile),
+        vec![TargetProfileConformanceFailureKind::UnsupportedCompositeProfile]
+    );
+}
+
+#[test]
 fn atomic_application_semantics_are_required_for_v1_conformance() {
     let mut profile = echo_profile();
     "eventual".clone_into(&mut profile.application_model);

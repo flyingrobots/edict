@@ -39,9 +39,11 @@ The canonical artifact shape for `edict.target-profile/v1` is named in
 - A conforming profile must accept `edict.core/v1`. [TPROF-REQ-004]
 - `acceptedLawpackAdapterAbi` remains empty in v1 until the byte-level
   `edict.lawpack-adapter/v1` ABI is specified. [TPROF-REQ-005]
+- `multiTarget` remains false in v1 conformance until composite profile
+  validation exists. [TPROF-REQ-006]
 - The v1 application doctrine accepted by the checker is atomic application,
   application-snapshot reads, precommit-atomic guard evaluation, and
-  no-visible-effects obstruction rollback. [TPROF-REQ-006]
+  no-visible-effects obstruction rollback. [TPROF-REQ-007]
 
 ## Deferred
 
@@ -54,6 +56,6 @@ The following are not implemented by this target-profile slice:
 - target lowerers;
 - verifier reports;
 - bundle/admission tooling;
-- multi-target composite profile validation.
+- multi-target composite profile validation beyond rejection.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).

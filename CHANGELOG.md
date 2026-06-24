@@ -19,7 +19,8 @@ versions still track specification maturity rather than a released product.
   `TargetProfileManifest`, `validate_target_profile_manifest`, runtime-neutral
   Echo/KV profile acceptance, SHA-256 digest-locked component validation, Core
   ABI validation, deferred lawpack-adapter ABI rejection, and atomic
-  application doctrine validation.
+  application doctrine validation. Composite `multiTarget` profile validation
+  remains deferred, so `multiTarget: true` is rejected in v1 conformance.
 - Added the lowerability topic shelf and the `edict.lowering-requirements/v1`
   CDDL shape in the target-profile ABI.
 - Added the target-profiles topic shelf for the manifest conformance contract
