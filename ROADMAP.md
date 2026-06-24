@@ -96,6 +96,8 @@ Milestone: `v0.3.0-alpha.1`
 
 Primary issues: #10, #20, #21, #22
 
+Release prep issue: #35
+
 Release labels: `release:semantic-validation`, `release:compiler-spine`,
 `release:core-ir`
 
@@ -117,10 +119,12 @@ Scope:
 - Source-to-Core lowering for the initial executable subset.
 - Reference canonical encoder.
 - First reviewed Core golden bytes and exact digest fixtures.
+- Release notes, changelog, and reusable release runbook for the compiler-spine
+  alpha.
 
 Exit gates:
 
-- #10, #20, #21, and #22 land or have reviewed release-scope splits.
+- #10, #20, #21, #22, and #35 land or have reviewed release-scope splits.
 - Tests prove the stage boundaries do not collapse into one semantic pass.
 - Golden Core bytes are produced by an executable encoder, not a prose plan.
 - Golden tests cover alpha-renaming invariance where applicable, map-order
