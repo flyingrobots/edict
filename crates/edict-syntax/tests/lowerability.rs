@@ -6,8 +6,8 @@
 
 use edict_syntax::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,
-    LowerabilityFailureKind, LowerabilityStatus, LoweringRequirements, NativeEffectSupport,
-    ResourceRef, SemanticEffectRequirement, TargetProfileFacts, WriteClass,
+    LowerabilityFailureKind, LowerabilityReport, LowerabilityStatus, LoweringRequirements,
+    NativeEffectSupport, ResourceRef, SemanticEffectRequirement, TargetProfileFacts, WriteClass,
 };
 
 fn read_requirements() -> LoweringRequirements {
@@ -71,6 +71,21 @@ fn direct_adapter() -> DirectAdapterSupport {
     }
 }
 
+fn failure_kinds(report: &LowerabilityReport) -> Vec<LowerabilityFailureKind> {
+    report.failures.iter().map(|failure| failure.kind).collect()
+}
+
+fn assert_single_failure(
+    requirements: LoweringRequirements,
+    facts: TargetProfileFacts,
+    kind: LowerabilityFailureKind,
+) {
+    let report = check_lowerability(&requirements, &facts);
+
+    assert_eq!(report.status, LowerabilityStatus::Unsupported);
+    assert_eq!(failure_kinds(&report), vec![kind]);
+}
+
 #[test]
 fn native_target_facts_satisfy_lowering_requirements() {
     let report = check_lowerability(&read_requirements(), &profile_facts());
@@ -94,6 +109,146 @@ fn one_direct_adapter_satisfies_v1_lowering_requirements() {
     assert_eq!(
         report.effect_results[0].adapter_coordinate(),
         Some("hello.optics@1.kv.transactional.adapter/v1")
+    );
+}
+
+#[test]
+fn missing_operation_profile_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.operation_profiles.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::MissingOperationProfile,
+    );
+}
+
+#[test]
+fn unsupported_required_write_class_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.write_classes.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::UnsupportedWriteClass,
+    );
+}
+
+#[test]
+fn unsupported_global_guard_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.guard_kinds.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::UnsupportedGuard,
+    );
+}
+
+#[test]
+fn unsupported_atomicity_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.atomicity.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::UnsupportedAtomicity,
+    );
+}
+
+#[test]
+fn unsupported_postcondition_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.postcondition_support = false;
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::UnsupportedPostcondition,
+    );
+}
+
+#[test]
+fn missing_obstruction_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.obstruction_coordinates.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::MissingObstruction,
+    );
+}
+
+#[test]
+fn missing_footprint_obligation_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.footprint_obligations.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::MissingFootprintObligation,
+    );
+}
+
+#[test]
+fn missing_cost_obligation_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.cost_obligations.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::MissingCostObligation,
+    );
+}
+
+#[test]
+fn unsupported_optic_contract_reports_stable_failure_kind() {
+    let mut facts = profile_facts();
+    facts.optic_contracts.clear();
+
+    assert_single_failure(
+        read_requirements(),
+        facts,
+        LowerabilityFailureKind::UnsupportedOpticContract,
+    );
+}
+
+#[test]
+fn all_non_effect_obligation_failures_report_stable_kinds_together() {
+    let mut facts = profile_facts();
+    facts.operation_profiles.clear();
+    facts.write_classes.clear();
+    facts.guard_kinds.clear();
+    facts.atomicity.clear();
+    facts.postcondition_support = false;
+    facts.obstruction_coordinates.clear();
+    facts.footprint_obligations.clear();
+    facts.cost_obligations.clear();
+    facts.optic_contracts.clear();
+
+    let report = check_lowerability(&read_requirements(), &facts);
+
+    assert_eq!(report.status, LowerabilityStatus::Unsupported);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![
+            LowerabilityFailureKind::MissingOperationProfile,
+            LowerabilityFailureKind::UnsupportedAtomicity,
+            LowerabilityFailureKind::UnsupportedPostcondition,
+            LowerabilityFailureKind::UnsupportedWriteClass,
+            LowerabilityFailureKind::UnsupportedGuard,
+            LowerabilityFailureKind::MissingObstruction,
+            LowerabilityFailureKind::MissingFootprintObligation,
+            LowerabilityFailureKind::MissingCostObligation,
+            LowerabilityFailureKind::UnsupportedOpticContract,
+        ]
     );
 }
 

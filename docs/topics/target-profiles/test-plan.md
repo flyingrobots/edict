@@ -56,9 +56,9 @@ Out of scope:
 
 ## Determinism Obligations
 
-- Tests build manifests from in-memory constants.
-- Tests assert structured statuses, failure kinds, and stable fields.
-- Tests do not inspect stdout, stderr, diagnostic prose, serialized bytes,
+- Manifests are built from in-memory constants.
+- Assertions use structured statuses, failure kinds, and stable fields.
+- No test inspects stdout, stderr, diagnostic prose, serialized bytes,
   filesystem ordering, network state, or wall-clock time.
 - The contract graph is checked by `cargo xtask contract-check`.
 
