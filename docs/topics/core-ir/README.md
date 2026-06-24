@@ -4,8 +4,9 @@ Status: current HEAD contract.
 
 This chapter describes the Core IR contract that exists today. It began as the
 `v0.2.0-alpha.1` semantic model and schema contract; the compiler-spine topic
-now owns the initial source-to-in-memory-Core lowerer. This shelf is still not a
-canonical encoding or hashing claim.
+now owns the initial source-to-in-memory-Core lowerer. This shelf also owns the
+reference canonical encoder for Core modules. It is still not a Core digest,
+golden-fixture, target-lowering, or admission claim.
 
 ## Public Surface
 
@@ -15,9 +16,15 @@ Its top-level artifact is `core-module`, and every Core module declares
 
 Core is downstream of the source AST. The source parser still returns source
 AST, not Core; the compiler-spine shelf owns the initial executable lowering
-from source AST to in-memory Core. The Core contract does not freeze canonical
-encodings, golden bytes, exact Core digests, target IR, or admission bundles.
-[COREIR-REQ-007]
+from source AST to in-memory Core.
+
+The `edict_syntax` crate exposes `encode_core_module` for
+`edict.canonical-cbor/v1` Core bytes, `decode_canonical_cbor` for canonical byte
+validation, and `encode_canonical_cbor` for decoded canonical values.
+[COREIR-REQ-012] [COREIR-REQ-013]
+
+The Core contract does not freeze reviewed golden bytes, exact Core digests,
+target IR, or admission bundles. [COREIR-REQ-007] [COREIR-REQ-014]
 
 ## Current Contract
 
@@ -49,6 +56,14 @@ encodings, golden bytes, exact Core digests, target IR, or admission bundles.
 - Schema-shape fixtures prove minimal accepted Core module/intent shapes and
   rejected missing or external-evidence fields against the CDDL declarations.
   [COREIR-REQ-010]
+- Core modules can be encoded as deterministic `edict.canonical-cbor/v1` bytes
+  from their semantic value tree. Validation decodes canonical bytes and
+  requires byte-identical re-encoding, rejecting non-canonical forms such as
+  non-minimal integers. [COREIR-REQ-012] [COREIR-REQ-013]
+- Canonical encoder behavior is covered for map-order independence, mutation
+  sensitivity, decode/re-encode stability, primitive integer width stability,
+  and source alpha-renaming invariance. [COREIR-REQ-005] [COREIR-REQ-012]
+  [COREIR-REQ-013]
 
 ## Deferred
 
@@ -57,8 +72,7 @@ The following are not implemented by the Core IR contract:
 - import resolution and resolved type checking;
 - full source-to-Core language coverage;
 - full CDDL instance validation;
-- canonical encoder implementation;
-- golden Core bytes and exact digest fixtures;
+- reviewed golden Core bytes and exact digest fixtures;
 - target-profile lowering;
 - bundle/admission artifacts.
 

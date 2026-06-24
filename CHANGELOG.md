@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the first reference `edict.canonical-cbor/v1` Core encoder for the
+  current in-memory Core module model, plus canonical byte validation through
+  decode/re-encode stability checks. This slice intentionally does not freeze
+  reviewed golden bytes or exact Core digests.
 - Added the first executable compiler-spine slice for `v0.3.0-alpha.1`:
   explicit `resolve_module`, `type_check`, `lower_core`, and `compile_to_core`
   APIs; deterministic `CompilerContext` profile/budget facts; a typed module
@@ -23,6 +27,23 @@ versions still track specification maturity rather than a released product.
   compatibility alias for the same stage.
 - Added the repository rule that issue-closing PRs must include GitHub
   auto-close text such as `Closes #123` in the pull request body.
+
+### Fixed
+
+- Rejected Core canonical encoding when an import resource digest is unresolved,
+  preventing floating imports from entering the canonical preimage.
+- Excluded source-local import alias spelling from Core canonical bytes.
+- Sorted resolved Core imports before canonical encoding so source import order
+  does not affect canonical bytes.
+- Excluded local source spelling from canonical local references, leaving the
+  alpha-normalized local name and type as the Core byte identity.
+- Canonicalized `requiredCoreCapabilities` as a sorted set before encoding.
+- Rejected oversized CBOR declared lengths before allocation in the canonical
+  decode validation path.
+- Normalized uppercase SHA-256 hex review forms to the same canonical digest
+  bytes as lowercase hex.
+- Sorted Core input constraints before canonical encoding so constraint vector
+  order does not affect canonical bytes.
 
 ## [v0.2.0-alpha.1] - 2026-07-01
 

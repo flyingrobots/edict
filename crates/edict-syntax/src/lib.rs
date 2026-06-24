@@ -14,21 +14,28 @@
 //! `type_check`, `lower_core`, and `compile_to_core`, currently covering the
 //! initial pure local-record subset and producing in-memory Core IR only.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
-//! list/map/unit expression literals, full source-language lowering, canonical
-//! Core encoding, exact Core digests, target lowering, and admission artifacts
-//! are deferred.
+//! list/map/unit expression literals, full source-language lowering, exact Core
+//! digests, target lowering, and admission artifacts are deferred. The crate
+//! also exposes the first reference canonical Core encoder for
+//! `edict.canonical-cbor/v1`; reviewed golden bytes and exact digests are a
+//! later release slice.
 //!
 //! Assurance tooling (HOLMES / Watson / Moriarty) is shared platform machinery
 //! in `flyingrobots/wesley`; it operates on bundles and evidence, downstream of
 //! this crate, and is wired in at the assurance phase — not depended on here.
 
 pub mod ast;
+pub mod canonical;
 pub mod compiler;
 pub mod core_ir;
 pub mod parser;
 pub mod semantic;
 pub mod token;
 
+pub use canonical::{
+    decode_canonical_cbor, encode_canonical_cbor, encode_core_module, CanonicalError,
+    CanonicalErrorKind, CanonicalValue, CORE_CANONICAL_ENCODING,
+};
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
     CompilerErrorKind, CompilerStage, ResolvedIntent, ResolvedModule, ResolvedTypeDecl,

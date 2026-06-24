@@ -14,7 +14,7 @@ In scope:
 
 Out of scope:
 
-- canonical Core bytes;
+- canonical Core bytes embedded in lowerer output;
 - exact Core digests;
 - target-profile lowering;
 - admission bundles;
@@ -31,7 +31,7 @@ Out of scope:
 | CSPINE-REQ-005 | implemented | Profile and budget source coordinates require explicit deterministic context facts; missing facts reject instead of producing placeholder Core. | issue #20 |
 | CSPINE-REQ-006 | implemented | The first lowerable subset covers `bounded-hello` style pure local-record intents and rejects out-of-subset constructs structurally. | fixtures/lang/bounds/bounded-hello.edict, issue #20 |
 | CSPINE-REQ-007 | implemented | Compiler-spine errors expose stable stage and kind identities. | crates/edict-syntax/src/compiler.rs |
-| CSPINE-REQ-008 | implemented | The compiler-spine slice makes no canonical byte, exact digest, target lowering, or admission claim. | ROADMAP.md |
+| CSPINE-REQ-008 | implemented | The compiler-spine lowerer embeds no canonical bytes, exact digest, target lowering, or admission artifacts in Core modules. | ROADMAP.md |
 
 ## Fixtures
 
@@ -57,12 +57,11 @@ Out of scope:
 - Maps use deterministic key ordering.
 - No test reads stdout, stderr, logs, wall-clock time, random values, or
   filesystem ordering.
-- Golden byte and digest determinism is intentionally deferred until the
-  executable canonical encoder exists.
+- Canonical encoder behavior is verified in the Core IR shelf; reviewed golden
+  byte and digest determinism remains deferred to #22.
 
 ## Open Gaps
 
-- Full Core canonical encoding belongs to #21.
 - Golden bytes and exact digest fixtures belong to #22.
 - Target/lawpack/shape artifact loading belongs to later lowerability work.
 - Effectful branches, loops, matches, variants, and obstruction maps are present

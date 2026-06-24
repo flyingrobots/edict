@@ -3,8 +3,9 @@
 Status: current HEAD contract.
 
 This chapter describes the executable compiler-spine stages that exist today.
-The spine is the path from parsed source AST to in-memory Core IR. It is not a
-canonical encoder, hash freezer, target lowerer, or admission tool.
+The spine is the path from parsed source AST to in-memory Core IR. The lowerer
+does not embed canonical bytes or hashes into Core modules, and it is not a hash
+freezer, target lowerer, or admission tool.
 
 ## Public Surface
 
@@ -39,22 +40,22 @@ before the resolver can produce Core-ready metadata. [CSPINE-REQ-005]
 - Resolver/type-checker failures use stable `CompilerErrorKind` and
   `CompilerStage` values. Tests assert those structured values rather than
   diagnostic prose. [CSPINE-REQ-007]
-- Canonical bytes, exact digests, encode/decode stability, map-order canonical
-  sorting, and platform independence are intentionally deferred to the canonical
-  encoder and golden issues. [CSPINE-REQ-008]
+- The lowerer output carries no embedded canonical bytes, exact digest, target
+  IR, or admission fields. Canonical encoding is a separate Core IR surface, and
+  reviewed golden bytes and exact digests remain separate release artifacts.
+  [CSPINE-REQ-008]
 
 ## Deferred
 
 The following are not implemented by this compiler-spine slice:
 
-- canonical Core encoder;
-- golden Core bytes and exact digest fixtures;
+- reviewed golden Core bytes and exact digest fixtures;
 - target-profile lowering;
 - obstruction exhaustiveness against target/lawpack failure facts;
 - shape/lawpack schema loading;
 - full source language lowering.
 
-Those items remain assigned to the v0.3 encoder/golden issues and later
+Those items remain assigned to the v0.3 golden issue and later
 lowerability/admission milestones.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
