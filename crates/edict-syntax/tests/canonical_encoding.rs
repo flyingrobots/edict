@@ -83,6 +83,21 @@ fn canonical_core_bytes_decode_and_reencode_stably() {
 }
 
 #[test]
+fn canonical_core_rejects_unresolved_import_digest() {
+    let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
+    let mut core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
+    core.imports
+        .first_mut()
+        .expect("fixture has an import")
+        .resource
+        .digest = None;
+
+    let err = encode_core_module(&core).expect_err("unresolved import digest rejects");
+
+    assert_eq!(err.kind(), CanonicalErrorKind::UnresolvedDigest);
+}
+
+#[test]
 fn noncanonical_cbor_bytes_reject_with_stable_error_kind() {
     let err = decode_canonical_cbor(&[0x18, 0x00]).expect_err("non-minimal zero rejects");
 

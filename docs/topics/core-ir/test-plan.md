@@ -73,6 +73,7 @@ Out of scope:
 | COREIR-TP-009 | implemented | Canonical validation | COREIR-REQ-013 | Decoding canonical bytes and re-encoding them returns identical bytes; non-canonical bytes and duplicate map keys reject. | canonical_core_bytes_decode_and_reencode_stably, noncanonical_cbor_bytes_reject_with_stable_error_kind, canonical_cbor_rejects_duplicate_map_keys_on_encode | fixtures/lang/bounds/bounded-hello.edict | Encode and decode paths validate canonical byte shape. |
 | COREIR-TP-010 | implemented | Alpha stability | COREIR-REQ-005, COREIR-REQ-012 | Source binder renaming that preserves Core local identity does not change canonical bytes. | canonical_core_bytes_are_source_alpha_rename_invariant | fixtures/lang/bounds/bounded-hello.edict | Tests source names do not enter Core identity. |
 | COREIR-TP-011 | implemented | Platform independence | COREIR-REQ-012 | Canonical integer encodings use fixed CBOR width thresholds and big-endian multi-byte payloads. | canonical_cbor_integer_widths_are_platform_independent | - | Tests primitive encoder behavior, not a Core golden fixture. |
+| COREIR-TP-012 | implemented | Canonical validation | COREIR-REQ-012, COREIR-REQ-013 | Core imports without resolved digests reject before canonical bytes are emitted. | canonical_core_rejects_unresolved_import_digest | fixtures/lang/bounds/bounded-hello.edict | Prevents floating imported semantics from entering the Core canonical preimage. |
 
 ## Determinism Obligations
 

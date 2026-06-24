@@ -28,6 +28,11 @@ versions still track specification maturity rather than a released product.
 - Added the repository rule that issue-closing PRs must include GitHub
   auto-close text such as `Closes #123` in the pull request body.
 
+### Fixed
+
+- Rejected Core canonical encoding when an import resource digest is unresolved,
+  preventing floating imports from entering the canonical preimage.
+
 ## [v0.2.0-alpha.1] - 2026-07-01
 
 ### Added

@@ -25,6 +25,8 @@ pub enum CanonicalErrorKind {
     UnsupportedValue,
     /// A numeric Core value is outside the supported integer range or malformed.
     InvalidInteger,
+    /// A digest-required Core reference has not been resolved.
+    UnresolvedDigest,
     /// A digest string is not the expected review rendering.
     InvalidDigest,
     /// The byte stream ended before a complete value was decoded.
@@ -192,9 +194,13 @@ fn core_import_value(import: &CoreImport) -> Result<CanonicalValue, CanonicalErr
 
 fn resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
     let mut entries = vec![("id", text(&resource.coordinate))];
-    if let Some(digest) = &resource.digest {
-        entries.push(("digest", digest_value(digest)?));
-    }
+    let Some(digest) = &resource.digest else {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnresolvedDigest,
+            "Core import resource digest is unresolved",
+        ));
+    };
+    entries.push(("digest", digest_value(digest)?));
     Ok(map(entries))
 }
 
