@@ -15,8 +15,15 @@ versions still track specification maturity rather than a released product.
   classifications, and stable lowerability failure kinds. The checker rejects
   chained/composite adapter claims and ambiguous direct adapters, and does not
   produce Target IR or admission artifacts.
+- Added typed v1 target-profile manifest conformance checks in `edict_syntax`:
+  `TargetProfileManifest`, `validate_target_profile_manifest`, runtime-neutral
+  Echo/KV profile acceptance, digest-locked component validation, Core ABI
+  validation, deferred lawpack-adapter ABI rejection, and atomic application
+  doctrine validation.
 - Added the lowerability topic shelf and the `edict.lowering-requirements/v1`
   CDDL shape in the target-profile ABI.
+- Added the target-profiles topic shelf for the manifest conformance contract
+  and verification matrix.
 
 ### Changed
 

@@ -13,10 +13,11 @@
 //! Phase 3 begins the executable compiler spine with `resolve_module`,
 //! `type_check`, `lower_core`, and `compile_to_core`, currently covering the
 //! initial pure local-record subset and producing in-memory Core IR only.
-//! The crate also exposes typed v1 lowerability checks for
-//! `LoweringRequirements` against explicit target-profile facts. These checks
-//! classify support as native, directly adapted, or unsupported; they do not
-//! produce Target IR or admission artifacts.
+//! The crate also exposes typed v1 target-profile conformance and lowerability
+//! checks. Conformance validates runtime-neutral target-profile manifests.
+//! Lowerability checks `LoweringRequirements` against explicit target-profile
+//! facts and classifies support as native, directly adapted, or unsupported;
+//! neither surface produces Target IR or admission artifacts.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, target
 //! lowering, and admission artifacts are deferred. The crate exposes the
@@ -35,6 +36,7 @@ pub mod core_ir;
 pub mod lowerability;
 pub mod parser;
 pub mod semantic;
+pub mod target_profile;
 pub mod token;
 
 pub use canonical::{
@@ -50,7 +52,7 @@ pub use compiler::{
 pub use core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
     CoreNode, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef,
+    ResourceRef, CORE_API_VERSION,
 };
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,
@@ -60,6 +62,12 @@ pub use lowerability::{
 };
 pub use parser::{parse_module, ParseError, ParseErrorKind};
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
+pub use target_profile::{
+    validate_target_profile_manifest, TargetProfileConformanceFailure,
+    TargetProfileConformanceFailureKind, TargetProfileConformanceReport,
+    TargetProfileConformanceStatus, TargetProfileManifest, CANONICAL_CBOR_ABI,
+    TARGET_PROFILE_API_VERSION,
+};
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
 
 #[cfg(doctest)]
@@ -72,6 +80,9 @@ mod topic_shelf_doctests {
 
     #[doc = include_str!("../../../docs/topics/lowerability/README.md")]
     pub struct LowerabilityTopicDocs;
+
+    #[doc = include_str!("../../../docs/topics/target-profiles/README.md")]
+    pub struct TargetProfilesTopicDocs;
 
     #[doc = include_str!("../../../docs/topics/semantic-validation/README.md")]
     pub struct SemanticValidationTopicDocs;

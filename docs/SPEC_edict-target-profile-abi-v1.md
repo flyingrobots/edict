@@ -8,7 +8,7 @@ status: "draft"
 owners:
   - "@flyingrobots"
 created: "2026-06-18"
-updated: "2026-06-18"
+updated: "2026-06-24"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -108,6 +108,13 @@ field is deferred.
 
 Display metadata is not part of this manifest. Human-facing names, codenames,
 and marketing copy live in sidecar documents keyed by the target profile digest.
+
+The reference `edict_syntax` conformance surface accepts typed manifest values
+only. It validates the profile API version, identity, accepted Core ABI,
+digest-locked component references, canonical encoding rule, deferred
+lawpack-adapter ABI emptiness, and v1 application doctrine. The checker is
+runtime-neutral: Echo and non-Echo profile shapes are accepted or rejected by the
+same obligations.
 
 ## Exchange Types And Plugin Boundary
 
