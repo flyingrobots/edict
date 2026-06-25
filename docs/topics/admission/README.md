@@ -37,8 +37,9 @@ The `edict_syntax` crate exposes:
   canonical input, witnessed evidence, admitted basis, or capability
   presentation. Hidden host inputs are rejected. [ADMISSION-REQ-003]
 - Admission receipt bodies must echo the request's bundle subject and policy
-  epoch. Receipt bodies must not reference their own signing envelope.
-  [ADMISSION-REQ-004]
+  epoch. Receipt admitted operations must be a subset of requested operations.
+  Accepted receipt bodies must not carry rejection evidence, and receipt bodies
+  must not reference their own signing envelope. [ADMISSION-REQ-004]
 - Gate C invocation names the operation being invoked. That operation must
   appear in the requested operation requirements, be admitted by an accepted
   admission receipt, and carry an invocation capability receipt matching the

@@ -69,15 +69,22 @@ fn canonical_input(coordinate: &str, hex: char) -> ExecutionInputRef {
     }
 }
 
-fn operation(bundle_subject: BundleSubject) -> OperationRequirementRef {
+fn operation_with_coordinate(
+    bundle_subject: BundleSubject,
+    operation_coordinate: &str,
+) -> OperationRequirementRef {
     OperationRequirementRef {
         bundle_subject,
-        operation_coordinate: "hello.sayHello".to_owned(),
+        operation_coordinate: operation_coordinate.to_owned(),
         basis: digest_locked("hello.sayHello.basis/v1", 'e'),
         variables_digest: digest('f'),
         requirements_digest: digest('1'),
         execution_inputs: vec![canonical_input("hello.sayHello.input/v1", '2')],
     }
+}
+
+fn operation(bundle_subject: BundleSubject) -> OperationRequirementRef {
+    operation_with_coordinate(bundle_subject, "hello.sayHello")
 }
 
 fn request_for(bundle: &ContractBundleManifest, kind: BundleSubjectKind) -> AdmissionRequest {
@@ -241,6 +248,38 @@ fn receipt_body_must_not_reference_its_signing_envelope() {
 }
 
 #[test]
+fn accepted_receipt_cannot_carry_rejection_evidence() {
+    let bundle = echo_bundle();
+    let request = request_for(&bundle, BundleSubjectKind::Semantic);
+    let mut receipt = accepted_receipt_for(&request);
+    receipt.rejection = Some(digest_locked("continuum.admission-rejection/v1", 'f'));
+
+    let report = validate_admission_receipt(&request, &receipt);
+
+    assert_eq!(report.status, AdmissionValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![AdmissionValidationFailureKind::AdmissionReceiptMismatch]
+    );
+}
+
+#[test]
+fn receipt_admitted_operations_must_be_requested() {
+    let bundle = echo_bundle();
+    let request = request_for(&bundle, BundleSubjectKind::Semantic);
+    let mut receipt = accepted_receipt_for(&request);
+    receipt.admitted_operations = vec!["hello.wave".to_owned()];
+
+    let report = validate_admission_receipt(&request, &receipt);
+
+    assert_eq!(report.status, AdmissionValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![AdmissionValidationFailureKind::AdmissionReceiptMismatch]
+    );
+}
+
+#[test]
 fn llm_authored_artifact_still_requires_admission_receipt() {
     let bundle = echo_bundle();
     let request = request_for(&bundle, BundleSubjectKind::Semantic);
@@ -319,8 +358,7 @@ fn participant_policy_rejection_is_evidence_not_invocation_authority() {
 fn invoked_operation_must_be_in_requested_operations() {
     let bundle = echo_bundle();
     let request = request_for(&bundle, BundleSubjectKind::Semantic);
-    let mut receipt = accepted_receipt_for(&request);
-    receipt.admitted_operations = vec!["hello.wave".to_owned()];
+    let receipt = accepted_receipt_for(&request);
     let mut capability = invocation_capability(&request);
     capability.operation_coordinate = "hello.wave".to_owned();
     let mut packet = invocation_packet(bundle, request, Some(receipt), vec![capability]);
@@ -338,15 +376,17 @@ fn invoked_operation_must_be_in_requested_operations() {
 #[test]
 fn accepted_receipt_must_admit_invoked_operation() {
     let bundle = echo_bundle();
-    let request = request_for(&bundle, BundleSubjectKind::Semantic);
-    let mut receipt = accepted_receipt_for(&request);
-    receipt.admitted_operations = vec!["hello.wave".to_owned()];
-    let packet = invocation_packet(
-        bundle,
-        request.clone(),
-        Some(receipt),
-        vec![invocation_capability(&request)],
-    );
+    let mut request = request_for(&bundle, BundleSubjectKind::Semantic);
+    request.requested_operations.push(operation_with_coordinate(
+        request.bundle_subject.clone(),
+        "hello.wave",
+    ));
+    let receipt = accepted_receipt_for(&request);
+    let mut capability = invocation_capability(&request);
+    capability.operation_coordinate = "hello.wave".to_owned();
+    let packet = invocation_packet(bundle, request, Some(receipt), vec![capability]);
+    let mut packet = packet;
+    packet.operation_coordinate = "hello.wave".to_owned();
 
     let report = check_gate_c_invocation(&packet);
 

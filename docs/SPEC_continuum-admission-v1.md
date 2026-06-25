@@ -86,6 +86,9 @@ An `AdmissionReceiptBody` contains:
 - obstruction or rejection taxonomy for non-accept decisions;
 - policy epoch.
 
+The admitted operation set must be a subset of the request's operation set.
+Accepted receipts carry no obstruction or rejection taxonomy.
+
 The body is hashed to `AdmissionReceiptBodyDigest`. A DSSE envelope signs that
 digest and is carried by the distribution envelope, **not** by the body. The
 body contains no signature-envelope reference.

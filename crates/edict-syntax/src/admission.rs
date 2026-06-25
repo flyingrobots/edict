@@ -301,6 +301,29 @@ pub fn validate_admission_receipt(
         );
     }
 
+    if receipt.decision == AdmissionDecision::Accepted && receipt.rejection.is_some() {
+        push_failure(
+            &mut failures,
+            AdmissionValidationFailureKind::AdmissionReceiptMismatch,
+            "rejection",
+            "accepted receipt omits rejection evidence",
+        );
+    }
+    for admitted_operation in &receipt.admitted_operations {
+        if !request
+            .requested_operations
+            .iter()
+            .any(|operation| operation.operation_coordinate == *admitted_operation)
+        {
+            push_failure(
+                &mut failures,
+                AdmissionValidationFailureKind::AdmissionReceiptMismatch,
+                "admitted_operations",
+                "receipt admitted operations are a subset of requested operations",
+            );
+        }
+    }
+
     check_digest_locked_resource("participant", &receipt.participant, &mut failures);
     check_resource_list(
         "admitted_capabilities",
