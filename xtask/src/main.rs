@@ -1040,6 +1040,22 @@ mod tests {
     }
 
     #[test]
+    fn auto_release_tag_dispatches_with_explicit_repo() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let dispatch_job = workflow
+            .split("dispatch-release-publication:")
+            .nth(1)
+            .expect("dispatch-release-publication job block");
+        assert!(
+            dispatch_job.contains("GH_REPO: ${{ github.repository }}")
+                || dispatch_job.contains("--repo \"${GITHUB_REPOSITORY}\""),
+            "release dispatch must name the repository explicitly"
+        );
+    }
+
+    #[test]
     fn release_tag_recovery_policy_is_structured() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))

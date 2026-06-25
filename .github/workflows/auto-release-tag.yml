@@ -161,6 +161,7 @@ jobs:
       - name: Dispatch release publication
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ needs.identify-release-pr.outputs.tag }}
         shell: bash
         run: |
