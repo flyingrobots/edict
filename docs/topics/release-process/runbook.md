@@ -110,9 +110,11 @@ gh workflow run auto-release-tag.yml \
   -f sha=<verified-main-merge-sha>
 ```
 
-The recovery path validates that the SHA is reachable from `origin/main`,
-refuses to move an existing tag, and still dispatches publication when the
-existing tag already targets the requested SHA.
+The recovery path validates that the SHA is reachable from `origin/main`, has a
+successful `main` CI run, came from a merged `release/*-prep` PR, and derives
+the same tag requested by the operator. It refuses to move an existing tag and
+still dispatches publication when the existing tag already targets the requested
+SHA.
 
 Manual local tagging remains the last fallback if Actions itself is unavailable.
 Tag the exact verified merge commit:

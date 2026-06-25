@@ -13,6 +13,7 @@ In scope:
 - no crates.io publication in the current release workflow;
 - operator runbook phases and required release checks;
 - release-prep PR auto-tagging after successful `main` CI;
+- manual recovery dispatch for verified release-prep merge commits;
 - milestone closure after successful release publication;
 - structured release metadata for alpha scope and non-goal boundaries;
 - deterministic local checks for workflow contract drift.
@@ -42,6 +43,7 @@ Out of scope:
 | RELEASE-REQ-012 | implemented | Successful `main` CI on a merged `release/vX.Y.Z-alpha.N-prep` pull request creates an immutable `vX.Y.Z-alpha.N` tag and dispatches release publication. | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-013 | implemented | Release publication closes the matching GitHub milestone only after the release exists and the milestone has zero open issues. | .github/workflows/release.yml, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-014 | implemented | Structured release policy captures the `v0.5.0-alpha.1` Gate C admission-boundary scope, release automation, and explicit Continuum-owned non-goal boundaries. | docs/topics/release-process/policy.toml |
+| RELEASE-REQ-015 | implemented | Manual auto-release recovery must only tag a requested `v*` release when the provided SHA is reachable from `origin/main`, has successful `main` CI, came from exactly one merged `release/*-prep` pull request, and derives the requested tag. | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml |
 
 ## Fixtures
 
@@ -70,6 +72,7 @@ Out of scope:
 | RELEASE-TP-007 | implemented | Boundary guard | RELEASE-REQ-011 | Structured policy captures the v0.4 target-profile, lowerability, contract-bundle validation, target-lowering, admission, and publication boundaries. | release_policy_tracks_v0_4_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the target-profile and lowerability milestone. |
 | RELEASE-TP-008 | implemented | Automation guard | RELEASE-REQ-012, RELEASE-REQ-013 | The auto-release workflow watches successful `main` CI, derives tags from merged release-prep PRs, refuses tag moves, dispatches release publication, and the Release workflow closes zero-open milestones after publication. | release_automation_policy_is_structured, auto_release_tag_workflow_is_guarded, release_workflow_supports_dispatch_and_milestone_closure | .github/workflows/auto-release-tag.yml, .github/workflows/release.yml, docs/topics/release-process/policy.toml | Keeps release automation deterministic and non-mutating. |
 | RELEASE-TP-009 | implemented | Boundary guard | RELEASE-REQ-014 | Structured policy captures the v0.5 admission-boundary scope and explicit non-goals for Continuum-owned policy, identity, delegation, revocation, ledger persistence, signature verification, target lowering, and crates.io publication. | release_policy_tracks_v0_5_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the Gate C admission milestone. |
+| RELEASE-TP-010 | implemented | Recovery guard | RELEASE-REQ-015 | The manual auto-release recovery path requires a successful main-CI release-prep merge, derives the tag from the merged release-prep PR, and rejects mismatched operator tag input before writing release outputs. | auto_release_tag_manual_dispatch_checks_verified_main_sha, auto_release_tag_workflow_is_guarded | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml | Keeps manual recovery idempotent without allowing arbitrary tag/SHA pairing. |
 
 ## Determinism Obligations
 

@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     permissions:
+      actions: read
       contents: read
       pull-requests: read
     outputs:
@@ -74,6 +75,47 @@ jobs:
               exit 1
             fi
 
+            CI_RUN_JSON="$(gh api \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&event=push&head_sha=${SHA}&status=success&per_page=1" \
+              --jq '.workflow_runs[0] // empty')"
+
+            if [[ -z "${CI_RUN_JSON}" ]]; then
+              echo "::error::Manual recovery SHA must have a successful main CI run."
+              exit 1
+            fi
+
+            PRS_JSON="$(gh api \
+              -H "Accept: application/vnd.github+json" \
+              "/repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls")"
+
+            MATCHES="$(jq '[.[] | select(
+              .merged_at != null and
+              .base.ref == "main" and
+              (.head.ref | test("^release/v[0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+-prep$"))
+            )]' <<<"${PRS_JSON}")"
+            COUNT="$(jq 'length' <<<"${MATCHES}")"
+
+            if [[ "${COUNT}" != "1" ]]; then
+              echo "::error::Manual recovery SHA must resolve to exactly one merged release-prep PR."
+              exit 1
+            fi
+
+            HEAD_REF="$(jq -r '.[0].head.ref' <<<"${MATCHES}")"
+            PR_NUMBER="$(jq -r '.[0].number' <<<"${MATCHES}")"
+            RELEASE_BRANCH_REGEX='^release/(v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+)-prep$'
+
+            if [[ ! "${HEAD_REF}" =~ ${RELEASE_BRANCH_REGEX} ]]; then
+              echo "::error::Release branch did not match expected pattern: ${HEAD_REF}"
+              exit 1
+            fi
+
+            TAG="${BASH_REMATCH[1]}"
+
+            if [[ "${TAG}" != "${INPUT_TAG}" ]]; then
+              echo "::error::Manual recovery tag ${INPUT_TAG} does not match merged release-prep PR tag ${TAG}."
+              exit 1
+            fi
+
             NOTES="docs/releases/${TAG}.md"
 
             if [[ ! -f "${NOTES}" ]]; then
@@ -84,7 +126,7 @@ jobs:
             {
               echo "release=true"
               echo "tag=${TAG}"
-              echo "pr=manual"
+              echo "pr=${PR_NUMBER}"
               echo "sha=${SHA}"
             } >>"${GITHUB_OUTPUT}"
             exit 0

@@ -1062,6 +1062,20 @@ mod tests {
             policy.contains("manual_recovery_trigger = \"workflow_dispatch\""),
             "release automation policy must allow manual recovery dispatch"
         );
+        assert!(
+            policy.contains("manual_recovery_requires = ["),
+            "release automation policy must structure manual recovery requirements"
+        );
+        for required in [
+            "main_ci_success",
+            "merged_release_pr",
+            "manual_tag_matches_release_prep_pr",
+        ] {
+            assert!(
+                policy.contains(required),
+                "release automation policy missing manual recovery requirement: {required}"
+            );
+        }
     }
 
     #[test]
@@ -1070,6 +1084,11 @@ mod tests {
         let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
             .expect("auto release workflow");
         let identify_job = workflow_block(&workflow, "identify-release-pr:", "create-release-tag:");
+        let manual_recovery = workflow_block(
+            identify_job,
+            "if [[ \"${EVENT_NAME}\" == \"workflow_dispatch\" ]]; then",
+            "exit 0",
+        );
         for required in [
             "workflow_dispatch:",
             "tag:",
@@ -1079,12 +1098,19 @@ mod tests {
             "INPUT_SHA:",
             "git fetch origin main:refs/remotes/origin/main --tags",
             "git merge-base --is-ancestor \"${SHA}\" origin/main",
+            "actions/workflows/ci.yml/runs",
+            "head_sha=${SHA}",
+            "status=success",
+            "Manual recovery SHA must have a successful main CI run",
+            "/commits/${SHA}/pulls",
+            "Manual recovery SHA must resolve to exactly one merged release-prep PR.",
+            "if [[ \"${TAG}\" != \"${INPUT_TAG}\" ]]",
             "release=true",
             "tag=${TAG}",
             "sha=${SHA}",
         ] {
             assert!(
-                identify_job.contains(required) || workflow.contains(required),
+                manual_recovery.contains(required) || workflow.contains(required),
                 "auto-release manual recovery missing verified-sha contract: {required}"
             );
         }
@@ -1117,9 +1143,11 @@ mod tests {
             .and_then(|tail| tail.split("create-release-tag:").next())
             .expect("identify-release-pr job block");
         assert!(
-            identify_job.contains("permissions:\n      contents: read\n      pull-requests: read")
+            identify_job.contains(
+                "permissions:\n      actions: read\n      contents: read\n      pull-requests: read",
+            )
                 && !identify_job.contains("write"),
-            "identify-release-pr must only read contents and pull requests"
+            "identify-release-pr must only read actions, contents, and pull requests"
         );
         let tag_job = workflow
             .split("create-release-tag:")
