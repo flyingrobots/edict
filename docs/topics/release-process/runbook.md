@@ -102,10 +102,13 @@ to move an existing tag, and dispatches the Release workflow with the tag.
 
 Manual tagging is now an operator fallback, not the normal path. If automation
 does not run and the release-prep merge commit has been verified on `main`, the
-fallback is:
+fallback is to tag that exact verified merge commit:
 
 ```bash
-git tag -a vX.Y.Z-alpha.N -m "vX.Y.Z-alpha.N"
+git fetch origin main:refs/remotes/origin/main --tags
+RELEASE_COMMIT=<verified-main-merge-sha>
+git merge-base --is-ancestor "${RELEASE_COMMIT}" origin/main
+git tag -a vX.Y.Z-alpha.N "${RELEASE_COMMIT}" -m "vX.Y.Z-alpha.N"
 git push origin vX.Y.Z-alpha.N
 ```
 

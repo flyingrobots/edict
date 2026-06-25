@@ -22,6 +22,7 @@ required_checks = [
 ]
 
 [release_runbook]
+manual_fallback_target = "verified_main_merge_commit"
 steps = [
   "prepare_branch",
   "verify_local",

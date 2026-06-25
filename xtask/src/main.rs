@@ -1010,6 +1010,7 @@ mod tests {
             "auto_tag_publish",
             "watch_workflow",
             "capture_evidence",
+            "manual_fallback_target = \"verified_main_merge_commit\"",
             "cargo xtask verify",
             "gh pr checks",
             "gh release view",
