@@ -36,6 +36,7 @@ Out of scope:
 | RELEASE-REQ-008 | implemented | Scheduled alpha release changelog dates match their structured release policy target dates. | CHANGELOG.md, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-009 | implemented | Release preparation follows a documented runbook with branch prep, local verification, PR merge gate, tag publication, workflow watch, evidence capture, and non-mutating recovery phases. | docs/topics/release-process/runbook.md, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-010 | implemented | Structured release policy captures the `v0.3.0-alpha.1` compiler-spine, canonical encoder, reviewed golden fixture, exact digest, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
+| RELEASE-REQ-011 | implemented | Structured release policy captures the `v0.4.0-alpha.1` target-profile, lowerability, contract-bundle validation, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
 
 ## Fixtures
 
@@ -43,7 +44,8 @@ Out of scope:
 | --- | --- | --- |
 | docs/releases/v0.1.0-alpha.1.md | Published release notes for the first front-end alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.2.0-alpha.1.md | Published release notes for the Core semantic model and schema alpha. | The release workflow looks up this file by full tag name. |
-| docs/releases/v0.3.0-alpha.1.md | Prepared release notes for the compiler-spine and canonical Core alpha. | The release workflow will look up this file by full tag name after tagging. |
+| docs/releases/v0.4.0-alpha.1.md | Prepared release notes for the target-profile, lowerability, and contract-bundle validation alpha. | The release workflow will look up this file by full tag name after tagging. |
+| docs/releases/v0.3.0-alpha.1.md | Published release notes for the compiler-spine and canonical Core alpha. | The release workflow looks up this file by full tag name. |
 | CHANGELOG.md | Release history for published and publish-ready alpha releases. | Scheduled alpha release sections use the matching release target date. |
 | docs/topics/release-process/policy.toml | Structured release-tag, runbook, and alpha boundary policy. | Tag mutation is forbidden, runbook phases are named, and release scope/non-goals are structured. |
 | docs/topics/release-process/runbook.md | Operator steps for preparing, tagging, publishing, and recovering releases. | The structured policy names the phases and checks the runbook must cover. |
@@ -58,6 +60,7 @@ Out of scope:
 | RELEASE-TP-004 | implemented | Consistency guard | RELEASE-REQ-008 | The v0.2 and v0.3 changelog section dates equal their target dates in structured release policy. | alpha_changelog_dates_match_release_policy | CHANGELOG.md, docs/topics/release-process/policy.toml | Prevents release chronology drift across release prep and publication. |
 | RELEASE-TP-005 | implemented | Runbook guard | RELEASE-REQ-009 | Structured policy names the release-prep phases and required checks for local verification, PR checks, and release existence. | release_runbook_policy_is_structured | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md | Keeps the human runbook tied to a stable release contract. |
 | RELEASE-TP-006 | implemented | Boundary guard | RELEASE-REQ-010 | Structured policy captures the v0.3 compiler-spine, canonical encoder, reviewed golden fixture, exact digest, target-lowering, and admission boundaries. | release_policy_tracks_v0_3_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the compiler-spine milestone. |
+| RELEASE-TP-007 | implemented | Boundary guard | RELEASE-REQ-011 | Structured policy captures the v0.4 target-profile, lowerability, contract-bundle validation, target-lowering, admission, and publication boundaries. | release_policy_tracks_v0_4_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the target-profile and lowerability milestone. |
 
 ## Determinism Obligations
 

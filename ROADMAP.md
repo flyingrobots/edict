@@ -144,6 +144,8 @@ Milestone: `v0.4.0-alpha.1`
 
 Primary issues: #1, #5
 
+Release prep issue: #39
+
 Release labels: `release:admission`, `release:lowerability`
 
 Scope:
@@ -158,7 +160,7 @@ Scope:
 
 Exit gates:
 
-- #1 and #5 land or have reviewed release-scope splits.
+- #1, #5, and #39 land or have reviewed release-scope splits.
 - The release reconciles lowerability with the v1 direct-adapter rule.
 - Any bundled assurance evidence is hash-bound to the selected bundle subject,
   target profile, and target IR.
@@ -237,7 +239,7 @@ Milestones:
 - `v0.1.0-alpha.1`: #16
 - `v0.2.0-alpha.1`: #3, #19, #28
 - `v0.3.0-alpha.1`: #10, #20, #21, #22
-- `v0.4.0-alpha.1`: #1, #5
+- `v0.4.0-alpha.1`: #1, #5, #39
 - `v0.5.0-alpha.1`: #6, #11
 - `v0.6.0-alpha.1`: #7
 - `v2-design`: #4

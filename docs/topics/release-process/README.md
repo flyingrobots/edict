@@ -45,7 +45,9 @@ capture evidence. The structured runbook contract is captured in
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
-- [`v0.3.0-alpha.1`](../../releases/v0.3.0-alpha.1.md): publish-ready
+- [`v0.4.0-alpha.1`](../../releases/v0.4.0-alpha.1.md): publish-ready
+  target-profile, lowerability, and contract-bundle validation alpha notes.
+- [`v0.3.0-alpha.1`](../../releases/v0.3.0-alpha.1.md): published
   compiler-spine, canonical Core encoder, reviewed golden bytes, and exact
   digest alpha notes.
 - [`v0.2.0-alpha.1`](../../releases/v0.2.0-alpha.1.md): published Core semantic
@@ -53,11 +55,18 @@ release workflow by full tag name. Current release-note files:
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
 
-The `v0.3.0-alpha.1` release notes are publish-ready:
+The `v0.4.0-alpha.1` release notes are publish-ready:
 
+- Release issue: <https://github.com/flyingrobots/edict/issues/39>
+- Required tag after release-prep merge: `v0.4.0-alpha.1`
+- Target date: 2026-07-29
+
+The `v0.3.0-alpha.1` release is published as a GitHub prerelease:
+
+- GitHub release:
+  <https://github.com/flyingrobots/edict/releases/tag/v0.3.0-alpha.1>
 - Release issue: <https://github.com/flyingrobots/edict/issues/35>
-- Required tag after release-prep merge: `v0.3.0-alpha.1`
-- Target date: 2026-07-15
+- Tag target: `4ea3d993f74490b495fe6e6a9ec2d52f889ccceb`
 
 The `v0.2.0-alpha.1` release is published as a GitHub prerelease:
 

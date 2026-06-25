@@ -921,7 +921,7 @@ mod tests {
             "[release_notes.v0_3_0_alpha_1]",
             "tag = \"v0.3.0-alpha.1\"",
             "target_date = \"2026-07-15\"",
-            "status = \"publish_ready\"",
+            "status = \"published\"",
             "compiler_spine",
             "surface_validation_split",
             "canonical_core_encoder",
@@ -938,6 +938,30 @@ mod tests {
     }
 
     #[test]
+    fn release_policy_tracks_v0_4_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for required in [
+            "[release_notes.v0_4_0_alpha_1]",
+            "tag = \"v0.4.0-alpha.1\"",
+            "target_date = \"2026-07-29\"",
+            "status = \"publish_ready\"",
+            "target_profile_conformance",
+            "lowerability_direct_adapter",
+            "contract_bundle_manifest_validation",
+            "no_target_lowerer_execution",
+            "no_admission_policy",
+            "no_crates_io_publish",
+        ] {
+            assert!(
+                policy.contains(required),
+                "v0.4 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
@@ -946,6 +970,7 @@ mod tests {
         for (tag, target) in [
             ("v0.2.0-alpha.1", "2026-07-01"),
             ("v0.3.0-alpha.1", "2026-07-15"),
+            ("v0.4.0-alpha.1", "2026-07-29"),
         ] {
             assert!(
                 policy.contains(&format!("tag = \"{tag}\"")),
