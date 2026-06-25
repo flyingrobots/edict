@@ -33,6 +33,7 @@ fn highlight_source_emits_editor_roles_for_fixture() {
         HighlightRole::Comment
     );
     assert_eq!(find_role(src, &tokens, "package"), HighlightRole::Keyword);
+    assert_eq!(find_role(src, &tokens, "lawpack"), HighlightRole::Keyword);
     assert_eq!(
         find_role(src, &tokens, "examples"),
         HighlightRole::Identifier
