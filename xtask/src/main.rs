@@ -968,6 +968,17 @@ mod tests {
     }
 
     #[test]
+    fn auto_release_tag_dispatches_release_from_tag_ref() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        assert!(
+            workflow.contains(r#"gh workflow run release.yml --ref "${TAG}" -f tag="${TAG}""#),
+            "auto release workflow must dispatch release.yml from the created tag ref"
+        );
+    }
+
+    #[test]
     fn release_tag_recovery_policy_is_structured() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
