@@ -248,6 +248,22 @@ fn admission_receipt_must_echo_request_digest() {
 }
 
 #[test]
+fn admission_receipt_must_echo_policy_epoch() {
+    let bundle = echo_bundle();
+    let request = request_for(&bundle, BundleSubjectKind::Semantic);
+    let mut receipt = accepted_receipt_for(&request);
+    receipt.policy_epoch = "epoch-2026-06-25T03:00Z".to_owned();
+
+    let report = validate_admission_receipt(&request, &receipt);
+
+    assert_eq!(report.status, AdmissionValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![AdmissionValidationFailureKind::AdmissionReceiptMismatch]
+    );
+}
+
+#[test]
 fn receipt_body_must_not_reference_its_signing_envelope() {
     let bundle = echo_bundle();
     let request = request_for(&bundle, BundleSubjectKind::Semantic);
@@ -436,6 +452,24 @@ fn invocation_capability_must_match_receipt_participant() {
     let receipt = accepted_receipt_for(&request);
     let mut capability = invocation_capability(&request);
     capability.participant = digest_locked("continuum.participant.other-lab/v1", '5');
+    let packet = invocation_packet(bundle, request, Some(receipt), vec![capability]);
+
+    let report = check_gate_c_invocation(&packet);
+
+    assert_eq!(report.status, AdmissionValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![AdmissionValidationFailureKind::MissingInvocationCapability]
+    );
+}
+
+#[test]
+fn invocation_capability_must_match_policy_epoch() {
+    let bundle = echo_bundle();
+    let request = request_for(&bundle, BundleSubjectKind::Semantic);
+    let receipt = accepted_receipt_for(&request);
+    let mut capability = invocation_capability(&request);
+    capability.policy_epoch = "epoch-2026-06-25T03:00Z".to_owned();
     let packet = invocation_packet(bundle, request, Some(receipt), vec![capability]);
 
     let report = check_gate_c_invocation(&packet);
