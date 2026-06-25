@@ -459,9 +459,10 @@ That's the gap Edict fills.
 ## Current Status
 
 Edict now has executable Rust implementation slices alongside the design specs.
-The current implementation includes the front end, Core semantic schema, and
-the first source-to-in-memory-Core compiler spine. It is not a complete compiler
-or admission stack.
+The current implementation includes the front end, Core semantic schema, the
+first source-to-in-memory-Core compiler spine, target-profile and bundle
+validation, and Gate C admission-boundary checks. It is not a complete compiler
+or full admission execution stack.
 
 What exists today:
 
@@ -490,7 +491,8 @@ What exists today:
 - Typed Gate C admission-boundary checks for Edict-owned bundle-subject,
   operation-requirement, hidden execution input rejection, receipt,
   invoked-operation, and invocation capability evidence semantics
-- Publish-ready `v0.4.0-alpha.1` release notes for the target-profile,
+- Release notes for the `v0.5.0-alpha.1` Gate C admission-boundary alpha
+- Published `v0.4.0-alpha.1` release notes for the target-profile,
   lowerability, and contract-bundle validation alpha
 - Published `v0.3.0-alpha.1` release notes and release runbook for the
   compiler-spine alpha
@@ -509,16 +511,17 @@ What doesn't exist yet:
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic
 
-The next implementation milestone after `v0.4.0-alpha.1` is the bundle and
-admission alpha tracked as `v0.5.0-alpha.1`.
+The next implementation milestone after `v0.5.0-alpha.1` is the developer
+tooling alpha tracked as `v0.6.0-alpha.1`.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.2.0-alpha.1` is a Core semantic model and schema milestone, and the
-`v0.3.0-alpha.1` release is a compiler-spine/canonical-Core milestone. The
-`v0.4.0-alpha.1` release is prepared as a target-profile, lowerability, and
-contract-bundle validation milestone. None of these releases claims target
-lowerers or admission tooling.
+`v0.3.0-alpha.1` release is a compiler-spine/canonical-Core milestone,
+`v0.4.0-alpha.1` is a target-profile, lowerability, and contract-bundle
+validation milestone, and `v0.5.0-alpha.1` is a Gate C admission-boundary
+milestone. None of these releases claims target lowerers or full admission
+execution tooling.
 
 ---
 
