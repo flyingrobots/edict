@@ -951,6 +951,23 @@ mod tests {
     }
 
     #[test]
+    fn auto_release_tag_checks_milestone_before_tag_push() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let milestone_check = workflow
+            .find("OPEN_ISSUES")
+            .expect("auto release workflow must check milestone open issue count");
+        let tag_creation = workflow
+            .find("git tag -a")
+            .expect("auto release workflow must create an annotated tag");
+        assert!(
+            milestone_check < tag_creation,
+            "auto release workflow must check milestone readiness before creating an immutable tag"
+        );
+    }
+
+    #[test]
     fn release_tag_recovery_policy_is_structured() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))

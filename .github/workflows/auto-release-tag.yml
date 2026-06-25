@@ -114,6 +114,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            --jq ".[] | select(.title == \"${TAG}\")" | head -n 1)"
+
+          if [[ -z "${MILESTONE_JSON}" ]]; then
+            echo "::error::Missing release milestone matching ${TAG}."
+            exit 1
+          fi
+
+          OPEN_ISSUES="$(jq -r '.open_issues' <<<"${MILESTONE_JSON}")"
+
+          if [[ "${OPEN_ISSUES}" != "0" ]]; then
+            echo "::error::Milestone ${TAG} still has ${OPEN_ISSUES} open issue(s)."
+            exit 1
+          fi
+
           if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
             git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
             TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
