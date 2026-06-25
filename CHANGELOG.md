@@ -23,10 +23,19 @@ versions still track specification maturity rather than a released product.
   ABI validation, deferred lawpack-adapter ABI rejection, and atomic
   application doctrine validation. Composite `multiTarget` profile validation
   remains deferred, so `multiTarget: true` is rejected in v1 conformance.
+- Added typed v1 contract-bundle manifest validation in `edict_syntax`:
+  `ContractBundleManifest`, `validate_contract_bundle_manifest`,
+  runtime-neutral Echo/KV bundle acceptance, SHA-256 digest-locked artifact
+  validation, lowercase digest review rendering, release-only provenance input
+  binding, canonicalization-profile pinning, logical source path validation,
+  optional HOLMES/Watson/Moriarty evidence binding, and explicit rejection of
+  admission artifacts from the participant-neutral bundle.
 - Added the lowerability topic shelf and the `edict.lowering-requirements/v1`
   CDDL shape in the target-profile ABI.
 - Added the target-profiles topic shelf for the manifest conformance contract
   and verification matrix.
+- Added the contract-bundles topic shelf for the participant-neutral bundle and
+  assurance evidence validation contract.
 
 ### Changed
 

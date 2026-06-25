@@ -484,6 +484,9 @@ What exists today:
 - Typed v1 lowerability checks for `LoweringRequirements` against explicit
   target-profile facts, including native, direct-adapter, and unsupported
   classifications
+- Typed v1 contract-bundle manifest validation for participant-neutral,
+  SHA-locked bundle artifacts, release-only provenance inputs, and optional
+  HOLMES/Watson/Moriarty evidence references
 - `v0.3.0-alpha.1` release notes and release runbook for the compiler-spine
   alpha
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
@@ -496,12 +499,12 @@ What doesn't exist yet:
 - A compiler CLI
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
   expression literals)
-- File-backed target profile manifest loading and conformance fixtures
+- File-backed target profile and contract bundle manifest loading
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next implementation milestone is target-profile file loading and the
-lowerability explanation surface, followed by admission evidence.
+The next implementation milestone is v0.4 release preparation once the
+target-profile, lowerability, and contract-bundle slices have landed.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,
@@ -521,6 +524,8 @@ releases claims target lowerers or admission tooling.
   must declare.
 - **[SPEC — Contract Bundle v1](./docs/SPEC_continuum-contract-bundle-v1.md)** —
   the participant-neutral bundle format, artifact graph, and canonical hash framing.
+- **[Contract Bundles Topic](./docs/topics/contract-bundles/README.md)** — the
+  typed v1 bundle and assurance evidence manifest validation contract.
 - **[GUIDE — Assurance and Transparency](./docs/GUIDE_edict-assurance-transparency.md)** —
   HOLMES, Watson, Moriarty, nutrition labels, and the hash-impact matrix.
 - **[ROADMAP](./ROADMAP.md)** — scheduled alpha milestones, release gates, and

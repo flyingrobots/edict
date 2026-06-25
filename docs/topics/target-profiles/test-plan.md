@@ -22,7 +22,8 @@ Out of scope:
 - intrinsic and operation-profile corpus parsing;
 - target lowering;
 - verifier reports;
-- bundle/admission validation;
+- file-backed integration with contract-bundle validation;
+- admission validation;
 - multi-target composite profile validation.
 
 ## Requirements
@@ -69,5 +70,6 @@ Out of scope:
 - Full CDDL instance validation.
 - Intrinsic and operation-profile corpus parsing.
 - Target lowerers and verifier reports.
-- Bundle/admission validation.
+- File-backed integration with contract-bundle validation.
+- Admission validation.
 - Multi-target composite profile validation beyond explicit v1 rejection.

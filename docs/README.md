@@ -22,6 +22,8 @@ The current specification set is:
   first front-end alpha milestone.
 - [Release Process Topic](./topics/release-process/): tag-triggered GitHub
   Release publication contract and verification matrix.
+- [Contract Bundles Topic](./topics/contract-bundles/): typed v1
+  participant-neutral bundle and assurance evidence manifest validation.
 - [Lowerability Topic](./topics/lowerability/): typed v1 lowering
   requirements, target-profile facts, and direct-only support classification.
 - [Target Profiles Topic](./topics/target-profiles/): typed v1 target-profile
