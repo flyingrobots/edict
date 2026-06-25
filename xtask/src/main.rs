@@ -916,9 +916,8 @@ mod tests {
         );
         assert!(
             workflow.contains("MILESTONE_NUMBER=\"${{ steps.release.outputs.milestone_number }}\"")
-                && workflow.contains(
-                    "MILESTONE_STATE=\"${{ steps.release.outputs.milestone_state }}\"",
-                ),
+                && workflow
+                    .contains("MILESTONE_STATE=\"${{ steps.release.outputs.milestone_state }}\"",),
             "milestone closure must be driven by release verification outputs"
         );
     }
