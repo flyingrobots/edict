@@ -843,6 +843,21 @@ mod tests {
         assert_eq!(base, "origin/main");
     }
 
+    fn workflow_block<'a>(workflow: &'a str, start: &str, end: &str) -> &'a str {
+        workflow
+            .split(start)
+            .nth(1)
+            .and_then(|tail| tail.split(end).next())
+            .unwrap_or_else(|| panic!("workflow block missing `{start}`"))
+    }
+
+    fn milestone_lookup_consumes_complete_stream(block: &str) -> bool {
+        block.contains(
+            "gh api --paginate \"repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100\"",
+        ) && block.contains("jq -s '.[0] // empty'")
+            && !block.contains("head -n 1")
+    }
+
     #[test]
     fn release_workflow_publishes_only_main_reachable_tags() {
         let root = repo_root().expect("repo root");
@@ -851,6 +866,7 @@ mod tests {
         for needle in [
             "tags:",
             "\"v*\"",
+            "workflow_dispatch:",
             "contents: write",
             "git merge-base --is-ancestor",
             "origin/main",
@@ -869,6 +885,299 @@ mod tests {
             !workflow.contains("cargo publish"),
             "release workflow must not publish crates"
         );
+        assert!(
+            !workflow.contains("git fetch --force"),
+            "release workflow must not force-fetch refs"
+        );
+    }
+
+    #[test]
+    fn release_workflow_supports_dispatch_and_milestone_closure() {
+        let root = repo_root().expect("repo root");
+        let workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for needle in [
+            "workflow_dispatch:",
+            "RELEASE_TAG:",
+            "inputs.tag",
+            "issues: write",
+            "milestones?state=all",
+            "OPEN_ISSUES",
+            "gh release view",
+            "Close release milestone",
+            "--method PATCH",
+            "-f state=closed",
+        ] {
+            assert!(
+                workflow.contains(needle),
+                "release workflow missing dispatch/milestone guard: {needle}"
+            );
+        }
+        assert!(
+            policy.contains("publication_before_milestone_closure = true"),
+            "release policy must require publication before milestone closure"
+        );
+        let publish_step = workflow
+            .find("name: Publish GitHub release")
+            .expect("release workflow must publish the GitHub Release");
+        let close_step = workflow
+            .find("name: Close release milestone")
+            .expect("release workflow must close the milestone");
+        assert!(
+            publish_step < close_step,
+            "release workflow must close the milestone only after publishing the release"
+        );
+        assert!(
+            workflow.contains("MILESTONE_NUMBER=\"${{ steps.release.outputs.milestone_number }}\"")
+                && workflow
+                    .contains("MILESTONE_STATE=\"${{ steps.release.outputs.milestone_state }}\"",),
+            "milestone closure must be driven by release verification outputs"
+        );
+    }
+
+    #[test]
+    fn release_workflow_paginates_milestone_lookup() {
+        let root = repo_root().expect("repo root");
+        let workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        assert!(
+            policy.contains("milestone_lookup = \"paginated_all_states\""),
+            "release automation policy must require paginated all-state milestone lookup"
+        );
+        let verification_step = workflow
+            .split("name: Verify tag target, release notes, and milestone")
+            .nth(1)
+            .and_then(|tail| tail.split("name: Publish GitHub release").next())
+            .expect("release verification step");
+        assert!(
+            verification_step
+                .contains("gh api --paginate \"repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100\""),
+            "release workflow must paginate all-state milestone lookup"
+        );
+    }
+
+    #[test]
+    fn release_milestone_lookup_consumes_complete_paginated_stream() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        let release_workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let auto_workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        assert!(
+            policy.contains("milestone_selection = \"complete_stream_first_match\""),
+            "release automation policy must require full-stream milestone selection"
+        );
+        let release_verification = workflow_block(
+            &release_workflow,
+            "name: Verify tag target, release notes, and milestone",
+            "name: Publish GitHub release",
+        );
+        assert!(
+            milestone_lookup_consumes_complete_stream(release_verification),
+            "release workflow must consume the full paginated milestone stream"
+        );
+        let auto_tag_job = workflow_block(
+            &auto_workflow,
+            "name: Create immutable release tag",
+            "dispatch-release-publication:",
+        );
+        assert!(
+            milestone_lookup_consumes_complete_stream(auto_tag_job),
+            "auto-release workflow must consume the full paginated milestone stream"
+        );
+    }
+
+    #[test]
+    fn milestone_lookup_contract_rejects_head_truncation() {
+        let lookup = r#"MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            --jq ".[] | select(.title == \"${TAG}\")" | head -n 1)""#;
+        assert!(
+            !milestone_lookup_consumes_complete_stream(lookup),
+            "milestone lookup contract must reject head-based truncation"
+        );
+    }
+
+    #[test]
+    fn release_workflow_checks_out_release_tag_for_dispatch() {
+        let root = repo_root().expect("repo root");
+        let workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let checkout_step = workflow
+            .split("actions/checkout@")
+            .nth(1)
+            .and_then(|tail| tail.split("- name: Verify tag target").next())
+            .expect("release workflow checkout block");
+        let release_ref =
+            "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}";
+        assert!(
+            checkout_step.contains(&format!("ref: {release_ref}")),
+            "release workflow must read release notes from the tag being published"
+        );
+    }
+
+    #[test]
+    fn auto_release_tag_workflow_is_guarded() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for needle in [
+            "workflow_run:",
+            "workflows: [\"CI\"]",
+            "branches: [main]",
+            "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.event == 'push'",
+            "/commits/${SHA}/pulls",
+            "^release/v[0-9]+",
+            "docs/releases/${TAG}.md",
+            "git tag -a",
+            "refusing to move",
+            "gh workflow run release.yml",
+            "actions: write",
+        ] {
+            assert!(
+                workflow.contains(needle),
+                "auto release workflow missing guard/action: {needle}"
+            );
+        }
+        assert!(
+            !workflow.contains("--force"),
+            "auto release workflow must not force any git operation"
+        );
+        assert!(
+            policy.contains("source_event = \"push\""),
+            "release automation policy must restrict auto-tagging to push CI runs"
+        );
+    }
+
+    #[test]
+    fn auto_release_tag_workflow_scopes_job_permissions() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        assert!(
+            policy.contains("job_permissions = \"least_privilege\""),
+            "release automation policy must require least-privilege job permissions"
+        );
+        let top_level_permissions = workflow
+            .split("permissions:")
+            .nth(1)
+            .and_then(|tail| tail.split("\njobs:").next())
+            .expect("top-level permissions block");
+        assert!(
+            top_level_permissions.contains("contents: read")
+                && !top_level_permissions.contains("write"),
+            "top-level auto-release permissions must be read-only"
+        );
+        let identify_job = workflow
+            .split("identify-release-pr:")
+            .nth(1)
+            .and_then(|tail| tail.split("create-release-tag:").next())
+            .expect("identify-release-pr job block");
+        assert!(
+            identify_job.contains("permissions:\n      contents: read\n      pull-requests: read")
+                && !identify_job.contains("write"),
+            "identify-release-pr must only read contents and pull requests"
+        );
+        let tag_job = workflow
+            .split("create-release-tag:")
+            .nth(1)
+            .and_then(|tail| tail.split("dispatch-release-publication:").next())
+            .expect("create-release-tag job block");
+        assert!(
+            tag_job.contains("permissions:\n      contents: write\n      issues: read")
+                && !tag_job.contains("actions: write")
+                && !tag_job.contains("pull-requests: write"),
+            "create-release-tag must only write contents and read issues"
+        );
+        let dispatch_job = workflow
+            .split("dispatch-release-publication:")
+            .nth(1)
+            .expect("dispatch-release-publication job block");
+        assert!(
+            dispatch_job.contains("permissions:\n      actions: write")
+                && !dispatch_job.contains("contents: write")
+                && !dispatch_job.contains("issues: write")
+                && !dispatch_job.contains("pull-requests: write"),
+            "dispatch-release-publication must only write actions"
+        );
+    }
+
+    #[test]
+    fn auto_release_tag_uses_ephemeral_push_credentials() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let tag_job = workflow
+            .split("create-release-tag:")
+            .nth(1)
+            .and_then(|tail| tail.split("dispatch-release-publication:").next())
+            .expect("create-release-tag job block");
+        for required in [
+            "persist-credentials: false",
+            "GIT_AUTH_CONFIG=\"http.https://github.com/.extraheader=${GIT_AUTH_HEADER}\"",
+            "git -c \"${GIT_AUTH_CONFIG}\" ls-remote",
+            "git -c \"${GIT_AUTH_CONFIG}\" fetch",
+            "git -c \"${GIT_AUTH_CONFIG}\" push origin",
+        ] {
+            assert!(
+                tag_job.contains(required),
+                "create-release-tag job missing ephemeral credential guard: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn auto_release_tag_checks_milestone_before_tag_push() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let milestone_check = workflow
+            .find("OPEN_ISSUES")
+            .expect("auto release workflow must check milestone open issue count");
+        let tag_creation = workflow
+            .find("git tag -a")
+            .expect("auto release workflow must create an annotated tag");
+        assert!(
+            milestone_check < tag_creation,
+            "auto release workflow must check milestone readiness before creating an immutable tag"
+        );
+    }
+
+    #[test]
+    fn auto_release_tag_dispatches_release_from_tag_ref() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        assert!(
+            workflow.contains(r#"gh workflow run release.yml --ref "${TAG}" -f tag="${TAG}""#),
+            "auto release workflow must dispatch release.yml from the created tag ref"
+        );
+    }
+
+    #[test]
+    fn auto_release_tag_dispatches_with_explicit_repo() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let dispatch_job = workflow
+            .split("dispatch-release-publication:")
+            .nth(1)
+            .expect("dispatch-release-publication job block");
+        assert!(
+            dispatch_job.contains("GH_REPO: ${{ github.repository }}")
+                || dispatch_job.contains("--repo \"${GITHUB_REPOSITORY}\""),
+            "release dispatch must name the repository explicitly"
+        );
     }
 
     #[test]
@@ -881,6 +1190,8 @@ mod tests {
             "mutation = \"forbidden\"",
             "recovery = \"publish_existing_valid_tag\"",
             "requires_main_reachable_target = true",
+            "normal_creation = \"auto_after_release_pr_main_ci\"",
+            "manual_creation = \"operator_fallback\"",
         ] {
             assert!(
                 policy.contains(needle),
@@ -898,9 +1209,11 @@ mod tests {
             "[release_runbook]",
             "prepare_branch",
             "merge_gate",
-            "tag_publish",
+            "auto_tag_publish",
             "watch_workflow",
             "capture_evidence",
+            "manual_fallback_target = \"verified_main_merge_commit\"",
+            "post_release_milestone_lookup = \"all_states_paginated\"",
             "cargo xtask verify",
             "gh pr checks",
             "gh release view",
@@ -908,6 +1221,31 @@ mod tests {
             assert!(
                 policy.contains(required),
                 "release runbook policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn release_automation_policy_is_structured() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for required in [
+            "[release_automation]",
+            "trigger = \"successful_main_ci_after_release_prep_merge\"",
+            "source_branch_pattern = \"release/vX.Y.Z-alpha.N-prep\"",
+            "tag_derivation = \"strip_release_prefix_and_prep_suffix\"",
+            "publication_trigger = \"workflow_dispatch\"",
+            "close_milestone = \"after_github_release_when_zero_open_issues\"",
+            "idempotency = \"existing_same_target_tag_ok\"",
+            "existing_different_target_tag = \"fail_without_mutation\"",
+            "merged_release_pr",
+            "tag_absent_or_same_target",
+            "zero_open_milestone_issues",
+        ] {
+            assert!(
+                policy.contains(required),
+                "release automation policy missing structured field: {required}"
             );
         }
     }
@@ -946,7 +1284,7 @@ mod tests {
             "[release_notes.v0_4_0_alpha_1]",
             "tag = \"v0.4.0-alpha.1\"",
             "target_date = \"2026-07-29\"",
-            "status = \"publish_ready\"",
+            "status = \"published\"",
             "target_profile_conformance",
             "lowerability_direct_adapter",
             "contract_bundle_manifest_validation",
@@ -962,6 +1300,38 @@ mod tests {
     }
 
     #[test]
+    fn release_policy_tracks_v0_5_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for required in [
+            "[release_notes.v0_5_0_alpha_1]",
+            "tag = \"v0.5.0-alpha.1\"",
+            "target_date = \"2026-08-12\"",
+            "status = \"publish_ready\"",
+            "edict_owned_continuum_participation_boundary",
+            "gate_c_admission_request_validation",
+            "gate_c_admission_receipt_validation",
+            "admission_request_digest_binding",
+            "policy_epoch_receipt_binding",
+            "invocation_capability_evidence_validation",
+            "release_automation_after_main_ci",
+            "no_participant_policy_evaluation",
+            "no_participant_identity_delegation_or_revocation",
+            "no_admission_ledger_persistence",
+            "no_signature_verification",
+            "no_target_lowerer_execution",
+            "no_bundle_digest_recomputation",
+            "no_crates_io_publish",
+        ] {
+            assert!(
+                policy.contains(required),
+                "v0.5 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
@@ -971,6 +1341,7 @@ mod tests {
             ("v0.2.0-alpha.1", "2026-07-01"),
             ("v0.3.0-alpha.1", "2026-07-15"),
             ("v0.4.0-alpha.1", "2026-07-29"),
+            ("v0.5.0-alpha.1", "2026-08-12"),
         ] {
             assert!(
                 policy.contains(&format!("tag = \"{tag}\"")),

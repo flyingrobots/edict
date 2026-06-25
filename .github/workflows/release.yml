@@ -4,37 +4,53 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing v* release tag to publish"
+        required: true
+        type: string
 
 permissions:
   contents: write
+  issues: write
 
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   github-release:
     name: publish GitHub release
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
-      - name: Verify tag target and release notes
+      - name: Verify tag target, release notes, and milestone
         id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
         shell: bash
         run: |
           set -euo pipefail
 
-          git fetch --force origin main:refs/remotes/origin/main --tags
+          git fetch origin main:refs/remotes/origin/main --tags
 
-          TAG="${GITHUB_REF_NAME}"
+          TAG="${RELEASE_TAG}"
           VERSION="${TAG#v}"
           NOTES="docs/releases/${TAG}.md"
           TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Release tag must look like a SemVer v* tag: ${TAG}"
+            exit 1
+          fi
 
           if ! git merge-base --is-ancestor "${TAG_COMMIT}" origin/main; then
             echo "::error::Release tags must target commits reachable from origin/main."
@@ -47,10 +63,30 @@ jobs:
             exit 1
           fi
 
+          MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            --jq ".[] | select(.title == \"${TAG}\")" |
+            jq -s '.[0] // empty')"
+
+          if [[ -z "${MILESTONE_JSON}" ]]; then
+            echo "::error::Missing release milestone matching ${TAG}."
+            exit 1
+          fi
+
+          MILESTONE_NUMBER="$(jq -r '.number' <<<"${MILESTONE_JSON}")"
+          MILESTONE_STATE="$(jq -r '.state' <<<"${MILESTONE_JSON}")"
+          OPEN_ISSUES="$(jq -r '.open_issues' <<<"${MILESTONE_JSON}")"
+
+          if [[ "${OPEN_ISSUES}" != "0" ]]; then
+            echo "::error::Milestone ${TAG} still has ${OPEN_ISSUES} open issue(s)."
+            exit 1
+          fi
+
           {
             echo "tag=${TAG}"
             echo "version=${VERSION}"
             echo "notes=${NOTES}"
+            echo "milestone_number=${MILESTONE_NUMBER}"
+            echo "milestone_state=${MILESTONE_STATE}"
             if [[ "${VERSION}" == *-* ]]; then
               echo "prerelease=true"
             else
@@ -86,3 +122,23 @@ jobs:
           fi
 
           gh "${args[@]}"
+
+      - name: Close release milestone
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MILESTONE_NUMBER="${{ steps.release.outputs.milestone_number }}"
+          MILESTONE_STATE="${{ steps.release.outputs.milestone_state }}"
+
+          if [[ "${MILESTONE_STATE}" == "closed" ]]; then
+            echo "::notice::Milestone is already closed."
+            exit 0
+          fi
+
+          gh api \
+            --method PATCH \
+            "repos/${GITHUB_REPOSITORY}/milestones/${MILESTONE_NUMBER}" \
+            -f state=closed >/dev/null

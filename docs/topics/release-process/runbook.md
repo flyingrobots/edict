@@ -5,7 +5,8 @@ Status: current operator runbook for alpha releases.
 Use this runbook for every Edict alpha release until the process is replaced by
 an executable release-preflight command. The structured policy fields in
 [`policy.toml`](./policy.toml) are the machine-checkable guardrail; this page is
-the human execution path.
+the human execution path. Normal release publication is automated after a
+release-prep pull request merges and `main` CI succeeds.
 
 ## 1. Prepare The Branch
 
@@ -84,22 +85,30 @@ gh pr checks --watch
 Merge only when CI is green, required reviews are satisfied, and there are no
 unresolved blocking review threads.
 
-## 5. Tag From Main
+## 5. Let Automation Tag From Main
 
-After the PR merges, update local `main` and re-run the local gate on the exact
-commit that will be tagged:
+After the PR merges, the `CI` workflow runs on `main`. If that run succeeds,
+`.github/workflows/auto-release-tag.yml` checks whether the merge commit came
+from a merged `release/vX.Y.Z-alpha.N-prep` pull request. Matching release-prep
+branches are converted to tags by stripping the `release/` prefix and `-prep`
+suffix:
 
-```bash
-git switch main
-git fetch origin
-git merge --ff-only origin/main
-cargo xtask verify
+```text
+release/vX.Y.Z-alpha.N-prep -> vX.Y.Z-alpha.N
 ```
 
-Create and push the annotated release tag:
+The automation creates the annotated tag on the verified `main` commit, refuses
+to move an existing tag, and dispatches the Release workflow with the tag.
+
+Manual tagging is now an operator fallback, not the normal path. If automation
+does not run and the release-prep merge commit has been verified on `main`, the
+fallback is to tag that exact verified merge commit:
 
 ```bash
-git tag -a vX.Y.Z-alpha.N -m "vX.Y.Z-alpha.N"
+git fetch origin main:refs/remotes/origin/main --tags
+RELEASE_COMMIT=<verified-main-merge-sha>
+git merge-base --is-ancestor "${RELEASE_COMMIT}" origin/main
+git tag -a vX.Y.Z-alpha.N "${RELEASE_COMMIT}" -m "vX.Y.Z-alpha.N"
 git push origin vX.Y.Z-alpha.N
 ```
 
@@ -111,6 +120,7 @@ The release workflow rejects tags whose target commit is not reachable from
 Find and watch the release workflow run:
 
 ```bash
+gh run list --workflow "Auto Release Tag" --limit 5
 gh run list --workflow Release --limit 5
 gh run watch <run-id>
 ```
@@ -121,8 +131,15 @@ Confirm the GitHub Release exists:
 gh release view vX.Y.Z-alpha.N
 ```
 
-Record the release URL, tag object or target commit, workflow run, and release
-issue in the release-process topic or final release report.
+Confirm the matching milestone is closed when it has zero open issues:
+
+```bash
+gh api --paginate 'repos/flyingrobots/edict/milestones?state=all&per_page=100' --jq \
+  '.[] | select(.title == "vX.Y.Z-alpha.N") | {title,state,open_issues}'
+```
+
+Record the release URL, tag object or target commit, workflow run, release
+issue, and milestone closure evidence in the final release report.
 
 ## 7. Recover Without Tag Mutation
 

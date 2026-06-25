@@ -177,6 +177,8 @@ Milestone: `v0.5.0-alpha.1`
 
 Primary issues: #6, #11
 
+Release issue: #42
+
 Release labels: `release:admission`
 
 Scope:
@@ -190,7 +192,7 @@ Scope:
 
 Exit gates:
 
-- #6 and #11 land or have reviewed release-scope splits.
+- #6, #11, and #42 land or have reviewed release-scope splits.
 - Admission claims are backed by fixtures, schema, or topic-shelf evidence.
 - Release notes distinguish Edict-owned artifacts from Continuum-owned
   participant policy.
@@ -242,7 +244,7 @@ Milestones:
 - `v0.2.0-alpha.1`: #3, #19, #28
 - `v0.3.0-alpha.1`: #10, #20, #21, #22
 - `v0.4.0-alpha.1`: #1, #5, #39
-- `v0.5.0-alpha.1`: #6, #11
+- `v0.5.0-alpha.1`: #6, #11, #42
 - `v0.6.0-alpha.1`: #7
 - `v2-design`: #4
 

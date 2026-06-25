@@ -1,0 +1,173 @@
+name: Auto Release Tag
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auto-release-tag-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  identify-release-pr:
+    name: identify merged release PR
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      release: ${{ steps.release_pr.outputs.release }}
+      tag: ${{ steps.release_pr.outputs.tag }}
+      pr: ${{ steps.release_pr.outputs.pr }}
+      sha: ${{ steps.release_pr.outputs.sha }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+
+      - name: Identify merged release PR
+        id: release_pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PRS_JSON="$(gh api \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${GITHUB_REPOSITORY}/commits/${SHA}/pulls")"
+
+          MATCHES="$(jq '[.[] | select(
+            .merged_at != null and
+            .base.ref == "main" and
+            (.head.ref | test("^release/v[0-9]+\\.[0-9]+\\.[0-9]+-alpha\\.[0-9]+-prep$"))
+          )]' <<<"${PRS_JSON}")"
+          COUNT="$(jq 'length' <<<"${MATCHES}")"
+
+          if [[ "${COUNT}" == "0" ]]; then
+            echo "::notice::Successful main CI did not come from a release-prep PR."
+            echo "release=false" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${COUNT}" != "1" ]]; then
+            echo "::error::Expected exactly one release-prep PR for ${SHA}; found ${COUNT}."
+            exit 1
+          fi
+
+          HEAD_REF="$(jq -r '.[0].head.ref' <<<"${MATCHES}")"
+          PR_NUMBER="$(jq -r '.[0].number' <<<"${MATCHES}")"
+          RELEASE_BRANCH_REGEX='^release/(v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+)-prep$'
+
+          if [[ ! "${HEAD_REF}" =~ ${RELEASE_BRANCH_REGEX} ]]; then
+            echo "::error::Release branch did not match expected pattern: ${HEAD_REF}"
+            exit 1
+          fi
+
+          TAG="${BASH_REMATCH[1]}"
+          NOTES="docs/releases/${TAG}.md"
+
+          if [[ ! -f "${NOTES}" ]]; then
+            echo "::error::Missing release notes file: ${NOTES}"
+            exit 1
+          fi
+
+          {
+            echo "release=true"
+            echo "tag=${TAG}"
+            echo "pr=${PR_NUMBER}"
+            echo "sha=${SHA}"
+          } >>"${GITHUB_OUTPUT}"
+
+  create-release-tag:
+    name: create immutable release tag
+    needs: identify-release-pr
+    runs-on: ubuntu-latest
+    if: needs.identify-release-pr.outputs.release == 'true'
+    permissions:
+      contents: write
+      issues: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ needs.identify-release-pr.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create immutable release tag
+        id: tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identify-release-pr.outputs.tag }}
+          SHA: ${{ needs.identify-release-pr.outputs.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          GIT_AUTH_HEADER="AUTHORIZATION: bearer ${GH_TOKEN}"
+          GIT_AUTH_CONFIG="http.https://github.com/.extraheader=${GIT_AUTH_HEADER}"
+
+          MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            --jq ".[] | select(.title == \"${TAG}\")" |
+            jq -s '.[0] // empty')"
+
+          if [[ -z "${MILESTONE_JSON}" ]]; then
+            echo "::error::Missing release milestone matching ${TAG}."
+            exit 1
+          fi
+
+          OPEN_ISSUES="$(jq -r '.open_issues' <<<"${MILESTONE_JSON}")"
+
+          if [[ "${OPEN_ISSUES}" != "0" ]]; then
+            echo "::error::Milestone ${TAG} still has ${OPEN_ISSUES} open issue(s)."
+            exit 1
+          fi
+
+          if git -c "${GIT_AUTH_CONFIG}" ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git -c "${GIT_AUTH_CONFIG}" fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+            TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
+
+            if [[ "${TAG_COMMIT}" != "${SHA}" ]]; then
+              echo "::error::Tag ${TAG} already targets ${TAG_COMMIT}; refusing to move it to ${SHA}."
+              exit 1
+            fi
+
+            echo "::notice::Tag ${TAG} already targets ${SHA}."
+            echo "created=false" >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git tag -a "${TAG}" "${SHA}" -m "${TAG}"
+          git -c "${GIT_AUTH_CONFIG}" push origin "refs/tags/${TAG}"
+          echo "created=true" >>"${GITHUB_OUTPUT}"
+
+  dispatch-release-publication:
+    name: dispatch release publication
+    needs:
+      - identify-release-pr
+      - create-release-tag
+    runs-on: ubuntu-latest
+    if: needs.identify-release-pr.outputs.release == 'true'
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch release publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.identify-release-pr.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gh workflow run release.yml --ref "${TAG}" -f tag="${TAG}"

@@ -12,6 +12,8 @@ In scope:
 - prerelease classification for SemVer prerelease versions;
 - no crates.io publication in the current release workflow;
 - operator runbook phases and required release checks;
+- release-prep PR auto-tagging after successful `main` CI;
+- milestone closure after successful release publication;
 - structured release metadata for alpha scope and non-goal boundaries;
 - deterministic local checks for workflow contract drift.
 
@@ -37,6 +39,9 @@ Out of scope:
 | RELEASE-REQ-009 | implemented | Release preparation follows a documented runbook with branch prep, local verification, PR merge gate, tag publication, workflow watch, evidence capture, and non-mutating recovery phases. | docs/topics/release-process/runbook.md, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-010 | implemented | Structured release policy captures the `v0.3.0-alpha.1` compiler-spine, canonical encoder, reviewed golden fixture, exact digest, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
 | RELEASE-REQ-011 | implemented | Structured release policy captures the `v0.4.0-alpha.1` target-profile, lowerability, contract-bundle validation, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
+| RELEASE-REQ-012 | implemented | Successful `main` CI on a merged `release/vX.Y.Z-alpha.N-prep` pull request creates an immutable `vX.Y.Z-alpha.N` tag and dispatches release publication. | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml |
+| RELEASE-REQ-013 | implemented | Release publication closes the matching GitHub milestone only after the release exists and the milestone has zero open issues. | .github/workflows/release.yml, docs/topics/release-process/policy.toml |
+| RELEASE-REQ-014 | implemented | Structured release policy captures the `v0.5.0-alpha.1` Gate C admission-boundary scope, release automation, and explicit Continuum-owned non-goal boundaries. | docs/topics/release-process/policy.toml |
 
 ## Fixtures
 
@@ -44,8 +49,10 @@ Out of scope:
 | --- | --- | --- |
 | docs/releases/v0.1.0-alpha.1.md | Published release notes for the first front-end alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.2.0-alpha.1.md | Published release notes for the Core semantic model and schema alpha. | The release workflow looks up this file by full tag name. |
-| docs/releases/v0.4.0-alpha.1.md | Prepared release notes for the target-profile, lowerability, and contract-bundle validation alpha. | The release workflow will look up this file by full tag name after tagging. |
 | docs/releases/v0.3.0-alpha.1.md | Published release notes for the compiler-spine and canonical Core alpha. | The release workflow looks up this file by full tag name. |
+| docs/releases/v0.4.0-alpha.1.md | Published release notes for the target-profile, lowerability, and contract-bundle validation alpha. | The release workflow looks up this file by full tag name. |
+| docs/releases/v0.5.0-alpha.1.md | Release notes for the Gate C admission-boundary alpha. | The release workflow looks up this file by full tag name after auto-tagging. |
+| .github/workflows/auto-release-tag.yml | Successful main-CI release-prep merges create immutable release tags and dispatch publication. | The workflow derives tags only from merged `release/*-prep` branches and refuses tag mutation. |
 | CHANGELOG.md | Release history for published and publish-ready alpha releases. | Scheduled alpha release sections use the matching release target date. |
 | docs/topics/release-process/policy.toml | Structured release-tag, runbook, and alpha boundary policy. | Tag mutation is forbidden, runbook phases are named, and release scope/non-goals are structured. |
 | docs/topics/release-process/runbook.md | Operator steps for preparing, tagging, publishing, and recovering releases. | The structured policy names the phases and checks the runbook must cover. |
@@ -61,17 +68,21 @@ Out of scope:
 | RELEASE-TP-005 | implemented | Runbook guard | RELEASE-REQ-009 | Structured policy names the release-prep phases and required checks for local verification, PR checks, and release existence. | release_runbook_policy_is_structured | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md | Keeps the human runbook tied to a stable release contract. |
 | RELEASE-TP-006 | implemented | Boundary guard | RELEASE-REQ-010 | Structured policy captures the v0.3 compiler-spine, canonical encoder, reviewed golden fixture, exact digest, target-lowering, and admission boundaries. | release_policy_tracks_v0_3_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the compiler-spine milestone. |
 | RELEASE-TP-007 | implemented | Boundary guard | RELEASE-REQ-011 | Structured policy captures the v0.4 target-profile, lowerability, contract-bundle validation, target-lowering, admission, and publication boundaries. | release_policy_tracks_v0_4_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the target-profile and lowerability milestone. |
+| RELEASE-TP-008 | implemented | Automation guard | RELEASE-REQ-012, RELEASE-REQ-013 | The auto-release workflow watches successful `main` CI, derives tags from merged release-prep PRs, refuses tag moves, dispatches release publication, and the Release workflow closes zero-open milestones after publication. | release_automation_policy_is_structured, auto_release_tag_workflow_is_guarded, release_workflow_supports_dispatch_and_milestone_closure | .github/workflows/auto-release-tag.yml, .github/workflows/release.yml, docs/topics/release-process/policy.toml | Keeps release automation deterministic and non-mutating. |
+| RELEASE-TP-009 | implemented | Boundary guard | RELEASE-REQ-014 | Structured policy captures the v0.5 admission-boundary scope and explicit non-goals for Continuum-owned policy, identity, delegation, revocation, ledger persistence, signature verification, target lowering, and crates.io publication. | release_policy_tracks_v0_5_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the Gate C admission milestone. |
 
 ## Determinism Obligations
 
 - Release workflow contract tests inspect checked-in workflow text, not live
   GitHub state.
-- Release tags must be explicit operator actions; no test creates or pushes live
-  tags.
+- Release tags must be explicit automation or operator actions; no test creates
+  or pushes live tags.
 - Recovery documentation must distinguish workflow fixes from tag mutation.
 - Tests do not scrape human diagnostic prose from Actions logs.
 - Release metadata tests assert structured policy artifacts rather than rendered
   prose or live GitHub state.
+- Automation tests inspect checked-in workflows and policy, not live GitHub PR,
+  tag, release, or milestone state.
 
 ## Open Gaps
 

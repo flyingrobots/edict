@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.5.0-alpha.1] - 2026-08-12
+
 ### Added
 
 - Added typed Gate C admission-boundary checks in `edict_syntax`:

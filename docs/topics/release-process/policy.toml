@@ -2,14 +2,39 @@
 mutation = "forbidden"
 recovery = "publish_existing_valid_tag"
 requires_main_reachable_target = true
+normal_creation = "auto_after_release_pr_main_ci"
+manual_creation = "operator_fallback"
+
+[release_automation]
+trigger = "successful_main_ci_after_release_prep_merge"
+source_event = "push"
+source_branch_pattern = "release/vX.Y.Z-alpha.N-prep"
+tag_derivation = "strip_release_prefix_and_prep_suffix"
+publication_trigger = "workflow_dispatch"
+close_milestone = "after_github_release_when_zero_open_issues"
+milestone_lookup = "paginated_all_states"
+milestone_selection = "complete_stream_first_match"
+job_permissions = "least_privilege"
+publication_before_milestone_closure = true
+idempotency = "existing_same_target_tag_ok"
+existing_different_target_tag = "fail_without_mutation"
+required_checks = [
+  "merged_release_pr",
+  "release_notes_file",
+  "tag_absent_or_same_target",
+  "main_ci_success",
+  "zero_open_milestone_issues",
+]
 
 [release_runbook]
+manual_fallback_target = "verified_main_merge_commit"
+post_release_milestone_lookup = "all_states_paginated"
 steps = [
   "prepare_branch",
   "verify_local",
   "open_pull_request",
   "merge_gate",
-  "tag_publish",
+  "auto_tag_publish",
   "watch_workflow",
   "capture_evidence",
   "recover_without_tag_mutation",
@@ -23,6 +48,7 @@ required_evidence = [
   "release_issue",
   "release_prep_pull_request",
   "main_ci_run",
+  "auto_release_tag_run",
   "tag_object",
   "github_release_url",
 ]
@@ -75,7 +101,7 @@ non_goals = [
 [release_notes.v0_4_0_alpha_1]
 tag = "v0.4.0-alpha.1"
 target_date = "2026-07-29"
-status = "publish_ready"
+status = "published"
 release_issue = 39
 scope = [
   "target_profile_conformance",
@@ -91,5 +117,32 @@ non_goals = [
   "no_bundle_digest_recomputation",
   "no_admission_policy",
   "no_lowerability_cli",
+  "no_crates_io_publish",
+]
+
+[release_notes.v0_5_0_alpha_1]
+tag = "v0.5.0-alpha.1"
+target_date = "2026-08-12"
+status = "publish_ready"
+release_issue = 42
+scope = [
+  "edict_owned_continuum_participation_boundary",
+  "gate_c_admission_request_validation",
+  "gate_c_admission_receipt_validation",
+  "admission_request_digest_binding",
+  "policy_epoch_receipt_binding",
+  "invocation_capability_evidence_validation",
+  "release_automation_after_main_ci",
+]
+non_goals = [
+  "no_participant_policy_evaluation",
+  "no_participant_identity_delegation_or_revocation",
+  "no_admission_ledger_persistence",
+  "no_signature_verification",
+  "no_file_backed_admission_loading",
+  "no_target_lowerer_execution",
+  "no_target_ir_generation",
+  "no_bundle_digest_recomputation",
+  "no_admission_cli",
   "no_crates_io_publish",
 ]
