@@ -7,6 +7,7 @@ manual_creation = "operator_fallback"
 
 [release_automation]
 trigger = "successful_main_ci_after_release_prep_merge"
+source_event = "push"
 source_branch_pattern = "release/vX.Y.Z-alpha.N-prep"
 tag_derivation = "strip_release_prefix_and_prep_suffix"
 publication_trigger = "workflow_dispatch"

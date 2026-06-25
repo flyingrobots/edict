@@ -939,11 +939,14 @@ mod tests {
         let root = repo_root().expect("repo root");
         let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
             .expect("auto release workflow");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
         for needle in [
             "workflow_run:",
             "workflows: [\"CI\"]",
             "branches: [main]",
             "github.event.workflow_run.conclusion == 'success'",
+            "github.event.workflow_run.event == 'push'",
             "/commits/${SHA}/pulls",
             "^release/v[0-9]+",
             "docs/releases/${TAG}.md",
@@ -960,6 +963,10 @@ mod tests {
         assert!(
             !workflow.contains("--force"),
             "auto release workflow must not force any git operation"
+        );
+        assert!(
+            policy.contains("source_event = \"push\""),
+            "release automation policy must restrict auto-tagging to push CI runs"
         );
     }
 
