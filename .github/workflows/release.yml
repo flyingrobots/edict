@@ -64,7 +64,8 @@ jobs:
           fi
 
           MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
-            --jq ".[] | select(.title == \"${TAG}\")" | head -n 1)"
+            --jq ".[] | select(.title == \"${TAG}\")" |
+            jq -s '.[0] // empty')"
 
           if [[ -z "${MILESTONE_JSON}" ]]; then
             echo "::error::Missing release milestone matching ${TAG}."

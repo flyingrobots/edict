@@ -946,6 +946,17 @@ mod tests {
     }
 
     #[test]
+    fn release_milestone_lookup_consumes_complete_paginated_stream() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        assert!(
+            policy.contains("milestone_selection = \"complete_stream_first_match\""),
+            "release automation policy must require full-stream milestone selection"
+        );
+    }
+
+    #[test]
     fn release_workflow_checks_out_release_tag_for_dispatch() {
         let root = repo_root().expect("repo root");
         let workflow =

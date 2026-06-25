@@ -13,6 +13,7 @@ tag_derivation = "strip_release_prefix_and_prep_suffix"
 publication_trigger = "workflow_dispatch"
 close_milestone = "after_github_release_when_zero_open_issues"
 milestone_lookup = "paginated_all_states"
+milestone_selection = "complete_stream_first_match"
 job_permissions = "least_privilege"
 publication_before_milestone_closure = true
 idempotency = "existing_same_target_tag_ok"
