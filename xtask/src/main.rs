@@ -1003,20 +1003,54 @@ mod tests {
         let root = repo_root().expect("repo root");
         let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
             .expect("auto release workflow");
-        for required in [
-            "identify-release-pr:",
-            "contents: read",
-            "pull-requests: read",
-            "create-release-tag:",
-            "contents: write",
-            "dispatch-release-publication:",
-            "actions: write",
-        ] {
-            assert!(
-                workflow.contains(required),
-                "auto release workflow missing scoped job permission contract: {required}"
-            );
-        }
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        assert!(
+            policy.contains("job_permissions = \"least_privilege\""),
+            "release automation policy must require least-privilege job permissions"
+        );
+        let top_level_permissions = workflow
+            .split("permissions:")
+            .nth(1)
+            .and_then(|tail| tail.split("\njobs:").next())
+            .expect("top-level permissions block");
+        assert!(
+            top_level_permissions.contains("contents: read")
+                && !top_level_permissions.contains("write"),
+            "top-level auto-release permissions must be read-only"
+        );
+        let identify_job = workflow
+            .split("identify-release-pr:")
+            .nth(1)
+            .and_then(|tail| tail.split("create-release-tag:").next())
+            .expect("identify-release-pr job block");
+        assert!(
+            identify_job.contains("permissions:\n      contents: read\n      pull-requests: read")
+                && !identify_job.contains("write"),
+            "identify-release-pr must only read contents and pull requests"
+        );
+        let tag_job = workflow
+            .split("create-release-tag:")
+            .nth(1)
+            .and_then(|tail| tail.split("dispatch-release-publication:").next())
+            .expect("create-release-tag job block");
+        assert!(
+            tag_job.contains("permissions:\n      contents: write\n      issues: read")
+                && !tag_job.contains("actions: write")
+                && !tag_job.contains("pull-requests: write"),
+            "create-release-tag must only write contents and read issues"
+        );
+        let dispatch_job = workflow
+            .split("dispatch-release-publication:")
+            .nth(1)
+            .expect("dispatch-release-publication job block");
+        assert!(
+            dispatch_job.contains("permissions:\n      actions: write")
+                && !dispatch_job.contains("contents: write")
+                && !dispatch_job.contains("issues: write")
+                && !dispatch_job.contains("pull-requests: write"),
+            "dispatch-release-publication must only write actions"
+        );
     }
 
     #[test]
