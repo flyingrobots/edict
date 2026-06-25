@@ -26,9 +26,10 @@ versions still track specification maturity rather than a released product.
 - Added typed v1 contract-bundle manifest validation in `edict_syntax`:
   `ContractBundleManifest`, `validate_contract_bundle_manifest`,
   runtime-neutral Echo/KV bundle acceptance, SHA-256 digest-locked artifact
-  validation, logical source path validation, HOLMES/Watson/Moriarty evidence
-  binding, and explicit rejection of admission artifacts from the
-  participant-neutral bundle.
+  validation, lowercase digest review rendering, release-only provenance input
+  binding, canonicalization-profile pinning, logical source path validation,
+  optional HOLMES/Watson/Moriarty evidence binding, and explicit rejection of
+  admission artifacts from the participant-neutral bundle.
 - Added the lowerability topic shelf and the `edict.lowering-requirements/v1`
   CDDL shape in the target-profile ABI.
 - Added the target-profiles topic shelf for the manifest conformance contract

@@ -4,9 +4,7 @@
 //! target lowering have produced hash-addressed artifacts. It does not recompute
 //! bundle digests, load files, run target verifiers, or perform admission.
 
-use std::collections::BTreeSet;
-
-use crate::core_ir::{is_sha256_review_digest, ResourceRef};
+use crate::{core_ir::ResourceRef, target_profile::CANONICAL_CBOR_ABI};
 
 /// Contract bundle manifest ABI supported by this crate.
 pub const CONTRACT_BUNDLE_API_VERSION: &str = "edict.contract-bundle/v1";
@@ -67,6 +65,8 @@ pub struct ContractBundleManifest {
     pub lowerer: ResourceRef,
     pub verifier: ResourceRef,
     pub semantic_compile_options: ResourceRef,
+    pub non_semantic_compile_options: ResourceRef,
+    pub build_provenance: ResourceRef,
     pub canonicalization_profile: ResourceRef,
     pub conformance_fixture_corpora: Vec<ResourceRef>,
     pub verifier_report: ResourceRef,
@@ -90,7 +90,7 @@ pub enum ContractBundleValidationFailureKind {
     EmptyArtifactSet,
     InvalidArtifactReference,
     InvalidSourcePath,
-    MissingAssuranceRole,
+    UnsupportedCanonicalizationProfile,
     AssuranceSubjectMismatch,
     AssuranceTargetProfileMismatch,
     AssuranceTargetIrMismatch,
@@ -170,27 +170,13 @@ fn check_required_artifact_sets(
     manifest: &ContractBundleManifest,
     failures: &mut Vec<ContractBundleValidationFailure>,
 ) {
-    for (field, is_empty) in [
-        ("source_artifacts", manifest.source_artifacts.is_empty()),
-        ("lawpacks", manifest.lawpacks.is_empty()),
-        (
-            "generated_artifacts",
-            manifest.generated_artifacts.is_empty(),
-        ),
-        (
-            "conformance_fixture_corpora",
-            manifest.conformance_fixture_corpora.is_empty(),
-        ),
-        ("assurance_evidence", manifest.assurance_evidence.is_empty()),
-    ] {
-        if is_empty {
-            push_failure(
-                failures,
-                ContractBundleValidationFailureKind::EmptyArtifactSet,
-                field,
-                "at least one digest-locked artifact reference",
-            );
-        }
+    if manifest.source_artifacts.is_empty() {
+        push_failure(
+            failures,
+            ContractBundleValidationFailureKind::EmptyArtifactSet,
+            "source_artifacts",
+            "at least one digest-locked source artifact reference",
+        );
     }
 }
 
@@ -231,6 +217,11 @@ fn check_artifact_refs(
             &manifest.semantic_compile_options,
         ),
         (
+            "non_semantic_compile_options",
+            &manifest.non_semantic_compile_options,
+        ),
+        ("build_provenance", &manifest.build_provenance),
+        (
             "canonicalization_profile",
             &manifest.canonicalization_profile,
         ),
@@ -238,6 +229,15 @@ fn check_artifact_refs(
         ("compile_explanation", &manifest.compile_explanation),
     ] {
         check_digest_locked_resource(field, resource, failures);
+    }
+
+    if manifest.canonicalization_profile.coordinate != CANONICAL_CBOR_ABI {
+        push_failure(
+            failures,
+            ContractBundleValidationFailureKind::UnsupportedCanonicalizationProfile,
+            "canonicalization_profile",
+            CANONICAL_CBOR_ABI,
+        );
     }
 
     check_resource_list("lawpacks", &manifest.lawpacks, failures);
@@ -257,26 +257,6 @@ fn check_assurance_evidence(
     manifest: &ContractBundleManifest,
     failures: &mut Vec<ContractBundleValidationFailure>,
 ) {
-    let present_roles = manifest
-        .assurance_evidence
-        .iter()
-        .map(|evidence| evidence.role)
-        .collect::<BTreeSet<_>>();
-    for (role, field) in [
-        (AssuranceRole::Holmes, "assurance_evidence.holmes"),
-        (AssuranceRole::Watson, "assurance_evidence.watson"),
-        (AssuranceRole::Moriarty, "assurance_evidence.moriarty"),
-    ] {
-        if !present_roles.contains(&role) {
-            push_failure(
-                failures,
-                ContractBundleValidationFailureKind::MissingAssuranceRole,
-                field,
-                "HOLMES, Watson, and Moriarty evidence",
-            );
-        }
-    }
-
     for evidence in &manifest.assurance_evidence {
         check_one_assurance_evidence(manifest, evidence, failures);
     }
@@ -288,7 +268,10 @@ fn check_one_assurance_evidence(
     failures: &mut Vec<ContractBundleValidationFailure>,
 ) {
     check_digest_locked_resource("assurance_evidence.artifact", &evidence.artifact, failures);
-    if evidence.subject.digest != bundle_subject_digest(manifest, evidence.subject.kind) {
+    let expected_subject_digest = bundle_subject_digest(manifest, evidence.subject.kind);
+    if is_bundle_digest(expected_subject_digest)
+        && evidence.subject.digest != expected_subject_digest
+    {
         push_failure(
             failures,
             ContractBundleValidationFailureKind::AssuranceSubjectMismatch,
@@ -347,23 +330,23 @@ fn check_digest_locked_resource(
     resource: &ResourceRef,
     failures: &mut Vec<ContractBundleValidationFailure>,
 ) {
-    if !resource.is_digest_locked() {
+    if !is_bundle_digest_locked_resource(resource) {
         push_failure(
             failures,
             ContractBundleValidationFailureKind::InvalidArtifactReference,
             field,
-            "non-empty coordinate and sha256 digest",
+            "non-empty coordinate and lowercase sha256 digest",
         );
     }
 }
 
 fn check_digest(field: &str, digest: &str, failures: &mut Vec<ContractBundleValidationFailure>) {
-    if !is_sha256_review_digest(digest) {
+    if !is_bundle_digest(digest) {
         push_failure(
             failures,
             ContractBundleValidationFailureKind::InvalidBundleDigest,
             field,
-            "sha256:<64 hex> digest",
+            "sha256:<64 lowercase hex> digest",
         );
     }
 }
@@ -372,7 +355,21 @@ fn digest_locked_value(resource: &ResourceRef) -> Option<&str> {
     resource
         .digest
         .as_deref()
-        .filter(|digest| resource.is_digest_locked() && is_sha256_review_digest(digest))
+        .filter(|digest| !resource.coordinate.is_empty() && is_bundle_digest(digest))
+}
+
+fn is_bundle_digest_locked_resource(resource: &ResourceRef) -> bool {
+    !resource.coordinate.is_empty() && resource.digest.as_deref().is_some_and(is_bundle_digest)
+}
+
+fn is_bundle_digest(digest: &str) -> bool {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 fn bundle_subject_digest(manifest: &ContractBundleManifest, kind: BundleSubjectKind) -> &str {

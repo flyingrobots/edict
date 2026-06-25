@@ -83,6 +83,8 @@ A contract bundle binds:
 - verifier identity and digest;
 - semantic compile options digest (semantic-affecting options only; nonsemantic
   diagnostic options are bound by release/sidecar, not semantic);
+- nonsemantic compile options digest (release preimage only);
+- build provenance digest (release preimage only);
 - canonicalization profile digest;
 - normative conformance fixture corpus digests;
 - verifier report digest;

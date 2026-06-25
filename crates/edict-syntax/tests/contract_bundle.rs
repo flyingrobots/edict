@@ -15,6 +15,10 @@ fn digest(hex: char) -> String {
     format!("sha256:{}", hex.to_string().repeat(64))
 }
 
+fn uppercase_digest() -> String {
+    format!("sha256:{}", "A".repeat(64))
+}
+
 fn digest_locked(coordinate: &str, hex: char) -> ResourceRef {
     ResourceRef {
         coordinate: coordinate.to_owned(),
@@ -80,6 +84,8 @@ fn echo_bundle() -> ContractBundleManifest {
         lowerer: digest_locked("echo.dpo.lowerer/v1", '5'),
         verifier: digest_locked("echo.dpo.verifier/v1", '6'),
         semantic_compile_options: digest_locked("edict.compile-options.semantic/v1", '7'),
+        non_semantic_compile_options: digest_locked("edict.compile-options.nonsemantic/v1", '8'),
+        build_provenance: digest_locked("edict.build-provenance/v1", '9'),
         canonicalization_profile: digest_locked("edict.canonical-cbor/v1", '8'),
         conformance_fixture_corpora: vec![digest_locked("echo.dpo.fixtures/v1", '9')],
         verifier_report: digest_locked("echo.dpo.verifier-report/v1", 'a'),
@@ -185,6 +191,79 @@ fn malformed_bundle_artifact_digest_is_rejected() {
 }
 
 #[test]
+fn uppercase_bundle_digest_rendering_is_rejected() {
+    let mut bundle = echo_bundle();
+    bundle.semantic_bundle_digest = uppercase_digest();
+
+    let report = validate_contract_bundle_manifest(&bundle);
+
+    assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![ContractBundleValidationFailureKind::InvalidBundleDigest]
+    );
+    assert_eq!(report.failures[0].field, "semantic_bundle_digest");
+}
+
+#[test]
+fn uppercase_artifact_digest_rendering_is_rejected() {
+    let mut bundle = echo_bundle();
+    bundle.target_profile.digest = Some(uppercase_digest());
+
+    let report = validate_contract_bundle_manifest(&bundle);
+
+    assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![ContractBundleValidationFailureKind::InvalidArtifactReference]
+    );
+    assert_eq!(report.failures[0].field, "target_profile");
+}
+
+#[test]
+fn release_bundle_inputs_must_be_digest_locked() {
+    let mut bundle = echo_bundle();
+    bundle.build_provenance.digest = None;
+
+    let report = validate_contract_bundle_manifest(&bundle);
+
+    assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![ContractBundleValidationFailureKind::InvalidArtifactReference]
+    );
+    assert_eq!(report.failures[0].field, "build_provenance");
+}
+
+#[test]
+fn canonicalization_profile_must_be_the_v1_cbor_profile() {
+    let mut bundle = echo_bundle();
+    bundle.canonicalization_profile.coordinate = "custom-cbor/v2".to_owned();
+
+    let report = validate_contract_bundle_manifest(&bundle);
+
+    assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![ContractBundleValidationFailureKind::UnsupportedCanonicalizationProfile]
+    );
+    assert_eq!(report.failures[0].field, "canonicalization_profile");
+}
+
+#[test]
+fn optional_artifact_lists_may_be_empty() {
+    let mut bundle = echo_bundle();
+    bundle.lawpacks.clear();
+    bundle.generated_artifacts.clear();
+    bundle.conformance_fixture_corpora.clear();
+
+    let report = validate_contract_bundle_manifest(&bundle);
+
+    assert_eq!(report.status, ContractBundleValidationStatus::Valid);
+    assert!(report.failures.is_empty());
+}
+
+#[test]
 fn source_artifact_paths_must_be_logical_package_relative_paths() {
     for logical_path in [
         "",
@@ -253,23 +332,14 @@ fn assurance_evidence_must_match_target_ir_digest() {
 }
 
 #[test]
-fn holmes_watson_and_moriarty_evidence_are_required() {
+fn external_assurance_evidence_is_optional() {
     let mut bundle = echo_bundle();
-    bundle.assurance_evidence.retain(|evidence| {
-        matches!(
-            evidence.role,
-            AssuranceRole::Holmes | AssuranceRole::Moriarty
-        )
-    });
+    bundle.assurance_evidence.clear();
 
     let report = validate_contract_bundle_manifest(&bundle);
 
-    assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
-    assert_eq!(
-        failure_kinds(&report),
-        vec![ContractBundleValidationFailureKind::MissingAssuranceRole]
-    );
-    assert_eq!(report.failures[0].field, "assurance_evidence.watson");
+    assert_eq!(report.status, ContractBundleValidationStatus::Valid);
+    assert!(report.failures.is_empty());
 }
 
 #[test]

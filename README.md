@@ -485,7 +485,8 @@ What exists today:
   target-profile facts, including native, direct-adapter, and unsupported
   classifications
 - Typed v1 contract-bundle manifest validation for participant-neutral,
-  SHA-locked bundle artifacts and HOLMES/Watson/Moriarty evidence references
+  SHA-locked bundle artifacts, release-only provenance inputs, and optional
+  HOLMES/Watson/Moriarty evidence references
 - `v0.3.0-alpha.1` release notes and release runbook for the compiler-spine
   alpha
 - Topic shelves and local contract-graph verification via `cargo xtask verify`

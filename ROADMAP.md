@@ -160,8 +160,8 @@ Exit gates:
 
 - #1 and #5 land or have reviewed release-scope splits.
 - The release reconciles lowerability with the v1 direct-adapter rule.
-- Bundle assurance evidence is hash-bound to the selected bundle subject, target
-  profile, and target IR.
+- Any bundled assurance evidence is hash-bound to the selected bundle subject,
+  target profile, and target IR.
 - Any `composite` or chained-adapter behavior is explicitly deferred to
   `v2-design`.
 - Lowerability output is documented as a contract or explicitly marked
