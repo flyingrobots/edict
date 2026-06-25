@@ -927,9 +927,21 @@ mod tests {
         let root = repo_root().expect("repo root");
         let workflow =
             fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
         assert!(
-            workflow.contains("gh api --paginate"),
-            "release workflow must paginate milestone lookup"
+            policy.contains("milestone_lookup = \"paginated_all_states\""),
+            "release automation policy must require paginated all-state milestone lookup"
+        );
+        let verification_step = workflow
+            .split("name: Verify tag target, release notes, and milestone")
+            .nth(1)
+            .and_then(|tail| tail.split("name: Publish GitHub release").next())
+            .expect("release verification step");
+        assert!(
+            verification_step
+                .contains("gh api --paginate \"repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100\""),
+            "release workflow must paginate all-state milestone lookup"
         );
     }
 

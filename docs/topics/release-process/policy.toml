@@ -12,6 +12,7 @@ source_branch_pattern = "release/vX.Y.Z-alpha.N-prep"
 tag_derivation = "strip_release_prefix_and_prep_suffix"
 publication_trigger = "workflow_dispatch"
 close_milestone = "after_github_release_when_zero_open_issues"
+milestone_lookup = "paginated_all_states"
 publication_before_milestone_closure = true
 idempotency = "existing_same_target_tag_ok"
 existing_different_target_tag = "fail_without_mutation"
