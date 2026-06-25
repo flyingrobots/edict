@@ -13,11 +13,13 @@
 //! Phase 3 begins the executable compiler spine with `resolve_module`,
 //! `type_check`, `lower_core`, and `compile_to_core`, currently covering the
 //! initial pure local-record subset and producing in-memory Core IR only.
-//! The crate also exposes typed v1 target-profile conformance and lowerability
-//! checks. Conformance validates runtime-neutral target-profile manifests.
-//! Lowerability checks `LoweringRequirements` against explicit target-profile
-//! facts and classifies support as native, directly adapted, or unsupported;
-//! neither surface produces Target IR or admission artifacts.
+//! The crate also exposes typed v1 target-profile conformance, lowerability, and
+//! contract-bundle checks. Conformance validates runtime-neutral target-profile
+//! manifests. Lowerability checks `LoweringRequirements` against explicit
+//! target-profile facts and classifies support as native, directly adapted, or
+//! unsupported. Contract-bundle validation checks participant-neutral,
+//! SHA-locked bundle and assurance evidence manifests; none of these surfaces
+//! produce Target IR or admission artifacts.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, target
 //! lowering, and admission artifacts are deferred. The crate exposes the
@@ -25,13 +27,14 @@
 //! domain-separated `edict.core.module/v1` Core digest used by reviewed golden
 //! fixtures.
 //!
-//! Assurance tooling (HOLMES / Watson / Moriarty) is shared platform machinery
-//! in `flyingrobots/wesley`; it operates on bundles and evidence, downstream of
-//! this crate, and is wired in at the assurance phase — not depended on here.
+//! Assurance tooling (HOLMES / Watson / Moriarty) remains shared platform
+//! machinery. This crate validates typed references to its evidence; it does not
+//! execute those tools or make admission decisions.
 
 pub mod ast;
 pub mod canonical;
 pub mod compiler;
+pub mod contract_bundle;
 pub mod core_ir;
 pub mod lowerability;
 pub mod parser;
@@ -48,6 +51,12 @@ pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
     CompilerErrorKind, CompilerStage, ResolvedIntent, ResolvedModule, ResolvedTypeDecl,
     TypedIntent, TypedModule,
+};
+pub use contract_bundle::{
+    validate_contract_bundle_manifest, AssuranceEvidenceRef, AssuranceRole, BundleSubject,
+    BundleSubjectKind, ContractBundleManifest, ContractBundleValidationFailure,
+    ContractBundleValidationFailureKind, ContractBundleValidationReport,
+    ContractBundleValidationStatus, SourceArtifactRef, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
@@ -77,6 +86,9 @@ mod topic_shelf_doctests {
 
     #[doc = include_str!("../../../docs/topics/compiler-spine/README.md")]
     pub struct CompilerSpineTopicDocs;
+
+    #[doc = include_str!("../../../docs/topics/contract-bundles/README.md")]
+    pub struct ContractBundlesTopicDocs;
 
     #[doc = include_str!("../../../docs/topics/lowerability/README.md")]
     pub struct LowerabilityTopicDocs;

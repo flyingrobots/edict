@@ -33,6 +33,9 @@ cargo xtask verify
 
 - [Compiler Spine](./compiler-spine/README.md): executable source-AST to
   in-memory Core IR stage contract for the initial lowerable subset.
+- [Contract Bundles](./contract-bundles/README.md): typed v1
+  participant-neutral contract bundle and assurance evidence manifest
+  validation.
 - [Core IR](./core-ir/README.md): `edict.core/v1` semantic model and normative
   CDDL schema boundary for the Core contract.
 - [Documentation Standards](./documentation/README.md): reader-task page types,

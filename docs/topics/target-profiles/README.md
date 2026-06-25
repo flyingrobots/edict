@@ -55,7 +55,8 @@ The following are not implemented by this target-profile slice:
 - intrinsic and operation-profile corpus parsing;
 - target lowerers;
 - verifier reports;
-- bundle/admission tooling;
+- file-backed integration with contract-bundle validation;
+- admission tooling;
 - multi-target composite profile validation beyond rejection.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
