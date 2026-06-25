@@ -1105,6 +1105,7 @@ mod tests {
             "watch_workflow",
             "capture_evidence",
             "manual_fallback_target = \"verified_main_merge_commit\"",
+            "post_release_milestone_lookup = \"all_states_paginated\"",
             "cargo xtask verify",
             "gh pr checks",
             "gh release view",

@@ -134,7 +134,7 @@ gh release view vX.Y.Z-alpha.N
 Confirm the matching milestone is closed when it has zero open issues:
 
 ```bash
-gh api repos/flyingrobots/edict/milestones --jq \
+gh api --paginate 'repos/flyingrobots/edict/milestones?state=all&per_page=100' --jq \
   '.[] | select(.title == "vX.Y.Z-alpha.N") | {title,state,open_issues}'
 ```
 
