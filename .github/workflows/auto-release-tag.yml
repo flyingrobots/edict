@@ -114,6 +114,8 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          GIT_AUTH_HEADER="AUTHORIZATION: bearer ${GH_TOKEN}"
+          GIT_AUTH_CONFIG="http.https://github.com/.extraheader=${GIT_AUTH_HEADER}"
 
           MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
             --jq ".[] | select(.title == \"${TAG}\")" |
@@ -131,8 +133,8 @@ jobs:
             exit 1
           fi
 
-          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
-            git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          if git -c "${GIT_AUTH_CONFIG}" ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git -c "${GIT_AUTH_CONFIG}" fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
             TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
 
             if [[ "${TAG_COMMIT}" != "${SHA}" ]]; then
@@ -146,7 +148,7 @@ jobs:
           fi
 
           git tag -a "${TAG}" "${SHA}" -m "${TAG}"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
+          git -c "${GIT_AUTH_CONFIG}" push origin "refs/tags/${TAG}"
           echo "created=true" >>"${GITHUB_OUTPUT}"
 
   dispatch-release-publication:

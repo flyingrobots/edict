@@ -1077,7 +1077,10 @@ mod tests {
             .expect("create-release-tag job block");
         for required in [
             "persist-credentials: false",
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git",
+            "GIT_AUTH_CONFIG=\"http.https://github.com/.extraheader=${GIT_AUTH_HEADER}\"",
+            "git -c \"${GIT_AUTH_CONFIG}\" ls-remote",
+            "git -c \"${GIT_AUTH_CONFIG}\" fetch",
+            "git -c \"${GIT_AUTH_CONFIG}\" push origin",
         ] {
             assert!(
                 tag_job.contains(required),
