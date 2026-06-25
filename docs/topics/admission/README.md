@@ -14,8 +14,11 @@ The `edict_syntax` crate exposes:
 
 - `validate_admission_request`, which checks Edict-owned fields of a Continuum
   admission request against a typed `ContractBundleManifest`;
+- `digest_admission_request`, which computes the domain-separated digest for a
+  typed admission request;
 - `validate_admission_receipt`, which checks that a receipt body echoes its
-  request and remains separate from its signing envelope;
+  request digest and request fields, and remains separate from its signing
+  envelope;
 - `check_gate_c_invocation`, which checks that invocation evidence names a
   requested operation and contains an accepted admission receipt plus a matching
   invocation capability receipt;
@@ -37,7 +40,8 @@ The `edict_syntax` crate exposes:
   canonical input, witnessed evidence, admitted basis, or capability
   presentation. Hidden host inputs are rejected. [ADMISSION-REQ-003]
 - Admission receipt bodies must echo the request's bundle subject and policy
-  epoch. Receipt admitted operations must be a subset of requested operations.
+  epoch. They must also carry the domain-separated digest of the typed admission
+  request. Receipt admitted operations must be a subset of requested operations.
   Accepted receipt bodies must not carry rejection evidence, and receipt bodies
   must not reference their own signing envelope. [ADMISSION-REQ-004]
 - Gate C invocation names the operation being invoked. That operation must
@@ -59,7 +63,6 @@ The following are not implemented by this admission-boundary slice:
 
 - file-backed admission request or receipt loading;
 - canonical-CBOR encoding for admission artifacts;
-- admission request digest recomputation;
 - participant authentication or host attestation;
 - participant policy evaluation;
 - capability delegation or revocation evaluation;

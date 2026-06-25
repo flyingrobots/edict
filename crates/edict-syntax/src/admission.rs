@@ -13,12 +13,17 @@ use crate::{
     },
     core_ir::ResourceRef,
 };
+use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 
 /// Continuum admission request ABI checked by this crate.
 pub const ADMISSION_REQUEST_API_VERSION: &str = "continuum.admission-request/v1";
 
 /// Continuum admission receipt body ABI checked by this crate.
 pub const ADMISSION_RECEIPT_API_VERSION: &str = "continuum.admission-receipt-body/v1";
+
+/// Domain label for typed admission request digests.
+pub const ADMISSION_REQUEST_DIGEST_DOMAIN: &str = "edict.admission-request/v1";
 
 /// Authorship provenance for an artifact before admission.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,6 +264,53 @@ pub fn validate_admission_request(
     report(failures)
 }
 
+/// Compute the domain-separated digest for a typed admission request.
+#[must_use]
+pub fn digest_admission_request(request: &AdmissionRequest) -> String {
+    let mut hasher = Sha256::new();
+    hash_str(&mut hasher, "domain", ADMISSION_REQUEST_DIGEST_DOMAIN);
+    hash_str(&mut hasher, "api_version", &request.api_version);
+    hash_bundle_subject(&mut hasher, "bundle_subject", &request.bundle_subject);
+    hash_resource(
+        &mut hasher,
+        "participant_descriptor",
+        &request.participant_descriptor,
+    );
+    hash_resource(&mut hasher, "catalog_snapshot", &request.catalog_snapshot);
+    hash_resource(&mut hasher, "admission_policy", &request.admission_policy);
+    hash_str(&mut hasher, "policy_epoch", &request.policy_epoch);
+    hash_len(
+        &mut hasher,
+        "requested_operations.len",
+        request.requested_operations.len(),
+    );
+    for operation in &request.requested_operations {
+        hash_operation_requirement(&mut hasher, operation);
+    }
+    hash_len(
+        &mut hasher,
+        "requested_capabilities.len",
+        request.requested_capabilities.len(),
+    );
+    for capability in &request.requested_capabilities {
+        hash_resource(&mut hasher, "requested_capability", capability);
+    }
+    hash_resource(
+        &mut hasher,
+        "requested_runtime_budget",
+        &request.requested_runtime_budget,
+    );
+    hash_len(
+        &mut hasher,
+        "admission_evidence.len",
+        request.admission_evidence.len(),
+    );
+    for evidence in &request.admission_evidence {
+        hash_resource(&mut hasher, "admission_evidence", &evidence.artifact);
+    }
+    format_sha256(hasher.finalize().as_slice())
+}
+
 /// Validate an admission receipt body against its request.
 #[must_use]
 pub fn validate_admission_receipt(
@@ -280,6 +332,14 @@ pub fn validate_admission_receipt(
         &receipt.admission_request_digest,
         &mut failures,
     );
+    if receipt.admission_request_digest != digest_admission_request(request) {
+        push_failure(
+            &mut failures,
+            AdmissionValidationFailureKind::AdmissionReceiptMismatch,
+            "admission_request_digest",
+            "receipt request digest matches the typed admission request digest",
+        );
+    }
     check_bundle_subject(&receipt.bundle_subject, "bundle_subject", &mut failures);
     if receipt.bundle_subject != request.bundle_subject
         || receipt.policy_epoch != request.policy_epoch
@@ -536,6 +596,102 @@ fn selected_bundle_digest(bundle: &ContractBundleManifest, kind: BundleSubjectKi
     match kind {
         BundleSubjectKind::Semantic => &bundle.semantic_bundle_digest,
         BundleSubjectKind::Release => &bundle.release_bundle_digest,
+    }
+}
+
+fn hash_operation_requirement(hasher: &mut Sha256, operation: &OperationRequirementRef) {
+    hash_bundle_subject(
+        hasher,
+        "operation.bundle_subject",
+        &operation.bundle_subject,
+    );
+    hash_str(
+        hasher,
+        "operation.operation_coordinate",
+        &operation.operation_coordinate,
+    );
+    hash_resource(hasher, "operation.basis", &operation.basis);
+    hash_str(
+        hasher,
+        "operation.variables_digest",
+        &operation.variables_digest,
+    );
+    hash_str(
+        hasher,
+        "operation.requirements_digest",
+        &operation.requirements_digest,
+    );
+    hash_len(
+        hasher,
+        "operation.execution_inputs.len",
+        operation.execution_inputs.len(),
+    );
+    for input in &operation.execution_inputs {
+        hash_execution_input(hasher, input);
+    }
+}
+
+fn hash_execution_input(hasher: &mut Sha256, input: &ExecutionInputRef) {
+    hash_str(
+        hasher,
+        "execution_input.kind",
+        match input.kind {
+            ExecutionInputKind::CanonicalInput => "canonical-input",
+            ExecutionInputKind::WitnessedEvidence => "witnessed-evidence",
+            ExecutionInputKind::AdmittedBasis => "admitted-basis",
+            ExecutionInputKind::CapabilityPresentation => "capability-presentation",
+            ExecutionInputKind::HiddenHostInput => "hidden-host-input",
+        },
+    );
+    hash_resource(hasher, "execution_input.artifact", &input.artifact);
+}
+
+fn hash_bundle_subject(hasher: &mut Sha256, label: &str, subject: &BundleSubject) {
+    hash_str(
+        hasher,
+        &format!("{label}.kind"),
+        bundle_subject_kind(subject.kind),
+    );
+    hash_str(hasher, &format!("{label}.digest"), &subject.digest);
+}
+
+fn hash_resource(hasher: &mut Sha256, label: &str, resource: &ResourceRef) {
+    hash_str(hasher, &format!("{label}.coordinate"), &resource.coordinate);
+    hash_str(
+        hasher,
+        &format!("{label}.digest"),
+        resource.digest.as_deref().unwrap_or(""),
+    );
+}
+
+fn hash_len(hasher: &mut Sha256, label: &str, len: usize) {
+    hash_str(hasher, label, &len.to_string());
+}
+
+fn hash_str(hasher: &mut Sha256, label: &str, value: &str) {
+    hasher.update(label.len().to_string().as_bytes());
+    hasher.update([0]);
+    hasher.update(label.as_bytes());
+    hasher.update([0]);
+    hasher.update(value.len().to_string().as_bytes());
+    hasher.update([0]);
+    hasher.update(value.as_bytes());
+    hasher.update([0xff]);
+}
+
+fn format_sha256(bytes: &[u8]) -> String {
+    let mut digest = String::with_capacity("sha256:".len() + 64);
+    digest.push_str("sha256:");
+    for byte in bytes {
+        write!(&mut digest, "{byte:02x}").expect("writing to String cannot fail");
+    }
+    digest
+}
+
+fn bundle_subject_kind(kind: BundleSubjectKind) -> &'static str {
+    match kind {
+        BundleSubjectKind::Semantic => "semantic",
+        BundleSubjectKind::Release => "release",
     }
 }
 

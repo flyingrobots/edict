@@ -86,6 +86,8 @@ An `AdmissionReceiptBody` contains:
 - obstruction or rejection taxonomy for non-accept decisions;
 - policy epoch.
 
+The `admissionRequestDigest` must match the digest of the admission request that
+the receipt answers.
 The admitted operation set must be a subset of the request's operation set.
 Accepted receipts carry no obstruction or rejection taxonomy.
 

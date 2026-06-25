@@ -5,13 +5,13 @@
 //! or repository layout.
 
 use edict_syntax::{
-    check_gate_c_invocation, validate_admission_receipt, validate_admission_request,
-    AdmissionDecision, AdmissionEvidenceRef, AdmissionRequest, AdmissionValidationFailureKind,
-    AdmissionValidationReport, AdmissionValidationStatus, AuthoringProvenance, BundleSubject,
-    BundleSubjectKind, CapabilityReceipt, CapabilityReceiptKind, ContractBundleManifest,
-    ExecutionInputKind, ExecutionInputRef, GateCInvocation, OperationRequirementRef, ResourceRef,
-    SourceArtifactRef, ADMISSION_RECEIPT_API_VERSION, ADMISSION_REQUEST_API_VERSION,
-    CONTRACT_BUNDLE_API_VERSION,
+    check_gate_c_invocation, digest_admission_request, validate_admission_receipt,
+    validate_admission_request, AdmissionDecision, AdmissionEvidenceRef, AdmissionRequest,
+    AdmissionValidationFailureKind, AdmissionValidationReport, AdmissionValidationStatus,
+    AuthoringProvenance, BundleSubject, BundleSubjectKind, CapabilityReceipt,
+    CapabilityReceiptKind, ContractBundleManifest, ExecutionInputKind, ExecutionInputRef,
+    GateCInvocation, OperationRequirementRef, ResourceRef, SourceArtifactRef,
+    ADMISSION_RECEIPT_API_VERSION, ADMISSION_REQUEST_API_VERSION, CONTRACT_BUNDLE_API_VERSION,
 };
 
 fn digest(hex: char) -> String {
@@ -114,7 +114,7 @@ fn request_for(bundle: &ContractBundleManifest, kind: BundleSubjectKind) -> Admi
 fn accepted_receipt_for(request: &AdmissionRequest) -> edict_syntax::AdmissionReceiptBody {
     edict_syntax::AdmissionReceiptBody {
         api_version: ADMISSION_RECEIPT_API_VERSION.to_owned(),
-        admission_request_digest: digest('9'),
+        admission_request_digest: digest_admission_request(request),
         bundle_subject: request.bundle_subject.clone(),
         participant: digest_locked("continuum.participant.echo-lab/v1", '3'),
         decision: AdmissionDecision::Accepted,
@@ -221,6 +221,22 @@ fn admission_receipt_must_echo_request_subject() {
     let request = request_for(&bundle, BundleSubjectKind::Semantic);
     let mut receipt = accepted_receipt_for(&request);
     receipt.bundle_subject.digest = digest('f');
+
+    let report = validate_admission_receipt(&request, &receipt);
+
+    assert_eq!(report.status, AdmissionValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![AdmissionValidationFailureKind::AdmissionReceiptMismatch]
+    );
+}
+
+#[test]
+fn admission_receipt_must_echo_request_digest() {
+    let bundle = echo_bundle();
+    let request = request_for(&bundle, BundleSubjectKind::Semantic);
+    let mut receipt = accepted_receipt_for(&request);
+    receipt.admission_request_digest = digest('f');
 
     let report = validate_admission_receipt(&request, &receipt);
 

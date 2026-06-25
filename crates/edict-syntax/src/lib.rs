@@ -46,12 +46,13 @@ pub mod target_profile;
 pub mod token;
 
 pub use admission::{
-    check_gate_c_invocation, validate_admission_receipt, validate_admission_request,
-    AdmissionDecision, AdmissionEvidenceRef, AdmissionReceiptBody, AdmissionRequest,
-    AdmissionValidationFailure, AdmissionValidationFailureKind, AdmissionValidationReport,
-    AdmissionValidationStatus, AuthoringProvenance, CapabilityReceipt, CapabilityReceiptKind,
-    ExecutionInputKind, ExecutionInputRef, GateCInvocation, OperationRequirementRef,
-    ADMISSION_RECEIPT_API_VERSION, ADMISSION_REQUEST_API_VERSION,
+    check_gate_c_invocation, digest_admission_request, validate_admission_receipt,
+    validate_admission_request, AdmissionDecision, AdmissionEvidenceRef, AdmissionReceiptBody,
+    AdmissionRequest, AdmissionValidationFailure, AdmissionValidationFailureKind,
+    AdmissionValidationReport, AdmissionValidationStatus, AuthoringProvenance, CapabilityReceipt,
+    CapabilityReceiptKind, ExecutionInputKind, ExecutionInputRef, GateCInvocation,
+    OperationRequirementRef, ADMISSION_RECEIPT_API_VERSION, ADMISSION_REQUEST_API_VERSION,
+    ADMISSION_REQUEST_DIGEST_DOMAIN,
 };
 pub use canonical::{
     decode_canonical_cbor, digest_core_module, encode_canonical_cbor, encode_core_module,
