@@ -100,9 +100,24 @@ release/vX.Y.Z-alpha.N-prep -> vX.Y.Z-alpha.N
 The automation creates the annotated tag on the verified `main` commit, refuses
 to move an existing tag, and dispatches the Release workflow with the tag.
 
-Manual tagging is now an operator fallback, not the normal path. If automation
-does not run and the release-prep merge commit has been verified on `main`, the
-fallback is to tag that exact verified merge commit:
+Manual workflow dispatch is now the preferred operator fallback. If automation
+does not run and the release-prep merge commit has been verified on `main`,
+rerun the same idempotent tag-and-dispatch path with an explicit tag and SHA:
+
+```bash
+gh workflow run auto-release-tag.yml \
+  -f tag=vX.Y.Z-alpha.N \
+  -f sha=<verified-main-merge-sha>
+```
+
+The recovery path validates that the SHA is reachable from `origin/main`, has a
+successful `main` CI run, came from a merged `release/*-prep` PR, and derives
+the same tag requested by the operator. It refuses to move an existing tag and
+still dispatches publication when the existing tag already targets the requested
+SHA.
+
+Manual local tagging remains the last fallback if Actions itself is unavailable.
+Tag the exact verified merge commit:
 
 ```bash
 git fetch origin main:refs/remotes/origin/main --tags

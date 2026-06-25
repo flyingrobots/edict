@@ -11,6 +11,12 @@ source_event = "push"
 source_branch_pattern = "release/vX.Y.Z-alpha.N-prep"
 tag_derivation = "strip_release_prefix_and_prep_suffix"
 publication_trigger = "workflow_dispatch"
+manual_recovery_trigger = "workflow_dispatch"
+manual_recovery_requires = [
+  "main_ci_success",
+  "merged_release_pr",
+  "manual_tag_matches_release_prep_pr",
+]
 close_milestone = "after_github_release_when_zero_open_issues"
 milestone_lookup = "paginated_all_states"
 milestone_selection = "complete_stream_first_match"
@@ -23,6 +29,8 @@ required_checks = [
   "release_notes_file",
   "tag_absent_or_same_target",
   "main_ci_success",
+  "main_reachable_manual_sha",
+  "manual_tag_matches_release_prep_pr",
   "zero_open_milestone_issues",
 ]
 
