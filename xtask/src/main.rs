@@ -881,6 +881,8 @@ mod tests {
         let root = repo_root().expect("repo root");
         let workflow =
             fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
         for needle in [
             "workflow_dispatch:",
             "RELEASE_TAG:",
@@ -898,6 +900,27 @@ mod tests {
                 "release workflow missing dispatch/milestone guard: {needle}"
             );
         }
+        assert!(
+            policy.contains("publication_before_milestone_closure = true"),
+            "release policy must require publication before milestone closure"
+        );
+        let publish_step = workflow
+            .find("name: Publish GitHub release")
+            .expect("release workflow must publish the GitHub Release");
+        let close_step = workflow
+            .find("name: Close release milestone")
+            .expect("release workflow must close the milestone");
+        assert!(
+            publish_step < close_step,
+            "release workflow must close the milestone only after publishing the release"
+        );
+        assert!(
+            workflow.contains("MILESTONE_NUMBER=\"${{ steps.release.outputs.milestone_number }}\"")
+                && workflow.contains(
+                    "MILESTONE_STATE=\"${{ steps.release.outputs.milestone_state }}\"",
+                ),
+            "milestone closure must be driven by release verification outputs"
+        );
     }
 
     #[test]
