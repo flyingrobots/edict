@@ -50,7 +50,7 @@ non_goals = [
 [release_notes.v0_3_0_alpha_1]
 tag = "v0.3.0-alpha.1"
 target_date = "2026-07-15"
-status = "publish_ready"
+status = "published"
 release_issue = 35
 scope = [
   "surface_validation_split",
@@ -69,5 +69,27 @@ non_goals = [
   "no_target_profile_conformance",
   "no_target_lowering",
   "no_bundle_admission",
+  "no_crates_io_publish",
+]
+
+[release_notes.v0_4_0_alpha_1]
+tag = "v0.4.0-alpha.1"
+target_date = "2026-07-29"
+status = "publish_ready"
+release_issue = 39
+scope = [
+  "target_profile_conformance",
+  "lowerability_direct_adapter",
+  "contract_bundle_manifest_validation",
+  "runtime_neutral_profile_fixtures",
+  "optional_assurance_evidence_binding",
+]
+non_goals = [
+  "no_target_lowerer_execution",
+  "no_target_ir_generation",
+  "no_file_backed_manifest_loading",
+  "no_bundle_digest_recomputation",
+  "no_admission_policy",
+  "no_lowerability_cli",
   "no_crates_io_publish",
 ]

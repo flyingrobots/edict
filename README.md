@@ -487,8 +487,10 @@ What exists today:
 - Typed v1 contract-bundle manifest validation for participant-neutral,
   SHA-locked bundle artifacts, release-only provenance inputs, and optional
   HOLMES/Watson/Moriarty evidence references
-- `v0.3.0-alpha.1` release notes and release runbook for the compiler-spine
-  alpha
+- Publish-ready `v0.4.0-alpha.1` release notes for the target-profile,
+  lowerability, and contract-bundle validation alpha
+- Published `v0.3.0-alpha.1` release notes and release runbook for the
+  compiler-spine alpha
 - Topic shelves and local contract-graph verification via `cargo xtask verify`
 - Release roadmap and GitHub milestone schedule in
   [`ROADMAP.md`](./ROADMAP.md)
@@ -503,14 +505,16 @@ What doesn't exist yet:
 - Echo or KV/CAS target lowerers
 - Admission tooling
 
-The next implementation milestone is v0.4 release preparation once the
-target-profile, lowerability, and contract-bundle slices have landed.
+The next implementation milestone after `v0.4.0-alpha.1` is the bundle and
+admission alpha tracked as `v0.5.0-alpha.1`.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.2.0-alpha.1` is a Core semantic model and schema milestone, and the
-`v0.3.0-alpha.1` release is a compiler-spine/canonical-Core milestone. None of these
-releases claims target lowerers or admission tooling.
+`v0.3.0-alpha.1` release is a compiler-spine/canonical-Core milestone. The
+`v0.4.0-alpha.1` release is prepared as a target-profile, lowerability, and
+contract-bundle validation milestone. None of these releases claims target
+lowerers or admission tooling.
 
 ---
 

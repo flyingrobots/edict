@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.4.0-alpha.1] - 2026-07-29
+
 ### Added
 
 - Added typed v1 lowerability checks in `edict_syntax`: `LoweringRequirements`,
