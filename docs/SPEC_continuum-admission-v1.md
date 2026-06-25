@@ -89,6 +89,7 @@ An `AdmissionReceiptBody` contains:
 The `admissionRequestDigest` must match the digest of the admission request that
 the receipt answers.
 The admitted operation set must be a subset of the request's operation set.
+The admitted capability set must be a subset of the request's capability set.
 Accepted receipts carry no obstruction or rejection taxonomy.
 
 The body is hashed to `AdmissionReceiptBodyDigest`. A DSSE envelope signs that
@@ -141,8 +142,8 @@ wall-clock time.
 
 Registration evidence is not invocation authority. A runtime invocation requires
 an accepted admission receipt plus a matching invocation capability receipt for
-the selected bundle subject, operation coordinate, participant, and policy
-epoch.
+the selected bundle subject, operation coordinate, participant, admitted
+capability scope, and policy epoch.
 
 ## Participant Policy
 

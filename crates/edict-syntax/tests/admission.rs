@@ -133,7 +133,7 @@ fn invocation_capability(request: &AdmissionRequest) -> CapabilityReceipt {
         issuer_bundle_subject: request.bundle_subject.clone(),
         participant: digest_locked("continuum.participant.echo-lab/v1", '3'),
         operation_coordinate: "hello.sayHello".to_owned(),
-        scope: digest_locked("continuum.scope.echo-lab/v1", '4'),
+        scope: request.requested_capabilities[0].clone(),
         policy_epoch: request.policy_epoch.clone(),
     }
 }
@@ -296,6 +296,22 @@ fn receipt_admitted_operations_must_be_requested() {
 }
 
 #[test]
+fn receipt_admitted_capabilities_must_be_requested() {
+    let bundle = echo_bundle();
+    let request = request_for(&bundle, BundleSubjectKind::Semantic);
+    let mut receipt = accepted_receipt_for(&request);
+    receipt.admitted_capabilities = vec![digest_locked("continuum.capability.unrequested/v1", '5')];
+
+    let report = validate_admission_receipt(&request, &receipt);
+
+    assert_eq!(report.status, AdmissionValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![AdmissionValidationFailureKind::AdmissionReceiptMismatch]
+    );
+}
+
+#[test]
 fn llm_authored_artifact_still_requires_admission_receipt() {
     let bundle = echo_bundle();
     let request = request_for(&bundle, BundleSubjectKind::Semantic);
@@ -420,6 +436,24 @@ fn invocation_capability_must_match_receipt_participant() {
     let receipt = accepted_receipt_for(&request);
     let mut capability = invocation_capability(&request);
     capability.participant = digest_locked("continuum.participant.other-lab/v1", '5');
+    let packet = invocation_packet(bundle, request, Some(receipt), vec![capability]);
+
+    let report = check_gate_c_invocation(&packet);
+
+    assert_eq!(report.status, AdmissionValidationStatus::Invalid);
+    assert_eq!(
+        failure_kinds(&report),
+        vec![AdmissionValidationFailureKind::MissingInvocationCapability]
+    );
+}
+
+#[test]
+fn invocation_capability_scope_must_be_admitted() {
+    let bundle = echo_bundle();
+    let request = request_for(&bundle, BundleSubjectKind::Semantic);
+    let receipt = accepted_receipt_for(&request);
+    let mut capability = invocation_capability(&request);
+    capability.scope = digest_locked("continuum.capability.unadmitted/v1", '5');
     let packet = invocation_packet(bundle, request, Some(receipt), vec![capability]);
 
     let report = check_gate_c_invocation(&packet);

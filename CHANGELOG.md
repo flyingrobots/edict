@@ -16,8 +16,9 @@ versions still track specification maturity rather than a released product.
   `validate_admission_receipt`, and `check_gate_c_invocation`. The checks
   validate Edict-owned bundle-subject, operation-requirement, hidden execution
   input, request-digest echoing, receipt echoing, receipt acyclicity,
-  invoked-operation, participant-matched capability, and invocation evidence
-  semantics while leaving participant policy, identity, delegation, and
+  invoked-operation, admitted capability scope, participant-matched capability,
+  and invocation evidence semantics while leaving participant policy, identity,
+  delegation, and
   revocation to Continuum.
 - Added the admission topic shelf for the Edict/Continuum admission-boundary
   contract and verification matrix.

@@ -385,6 +385,20 @@ pub fn validate_admission_receipt(
     }
 
     check_digest_locked_resource("participant", &receipt.participant, &mut failures);
+    for admitted_capability in &receipt.admitted_capabilities {
+        if !request
+            .requested_capabilities
+            .iter()
+            .any(|requested_capability| requested_capability == admitted_capability)
+        {
+            push_failure(
+                &mut failures,
+                AdmissionValidationFailureKind::AdmissionReceiptMismatch,
+                "admitted_capabilities",
+                "receipt admitted capabilities are a subset of requested capabilities",
+            );
+        }
+    }
     check_resource_list(
         "admitted_capabilities",
         &receipt.admitted_capabilities,
@@ -524,6 +538,10 @@ fn has_matching_invocation_capability(
             && capability.policy_epoch == packet.request.policy_epoch
             && is_digest_locked_resource(&capability.participant)
             && is_digest_locked_resource(&capability.scope)
+            && admission_receipt
+                .admitted_capabilities
+                .iter()
+                .any(|admitted_capability| admitted_capability == &capability.scope)
     })
 }
 
