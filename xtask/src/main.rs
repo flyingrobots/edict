@@ -843,6 +843,21 @@ mod tests {
         assert_eq!(base, "origin/main");
     }
 
+    fn workflow_block<'a>(workflow: &'a str, start: &str, end: &str) -> &'a str {
+        workflow
+            .split(start)
+            .nth(1)
+            .and_then(|tail| tail.split(end).next())
+            .unwrap_or_else(|| panic!("workflow block missing `{start}`"))
+    }
+
+    fn milestone_lookup_consumes_complete_stream(block: &str) -> bool {
+        block.contains(
+            "gh api --paginate \"repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100\"",
+        ) && block.contains("jq -s '.[0] // empty'")
+            && !block.contains("head -n 1")
+    }
+
     #[test]
     fn release_workflow_publishes_only_main_reachable_tags() {
         let root = repo_root().expect("repo root");
@@ -950,9 +965,41 @@ mod tests {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
             .expect("release policy");
+        let release_workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let auto_workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
         assert!(
             policy.contains("milestone_selection = \"complete_stream_first_match\""),
             "release automation policy must require full-stream milestone selection"
+        );
+        let release_verification = workflow_block(
+            &release_workflow,
+            "name: Verify tag target, release notes, and milestone",
+            "name: Publish GitHub release",
+        );
+        assert!(
+            milestone_lookup_consumes_complete_stream(release_verification),
+            "release workflow must consume the full paginated milestone stream"
+        );
+        let auto_tag_job = workflow_block(
+            &auto_workflow,
+            "name: Create immutable release tag",
+            "dispatch-release-publication:",
+        );
+        assert!(
+            milestone_lookup_consumes_complete_stream(auto_tag_job),
+            "auto-release workflow must consume the full paginated milestone stream"
+        );
+    }
+
+    #[test]
+    fn milestone_lookup_contract_rejects_head_truncation() {
+        let lookup = r#"MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            --jq ".[] | select(.title == \"${TAG}\")" | head -n 1)""#;
+        assert!(
+            !milestone_lookup_consumes_complete_stream(lookup),
+            "milestone lookup contract must reject head-based truncation"
         );
     }
 
