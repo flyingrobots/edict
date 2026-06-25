@@ -934,6 +934,23 @@ mod tests {
     }
 
     #[test]
+    fn release_workflow_checks_out_release_tag_for_dispatch() {
+        let root = repo_root().expect("repo root");
+        let workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        let checkout_step = workflow
+            .split("actions/checkout@")
+            .nth(1)
+            .and_then(|tail| tail.split("- name: Verify tag target").next())
+            .expect("release workflow checkout block");
+        let release_ref = "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}";
+        assert!(
+            checkout_step.contains(&format!("ref: {release_ref}")),
+            "release workflow must read release notes from the tag being published"
+        );
+    }
+
+    #[test]
     fn auto_release_tag_workflow_is_guarded() {
         let root = repo_root().expect("repo root");
         let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
