@@ -487,6 +487,9 @@ What exists today:
 - Typed v1 contract-bundle manifest validation for participant-neutral,
   SHA-locked bundle artifacts, release-only provenance inputs, and optional
   HOLMES/Watson/Moriarty evidence references
+- Typed Gate C admission-boundary checks for Edict-owned bundle-subject,
+  operation-requirement, hidden execution input rejection, receipt,
+  invoked-operation, and invocation capability evidence semantics
 - Publish-ready `v0.4.0-alpha.1` release notes for the target-profile,
   lowerability, and contract-bundle validation alpha
 - Published `v0.3.0-alpha.1` release notes and release runbook for the
@@ -503,7 +506,8 @@ What doesn't exist yet:
   expression literals)
 - File-backed target profile and contract bundle manifest loading
 - Echo or KV/CAS target lowerers
-- Admission tooling
+- Full admission execution tooling
+- Participant policy evaluation, capability delegation, and revocation logic
 
 The next implementation milestone after `v0.4.0-alpha.1` is the bundle and
 admission alpha tracked as `v0.5.0-alpha.1`.

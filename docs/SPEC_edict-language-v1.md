@@ -953,6 +953,12 @@ provenance:
 - unconstrained recursion;
 - unbounded loops.
 
+Hidden model state, prompt context, browser DOM state, filesystem state, network
+responses, host callbacks, and scheduler state may influence candidate source
+generation above the boundary. They may not influence compiled execution below
+the boundary unless materialized as explicit canonical input, witnessed evidence,
+admitted basis, or capability presentation.
+
 ### I-004 Total Bounded Evaluation
 
 Pure Edict functions are total and cost-bounded over valid inputs. Loops must

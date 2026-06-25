@@ -14,23 +14,26 @@
 //! `type_check`, `lower_core`, and `compile_to_core`, currently covering the
 //! initial pure local-record subset and producing in-memory Core IR only.
 //! The crate also exposes typed v1 target-profile conformance, lowerability, and
-//! contract-bundle checks. Conformance validates runtime-neutral target-profile
-//! manifests. Lowerability checks `LoweringRequirements` against explicit
-//! target-profile facts and classifies support as native, directly adapted, or
-//! unsupported. Contract-bundle validation checks participant-neutral,
-//! SHA-locked bundle and assurance evidence manifests; none of these surfaces
-//! produce Target IR or admission artifacts.
+//! contract-bundle checks plus typed Gate C admission-boundary checks.
+//! Conformance validates runtime-neutral target-profile manifests. Lowerability
+//! checks `LoweringRequirements` against explicit target-profile facts and
+//! classifies support as native, directly adapted, or unsupported.
+//! Contract-bundle validation checks participant-neutral, SHA-locked bundle and
+//! assurance evidence manifests. Admission-boundary checks validate Edict-owned
+//! artifact and invocation evidence bindings without evaluating participant
+//! policy.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, target
-//! lowering, and admission artifacts are deferred. The crate exposes the
-//! reference canonical Core encoder for `edict.canonical-cbor/v1` and the
-//! domain-separated `edict.core.module/v1` Core digest used by reviewed golden
-//! fixtures.
+//! lowering, and full admission execution tooling are deferred. The crate
+//! exposes the reference canonical Core encoder for `edict.canonical-cbor/v1`
+//! and the domain-separated `edict.core.module/v1` Core digest used by reviewed
+//! golden fixtures.
 //!
 //! Assurance tooling (HOLMES / Watson / Moriarty) remains shared platform
 //! machinery. This crate validates typed references to its evidence; it does not
 //! execute those tools or make admission decisions.
 
+pub mod admission;
 pub mod ast;
 pub mod canonical;
 pub mod compiler;
@@ -42,6 +45,15 @@ pub mod semantic;
 pub mod target_profile;
 pub mod token;
 
+pub use admission::{
+    check_gate_c_invocation, digest_admission_request, validate_admission_receipt,
+    validate_admission_request, AdmissionDecision, AdmissionEvidenceRef, AdmissionReceiptBody,
+    AdmissionRequest, AdmissionValidationFailure, AdmissionValidationFailureKind,
+    AdmissionValidationReport, AdmissionValidationStatus, AuthoringProvenance, CapabilityReceipt,
+    CapabilityReceiptKind, ExecutionInputKind, ExecutionInputRef, GateCInvocation,
+    OperationRequirementRef, ADMISSION_RECEIPT_API_VERSION, ADMISSION_REQUEST_API_VERSION,
+    ADMISSION_REQUEST_DIGEST_DOMAIN,
+};
 pub use canonical::{
     decode_canonical_cbor, digest_core_module, encode_canonical_cbor, encode_core_module,
     CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, CORE_CANONICAL_ENCODING,
@@ -89,6 +101,9 @@ mod topic_shelf_doctests {
 
     #[doc = include_str!("../../../docs/topics/contract-bundles/README.md")]
     pub struct ContractBundlesTopicDocs;
+
+    #[doc = include_str!("../../../docs/topics/admission/README.md")]
+    pub struct AdmissionTopicDocs;
 
     #[doc = include_str!("../../../docs/topics/lowerability/README.md")]
     pub struct LowerabilityTopicDocs;

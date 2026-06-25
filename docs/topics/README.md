@@ -31,6 +31,8 @@ cargo xtask verify
 
 ## Topics
 
+- [Admission](./admission/README.md): typed Gate C admission-boundary checks
+  for Edict-owned artifact and invocation evidence semantics.
 - [Compiler Spine](./compiler-spine/README.md): executable source-AST to
   in-memory Core IR stage contract for the initial lowerable subset.
 - [Contract Bundles](./contract-bundles/README.md): typed v1

@@ -183,6 +183,8 @@ Scope:
 
 - Edict-owned Continuum participation boundary.
 - Gate C artifact admission contract and evidence expectations.
+- Typed Gate C admission-boundary checks for bundle subject, operation
+  requirements, receipts, and invocation capability evidence.
 - Bundle/admission fixtures that consume compiler-spine artifacts rather than
   paper-only sketches.
 

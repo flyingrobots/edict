@@ -24,6 +24,8 @@ The current specification set is:
   first front-end alpha milestone.
 - [Release Process Topic](./topics/release-process/): tag-triggered GitHub
   Release publication contract and verification matrix.
+- [Admission Topic](./topics/admission/): typed Gate C admission-boundary checks
+  for Edict-owned artifact and invocation evidence semantics.
 - [Contract Bundles Topic](./topics/contract-bundles/): typed v1
   participant-neutral bundle and assurance evidence manifest validation.
 - [Lowerability Topic](./topics/lowerability/): typed v1 lowering

@@ -24,6 +24,29 @@ bundle. Admission requests and receipts reference a `bundleSubject`
 (`{ kind: semantic | release, digest }`); they are not components of either
 bundle digest (`CONTINUUM-BUNDLE-SUBJECT-001`).
 
+## Ownership Boundary
+
+Edict owns the artifact and operation semantics carried by admission artifacts:
+
+- exact `bundleSubject { kind: semantic | release, digest }` semantics;
+- semantic versus release bundle digest selection;
+- operation coordinate meaning inside a bundle;
+- basis, canonical variables digest, and instantiated operation requirements;
+- bundle-declared footprint, aperture, and budget ceilings;
+- hidden execution input rejection below the determinism boundary;
+- compiler, lowering, verifier, and runtime-effect failure taxonomy.
+
+Continuum owns participant protocol semantics:
+
+- participant, principal, host, agent, and role vocabulary;
+- participant policy, capability delegation, revocation, and policy epochs;
+- effective-authority evaluation;
+- admission, activation, invocation, and receipt lifecycle;
+- participant descriptor and catalog snapshot interpretation.
+
+Admission artifacts may carry Edict-owned fields, but Continuum policy does not
+define Edict language meaning and Edict does not grant participant authority.
+
 ## Admission Request
 
 An admission request contains:
@@ -35,6 +58,9 @@ An admission request contains:
 - admission policy digest;
 - policy epoch or monotonic policy version;
 - requested operation set;
+- operation requirement references derived from the admitted `bundleSubject`,
+  operation coordinate, basis, canonical variables digest, and instantiated
+  requirements digest;
 - requested capabilities;
 - requested runtime budgets and ceilings;
 - requester identity or provenance, if required by participant policy;
@@ -59,6 +85,12 @@ An `AdmissionReceiptBody` contains:
 - admitted capabilities;
 - obstruction or rejection taxonomy for non-accept decisions;
 - policy epoch.
+
+The `admissionRequestDigest` must match the digest of the admission request that
+the receipt answers.
+The admitted operation set must be a subset of the request's operation set.
+The admitted capability set must be a subset of the request's capability set.
+Accepted receipts carry no obstruction or rejection taxonomy.
 
 The body is hashed to `AdmissionReceiptBodyDigest`. A DSSE envelope signs that
 digest and is carried by the distribution envelope, **not** by the body. The
@@ -107,6 +139,11 @@ A receipt should include:
 
 Expiry must use explicit participant epochs or supplied provenance, not ambient
 wall-clock time.
+
+Registration evidence is not invocation authority. A runtime invocation requires
+an accepted admission receipt plus a matching invocation capability receipt for
+the selected bundle subject, operation coordinate, participant, admitted
+capability scope, and policy epoch.
 
 ## Participant Policy
 
