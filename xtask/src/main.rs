@@ -966,7 +966,8 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("- name: Verify tag target").next())
             .expect("release workflow checkout block");
-        let release_ref = "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}";
+        let release_ref =
+            "${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}";
         assert!(
             checkout_step.contains(&format!("ref: {release_ref}")),
             "release workflow must read release notes from the tag being published"
