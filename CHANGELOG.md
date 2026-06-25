@@ -8,6 +8,19 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added typed Gate C admission-boundary checks in `edict_syntax`:
+  `AdmissionRequest`, `AdmissionReceiptBody`, `GateCInvocation`,
+  `validate_admission_request`, `validate_admission_receipt`, and
+  `check_gate_c_invocation`. The checks validate Edict-owned bundle-subject,
+  operation-requirement, hidden execution input, receipt echoing, receipt
+  acyclicity, invoked-operation, participant-matched capability, and invocation
+  evidence semantics while leaving participant policy, identity, delegation, and
+  revocation to Continuum.
+- Added the admission topic shelf for the Edict/Continuum admission-boundary
+  contract and verification matrix.
+
 ## [v0.4.0-alpha.1] - 2026-07-29
 
 ### Added

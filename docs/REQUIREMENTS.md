@@ -40,6 +40,8 @@ embedded snippet, schema, or fixture no longer matches the locked digests.
 - `EDICT-TARGET-*` — Target Profile ABI.
 - `EDICT-LAWPACK-*` — Lawpack ABI.
 - `EDICT-ABI-*` — cross-ABI rules (no-duplication, display sidecars).
+- `EDICT-ADMISSION-*` — Edict-owned admission-boundary artifact and operation
+  semantics.
 - `EDICT-CONFORMANCE-*` — conformance/differential testing.
 - `CONTINUUM-*` — contract bundle and admission.
 
@@ -70,6 +72,10 @@ but owned by a follow-up issue; no fixtures until its dependency lands).
 | EDICT-DIGEST-WIRE-001 | Canonical digest is typed `[algorithm, bytes]`, never a hex string; hex only in review JSON | Bundle/ABI | `abi/digest/typed-pair` | `abi/digest/hex-string` | spec |
 | EDICT-ABI-FAILURE-NAMED-001 | Effects declare named, typed low-level failures; obstruction map keyed by failure coordinate | Target/Lawpack | `abi/failure/named-payload` | `abi/failure/undeclared-arm` | spec |
 | CONTINUUM-BUNDLE-SUBJECT-001 | Requests/receipts/explanations carry `bundleSubject {kind,digest}`; receipt echoes it; Moriarty tracks both | Bundle/Admission | `bundle/subject/echo` | `bundle/subject/mismatch` | spec |
+| EDICT-ADMISSION-BOUNDARY-001 | Edict owns bundle subject, digest selection, operation coordinates, basis, variables, requirements, and failure taxonomy; Continuum owns participant policy and authority | Admission | `admission/boundary/edict-owned-fields` | `admission/boundary/participant-policy-in-edict` | impl |
+| EDICT-ADMISSION-OPREQ-001 | Operation requirements bind bundle subject, operation coordinate, basis, canonical variables digest, and instantiated requirements digest | Admission | `admission/opreq/bound` | `admission/opreq/floating-subject` | impl |
+| EDICT-ADMISSION-HIDDEN-INPUT-001 | Hidden prompt, DOM, filesystem, network, host callback, or scheduler state cannot influence execution unless materialized as canonical input, witnessed evidence, admitted basis, or capability presentation | Admission | `admission/input/canonical` | `admission/input/hidden-host` | impl |
+| EDICT-ADMISSION-AUTHORITY-001 | Authorship provenance and registration evidence do not grant invocation authority; invocation requires accepted admission plus matching invocation capability evidence | Admission | `admission/authority/invocation-capability` | `admission/authority/registration-only` | impl |
 | EDICT-TARGET-NEUTRAL-LOWERING-001 | Lowerer compares cost/footprint vs declared target ceiling, never an admitted participant budget | Target | `target/lowering/declared-ceiling` | `target/lowering/admitted-budget` | spec |
 | EDICT-CORE-GUARD-PAYLOAD-001 | CoreGuard/ObstructionMap carry a typed obstruction payload construct (coordinate + binder + payload expr) | Language | `core/guard/payload-roundtrip` | `core/guard/coordinate-only` | spec |
 | EDICT-CORE-WHERE-HASH-001 | Core carries typed `where` predicate trees in `inputConstraints`, not a validator coordinate | Language | `core/where/predicate-tree` | `core/where/coordinate-only` | spec |
