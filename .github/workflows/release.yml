@@ -62,8 +62,8 @@ jobs:
             exit 1
           fi
 
-          MILESTONE_JSON="$(gh api "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
-            --jq ".[] | select(.title == \"${TAG}\")")"
+          MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
+            --jq ".[] | select(.title == \"${TAG}\")" | head -n 1)"
 
           if [[ -z "${MILESTONE_JSON}" ]]; then
             echo "::error::Missing release milestone matching ${TAG}."

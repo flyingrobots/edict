@@ -901,6 +901,17 @@ mod tests {
     }
 
     #[test]
+    fn release_workflow_paginates_milestone_lookup() {
+        let root = repo_root().expect("repo root");
+        let workflow =
+            fs::read_to_string(root.join(".github/workflows/release.yml")).expect("workflow");
+        assert!(
+            workflow.contains("gh api --paginate"),
+            "release workflow must paginate milestone lookup"
+        );
+    }
+
+    #[test]
     fn auto_release_tag_workflow_is_guarded() {
         let root = repo_root().expect("repo root");
         let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
