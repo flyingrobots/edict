@@ -991,6 +991,27 @@ mod tests {
     }
 
     #[test]
+    fn auto_release_tag_uses_ephemeral_push_credentials() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let tag_job = workflow
+            .split("create-release-tag:")
+            .nth(1)
+            .and_then(|tail| tail.split("dispatch-release-publication:").next())
+            .expect("create-release-tag job block");
+        for required in [
+            "persist-credentials: false",
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git",
+        ] {
+            assert!(
+                tag_job.contains(required),
+                "create-release-tag job missing ephemeral credential guard: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn auto_release_tag_checks_milestone_before_tag_push() {
         let root = repo_root().expect("repo root");
         let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))

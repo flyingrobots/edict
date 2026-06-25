@@ -100,6 +100,7 @@ jobs:
         with:
           ref: ${{ needs.identify-release-pr.outputs.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Create immutable release tag
         id: tag
@@ -144,7 +145,7 @@ jobs:
           fi
 
           git tag -a "${TAG}" "${SHA}" -m "${TAG}"
-          git push origin "refs/tags/${TAG}"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "refs/tags/${TAG}"
           echo "created=true" >>"${GITHUB_OUTPUT}"
 
   dispatch-release-publication:
