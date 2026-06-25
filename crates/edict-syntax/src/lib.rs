@@ -15,6 +15,8 @@
 //! initial pure local-record subset and producing in-memory Core IR only.
 //! The crate also exposes typed v1 target-profile conformance, lowerability, and
 //! contract-bundle checks plus typed Gate C admission-boundary checks.
+//! Developer-tooling support begins with lexical highlighting roles for editor
+//! adapters.
 //! Conformance validates runtime-neutral target-profile manifests. Lowerability
 //! checks `LoweringRequirements` against explicit target-profile facts and
 //! classifies support as native, directly adapted, or unsupported.
@@ -39,6 +41,7 @@ pub mod canonical;
 pub mod compiler;
 pub mod contract_bundle;
 pub mod core_ir;
+pub mod highlight;
 pub mod lowerability;
 pub mod parser;
 pub mod semantic;
@@ -75,6 +78,7 @@ pub use core_ir::{
     CoreNode, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
     ResourceRef, CORE_API_VERSION,
 };
+pub use highlight::{highlight_source, HighlightRole, HighlightToken};
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,
     LowerabilityEffectResult, LowerabilityEffectStatus, LowerabilityFailure,
@@ -116,4 +120,7 @@ mod topic_shelf_doctests {
 
     #[doc = include_str!("../../../docs/topics/syntax/README.md")]
     pub struct SyntaxTopicDocs;
+
+    #[doc = include_str!("../../../docs/topics/developer-tooling/README.md")]
+    pub struct DeveloperToolingTopicDocs;
 }

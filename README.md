@@ -461,8 +461,9 @@ That's the gap Edict fills.
 Edict now has executable Rust implementation slices alongside the design specs.
 The current implementation includes the front end, Core semantic schema, the
 first source-to-in-memory-Core compiler spine, target-profile and bundle
-validation, and Gate C admission-boundary checks. It is not a complete compiler
-or full admission execution stack.
+validation, Gate C admission-boundary checks, and editor-facing lexical
+highlighting roles. It is not a complete compiler or full admission execution
+stack.
 
 What exists today:
 
@@ -472,6 +473,8 @@ What exists today:
 - Assurance and transparency guidance (HOLMES, Watson, Moriarty)
 - Design rationale and research anchors
 - Phase 1 `edict-syntax` lexer/parser for the landed source-AST subset
+- Editor-facing lexical `highlight_source` API with stable source roles for the
+  first developer-tooling slice
 - Phase 2 source-AST semantic validation for checks that do not require Core IR
 - `edict.core/v1` semantic model and normative CDDL schema
 - Initial compiler-spine APIs: `resolve_module`, `type_check`, `lower_core`, and
@@ -506,13 +509,14 @@ What doesn't exist yet:
 - A compiler CLI
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
   expression literals)
+- Tree-sitter/TextMate grammar artifacts and packaged editor integrations
 - File-backed target profile and contract bundle manifest loading
 - Echo or KV/CAS target lowerers
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic
 
-The next implementation milestone after `v0.5.0-alpha.1` is the developer
-tooling alpha tracked as `v0.6.0-alpha.1`.
+The active implementation milestone is the developer-tooling alpha tracked as
+`v0.6.0-alpha.1`.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,

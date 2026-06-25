@@ -209,6 +209,8 @@ Release labels: `release:developer-tools`
 
 Scope:
 
+- Editor-facing lexical highlighting roles that editor adapters can consume
+  before full grammar packages land.
 - Editor syntax-highlighting plan and first supported grammar artifacts.
 - Differential grammar fixture path after the compiler/Core spine stabilizes.
 - Tooling documentation for VS Code, Vim, Zed, jedit, or the first supported
@@ -217,6 +219,8 @@ Scope:
 Exit gates:
 
 - #7 lands or has a reviewed release-scope split.
+- Highlighting roles are backed by deterministic fixtures before editor
+  adapters consume them.
 - Grammar fixtures are deterministic and versioned with the source grammar.
 - The release notes identify exactly which editor integrations are supported.
 

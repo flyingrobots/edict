@@ -1,0 +1,24 @@
+// editor tooling fixture
+package examples.tooling@1;
+
+use lawpack hello.optics@1 digest "sha256:0000000000000000000000000000000000000000000000000000000000000000" as hello;
+
+/* comments remain editor-visible */
+type HelloInput = {
+  name: String<max=256>,
+};
+
+type HelloReading = {
+  message: String<max=512>,
+};
+
+intent sayHello(input: HelloInput)
+  returns HelloReading
+  profile hello.readOnly
+  basis none
+  budget <= hello.tinyBudget
+  where input.name != ""
+{
+  let message = "hello, ";
+  return { message };
+}
