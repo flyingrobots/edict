@@ -5,19 +5,29 @@ on:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "v* release tag to create or verify"
+        required: true
+        type: string
+      sha:
+        description: "Verified main commit SHA to tag"
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: auto-release-tag-${{ github.event.workflow_run.head_sha }}
+  group: auto-release-tag-${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
   identify-release-pr:
     name: identify merged release PR
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     permissions:
       contents: read
       pull-requests: read
@@ -29,17 +39,56 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
           fetch-depth: 0
 
       - name: Identify merged release PR
         id: release_pr
         env:
+          EVENT_NAME: ${{ github.event_name }}
           GH_TOKEN: ${{ github.token }}
-          SHA: ${{ github.event.workflow_run.head_sha }}
+          INPUT_SHA: ${{ inputs.sha }}
+          INPUT_TAG: ${{ inputs.tag }}
+          SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.sha || github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ "${EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TAG="${INPUT_TAG}"
+
+            if [[ ! "${SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Manual recovery SHA must be a full 40-character commit SHA: ${SHA}"
+              exit 1
+            fi
+
+            if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+              echo "::error::Manual recovery tag must look like a SemVer v* tag: ${TAG}"
+              exit 1
+            fi
+
+            git fetch origin main:refs/remotes/origin/main --tags
+
+            if ! git merge-base --is-ancestor "${SHA}" origin/main; then
+              echo "::error::Manual recovery SHA must be reachable from origin/main."
+              exit 1
+            fi
+
+            NOTES="docs/releases/${TAG}.md"
+
+            if [[ ! -f "${NOTES}" ]]; then
+              echo "::error::Missing release notes file: ${NOTES}"
+              exit 1
+            fi
+
+            {
+              echo "release=true"
+              echo "tag=${TAG}"
+              echo "pr=manual"
+              echo "sha=${SHA}"
+            } >>"${GITHUB_OUTPUT}"
+            exit 0
+          fi
 
           PRS_JSON="$(gh api \
             -H "Accept: application/vnd.github+json" \
@@ -114,8 +163,7 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          GIT_AUTH_HEADER="AUTHORIZATION: bearer ${GH_TOKEN}"
-          GIT_AUTH_CONFIG="http.https://github.com/.extraheader=${GIT_AUTH_HEADER}"
+          AUTHENTICATED_ORIGIN="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
 
           MILESTONE_JSON="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100" \
             --jq ".[] | select(.title == \"${TAG}\")" |
@@ -133,8 +181,8 @@ jobs:
             exit 1
           fi
 
-          if git -c "${GIT_AUTH_CONFIG}" ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
-            git -c "${GIT_AUTH_CONFIG}" fetch origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          if git ls-remote --exit-code --tags "${AUTHENTICATED_ORIGIN}" "refs/tags/${TAG}" >/dev/null 2>&1; then
+            git fetch "${AUTHENTICATED_ORIGIN}" "refs/tags/${TAG}:refs/tags/${TAG}"
             TAG_COMMIT="$(git rev-parse "${TAG}^{commit}")"
 
             if [[ "${TAG_COMMIT}" != "${SHA}" ]]; then
@@ -148,7 +196,7 @@ jobs:
           fi
 
           git tag -a "${TAG}" "${SHA}" -m "${TAG}"
-          git -c "${GIT_AUTH_CONFIG}" push origin "refs/tags/${TAG}"
+          git push "${AUTHENTICATED_ORIGIN}" "refs/tags/${TAG}"
           echo "created=true" >>"${GITHUB_OUTPUT}"
 
   dispatch-release-publication:

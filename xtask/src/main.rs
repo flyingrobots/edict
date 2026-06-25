@@ -1030,10 +1030,13 @@ mod tests {
             .expect("release policy");
         for needle in [
             "workflow_run:",
+            "workflow_dispatch:",
             "workflows: [\"CI\"]",
             "branches: [main]",
             "github.event.workflow_run.conclusion == 'success'",
             "github.event.workflow_run.event == 'push'",
+            "inputs.tag",
+            "inputs.sha",
             "/commits/${SHA}/pulls",
             "^release/v[0-9]+",
             "docs/releases/${TAG}.md",
@@ -1055,6 +1058,36 @@ mod tests {
             policy.contains("source_event = \"push\""),
             "release automation policy must restrict auto-tagging to push CI runs"
         );
+        assert!(
+            policy.contains("manual_recovery_trigger = \"workflow_dispatch\""),
+            "release automation policy must allow manual recovery dispatch"
+        );
+    }
+
+    #[test]
+    fn auto_release_tag_manual_dispatch_checks_verified_main_sha() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        let identify_job = workflow_block(&workflow, "identify-release-pr:", "create-release-tag:");
+        for required in [
+            "workflow_dispatch:",
+            "tag:",
+            "sha:",
+            "github.event_name == 'workflow_dispatch'",
+            "INPUT_TAG:",
+            "INPUT_SHA:",
+            "git fetch origin main:refs/remotes/origin/main --tags",
+            "git merge-base --is-ancestor \"${SHA}\" origin/main",
+            "release=true",
+            "tag=${TAG}",
+            "sha=${SHA}",
+        ] {
+            assert!(
+                identify_job.contains(required) || workflow.contains(required),
+                "auto-release manual recovery missing verified-sha contract: {required}"
+            );
+        }
     }
 
     #[test]
@@ -1124,10 +1157,10 @@ mod tests {
             .expect("create-release-tag job block");
         for required in [
             "persist-credentials: false",
-            "GIT_AUTH_CONFIG=\"http.https://github.com/.extraheader=${GIT_AUTH_HEADER}\"",
-            "git -c \"${GIT_AUTH_CONFIG}\" ls-remote",
-            "git -c \"${GIT_AUTH_CONFIG}\" fetch",
-            "git -c \"${GIT_AUTH_CONFIG}\" push origin",
+            "AUTHENTICATED_ORIGIN=\"https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git\"",
+            "git ls-remote --exit-code --tags \"${AUTHENTICATED_ORIGIN}\"",
+            "git fetch \"${AUTHENTICATED_ORIGIN}\"",
+            "git push \"${AUTHENTICATED_ORIGIN}\"",
         ] {
             assert!(
                 tag_job.contains(required),
