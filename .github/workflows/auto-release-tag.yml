@@ -7,19 +7,25 @@ on:
     branches: [main]
 
 permissions:
-  actions: write
-  contents: write
-  pull-requests: read
+  contents: read
 
 concurrency:
   group: auto-release-tag-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
-  tag-release:
-    name: tag merged release PR
+  identify-release-pr:
+    name: identify merged release PR
     runs-on: ubuntu-latest
     if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      release: ${{ steps.release_pr.outputs.release }}
+      tag: ${{ steps.release_pr.outputs.tag }}
+      pr: ${{ steps.release_pr.outputs.pr }}
+      sha: ${{ steps.release_pr.outputs.sha }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
@@ -81,12 +87,26 @@ jobs:
             echo "sha=${SHA}"
           } >>"${GITHUB_OUTPUT}"
 
+  create-release-tag:
+    name: create immutable release tag
+    needs: identify-release-pr
+    runs-on: ubuntu-latest
+    if: needs.identify-release-pr.outputs.release == 'true'
+    permissions:
+      contents: write
+      issues: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          ref: ${{ needs.identify-release-pr.outputs.sha }}
+          fetch-depth: 0
+
       - name: Create immutable release tag
-        if: steps.release_pr.outputs.release == 'true'
         id: tag
         env:
-          TAG: ${{ steps.release_pr.outputs.tag }}
-          SHA: ${{ steps.release_pr.outputs.sha }}
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.identify-release-pr.outputs.tag }}
+          SHA: ${{ needs.identify-release-pr.outputs.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -112,11 +132,20 @@ jobs:
           git push origin "refs/tags/${TAG}"
           echo "created=true" >>"${GITHUB_OUTPUT}"
 
+  dispatch-release-publication:
+    name: dispatch release publication
+    needs:
+      - identify-release-pr
+      - create-release-tag
+    runs-on: ubuntu-latest
+    if: needs.identify-release-pr.outputs.release == 'true'
+    permissions:
+      actions: write
+    steps:
       - name: Dispatch release publication
-        if: steps.release_pr.outputs.release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.release_pr.outputs.tag }}
+          TAG: ${{ needs.identify-release-pr.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail

@@ -930,6 +930,27 @@ mod tests {
     }
 
     #[test]
+    fn auto_release_tag_workflow_scopes_job_permissions() {
+        let root = repo_root().expect("repo root");
+        let workflow = fs::read_to_string(root.join(".github/workflows/auto-release-tag.yml"))
+            .expect("auto release workflow");
+        for required in [
+            "identify-release-pr:",
+            "contents: read",
+            "pull-requests: read",
+            "create-release-tag:",
+            "contents: write",
+            "dispatch-release-publication:",
+            "actions: write",
+        ] {
+            assert!(
+                workflow.contains(required),
+                "auto release workflow missing scoped job permission contract: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn release_tag_recovery_policy_is_structured() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
