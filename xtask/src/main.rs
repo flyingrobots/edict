@@ -647,6 +647,18 @@ mod tests {
 
     use super::{check_topic, contract_check, repo_root};
 
+    fn toml_section(document: &str, header: &str) -> String {
+        let start = document.find(header).expect("section header");
+        let section = &document[start..];
+        let end = section
+            .lines()
+            .enumerate()
+            .skip(1)
+            .find_map(|(index, line)| line.starts_with('[').then_some(index))
+            .unwrap_or_else(|| section.lines().count());
+        section.lines().take(end).collect::<Vec<_>>().join("\n")
+    }
+
     #[test]
     fn contract_graph_is_valid() {
         contract_check(&repo_root().expect("repo root")).expect("contract graph is valid");
@@ -2111,11 +2123,12 @@ fn run() {}
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
             .expect("release policy");
+        let v0_6_policy = toml_section(&policy, "[release_notes.v0_6_0_alpha_1]");
         for required in [
             "[release_notes.v0_6_0_alpha_1]",
             "tag = \"v0.6.0-alpha.1\"",
             "target_date = \"2026-08-26\"",
-            "status = \"publish_ready\"",
+            "status = \"published\"",
             "editor_highlight_roles",
             "tree_sitter_grammar_source",
             "textmate_grammar_artifact",
@@ -2129,7 +2142,7 @@ fn run() {}
             "no_crates_io_publish",
         ] {
             assert!(
-                policy.contains(required),
+                v0_6_policy.contains(required),
                 "v0.6 release policy missing structured field: {required}"
             );
         }
