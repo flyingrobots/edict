@@ -642,6 +642,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use edict_syntax::parse_module;
+    use regex::Regex;
     use serde_json::Value;
 
     use super::{check_topic, contract_check, repo_root};
@@ -963,22 +964,11 @@ mod tests {
             .collect()
     }
 
-    fn textmate_regex_covers_literal(regex: &str, literal: &str) -> bool {
-        regex.contains(literal) || regex.contains(&regex_escaped_literal(literal))
-    }
-
-    fn regex_escaped_literal(literal: &str) -> String {
-        let mut escaped = String::new();
-        for ch in literal.chars() {
-            if matches!(
-                ch,
-                '\\' | '.' | '+' | '*' | '?' | '^' | '$' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
-            ) {
-                escaped.push('\\');
-            }
-            escaped.push(ch);
-        }
-        escaped
+    fn textmate_regex_matches_literal(pattern: &str, literal: &str) -> bool {
+        let anchored = format!("^(?:{pattern})$");
+        Regex::new(&anchored)
+            .unwrap_or_else(|err| panic!("TextMate regex `{pattern}` must compile: {err}"))
+            .is_match(literal)
     }
 
     #[derive(Debug)]
@@ -1273,7 +1263,7 @@ fn run() {}
         let source = "package use type enum variant intent returns profile implements basis \
             footprint budget where let return require guarantee assert if then else for in \
             bounded yield match shape lawpack target core capability as digest fn const true \
-            false HelloInput input = == != < <= > >= + - * / % ! && || => :: ... ; : , . @ \
+            false HelloInput input = == != < <= > >= + - * / % ! && || => -> :: ... ; : , . @ \
             ( ) { } [ ] \"text\" 123";
         let highlights = edict_syntax::highlight_source(source).expect("highlight role source");
 
@@ -1284,24 +1274,24 @@ fn run() {}
             }
             match token.role {
                 edict_syntax::HighlightRole::Keyword => assert!(
-                    textmate_regex_covers_literal(keyword_regex, lexeme),
+                    textmate_regex_matches_literal(keyword_regex, lexeme),
                     "TextMate keyword regex must cover `{lexeme}`"
                 ),
                 edict_syntax::HighlightRole::Operator => assert!(
-                    textmate_regex_covers_literal(operator_regex, lexeme),
+                    textmate_regex_matches_literal(operator_regex, lexeme),
                     "TextMate operator regex must cover `{lexeme}`"
                 ),
                 edict_syntax::HighlightRole::Punctuation => assert!(
-                    textmate_regex_covers_literal(punctuation_regex, lexeme),
+                    textmate_regex_matches_literal(punctuation_regex, lexeme),
                     "TextMate punctuation regex must cover `{lexeme}`"
                 ),
                 edict_syntax::HighlightRole::TypeIdentifier => assert!(
-                    textmate_regex_covers_literal(type_regex, "[A-Z]"),
-                    "TextMate type regex must cover uppercase identifiers"
+                    textmate_regex_matches_literal(type_regex, lexeme),
+                    "TextMate type regex must cover `{lexeme}`"
                 ),
                 edict_syntax::HighlightRole::Identifier => assert!(
-                    textmate_regex_covers_literal(identifier_regex, "[A-Za-z_]"),
-                    "TextMate identifier regex must cover bare identifiers"
+                    textmate_regex_matches_literal(identifier_regex, lexeme),
+                    "TextMate identifier regex must cover `{lexeme}`"
                 ),
                 edict_syntax::HighlightRole::Comment
                 | edict_syntax::HighlightRole::Number

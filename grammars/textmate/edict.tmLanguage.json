@@ -74,7 +74,7 @@
     },
     "operators": {
       "name": "keyword.operator.edict",
-      "match": "=>|==|!=|<=|>=|&&|\\|\\||=|<|>|\\+|-|\\*|/|%|!"
+      "match": "->|=>|==|!=|<=|>=|&&|\\|\\||=|<|>|\\+|-|\\*|/|%|!"
     },
     "punctuation": {
       "name": "punctuation.separator.edict",
