@@ -1324,9 +1324,9 @@ fn run() {}
 
         assert!(
             number_spans.iter().any(|(start, end)| {
-                *start == public_number.span.start && *end >= public_number.span.end
+                *start == public_number.span.start && *end == public_number.span.end
             }),
-            "TextMate number regex must scope public version-label number span `{}`",
+            "TextMate number regex must exactly scope public version-label number span `{}`",
             public_number.lexeme(source)
         );
     }

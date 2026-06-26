@@ -62,7 +62,7 @@
     },
     "numbers": {
       "name": "constant.numeric.integer.edict",
-      "match": "\\b[0-9]+(?:_[0-9]+)*(?:(?:i32|i64|u32|u64)\\b|_[A-Za-z][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*|\\b)"
+      "match": "\\b[0-9]+(?:_[0-9]+)*(?:i32|i64|u32|u64)?\\b|\\b[0-9]+(?:_[0-9]+)*_"
     },
     "keywords": {
       "name": "keyword.control.edict",
