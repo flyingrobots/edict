@@ -1510,6 +1510,57 @@ mod tests {
     }
 
     #[test]
+    fn release_topic_audit_policy_sets_minimums() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for required in [
+            "[release_topic_audit]",
+            "scope = \"docs/topics\"",
+            "timing = \"release_prep_before_pr\"",
+            "evidence_location = \"release_issue_or_pr_before_merge\"",
+            "release_blocking = true",
+            "coverage_definition = \"audited_topic_shelves / total_topic_shelves\"",
+            "accuracy_definition = \"accurate_audited_topic_shelves / audited_topic_shelves\"",
+            "stale_current_truth = \"correct_or_remove_before_counting_accurate\"",
+            "topic_shelf_total",
+            "topic_shelf_audited",
+            "accurate_audited_topic_shelves",
+            "coverage_percent",
+            "accuracy_percent",
+            "findings_fixed_or_release_blocking",
+        ] {
+            assert!(
+                policy.contains(required),
+                "release topic audit policy missing structured field: {required}"
+            );
+        }
+
+        assert!(
+            toml_integer_value(&policy, "coverage_floor_percent") >= 90,
+            "release topic audit coverage floor must be at least 90%"
+        );
+        assert!(
+            toml_integer_value(&policy, "accuracy_floor_percent") >= 90,
+            "release topic audit accuracy floor must be at least 90%"
+        );
+    }
+
+    fn toml_integer_value(policy: &str, key: &str) -> u16 {
+        policy
+            .lines()
+            .find_map(|line| {
+                let (raw_key, raw_value) = line.trim().split_once('=')?;
+                if raw_key.trim() == key {
+                    raw_value.trim().parse::<u16>().ok()
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| panic!("release policy missing integer field `{key}`"))
+    }
+
+    #[test]
     fn release_automation_policy_is_structured() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
