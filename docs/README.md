@@ -28,8 +28,14 @@ The current specification set is:
   Release publication contract and verification matrix.
 - [Admission Topic](./topics/admission/): typed Gate C admission-boundary checks
   for Edict-owned artifact and invocation evidence semantics.
+- [Assurance Topic](./topics/assurance/): optional, hash-bound HOLMES, Watson,
+  and Moriarty evidence references at the contract-bundle boundary.
 - [Contract Bundles Topic](./topics/contract-bundles/): typed v1
   participant-neutral bundle and assurance evidence manifest validation.
+- [Fixtures Topic](./topics/fixtures/): shared executable fixture corpus and
+  reviewed Core golden artifact contract.
+- [Lawpacks Topic](./topics/lawpacks/): lawpack import, direct-adapter, bundle
+  reference, and deferred manifest-validation boundary.
 - [Lowerability Topic](./topics/lowerability/): typed v1 lowering
   requirements, target-profile facts, and direct-only support classification.
 - [Target Profiles Topic](./topics/target-profiles/): typed v1 target-profile

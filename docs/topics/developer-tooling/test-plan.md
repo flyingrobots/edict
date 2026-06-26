@@ -11,11 +11,12 @@ In scope:
 - Tree-sitter highlight query captures aligned with the editor roles;
 - Tree-sitter corpus examples that remain accepted by the reference parser.
 - TextMate grammar artifacts for `.edict` lexical highlighting.
+- thin VS Code/Cursor extension packaging for the TextMate grammar.
 
 Out of scope:
 
 - generated Tree-sitter parser packages;
-- editor extension packaging;
+- Vim, Zed, jedit, and marketplace publication packaging;
 - parse, resolution, type-check, Core lowering, or admission behavior.
 
 ## Requirements
@@ -26,6 +27,7 @@ Out of scope:
 | DEVTOOLS-REQ-002 | implemented | The Tree-sitter grammar source and highlight query expose the current editor-facing Edict surface without claiming generated parser packages or editor extension support. | issue #7 |
 | DEVTOOLS-REQ-003 | implemented | Tree-sitter corpus examples stay aligned with Edict's reference parser for the current accepted source subset. | issue #7 |
 | DEVTOOLS-REQ-004 | implemented | The TextMate grammar exposes `.edict` lexical scopes aligned with the public editor-facing highlight roles without claiming packaged editor extension support. | issue #7 |
+| DEVTOOLS-REQ-005 | implemented | The VS Code/Cursor extension package registers `.edict` as the Edict language and uses the canonical TextMate grammar artifact without adding runtime behavior. | issue #7 |
 
 ## Fixtures
 
@@ -36,6 +38,8 @@ Out of scope:
 | grammars/tree-sitter-edict/queries/highlights.scm | Tree-sitter highlight query for the grammar source. | The query emits captures for comments, keywords, strings, numbers, operators, punctuation, type identifiers, and callable identifiers. |
 | grammars/tree-sitter-edict/test/corpus/current-subset.txt | Tree-sitter corpus examples covering the accepted fixture families. | Each example parses through `edict_syntax::parse_module`, and each corpus case has an expected syntax tree. |
 | grammars/textmate/edict.tmLanguage.json | TextMate grammar artifact for `.edict` lexical scopes. | The grammar is valid JSON, registers `source.edict` for `.edict`, and exposes lexical scopes aligned with public highlight roles. |
+| editors/vscode/package.json | VS Code/Cursor extension manifest for `.edict` syntax highlighting. | The manifest contributes the Edict language and maps it to a vendored grammar with `source.edict`. |
+| editors/vscode/language-configuration.json | VS Code/Cursor editor behavior metadata for comments and bracket pairs. | The configuration exposes the same comment and delimiter boundaries as the public lexer. |
 
 ## Cases
 
@@ -51,8 +55,10 @@ Out of scope:
 | DEVTOOLS-TP-008 | implemented | Contract artifact | DEVTOOLS-REQ-004 | TextMate grammar declares the current editor contract for `.edict` lexical scopes. | textmate_grammar_declares_current_editor_contract | grammars/textmate/edict.tmLanguage.json | The grammar is valid JSON, names `source.edict`, registers `.edict`, includes comments, strings, numbers, keywords, types, operators, punctuation, and identifiers, and scopes line/block comments distinctly. |
 | DEVTOOLS-TP-009 | implemented | Contract artifact | DEVTOOLS-REQ-004 | TextMate grammar keyword, operator, punctuation, type, and identifier patterns stay aligned with public highlighter roles. | textmate_grammar_covers_public_highlight_roles | grammars/textmate/edict.tmLanguage.json | Lexemes emitted by `highlight_source` as keywords, operators including `->`, punctuation, type identifiers, and identifiers are covered by the corresponding TextMate scope patterns. |
 | DEVTOOLS-TP-010 | implemented | Contract artifact | DEVTOOLS-REQ-004 | TextMate grammar number patterns stay aligned with public highlighter spans for package version labels. | textmate_grammar_scopes_public_number_spans_in_version_labels | grammars/textmate/edict.tmLanguage.json | In a valid version label such as `@1_beta`, a number scope exactly covers the public `Number` span emitted by `highlight_source`. |
+| DEVTOOLS-TP-011 | implemented | Contract artifact | DEVTOOLS-REQ-005 | VS Code/Cursor package registration stays aligned with the canonical TextMate grammar. | vscode_extension_declares_textmate_language_contract | editors/vscode/package.json, editors/vscode/syntaxes/edict.tmLanguage.json | The extension contributes language id `edict`, extension `.edict`, scope `source.edict`, and a vendored grammar identical to the canonical TextMate grammar artifact. |
+| DEVTOOLS-TP-012 | implemented | Contract artifact | DEVTOOLS-REQ-005 | VS Code/Cursor language configuration exposes Edict lexer comment and delimiter boundaries. | vscode_language_configuration_matches_lexer_boundaries | editors/vscode/package.json, editors/vscode/language-configuration.json | The language configuration declares `//`, `/* */`, `{}`, `[]`, and `()` boundaries consistent with the lexer and grammar artifacts. |
 
 ## Known Gaps
 
 - Generated Tree-sitter parser packages are not shipped yet.
-- No editor extension package is shipped yet.
+- Vim, Zed, and jedit extension packages are not shipped yet.

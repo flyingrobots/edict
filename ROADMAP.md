@@ -215,6 +215,7 @@ Scope:
   current-subset corpus for the accepted fixture families.
 - TextMate grammar artifact for `.edict` lexical scopes in TextMate-compatible
   editors.
+- Thin VS Code/Cursor extension package wrapping the TextMate grammar.
 - Differential grammar fixture path after the compiler/Core spine stabilizes
   beyond the current Tree-sitter corpus.
 - Tooling documentation for VS Code, Vim, Zed, jedit, or the first supported
@@ -229,6 +230,8 @@ Exit gates:
   grammar, and aligned with the reference parser.
 - TextMate grammar scopes are backed by executable checks against public
   highlighter roles.
+- The VS Code/Cursor package registers `.edict` files and uses the canonical
+  TextMate grammar artifact.
 - The release notes identify exactly which editor integrations are supported.
 
 ## v2-design - Future Design Track
