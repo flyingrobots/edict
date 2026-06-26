@@ -641,6 +641,8 @@ mod tests {
     use std::fs;
     use std::path::{Path, PathBuf};
 
+    use edict_syntax::parse_module;
+
     use super::{check_topic, contract_check, repo_root};
 
     #[test]
@@ -856,6 +858,349 @@ mod tests {
             "gh api --paginate \"repos/${GITHUB_REPOSITORY}/milestones?state=all&per_page=100\"",
         ) && block.contains("jq -s '.[0] // empty'")
             && !block.contains("head -n 1")
+    }
+
+    fn tree_sitter_rule_declared(grammar: &str, rule: &str) -> bool {
+        grammar.contains(&format!("{rule}: $ =>"))
+    }
+
+    fn tree_sitter_literal_declared(grammar: &str, literal: &str) -> bool {
+        grammar.contains(&format!("'{literal}'")) || grammar.contains(&format!("\"{literal}\""))
+    }
+
+    fn quoted_query_atoms(line: &str) -> Vec<String> {
+        let mut atoms = Vec::new();
+        let mut chars = line.char_indices();
+        while let Some((start, ch)) = chars.next() {
+            if ch != '"' {
+                continue;
+            }
+            let atom_start = start + ch.len_utf8();
+            for (end, end_ch) in chars.by_ref() {
+                if end_ch == '"' {
+                    atoms.push(line[atom_start..end].to_owned());
+                    break;
+                }
+            }
+        }
+        atoms
+    }
+
+    fn tree_sitter_query_atoms_for_capture(query: &str, capture: &str) -> BTreeSet<String> {
+        let mut atoms = BTreeSet::new();
+        let mut list_atoms = Vec::new();
+        let mut in_list = false;
+
+        for line in query.lines() {
+            let trimmed = line.trim();
+            if trimmed == "[" {
+                in_list = true;
+                list_atoms.clear();
+                continue;
+            }
+
+            if in_list {
+                if trimmed.starts_with(']') {
+                    if trimmed.contains(capture) {
+                        atoms.extend(list_atoms.drain(..));
+                    }
+                    in_list = false;
+                    list_atoms.clear();
+                } else {
+                    list_atoms.extend(quoted_query_atoms(trimmed));
+                }
+                continue;
+            }
+
+            if trimmed.contains("#any-of?") && trimmed.contains(capture) {
+                atoms.extend(quoted_query_atoms(trimmed));
+            }
+        }
+
+        atoms
+    }
+
+    #[derive(Debug)]
+    struct TreeSitterCorpusExample {
+        title: String,
+        source: String,
+        expected_tree: String,
+    }
+
+    fn parse_tree_sitter_corpus(corpus: &str) -> Vec<TreeSitterCorpusExample> {
+        let lines = corpus.lines().collect::<Vec<_>>();
+        let mut examples = Vec::new();
+        let mut index = 0usize;
+
+        while index < lines.len() {
+            while index < lines.len() && !is_tree_sitter_delimiter(lines[index]) {
+                index += 1;
+            }
+            if index == lines.len() {
+                break;
+            }
+
+            index += 1;
+            assert!(index < lines.len(), "Tree-sitter corpus missing title");
+            let title = lines[index].trim().to_owned();
+            index += 1;
+            assert!(
+                index < lines.len() && is_tree_sitter_delimiter(lines[index]),
+                "Tree-sitter corpus example `{title}` missing title delimiter"
+            );
+            index += 1;
+            if index < lines.len() && lines[index].trim().is_empty() {
+                index += 1;
+            }
+
+            let mut source_lines = Vec::new();
+            while index < lines.len() && lines[index].trim() != "---" {
+                source_lines.push(lines[index]);
+                index += 1;
+            }
+            assert!(
+                index < lines.len(),
+                "Tree-sitter corpus example `{title}` missing expected-tree delimiter"
+            );
+            index += 1;
+
+            let mut expected_tree_lines = Vec::new();
+            while index < lines.len() && !is_tree_sitter_delimiter(lines[index]) {
+                expected_tree_lines.push(lines[index]);
+                index += 1;
+            }
+
+            examples.push(TreeSitterCorpusExample {
+                title,
+                source: source_lines.join("\n").trim().to_owned(),
+                expected_tree: expected_tree_lines.join("\n").trim().to_owned(),
+            });
+        }
+
+        examples
+    }
+
+    fn is_tree_sitter_delimiter(line: &str) -> bool {
+        let trimmed = line.trim();
+        !trimmed.is_empty() && trimmed.chars().all(|ch| ch == '=')
+    }
+
+    #[test]
+    fn tree_sitter_grammar_declares_current_editor_contract() {
+        let root = repo_root().expect("repo root");
+        let grammar = fs::read_to_string(root.join("grammars/tree-sitter-edict/grammar.js"))
+            .expect("Tree-sitter grammar source");
+        let highlights =
+            fs::read_to_string(root.join("grammars/tree-sitter-edict/queries/highlights.scm"))
+                .expect("Tree-sitter highlight query");
+
+        for rule in [
+            "source_file",
+            "package_declaration",
+            "use_declaration",
+            "type_declaration",
+            "enum_declaration",
+            "variant_type",
+            "intent_declaration",
+            "intent_clause",
+            "block",
+            "let_statement",
+            "return_statement",
+            "require_statement",
+            "guarantee_statement",
+            "assert_statement",
+            "if_statement",
+            "for_statement",
+            "yield_block",
+            "match_expression",
+            "call_expression",
+            "call_type_arguments",
+            "call_argument_list",
+            "record_literal",
+            "type_reference",
+            "comment",
+            "string",
+            "number",
+        ] {
+            assert!(
+                tree_sitter_rule_declared(&grammar, rule),
+                "Tree-sitter grammar must declare `{rule}`"
+            );
+        }
+
+        for keyword in [
+            "package",
+            "use",
+            "type",
+            "enum",
+            "variant",
+            "intent",
+            "returns",
+            "profile",
+            "implements",
+            "basis",
+            "footprint",
+            "budget",
+            "where",
+            "let",
+            "return",
+            "require",
+            "guarantee",
+            "assert",
+            "if",
+            "then",
+            "else",
+            "for",
+            "in",
+            "bounded",
+            "yield",
+            "match",
+            "shape",
+            "lawpack",
+            "target",
+            "core",
+            "as",
+            "digest",
+            "true",
+            "false",
+        ] {
+            assert!(
+                tree_sitter_literal_declared(&grammar, keyword),
+                "Tree-sitter grammar must recognize keyword `{keyword}`"
+            );
+        }
+
+        for capture in [
+            "@comment",
+            "@keyword",
+            "@string",
+            "@number",
+            "@operator",
+            "@punctuation",
+            "@type",
+            "@function",
+        ] {
+            assert!(
+                highlights.contains(capture),
+                "Tree-sitter highlight query must emit `{capture}`"
+            );
+        }
+    }
+
+    #[test]
+    fn tree_sitter_query_covers_public_keyword_roles() {
+        let root = repo_root().expect("repo root");
+        let highlights =
+            fs::read_to_string(root.join("grammars/tree-sitter-edict/queries/highlights.scm"))
+                .expect("Tree-sitter highlight query");
+        let source = r"
+package examples.keywords@1;
+use capability caps.auth@1 as caps;
+const demo = 1;
+fn run() {}
+";
+        let public_keywords = edict_syntax::highlight_source(source)
+            .expect("source lexes for highlighting")
+            .into_iter()
+            .filter(|token| token.role == edict_syntax::HighlightRole::Keyword)
+            .map(|token| token.lexeme(source).to_owned())
+            .collect::<BTreeSet<_>>();
+        let query_keywords = tree_sitter_query_atoms_for_capture(&highlights, "@keyword");
+
+        for keyword in public_keywords {
+            assert!(
+                query_keywords.contains(&keyword),
+                "Tree-sitter highlight query must capture public keyword `{keyword}`"
+            );
+        }
+    }
+
+    #[test]
+    fn tree_sitter_query_operator_and_punctuation_roles_match_public_highlighter() {
+        let root = repo_root().expect("repo root");
+        let highlights =
+            fs::read_to_string(root.join("grammars/tree-sitter-edict/queries/highlights.scm"))
+                .expect("Tree-sitter highlight query");
+        let source = "= == != < <= > >= + - * / % ! && || => :: ... ; : , . @ ( ) { }";
+        let public_roles = edict_syntax::highlight_source(source)
+            .expect("operator and punctuation source lexes")
+            .into_iter()
+            .map(|token| (token.lexeme(source).to_owned(), token.role))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let query_operators = tree_sitter_query_atoms_for_capture(&highlights, "@operator");
+        let query_punctuation = tree_sitter_query_atoms_for_capture(&highlights, "@punctuation");
+
+        if let Some(duplicate) = query_operators.intersection(&query_punctuation).next() {
+            panic!("Tree-sitter query assigns `{duplicate}` to both operator and punctuation");
+        }
+
+        for operator in query_operators {
+            if let Some(role) = public_roles.get(&operator) {
+                assert_eq!(
+                    *role,
+                    edict_syntax::HighlightRole::Operator,
+                    "Tree-sitter query marks `{operator}` as operator but public highlighter emits {role:?}"
+                );
+            }
+        }
+
+        for punctuation in query_punctuation {
+            if let Some(role) = public_roles.get(&punctuation) {
+                assert_eq!(
+                    *role,
+                    edict_syntax::HighlightRole::Punctuation,
+                    "Tree-sitter query marks `{punctuation}` as punctuation but public highlighter emits {role:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tree_sitter_corpus_examples_match_reference_parser() {
+        let root = repo_root().expect("repo root");
+        let corpus = fs::read_to_string(
+            root.join("grammars/tree-sitter-edict/test/corpus/current-subset.txt"),
+        )
+        .expect("Tree-sitter corpus");
+        let examples = parse_tree_sitter_corpus(&corpus);
+        assert!(
+            !examples.is_empty(),
+            "Tree-sitter corpus must include accepted Edict examples"
+        );
+
+        let mut titles = BTreeSet::new();
+        for example in &examples {
+            assert!(
+                titles.insert(example.title.as_str()),
+                "duplicate Tree-sitter corpus example `{}`",
+                example.title
+            );
+            assert!(
+                !example.expected_tree.trim().is_empty(),
+                "Tree-sitter corpus example `{}` must include an expected tree",
+                example.title
+            );
+            parse_module(&example.source).unwrap_or_else(|err| {
+                panic!(
+                    "Tree-sitter corpus example `{}` must parse with the reference parser: {err}",
+                    example.title
+                );
+            });
+        }
+
+        for title in [
+            "bounded hello",
+            "conditional blob",
+            "spaced type call",
+            "read greeting",
+            "uppercase bare identifiers",
+            "color match",
+        ] {
+            assert!(
+                titles.contains(title),
+                "Tree-sitter corpus must cover `{title}`"
+            );
+        }
     }
 
     #[test]

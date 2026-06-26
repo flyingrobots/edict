@@ -18,6 +18,9 @@ versions still track specification maturity rather than a released product.
   unchanged.
 - Added the developer-tooling topic shelf and a deterministic highlighting
   fixture for the `v0.6.0-alpha.1` tooling milestone.
+- Added initial Tree-sitter artifacts for the developer-tooling milestone:
+  grammar source, generated parser source, node metadata, highlight queries, and
+  a current-subset corpus aligned with Edict's reference parser.
 - Added a release-prep topic-shelf audit gate requiring `docs/topics/` coverage
   and accuracy to both meet at least 90% before release.
 
