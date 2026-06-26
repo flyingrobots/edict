@@ -8,6 +8,8 @@ In scope:
 
 - explicit stage APIs: resolve, type-check, lower to in-memory Core;
 - deterministic compiler context facts for profile and budget resolution;
+- deterministic compiler context facts for profile write permissions and effect
+  write classes;
 - typed representation boundary distinct from source AST;
 - source-to-Core lowering for the initial pure local-record subset;
 - structured compiler error identity.
@@ -32,6 +34,7 @@ Out of scope:
 | CSPINE-REQ-006 | implemented | The first lowerable subset covers `bounded-hello` style pure local-record intents and rejects out-of-subset constructs structurally. | fixtures/lang/bounds/bounded-hello.edict, issue #20 |
 | CSPINE-REQ-007 | implemented | Compiler-spine errors expose stable stage and kind identities. | crates/edict-syntax/src/compiler.rs |
 | CSPINE-REQ-008 | implemented | The compiler-spine lowerer embeds no canonical bytes, exact digest, target lowering, or admission artifacts in Core modules. | ROADMAP.md |
+| CSPINE-REQ-009 | implemented | The compiler spine rejects source effect bodies whose effect write class is not allowed by the resolved operation profile. | issue #54 |
 
 ## Fixtures
 
@@ -49,6 +52,8 @@ Out of scope:
 | CSPINE-TP-004 | implemented | Error handling | CSPINE-REQ-002, CSPINE-REQ-007 | Unknown local named types return `CompilerStage::TypeCheck` plus `UnresolvedType`. | unresolved_local_types_reject_in_type_check_stage, unresolved_record_field_types_reject_in_type_check_stage | - | Surface validation still accepts the source. |
 | CSPINE-TP-005 | implemented | Error handling | CSPINE-REQ-002, CSPINE-REQ-007 | Returning a record with the wrong field shape, or failing to return, returns `CompilerStage::TypeCheck` plus `TypeMismatch`. | record_return_shape_mismatch_rejects_in_type_check_stage, missing_return_rejects_in_type_check_stage | - | Asserts type identity, not diagnostic prose. |
 | CSPINE-TP-006 | implemented | Boundary guard | CSPINE-REQ-008 | The lowered Core module carries no canonical bytes, digest, target IR, or admission fields. | initial_core_lowering_makes_no_canonical_or_target_claim | fixtures/lang/bounds/bounded-hello.edict | Keeps #21/#22 boundaries honest. |
+| CSPINE-TP-007 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-009 | A write-class effect body under a read-only operation profile rejects in `CompilerStage::TypeCheck` with `ProfileEffectMismatch`. | read_only_profile_rejects_write_effect_body | - | Uses in-memory context facts; no target/lawpack file loading. |
+| CSPINE-TP-008 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-009 | A write-class effect in a `let` initializer without an obstruction handler rejects in `CompilerStage::TypeCheck` with `ProfileEffectMismatch`. | read_only_profile_rejects_write_effect_let_without_else | - | The compatibility check is independent of source obstruction syntax. |
 
 ## Determinism Obligations
 

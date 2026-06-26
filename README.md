@@ -142,9 +142,10 @@ intent sayHello(input: HelloInput)
 ```
 
 No ambient access. No clock. No filesystem. No network. No database. This intent
-compiles to a Core IR with zero runtime effects. The compiler can prove it: the
-`profile hello.readOnly` claim is not a label you apply yourself — it's a
-property the compiler verifies against the imported effect signatures.
+compiles to a Core IR with zero runtime effects. The current compiler-spine can
+prove the pure subset and can reject known profile/effect write-class conflicts
+from deterministic compiler context facts. Loading those facts from imported
+lawpack and target signatures remains future target/lawpack work.
 
 A more realistic intent — one that actually reads from a backing store — looks like
 this:
@@ -183,13 +184,14 @@ Walk through this line by line:
 - `use target echo.dpo@1 digest "sha256:..."` — imports the target runtime profile
   under which this intent will execute. Edict Core is runtime-neutral; it lowers
   to a specific target through an explicitly declared, hash-locked profile.
-- `profile echo.readOnly` — a claim the compiler verifies. If the body contains a
-  write effect, this claim fails, and compilation fails. The profile name comes
-  from the *target* import (`echo`), because read-only is a property of how the
-  target executes this intent.
-- `budget <= greeting.readGreetingBudget` — the compiler checks that the inferred
-  operation cost stays within the declared budget. There is no unbounded "however
-  much it takes."
+- `profile echo.readOnly` — a claim the current compiler can check when the
+  caller supplies deterministic profile and effect write-class facts. If the
+  body contains a known write effect under a read-only profile, this claim fails
+  and compilation fails. Loading those facts from the target import is future
+  target-profile work.
+- `budget <= greeting.readGreetingBudget` — the current compiler resolves the
+  budget through explicit deterministic context facts. Full inferred operation
+  cost from imported effect signatures is future lowerability work.
 - `greetingRef.read() else greeting.GreetingMissing` — every effect that can fail
   must declare how it fails. `GreetingMissing` comes from the *lawpack* import
   (`greeting`), not the target — it's a domain failure name, not a runtime error.
@@ -487,6 +489,8 @@ What exists today:
 - `edict.core/v1` semantic model and normative CDDL schema
 - Initial compiler-spine APIs: `resolve_module`, `type_check`, `lower_core`, and
   `compile_to_core` for the first pure local-record subset
+- Compiler-spine profile/effect compatibility checks for effectful source bodies
+  against explicit in-memory profile and effect write-class facts
 - Reference `edict.canonical-cbor/v1` Core encoder and canonical byte validation
   path for the current in-memory Core module model
 - Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for
@@ -521,6 +525,8 @@ What doesn't exist yet:
   expression literals)
 - Packaged Tree-sitter bindings plus Vim, Zed, and jedit integrations
 - File-backed target profile and contract bundle manifest loading
+- File-backed lawpack/target loading for compiler-spine profile, budget, and
+  effect facts
 - Echo or KV/CAS target lowerers
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic
