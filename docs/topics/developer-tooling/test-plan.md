@@ -6,11 +6,14 @@ In scope:
 
 - editor-facing source highlighting roles;
 - comment visibility for editor integrations;
-- deterministic source spans for highlighted tokens.
+- deterministic source spans for highlighted tokens;
+- Tree-sitter grammar source for the current accepted fixture subset;
+- Tree-sitter highlight query captures aligned with the editor roles;
+- Tree-sitter corpus examples that remain accepted by the reference parser.
 
 Out of scope:
 
-- Tree-sitter grammar generation;
+- generated Tree-sitter parser packages;
 - TextMate grammar generation;
 - editor extension packaging;
 - parse, resolution, type-check, Core lowering, or admission behavior.
@@ -20,20 +23,28 @@ Out of scope:
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
 | DEVTOOLS-REQ-001 | implemented | `highlight_source` emits deterministic editor roles for lexically meaningful Edict source spans, including comments that the parser otherwise treats as trivia. | issue #7 |
+| DEVTOOLS-REQ-002 | implemented | The Tree-sitter grammar source and highlight query expose the current editor-facing Edict surface without claiming generated parser packages or editor extension support. | issue #7 |
+| DEVTOOLS-REQ-003 | implemented | Tree-sitter corpus examples stay aligned with Edict's reference parser for the current accepted source subset. | issue #7 |
 
 ## Fixtures
 
 | Fixture | Purpose | Oracle |
 | --- | --- | --- |
 | fixtures/lang/tooling/highlight-smoke.edict | Positive highlighting fixture covering comments, declarations, identifiers, type identifiers, strings, numbers, operators, and punctuation. | `highlight_source` emits the expected roles and no whitespace-only tokens. |
+| grammars/tree-sitter-edict/grammar.js | Tree-sitter grammar source for editor syntax trees over the current accepted fixture subset. | The grammar declares the current editor-facing declaration, type, statement, expression, lexical, and keyword surface. |
+| grammars/tree-sitter-edict/queries/highlights.scm | Tree-sitter highlight query for the grammar source. | The query emits captures for comments, keywords, strings, numbers, operators, punctuation, type identifiers, and callable identifiers. |
+| grammars/tree-sitter-edict/test/corpus/current-subset.txt | Tree-sitter corpus examples covering the accepted fixture families. | Each example parses through `edict_syntax::parse_module`, and each corpus case has an expected syntax tree. |
 
 ## Cases
 
 | ID | Status | Kind | Requirement | Scenario | Evidence | Fixtures | Oracle |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | DEVTOOLS-TP-001 | implemented | Golden path | DEVTOOLS-REQ-001 | Highlighting a representative source fixture emits stable roles and spans for editor adapters. | highlight_source_emits_editor_roles_for_fixture | fixtures/lang/tooling/highlight-smoke.edict | Comments, keywords, identifiers, type identifiers, strings, numbers, operators, and punctuation are classified distinctly; whitespace-only spans are not emitted. |
+| DEVTOOLS-TP-002 | implemented | Contract artifact | DEVTOOLS-REQ-002 | Tree-sitter grammar artifacts expose the current editor syntax surface and highlight roles. | tree_sitter_grammar_declares_current_editor_contract | grammars/tree-sitter-edict/grammar.js, grammars/tree-sitter-edict/queries/highlights.scm | Grammar rules cover package, imports, declarations, intent clauses, blocks, statements, match/call/type-call/record expressions, comments, strings, and numbers; highlight captures cover the public editor roles. |
+| DEVTOOLS-TP-003 | implemented | Corpus alignment | DEVTOOLS-REQ-003 | Tree-sitter corpus examples remain accepted Edict source under the reference parser. | tree_sitter_corpus_examples_match_reference_parser | grammars/tree-sitter-edict/test/corpus/current-subset.txt | Corpus cases are nonempty, unique, include expected trees, cover the accepted fixture families, and parse through `parse_module`. |
 
 ## Known Gaps
 
-- Tree-sitter and TextMate grammar artifacts are not implemented yet.
+- Generated Tree-sitter parser packages are not shipped yet.
+- TextMate grammar artifacts are not implemented yet.
 - No editor extension package is shipped yet.

@@ -211,8 +211,10 @@ Scope:
 
 - Editor-facing lexical highlighting roles that editor adapters can consume
   before full grammar packages land.
-- Editor syntax-highlighting plan and first supported grammar artifacts.
-- Differential grammar fixture path after the compiler/Core spine stabilizes.
+- Tree-sitter grammar source, generated parser source, highlight query, and
+  current-subset corpus for the accepted fixture families.
+- Differential grammar fixture path after the compiler/Core spine stabilizes
+  beyond the current Tree-sitter corpus.
 - Tooling documentation for VS Code, Vim, Zed, jedit, or the first supported
   subset.
 
@@ -221,7 +223,8 @@ Exit gates:
 - #7 lands or has a reviewed release-scope split.
 - Highlighting roles are backed by deterministic fixtures before editor
   adapters consume them.
-- Grammar fixtures are deterministic and versioned with the source grammar.
+- Tree-sitter grammar fixtures are deterministic, versioned with the source
+  grammar, and aligned with the reference parser.
 - The release notes identify exactly which editor integrations are supported.
 
 ## v2-design - Future Design Track

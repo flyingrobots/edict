@@ -1,8 +1,15 @@
 # Developer Tooling
 
-The developer-tooling alpha starts with editor-facing source highlighting. The
-public contract in this branch is `edict_syntax::highlight_source`, which
-classifies source spans into stable `HighlightRole` values for editor adapters.
+The developer-tooling alpha now has two editor-facing surfaces:
+
+- `edict_syntax::highlight_source`, which classifies source spans into stable
+  `HighlightRole` values for editor adapters.
+- [Tree-sitter grammar source](../../../grammars/tree-sitter-edict/grammar.js),
+  generated parser source, a
+  [highlight query](../../../grammars/tree-sitter-edict/queries/highlights.scm),
+  and a
+  [current-subset corpus](../../../grammars/tree-sitter-edict/test/corpus/current-subset.txt)
+  for the accepted fixture families.
 
 Highlighting is intentionally lexical. It does not parse, resolve, type-check,
 lower to Core, or evaluate admission policy. It keeps comments visible to
@@ -20,6 +27,11 @@ Supported roles are:
 - `String`
 - `TypeIdentifier`
 
-Tree-sitter, TextMate, VS Code, Vim, Zed, and jedit integration artifacts remain
-future `v0.6.0-alpha.1` work. This shelf owns the behavior those adapters must
-preserve.
+The Tree-sitter grammar is an editor syntax-tree artifact for the current
+accepted source subset. Its corpus covers bounded hello, branch-yield effects,
+read obstruction handling, and enum/variant match syntax, and the corpus source
+examples must keep parsing through `edict_syntax::parse_module`.
+
+Generated npm packages, TextMate grammar artifacts, VS Code, Vim, Zed, and jedit
+integration packages remain future `v0.6.0-alpha.1` work. This shelf owns the
+behavior those adapters must preserve.

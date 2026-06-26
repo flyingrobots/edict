@@ -1,0 +1,36 @@
+{
+  "grammars": [
+    {
+      "name": "edict",
+      "camelcase": "Edict",
+      "scope": "source.edict",
+      "path": ".",
+      "file-types": [
+        "edict"
+      ],
+      "injection-regex": "^edict$"
+    }
+  ],
+  "metadata": {
+    "version": "0.0.0",
+    "license": "Apache-2.0",
+    "description": "Tree-sitter grammar source for Edict",
+    "authors": [
+      {
+        "name": "Flying Robots"
+      }
+    ],
+    "links": {
+      "repository": "https://github.com/flyingrobots/edict"
+    }
+  },
+  "bindings": {
+    "c": false,
+    "go": false,
+    "node": false,
+    "python": false,
+    "rust": false,
+    "swift": false,
+    "zig": false
+  }
+}

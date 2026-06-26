@@ -43,7 +43,8 @@ cargo xtask verify
 - [Documentation Standards](./documentation/README.md): reader-task page types,
   documentation coverage, examples, and docs-impact rules.
 - [Developer Tooling](./developer-tooling/README.md): editor-facing source
-  highlighting roles and fixture-backed tooling behavior.
+  highlighting roles, Tree-sitter grammar source, and fixture-backed tooling
+  behavior.
 - [Lowerability](./lowerability/README.md): typed v1 lowering requirements,
   target-profile facts, and direct-only support classification.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
