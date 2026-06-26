@@ -52,6 +52,9 @@
   function: (expression
     (qualified_identifier) @function))
 
+(call_expression
+  function: (qualified_identifier) @function)
+
 (field_expression
   field: (_) @property)
 

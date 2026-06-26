@@ -2292,6 +2292,35 @@
                 "name": "function",
                 "content": {
                   "type": "SYMBOL",
+                  "name": "qualified_identifier"
+                }
+              },
+              {
+                "type": "FIELD",
+                "name": "type_arguments",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "call_type_arguments"
+                }
+              },
+              {
+                "type": "FIELD",
+                "name": "arguments",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "call_argument_list"
+                }
+              }
+            ]
+          },
+          {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "FIELD",
+                "name": "function",
+                "content": {
+                  "type": "SYMBOL",
                   "name": "expression"
                 }
               },
@@ -2338,75 +2367,76 @@
       }
     },
     "call_type_arguments": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "IMMEDIATE_TOKEN",
-          "content": {
+      "type": "PREC",
+      "value": 8,
+      "content": {
+        "type": "SEQ",
+        "members": [
+          {
             "type": "STRING",
             "value": "<"
-          }
-        },
-        {
-          "type": "SEQ",
-          "members": [
-            {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "SYMBOL",
-                  "name": "type_reference"
-                },
-                {
-                  "type": "SYMBOL",
-                  "name": "type_constraint_argument"
+          },
+          {
+            "type": "SEQ",
+            "members": [
+              {
+                "type": "CHOICE",
+                "members": [
+                  {
+                    "type": "SYMBOL",
+                    "name": "type_reference"
+                  },
+                  {
+                    "type": "SYMBOL",
+                    "name": "type_constraint_argument"
+                  }
+                ]
+              },
+              {
+                "type": "REPEAT",
+                "content": {
+                  "type": "SEQ",
+                  "members": [
+                    {
+                      "type": "STRING",
+                      "value": ","
+                    },
+                    {
+                      "type": "CHOICE",
+                      "members": [
+                        {
+                          "type": "SYMBOL",
+                          "name": "type_reference"
+                        },
+                        {
+                          "type": "SYMBOL",
+                          "name": "type_constraint_argument"
+                        }
+                      ]
+                    }
+                  ]
                 }
-              ]
-            },
-            {
-              "type": "REPEAT",
-              "content": {
-                "type": "SEQ",
+              },
+              {
+                "type": "CHOICE",
                 "members": [
                   {
                     "type": "STRING",
                     "value": ","
                   },
                   {
-                    "type": "CHOICE",
-                    "members": [
-                      {
-                        "type": "SYMBOL",
-                        "name": "type_reference"
-                      },
-                      {
-                        "type": "SYMBOL",
-                        "name": "type_constraint_argument"
-                      }
-                    ]
+                    "type": "BLANK"
                   }
                 ]
               }
-            },
-            {
-              "type": "CHOICE",
-              "members": [
-                {
-                  "type": "STRING",
-                  "value": ","
-                },
-                {
-                  "type": "BLANK"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "STRING",
-          "value": ">"
-        }
-      ]
+            ]
+          },
+          {
+            "type": "STRING",
+            "value": ">"
+          }
+        ]
+      }
     },
     "call_argument_list": {
       "type": "SEQ",
@@ -2965,7 +2995,21 @@
       "name": "comment"
     }
   ],
-  "conflicts": [],
+  "conflicts": [
+    [
+      "binary_expression",
+      "unary_expression",
+      "call_expression"
+    ],
+    [
+      "binary_expression",
+      "call_expression"
+    ],
+    [
+      "type_reference",
+      "expression"
+    ]
+  ],
   "precedences": [],
   "externals": [],
   "inline": [],

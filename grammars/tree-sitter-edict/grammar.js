@@ -23,6 +23,12 @@ module.exports = grammar({
 
   word: $ => $.identifier,
 
+  conflicts: $ => [
+    [$.binary_expression, $.unary_expression, $.call_expression],
+    [$.binary_expression, $.call_expression],
+    [$.type_reference, $.expression],
+  ],
+
   rules: {
     source_file: $ => seq(
       $.package_declaration,
@@ -341,6 +347,11 @@ module.exports = grammar({
 
     call_expression: $ => prec(PREC.call, choice(
       seq(
+        field('function', $.qualified_identifier),
+        field('type_arguments', $.call_type_arguments),
+        field('arguments', $.call_argument_list),
+      ),
+      seq(
         field('function', $.expression),
         field('type_arguments', $.call_type_arguments),
         field('arguments', $.call_argument_list),
@@ -351,11 +362,11 @@ module.exports = grammar({
       ),
     )),
 
-    call_type_arguments: $ => seq(
-      token.immediate('<'),
+    call_type_arguments: $ => prec(PREC.call, seq(
+      '<',
       commaSep1(choice($.type_reference, $.type_constraint_argument)),
       '>',
-    ),
+    )),
 
     call_argument_list: $ => seq(
       token.immediate('('),

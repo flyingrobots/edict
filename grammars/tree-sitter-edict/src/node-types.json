@@ -201,6 +201,10 @@
           {
             "type": "expression",
             "named": true
+          },
+          {
+            "type": "qualified_identifier",
+            "named": true
           }
         ]
       },

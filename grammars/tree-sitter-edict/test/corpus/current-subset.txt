@@ -217,9 +217,8 @@ intent storeBlob(input: shape.StoreBlobInput)
           (yield_block
             (expression
               (call_expression
-                (expression
-                  (qualified_identifier
-                    (identifier)))
+                (qualified_identifier
+                  (identifier))
                 (call_type_arguments
                   (type_reference
                     (qualified_identifier
@@ -231,10 +230,9 @@ intent storeBlob(input: shape.StoreBlobInput)
               (identifier)
               (expression
                 (call_expression
-                  (expression
-                    (qualified_identifier
-                      (identifier)
-                      (identifier)))
+                  (qualified_identifier
+                    (identifier)
+                    (identifier))
                   (call_type_arguments
                     (type_reference
                       (qualified_identifier
@@ -262,6 +260,78 @@ intent storeBlob(input: shape.StoreBlobInput)
               (expression
                 (qualified_identifier
                   (identifier))))))))))
+
+==================
+spaced type call
+==================
+
+package examples.spacing@1;
+
+use shape "schemas/blob.graphql" as shape;
+
+intent check(input: shape.In)
+  returns shape.Out
+  profile shape.readOnly
+  basis none
+  budget <= shape.b
+{
+  let blob = none <shape.T>();
+  return { blob };
+}
+
+---
+
+(source_file
+  (package_declaration
+    (package_reference
+      (qualified_identifier
+        (identifier)
+        (identifier))
+      (version)))
+  (use_declaration
+    (import_kind)
+    (string)
+    (identifier))
+  (intent_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_reference
+          (qualified_identifier
+            (identifier)
+            (type_identifier)))))
+    (type_reference
+      (qualified_identifier
+        (identifier)
+        (type_identifier)))
+    (intent_clause
+      (qualified_identifier
+        (identifier)
+        (identifier)))
+    (intent_clause)
+    (intent_clause
+      (qualified_identifier
+        (identifier)
+        (identifier)))
+    (block
+      (let_statement
+        (identifier)
+        (expression
+          (call_expression
+            (qualified_identifier
+              (identifier))
+            (call_type_arguments
+              (type_reference
+                (qualified_identifier
+                  (identifier)
+                  (type_identifier))))
+            (call_argument_list))))
+      (return_statement
+        (expression
+          (record_literal
+            (shorthand_entry
+              (identifier))))))))
 
 ==================
 read greeting
@@ -349,10 +419,9 @@ intent readGreeting(input: shape.ReadGreetingInput)
         (identifier)
         (expression
           (call_expression
-            (expression
-              (qualified_identifier
-                (identifier)
-                (identifier)))
+            (qualified_identifier
+              (identifier)
+              (identifier))
             (call_type_arguments
               (type_reference
                 (qualified_identifier
