@@ -1295,15 +1295,17 @@ mod tests {
             "[release_topic_audit]",
             "scope = \"docs/topics\"",
             "timing = \"release_prep_before_pr\"",
+            "evidence_location = \"release_issue_or_pr_before_merge\"",
             "release_blocking = true",
             "coverage_definition = \"audited_topic_shelves / total_topic_shelves\"",
             "accuracy_definition = \"accurate_audited_topic_shelves / audited_topic_shelves\"",
+            "stale_current_truth = \"correct_or_remove_before_counting_accurate\"",
             "topic_shelf_total",
             "topic_shelf_audited",
             "accurate_audited_topic_shelves",
             "coverage_percent",
             "accuracy_percent",
-            "findings_fixed_or_deferred",
+            "findings_fixed_or_release_blocking",
         ] {
             assert!(
                 policy.contains(required),

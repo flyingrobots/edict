@@ -55,8 +55,9 @@ owning topic shelf and tests exist.
 Audit `docs/topics/` before opening the release-prep pull request. The audit is
 a release blocker, not an optional editorial pass.
 
-Record these values in the release-prep issue, pull request body, or final
-release report:
+Record these values in the release-prep issue before opening the pull request.
+Mirror or update them in the pull request body before merge when review fixes
+change the counts:
 
 - total topic shelves under `docs/topics/`;
 - audited topic shelves;
@@ -64,11 +65,12 @@ release report:
 - coverage percent: `audited_topic_shelves / total_topic_shelves * 100`;
 - accuracy percent:
   `accurate_audited_topic_shelves / audited_topic_shelves * 100`;
-- findings fixed or deliberately deferred.
+- findings fixed or still blocking release.
 
-Coverage and accuracy must both be at least 90%. Treat stale current-truth
-claims as release blockers unless they are corrected, removed, or recorded as
-known gaps in the owning topic `test-plan.md`.
+Coverage and accuracy must both be at least 90%. A stale current-truth claim
+makes that shelf inaccurate until the claim is corrected or removed. Planned
+work and known gaps belong in the owning `test-plan.md`, but they do not make a
+false current-truth statement accurate.
 
 `cargo xtask contract-check` verifies the topic graph structure, links,
 fixtures, and executable evidence references. It does not replace the accuracy
