@@ -642,6 +642,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use edict_syntax::parse_module;
+    use regex::Regex;
+    use serde_json::Value;
 
     use super::{check_topic, contract_check, repo_root};
 
@@ -920,6 +922,63 @@ mod tests {
         atoms
     }
 
+    fn textmate_grammar() -> Value {
+        let root = repo_root().expect("repo root");
+        let grammar = fs::read_to_string(root.join("grammars/textmate/edict.tmLanguage.json"))
+            .expect("TextMate grammar");
+        serde_json::from_str(&grammar).expect("TextMate grammar must be valid JSON")
+    }
+
+    fn json_str<'a>(value: &'a Value, key: &str) -> &'a str {
+        value
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("JSON object missing string field `{key}`"))
+    }
+
+    fn textmate_repository_match<'a>(grammar: &'a Value, entry: &str) -> &'a str {
+        grammar
+            .get("repository")
+            .and_then(|repository| repository.get(entry))
+            .and_then(|entry| entry.get("match"))
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| panic!("TextMate repository entry `{entry}` missing match regex"))
+    }
+
+    fn textmate_repository_patterns<'a>(grammar: &'a Value, entry: &str) -> &'a Vec<Value> {
+        grammar
+            .get("repository")
+            .and_then(|repository| repository.get(entry))
+            .and_then(|entry| entry.get("patterns"))
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("TextMate repository entry `{entry}` missing patterns"))
+    }
+
+    fn textmate_includes(grammar: &Value) -> BTreeSet<String> {
+        grammar
+            .get("patterns")
+            .and_then(Value::as_array)
+            .expect("TextMate grammar missing top-level patterns")
+            .iter()
+            .map(|pattern| json_str(pattern, "include").to_owned())
+            .collect()
+    }
+
+    fn textmate_regex_matches_literal(pattern: &str, literal: &str) -> bool {
+        let anchored = format!("^(?:{pattern})$");
+        Regex::new(&anchored)
+            .unwrap_or_else(|err| panic!("TextMate regex `{pattern}` must compile: {err}"))
+            .is_match(literal)
+    }
+
+    fn textmate_regex_spans(pattern: &str, source: &str) -> Vec<(usize, usize)> {
+        Regex::new(pattern)
+            .unwrap_or_else(|err| panic!("TextMate regex `{pattern}` must compile: {err}"))
+            .find_iter(source)
+            .map(|match_| (match_.start(), match_.end()))
+            .collect()
+    }
+
     #[derive(Debug)]
     struct TreeSitterCorpusExample {
         title: String,
@@ -1153,6 +1212,123 @@ fn run() {}
                 );
             }
         }
+    }
+
+    #[test]
+    fn textmate_grammar_declares_current_editor_contract() {
+        let grammar = textmate_grammar();
+        assert_eq!(json_str(&grammar, "name"), "Edict");
+        assert_eq!(json_str(&grammar, "scopeName"), "source.edict");
+        let file_types = grammar
+            .get("fileTypes")
+            .and_then(Value::as_array)
+            .expect("TextMate grammar missing file types");
+        assert!(
+            file_types.iter().any(|file_type| file_type == "edict"),
+            "TextMate grammar must register .edict files"
+        );
+
+        let includes = textmate_includes(&grammar);
+        for include in [
+            "#comments",
+            "#strings",
+            "#numbers",
+            "#keywords",
+            "#types",
+            "#operators",
+            "#punctuation",
+            "#identifiers",
+        ] {
+            assert!(
+                includes.contains(include),
+                "TextMate grammar must include repository pattern `{include}`"
+            );
+        }
+
+        let comments = textmate_repository_patterns(&grammar, "comments");
+        assert!(
+            comments
+                .iter()
+                .any(|pattern| json_str(pattern, "name") == "comment.line.double-slash.edict"),
+            "TextMate grammar must scope line comments"
+        );
+        assert!(
+            comments
+                .iter()
+                .any(|pattern| json_str(pattern, "name") == "comment.block.edict"),
+            "TextMate grammar must scope block comments"
+        );
+    }
+
+    #[test]
+    fn textmate_grammar_covers_public_highlight_roles() {
+        let grammar = textmate_grammar();
+        let keyword_regex = textmate_repository_match(&grammar, "keywords");
+        let operator_regex = textmate_repository_match(&grammar, "operators");
+        let punctuation_regex = textmate_repository_match(&grammar, "punctuation");
+        let type_regex = textmate_repository_match(&grammar, "types");
+        let identifier_regex = textmate_repository_match(&grammar, "identifiers");
+        let source = "package use type enum variant intent returns profile implements basis \
+            footprint budget where let return require guarantee assert if then else for in \
+            bounded yield match shape lawpack target core capability as digest fn const true \
+            false HelloInput input = == != < <= > >= + - * / % ! && || => -> :: ... ; : , . @ \
+            ( ) { } [ ] \"text\" 123";
+        let highlights = edict_syntax::highlight_source(source).expect("highlight role source");
+
+        for token in highlights {
+            let lexeme = token.lexeme(source).trim();
+            if lexeme.is_empty() {
+                continue;
+            }
+            match token.role {
+                edict_syntax::HighlightRole::Keyword => assert!(
+                    textmate_regex_matches_literal(keyword_regex, lexeme),
+                    "TextMate keyword regex must cover `{lexeme}`"
+                ),
+                edict_syntax::HighlightRole::Operator => assert!(
+                    textmate_regex_matches_literal(operator_regex, lexeme),
+                    "TextMate operator regex must cover `{lexeme}`"
+                ),
+                edict_syntax::HighlightRole::Punctuation => assert!(
+                    textmate_regex_matches_literal(punctuation_regex, lexeme),
+                    "TextMate punctuation regex must cover `{lexeme}`"
+                ),
+                edict_syntax::HighlightRole::TypeIdentifier => assert!(
+                    textmate_regex_matches_literal(type_regex, lexeme),
+                    "TextMate type regex must cover `{lexeme}`"
+                ),
+                edict_syntax::HighlightRole::Identifier => assert!(
+                    textmate_regex_matches_literal(identifier_regex, lexeme),
+                    "TextMate identifier regex must cover `{lexeme}`"
+                ),
+                edict_syntax::HighlightRole::Comment
+                | edict_syntax::HighlightRole::Number
+                | edict_syntax::HighlightRole::String => {}
+            }
+        }
+    }
+
+    #[test]
+    fn textmate_grammar_scopes_public_number_spans_in_version_labels() {
+        let grammar = textmate_grammar();
+        let number_regex = textmate_repository_match(&grammar, "numbers");
+        let source = "package examples.tooling@1_beta;";
+        let public_number = edict_syntax::highlight_source(source)
+            .expect("version label source lexes")
+            .into_iter()
+            .find(|token| {
+                token.role == edict_syntax::HighlightRole::Number && token.lexeme(source) == "1_"
+            })
+            .expect("public highlighter emits leading numeric version-label span");
+        let number_spans = textmate_regex_spans(number_regex, source);
+
+        assert!(
+            number_spans.iter().any(|(start, end)| {
+                *start == public_number.span.start && *end == public_number.span.end
+            }),
+            "TextMate number regex must exactly scope public version-label number span `{}`",
+            public_number.lexeme(source)
+        );
     }
 
     #[test]

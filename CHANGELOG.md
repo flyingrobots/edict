@@ -21,6 +21,8 @@ versions still track specification maturity rather than a released product.
 - Added initial Tree-sitter artifacts for the developer-tooling milestone:
   grammar source, generated parser source, node metadata, highlight queries, and
   a current-subset corpus aligned with Edict's reference parser.
+- Added a TextMate grammar artifact for `.edict` lexical scopes aligned with the
+  public editor-facing highlight roles.
 - Added a release-prep topic-shelf audit gate requiring `docs/topics/` coverage
   and accuracy to both meet at least 90% before release.
 

@@ -462,8 +462,8 @@ Edict now has executable Rust implementation slices alongside the design specs.
 The current implementation includes the front end, Core semantic schema, the
 first source-to-in-memory-Core compiler spine, target-profile and bundle
 validation, Gate C admission-boundary checks, and editor-facing lexical
-highlighting roles plus initial Tree-sitter grammar artifacts. It is not a
-complete compiler or full admission execution stack.
+highlighting roles plus initial Tree-sitter and TextMate grammar artifacts. It
+is not a complete compiler or full admission execution stack.
 
 What exists today:
 
@@ -478,6 +478,8 @@ What exists today:
 - Tree-sitter grammar source, generated parser source, highlight query, and a
   current-subset corpus for editor syntax trees over the accepted fixture
   families
+- TextMate grammar artifact for `.edict` lexical scopes in TextMate-compatible
+  editors
 - Phase 2 source-AST semantic validation for checks that do not require Core IR
 - `edict.core/v1` semantic model and normative CDDL schema
 - Initial compiler-spine APIs: `resolve_module`, `type_check`, `lower_core`, and
@@ -512,8 +514,7 @@ What doesn't exist yet:
 - A compiler CLI
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
   expression literals)
-- TextMate grammar artifacts, packaged Tree-sitter bindings, and editor
-  integrations
+- Packaged Tree-sitter bindings and editor integrations
 - File-backed target profile and contract bundle manifest loading
 - Echo or KV/CAS target lowerers
 - Full admission execution tooling
