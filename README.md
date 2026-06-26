@@ -502,7 +502,7 @@ What exists today:
 - Typed Gate C admission-boundary checks for Edict-owned bundle-subject,
   operation-requirement, hidden execution input rejection, receipt,
   invoked-operation, and invocation capability evidence semantics
-- Release notes for the `v0.6.0-alpha.1` developer-tooling alpha
+- Published `v0.6.0-alpha.1` release notes for the developer-tooling alpha
 - Published `v0.5.0-alpha.1` release notes for the Gate C admission-boundary
   alpha
 - Published `v0.4.0-alpha.1` release notes for the target-profile,

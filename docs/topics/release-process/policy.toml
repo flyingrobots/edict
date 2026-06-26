@@ -183,7 +183,7 @@ non_goals = [
 [release_notes.v0_6_0_alpha_1]
 tag = "v0.6.0-alpha.1"
 target_date = "2026-08-26"
-status = "publish_ready"
+status = "published"
 release_issue = 50
 scope = [
   "editor_highlight_roles",
