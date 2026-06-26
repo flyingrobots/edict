@@ -35,6 +35,9 @@
   "false"
 ] @keyword
 
+((identifier) @keyword
+  (#any-of? @keyword "capability" "fn" "const"))
+
 (comment) @comment
 (string) @string
 (number) @number

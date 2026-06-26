@@ -868,6 +868,58 @@ mod tests {
         grammar.contains(&format!("'{literal}'")) || grammar.contains(&format!("\"{literal}\""))
     }
 
+    fn quoted_query_atoms(line: &str) -> Vec<String> {
+        let mut atoms = Vec::new();
+        let mut chars = line.char_indices();
+        while let Some((start, ch)) = chars.next() {
+            if ch != '"' {
+                continue;
+            }
+            let atom_start = start + ch.len_utf8();
+            for (end, end_ch) in chars.by_ref() {
+                if end_ch == '"' {
+                    atoms.push(line[atom_start..end].to_owned());
+                    break;
+                }
+            }
+        }
+        atoms
+    }
+
+    fn tree_sitter_query_atoms_for_capture(query: &str, capture: &str) -> BTreeSet<String> {
+        let mut atoms = BTreeSet::new();
+        let mut list_atoms = Vec::new();
+        let mut in_list = false;
+
+        for line in query.lines() {
+            let trimmed = line.trim();
+            if trimmed == "[" {
+                in_list = true;
+                list_atoms.clear();
+                continue;
+            }
+
+            if in_list {
+                if trimmed.starts_with(']') {
+                    if trimmed.contains(capture) {
+                        atoms.extend(list_atoms.drain(..));
+                    }
+                    in_list = false;
+                    list_atoms.clear();
+                } else {
+                    list_atoms.extend(quoted_query_atoms(trimmed));
+                }
+                continue;
+            }
+
+            if trimmed.contains("#any-of?") && trimmed.contains(capture) {
+                atoms.extend(quoted_query_atoms(trimmed));
+            }
+        }
+
+        atoms
+    }
+
     #[derive(Debug)]
     struct TreeSitterCorpusExample {
         title: String,
@@ -1031,6 +1083,34 @@ mod tests {
             assert!(
                 highlights.contains(capture),
                 "Tree-sitter highlight query must emit `{capture}`"
+            );
+        }
+    }
+
+    #[test]
+    fn tree_sitter_query_covers_public_keyword_roles() {
+        let root = repo_root().expect("repo root");
+        let highlights =
+            fs::read_to_string(root.join("grammars/tree-sitter-edict/queries/highlights.scm"))
+                .expect("Tree-sitter highlight query");
+        let source = r#"
+package examples.keywords@1;
+use capability caps.auth@1 as caps;
+const demo = 1;
+fn run() {}
+"#;
+        let public_keywords = edict_syntax::highlight_source(source)
+            .expect("source lexes for highlighting")
+            .into_iter()
+            .filter(|token| token.role == edict_syntax::HighlightRole::Keyword)
+            .map(|token| token.lexeme(source).to_owned())
+            .collect::<BTreeSet<_>>();
+        let query_keywords = tree_sitter_query_atoms_for_capture(&highlights, "@keyword");
+
+        for keyword in public_keywords {
+            assert!(
+                query_keywords.contains(&keyword),
+                "Tree-sitter highlight query must capture public keyword `{keyword}`"
             );
         }
     }
