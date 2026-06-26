@@ -2860,7 +2860,7 @@
     },
     "identifier": {
       "type": "PATTERN",
-      "value": "[a-z_][A-Za-z0-9_]*"
+      "value": "[A-Za-z_][A-Za-z0-9_]*"
     },
     "type_identifier": {
       "type": "PATTERN",

@@ -51,7 +51,7 @@ intent sayHello(input: HelloInput)
         (identifier)
         (type_reference
           (qualified_identifier
-            (type_identifier))
+            (identifier))
           (type_arguments
             (type_constraint_argument
               (number)))))))
@@ -62,7 +62,7 @@ intent sayHello(input: HelloInput)
         (identifier)
         (type_reference
           (qualified_identifier
-            (type_identifier))
+            (identifier))
           (type_arguments
             (type_constraint_argument
               (number)))))))
@@ -73,10 +73,10 @@ intent sayHello(input: HelloInput)
         (identifier)
         (type_reference
           (qualified_identifier
-            (type_identifier)))))
+            (identifier)))))
     (type_reference
       (qualified_identifier
-        (type_identifier)))
+        (identifier)))
     (intent_clause
       (qualified_identifier
         (identifier)
@@ -178,11 +178,11 @@ intent storeBlob(input: shape.StoreBlobInput)
         (type_reference
           (qualified_identifier
             (identifier)
-            (type_identifier)))))
+            (identifier)))))
     (type_reference
       (qualified_identifier
         (identifier)
-        (type_identifier)))
+        (identifier)))
     (intent_clause
       (qualified_identifier
         (identifier)
@@ -223,7 +223,7 @@ intent storeBlob(input: shape.StoreBlobInput)
                   (type_reference
                     (qualified_identifier
                       (identifier)
-                      (type_identifier))))
+                      (identifier))))
                 (call_argument_list))))
           (yield_block
             (let_statement
@@ -237,7 +237,7 @@ intent storeBlob(input: shape.StoreBlobInput)
                     (type_reference
                       (qualified_identifier
                         (identifier)
-                        (type_identifier))))
+                        (identifier))))
                   (call_argument_list
                     (expression
                       (qualified_identifier
@@ -300,11 +300,11 @@ intent check(input: shape.In)
         (type_reference
           (qualified_identifier
             (identifier)
-            (type_identifier)))))
+            (identifier)))))
     (type_reference
       (qualified_identifier
         (identifier)
-        (type_identifier)))
+        (identifier)))
     (intent_clause
       (qualified_identifier
         (identifier)
@@ -325,7 +325,7 @@ intent check(input: shape.In)
               (type_reference
                 (qualified_identifier
                   (identifier)
-                  (type_identifier))))
+                  (identifier))))
             (call_argument_list))))
       (return_statement
         (expression
@@ -396,11 +396,11 @@ intent readGreeting(input: shape.ReadGreetingInput)
         (type_reference
           (qualified_identifier
             (identifier)
-            (type_identifier)))))
+            (identifier)))))
     (type_reference
       (qualified_identifier
         (identifier)
-        (type_identifier)))
+        (identifier)))
     (intent_clause
       (qualified_identifier
         (identifier)
@@ -426,7 +426,7 @@ intent readGreeting(input: shape.ReadGreetingInput)
               (type_reference
                 (qualified_identifier
                   (identifier)
-                  (type_identifier))))
+                  (identifier))))
             (call_argument_list
               (expression
                 (qualified_identifier
@@ -445,7 +445,7 @@ intent readGreeting(input: shape.ReadGreetingInput)
           (obstruction_target
             (qualified_identifier
               (identifier)
-              (type_identifier)))))
+              (identifier)))))
       (return_statement
         (expression
           (record_literal
@@ -455,6 +455,72 @@ intent readGreeting(input: shape.ReadGreetingInput)
                 (qualified_identifier
                   (identifier)
                   (identifier))))))))))
+
+==================
+uppercase bare identifiers
+==================
+
+package examples.uppercase@1;
+
+use shape "schemas/upper.graphql" as Shape;
+
+intent Check(Input: Shape.In)
+  returns Shape.Out
+  profile Shape.readOnly
+  basis none
+  budget <= Shape.b
+{
+  let Result = Input.value;
+  return { Result };
+}
+
+---
+
+(source_file
+  (package_declaration
+    (package_reference
+      (qualified_identifier
+        (identifier)
+        (identifier))
+      (version)))
+  (use_declaration
+    (import_kind)
+    (string)
+    (identifier))
+  (intent_declaration
+    (identifier)
+    (parameter_list
+      (parameter
+        (identifier)
+        (type_reference
+          (qualified_identifier
+            (identifier)
+            (identifier)))))
+    (type_reference
+      (qualified_identifier
+        (identifier)
+        (identifier)))
+    (intent_clause
+      (qualified_identifier
+        (identifier)
+        (identifier)))
+    (intent_clause)
+    (intent_clause
+      (qualified_identifier
+        (identifier)
+        (identifier)))
+    (block
+      (let_statement
+        (identifier)
+        (expression
+          (qualified_identifier
+            (identifier)
+            (identifier))))
+      (return_statement
+        (expression
+          (record_literal
+            (shorthand_entry
+              (identifier))))))))
 
 ==================
 color match
@@ -524,13 +590,13 @@ intent describe(input: shape.DescribeInput)
         (type_reference
           (qualified_identifier
             (identifier)
-            (type_identifier))))
+            (identifier))))
       (variant_case
         (type_identifier)
         (type_reference
           (qualified_identifier
             (identifier)
-            (type_identifier))))
+            (identifier))))
       (variant_case
         (type_identifier))))
   (intent_declaration
@@ -541,11 +607,11 @@ intent describe(input: shape.DescribeInput)
         (type_reference
           (qualified_identifier
             (identifier)
-            (type_identifier)))))
+            (identifier)))))
     (type_reference
       (qualified_identifier
         (identifier)
-        (type_identifier)))
+        (identifier)))
     (intent_clause
       (qualified_identifier
         (identifier)
@@ -594,7 +660,7 @@ intent describe(input: shape.DescribeInput)
           (variant_literal
             (qualified_identifier
               (identifier)
-              (type_identifier))
+              (identifier))
             (type_identifier)
             (argument_list
               (expression

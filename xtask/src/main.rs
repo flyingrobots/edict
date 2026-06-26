@@ -1151,7 +1151,9 @@ fn run() {}
         for title in [
             "bounded hello",
             "conditional blob",
+            "spaced type call",
             "read greeting",
+            "uppercase bare identifiers",
             "color match",
         ] {
             assert!(

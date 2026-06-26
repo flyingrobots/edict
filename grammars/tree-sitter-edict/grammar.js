@@ -424,7 +424,7 @@ module.exports = grammar({
 
     _name: $ => choice($.identifier, $.type_identifier),
 
-    identifier: $ => /[a-z_][A-Za-z0-9_]*/,
+    identifier: $ => /[A-Za-z_][A-Za-z0-9_]*/,
 
     type_identifier: $ => /[A-Z][A-Za-z0-9_]*/,
 
