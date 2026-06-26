@@ -18,6 +18,8 @@ versions still track specification maturity rather than a released product.
   unchanged.
 - Added the developer-tooling topic shelf and a deterministic highlighting
   fixture for the `v0.6.0-alpha.1` tooling milestone.
+- Added a release-prep topic-shelf audit gate requiring `docs/topics/` coverage
+  and accuracy to both meet at least 90% before release.
 
 ## [v0.5.0-alpha.1] - 2026-08-12
 

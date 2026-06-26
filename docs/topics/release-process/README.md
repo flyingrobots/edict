@@ -46,10 +46,17 @@ tags to paper over workflow mistakes. The stable recovery policy is captured in
 [`policy.toml`](./policy.toml). [RELEASE-REQ-006]
 
 Release preparation follows the operator runbook in [`runbook.md`](./runbook.md):
-prepare a release branch, refresh release artifacts, verify locally, merge a
-normal pull request to `main`, let automation tag from verified `main`, watch
-publication, and capture evidence. The structured runbook contract is captured
-in [`policy.toml`](./policy.toml). [RELEASE-REQ-009]
+prepare a release branch, refresh release artifacts, audit topic shelves, verify
+locally, merge a normal pull request to `main`, let automation tag from verified
+`main`, watch publication, and capture evidence. The structured runbook contract
+is captured in [`policy.toml`](./policy.toml). [RELEASE-REQ-009]
+
+Every release-prep branch must audit `docs/topics/` coverage and accuracy before
+the release-prep pull request opens. Coverage is audited topic shelves divided
+by total topic shelves; accuracy is accurate audited topic shelves divided by
+audited topic shelves after fixes. Both metrics must be at least 90%, and the
+release report must record the denominators, percentages, and findings.
+[RELEASE-REQ-016]
 
 ## Release Notes
 
