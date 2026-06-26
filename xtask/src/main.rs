@@ -1093,12 +1093,12 @@ mod tests {
         let highlights =
             fs::read_to_string(root.join("grammars/tree-sitter-edict/queries/highlights.scm"))
                 .expect("Tree-sitter highlight query");
-        let source = r#"
+        let source = r"
 package examples.keywords@1;
 use capability caps.auth@1 as caps;
 const demo = 1;
 fn run() {}
-"#;
+";
         let public_keywords = edict_syntax::highlight_source(source)
             .expect("source lexes for highlighting")
             .into_iter()
@@ -1130,7 +1130,7 @@ fn run() {}
         let query_operators = tree_sitter_query_atoms_for_capture(&highlights, "@operator");
         let query_punctuation = tree_sitter_query_atoms_for_capture(&highlights, "@punctuation");
 
-        for duplicate in query_operators.intersection(&query_punctuation) {
+        if let Some(duplicate) = query_operators.intersection(&query_punctuation).next() {
             panic!("Tree-sitter query assigns `{duplicate}` to both operator and punctuation");
         }
 
