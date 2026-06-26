@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    BinOp, BoundRef, Decl, Expr, FieldDecl, Import, ImportKind, IntentClause, IntentDecl, Module,
-    RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef,
+    BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldDecl, Import, ImportKind, IntentClause,
+    IntentDecl, Module, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
 };
 use crate::core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
@@ -679,6 +679,9 @@ impl<'a> TypeChecker<'a> {
                         }
                         continue;
                     }
+                    if !self.check_known_effect_profiles(intent, value) {
+                        continue;
+                    }
                     let Some(value) = self.check_expr(value, env) else {
                         continue;
                     };
@@ -799,6 +802,164 @@ impl<'a> TypeChecker<'a> {
                 span,
             ));
             false
+        }
+    }
+
+    fn check_known_effect_profiles(&mut self, intent: &ResolvedIntent, expr: &Expr) -> bool {
+        let mut accepted = true;
+        if let Some(effect) = effect_coordinate(expr) {
+            if self.resolved.effect_write_classes.contains_key(&effect) {
+                accepted &= self.check_effect_profile(intent, expr, expr_span(expr));
+            }
+        }
+        match expr {
+            Expr::Ident { .. }
+            | Expr::Int { .. }
+            | Expr::Str { .. }
+            | Expr::Bool { .. }
+            | Expr::Digest { .. } => {}
+            Expr::Field { base, .. } => {
+                accepted &= self.check_known_effect_profiles(intent, base);
+            }
+            Expr::Call { callee, args, .. } => {
+                accepted &= self.check_known_effect_profiles(intent, callee);
+                for arg in args {
+                    accepted &= self.check_known_effect_profiles(intent, arg);
+                }
+            }
+            Expr::Unary { operand, .. } => {
+                accepted &= self.check_known_effect_profiles(intent, operand);
+            }
+            Expr::Binary { lhs, rhs, .. } => {
+                accepted &= self.check_known_effect_profiles(intent, lhs);
+                accepted &= self.check_known_effect_profiles(intent, rhs);
+            }
+            Expr::Record { entries, .. } => {
+                for entry in entries {
+                    accepted &= self.check_known_effect_profiles_in_record_entry(intent, entry);
+                }
+            }
+            Expr::If {
+                cond, then, els, ..
+            } => {
+                accepted &= self.check_known_effect_profiles(intent, cond);
+                accepted &= self.check_known_effect_profiles(intent, then);
+                accepted &= self.check_known_effect_profiles(intent, els);
+            }
+            Expr::IfYield {
+                pred,
+                then_block,
+                else_block,
+                ..
+            } => {
+                accepted &= self.check_known_effect_profiles(intent, pred);
+                accepted &= self.check_known_effect_profiles_in_yield_block(intent, then_block);
+                accepted &= self.check_known_effect_profiles_in_yield_block(intent, else_block);
+            }
+            Expr::VariantLit { payload, .. } => {
+                if let Some(payload) = payload {
+                    accepted &= self.check_known_effect_profiles(intent, payload);
+                }
+            }
+            Expr::Match {
+                scrutinee, arms, ..
+            } => {
+                accepted &= self.check_known_effect_profiles(intent, scrutinee);
+                for arm in arms {
+                    accepted &= self.check_known_effect_profiles(intent, &arm.body);
+                }
+            }
+        }
+        accepted
+    }
+
+    fn check_known_effect_profiles_in_record_entry(
+        &mut self,
+        intent: &ResolvedIntent,
+        entry: &RecordEntry,
+    ) -> bool {
+        match entry {
+            RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                self.check_known_effect_profiles(intent, value)
+            }
+            RecordEntry::Shorthand { .. } => true,
+        }
+    }
+
+    fn check_known_effect_profiles_in_yield_block(
+        &mut self,
+        intent: &ResolvedIntent,
+        block: &YieldBlock,
+    ) -> bool {
+        let mut accepted = true;
+        for stmt in &block.stmts {
+            accepted &= self.check_known_effect_profiles_in_stmt(intent, stmt);
+        }
+        accepted &= self.check_known_effect_profiles(intent, &block.value);
+        accepted
+    }
+
+    fn check_known_effect_profiles_in_block(
+        &mut self,
+        intent: &ResolvedIntent,
+        block: &Block,
+    ) -> bool {
+        let mut accepted = true;
+        for stmt in &block.stmts {
+            accepted &= self.check_known_effect_profiles_in_stmt(intent, stmt);
+        }
+        accepted
+    }
+
+    fn check_known_effect_profiles_in_stmt(
+        &mut self,
+        intent: &ResolvedIntent,
+        stmt: &Stmt,
+    ) -> bool {
+        match stmt {
+            Stmt::Let {
+                value, els, span, ..
+            } => {
+                if els.is_some() {
+                    self.check_effect_profile(intent, value, *span)
+                } else {
+                    self.check_known_effect_profiles(intent, value)
+                }
+            }
+            Stmt::Effect { call, span, .. } => self.check_effect_profile(intent, call, *span),
+            Stmt::Require { predicate, .. }
+            | Stmt::Guarantee { predicate, .. }
+            | Stmt::Assert { predicate, .. } => self.check_known_effect_profiles(intent, predicate),
+            Stmt::If {
+                cond,
+                then_block,
+                els,
+                ..
+            } => {
+                let mut accepted = self.check_known_effect_profiles(intent, cond);
+                accepted &= self.check_known_effect_profiles_in_block(intent, then_block);
+                if let Some(els) = els {
+                    accepted &= self.check_known_effect_profiles_in_else(intent, els);
+                }
+                accepted
+            }
+            Stmt::For { iter, body, .. } => {
+                let mut accepted = self.check_known_effect_profiles(intent, iter);
+                accepted &= self.check_known_effect_profiles_in_block(intent, body);
+                accepted
+            }
+            Stmt::Return { value, .. } => self.check_known_effect_profiles(intent, value),
+        }
+    }
+
+    fn check_known_effect_profiles_in_else(
+        &mut self,
+        intent: &ResolvedIntent,
+        els: &ElseClause,
+    ) -> bool {
+        match els {
+            ElseClause::Block(block) => self.check_known_effect_profiles_in_block(intent, block),
+            ElseClause::If(stmt) => self.check_known_effect_profiles_in_stmt(intent, stmt),
         }
     }
 

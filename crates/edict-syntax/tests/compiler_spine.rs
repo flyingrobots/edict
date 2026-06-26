@@ -266,6 +266,49 @@ fn read_only_profile_rejects_write_effect_body() {
 }
 
 #[test]
+fn read_only_profile_rejects_write_effect_let_without_else() {
+    let module = parse_module(
+        "package a.b@1;\n\
+         type Input = { id: String<max=16>, };\n\
+         type Output = { id: String<max=16>, };\n\
+         intent t(input: Input) returns Output\n\
+           profile p.readOnly\n\
+           basis none\n\
+           budget <= p.tiny {\n\
+           let _receipt = target.replace(input.id);\n\
+           return { id: input.id };\n\
+         }",
+    )
+    .expect("source parses");
+    let context = CompilerContext::new()
+        .with_operation_profile("p.readOnly", "continuum.profile.read-only/v1")
+        .with_operation_profile_write_classes("p.readOnly", [WriteClass::Read])
+        .with_effect_write_class("target.replace", WriteClass::Replace)
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 1,
+                max_allocated_bytes: 1,
+                max_output_bytes: 1,
+            },
+        );
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("write effect rejects under read-only profile");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|err| err.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::ProfileEffectMismatch]
+    );
+}
+
+#[test]
 fn initial_core_lowering_makes_no_canonical_or_target_claim() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
