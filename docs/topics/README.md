@@ -63,5 +63,5 @@ cargo xtask verify
   manifest conformance and runtime-neutral profile validation.
 - [Testing Workflow](./tests/README.md): RED/GREEN development discipline,
   fixture reuse, and local verification workflow.
-- [v2 Design](./v2-design/README.md): adapter composition and
-  obligation-closure resolution design boundary.
+- [v2 Design](./v2-design/README.md): current HEAD boundary and planned test
+  ledger for future adapter composition work.

@@ -9,8 +9,11 @@ The current specification set is:
   `rationale.md` files explain machinery and still-relevant tradeoffs.
 - [Testing Workflow Topic](./topics/tests/): RED/GREEN development discipline,
   fixture reuse, and local verification workflow.
-- [v2 Design Topic](./topics/v2-design/): adapter composition and
-  obligation-closure resolution design boundary.
+- [v2 Design Topic](./topics/v2-design/): current HEAD boundary for future
+  adapter composition work.
+- [v2 Obligation-Closure Design Note](./design/v2-obligation-closure.md):
+  non-topic planning note for future adapter composition and
+  obligation-closure resolution.
 - [Documentation Standards Topic](./topics/documentation/): reader-task page
   types, documentation coverage, examples, and docs-impact rules.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
