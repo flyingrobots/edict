@@ -2083,7 +2083,7 @@ fn run() {}
             "[release_notes.v0_5_0_alpha_1]",
             "tag = \"v0.5.0-alpha.1\"",
             "target_date = \"2026-08-12\"",
-            "status = \"publish_ready\"",
+            "status = \"published\"",
             "edict_owned_continuum_participation_boundary",
             "gate_c_admission_request_validation",
             "gate_c_admission_receipt_validation",
@@ -2107,6 +2107,35 @@ fn run() {}
     }
 
     #[test]
+    fn release_policy_tracks_v0_6_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        for required in [
+            "[release_notes.v0_6_0_alpha_1]",
+            "tag = \"v0.6.0-alpha.1\"",
+            "target_date = \"2026-08-26\"",
+            "status = \"publish_ready\"",
+            "editor_highlight_roles",
+            "tree_sitter_grammar_source",
+            "textmate_grammar_artifact",
+            "vscode_cursor_extension_package",
+            "topic_shelf_coverage_audit",
+            "no_compiler_cli",
+            "no_language_server",
+            "no_marketplace_publication",
+            "no_target_lowering",
+            "no_admission_tooling",
+            "no_crates_io_publish",
+        ] {
+            assert!(
+                policy.contains(required),
+                "v0.6 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
@@ -2117,6 +2146,7 @@ fn run() {}
             ("v0.3.0-alpha.1", "2026-07-15"),
             ("v0.4.0-alpha.1", "2026-07-29"),
             ("v0.5.0-alpha.1", "2026-08-12"),
+            ("v0.6.0-alpha.1", "2026-08-26"),
         ] {
             assert!(
                 policy.contains(&format!("tag = \"{tag}\"")),

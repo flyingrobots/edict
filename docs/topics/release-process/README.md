@@ -65,6 +65,8 @@ evidence before merge when review fixes change the counts.
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
+- [`v0.6.0-alpha.1`](../../releases/v0.6.0-alpha.1.md): release notes for the
+  developer-tooling alpha.
 - [`v0.5.0-alpha.1`](../../releases/v0.5.0-alpha.1.md): release notes for the
   Gate C admission-boundary alpha.
 - [`v0.4.0-alpha.1`](../../releases/v0.4.0-alpha.1.md): published
@@ -77,11 +79,20 @@ release workflow by full tag name. Current release-note files:
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
 
-The `v0.5.0-alpha.1` release notes are publish-ready:
+The `v0.6.0-alpha.1` release notes are publish-ready:
 
+- Release issue: <https://github.com/flyingrobots/edict/issues/50>
+- Required tag after release-prep merge: `v0.6.0-alpha.1`
+- Target date: 2026-08-26
+- Topic-shelf audit evidence: 15 of 15 shelves audited; 15 of 15 accurate after
+  release-process status fixes; coverage 100%; accuracy 100%.
+
+The `v0.5.0-alpha.1` release is published as a GitHub prerelease:
+
+- GitHub release:
+  <https://github.com/flyingrobots/edict/releases/tag/v0.5.0-alpha.1>
 - Release issue: <https://github.com/flyingrobots/edict/issues/42>
-- Required tag after release-prep merge: `v0.5.0-alpha.1`
-- Target date: 2026-08-12
+- Tag target: `e680adf0a3ccc72559d1c4710e81010738918532`
 
 The `v0.4.0-alpha.1` release is published as a GitHub prerelease:
 
