@@ -213,6 +213,8 @@ Scope:
   before full grammar packages land.
 - Tree-sitter grammar source, generated parser source, highlight query, and
   current-subset corpus for the accepted fixture families.
+- TextMate grammar artifact for `.edict` lexical scopes in TextMate-compatible
+  editors.
 - Differential grammar fixture path after the compiler/Core spine stabilizes
   beyond the current Tree-sitter corpus.
 - Tooling documentation for VS Code, Vim, Zed, jedit, or the first supported
@@ -225,6 +227,8 @@ Exit gates:
   adapters consume them.
 - Tree-sitter grammar fixtures are deterministic, versioned with the source
   grammar, and aligned with the reference parser.
+- TextMate grammar scopes are backed by executable checks against public
+  highlighter roles.
 - The release notes identify exactly which editor integrations are supported.
 
 ## v2-design - Future Design Track

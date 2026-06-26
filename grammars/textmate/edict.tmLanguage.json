@@ -1,0 +1,88 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Edict",
+  "scopeName": "source.edict",
+  "fileTypes": [
+    "edict"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#types"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    },
+    {
+      "include": "#identifiers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.edict",
+          "match": "//.*$"
+        },
+        {
+          "name": "comment.block.edict",
+          "begin": "/\\*",
+          "end": "\\*/"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.double.edict",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.edict",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.integer.edict",
+      "match": "\\b[0-9]+(?:_[0-9]+)*(?:i32|i64|u32|u64)?\\b"
+    },
+    "keywords": {
+      "name": "keyword.control.edict",
+      "match": "\\b(?:package|use|type|enum|variant|intent|returns|profile|implements|basis|footprint|budget|where|let|return|require|guarantee|assert|if|then|else|for|in|bounded|yield|match|shape|lawpack|target|core|capability|as|digest|fn|const|true|false)\\b"
+    },
+    "types": {
+      "name": "entity.name.type.edict",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+    "operators": {
+      "name": "keyword.operator.edict",
+      "match": "=>|==|!=|<=|>=|&&|\\|\\||=|<|>|\\+|-|\\*|/|%|!"
+    },
+    "punctuation": {
+      "name": "punctuation.separator.edict",
+      "match": "::|\\.\\.\\.|[;:,.@(){}\\[\\]]"
+    },
+    "identifiers": {
+      "name": "variable.other.edict",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
+    }
+  }
+}

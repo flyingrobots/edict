@@ -11,3 +11,4 @@ workspace = true
 
 [dependencies]
 edict-syntax = { path = "../crates/edict-syntax" }
+serde_json = "1"
