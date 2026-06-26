@@ -42,7 +42,8 @@ The canonical artifact shape for `edict.lowering-requirements/v1` is named in
   [LOWER-REQ-004]
 - Edict v1 rejects ambiguous native support, undigested adapter references,
   adapter chains, and ambiguous adapter choices. General composite / chained
-  adapter legalization belongs to future v2 design work. [LOWER-REQ-005]
+  adapter legalization belongs to the
+  [v2 design track](../v2-design/README.md). [LOWER-REQ-005]
 - Lowerability checks stop before Target IR, verifier reports, contract bundles,
   and admission receipts. [LOWER-REQ-006]
 

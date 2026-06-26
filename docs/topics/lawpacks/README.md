@@ -41,7 +41,8 @@ The current executable Rust surfaces touching lawpacks are:
   digest is present. Invalid digest strings reject at the parser boundary.
   [LAWPACKS-REQ-001]
 - v1 target profiles do not yet accept a lawpack adapter ABI declaration. The
-  field exists as a future extension slot, and non-empty values reject.
+  field exists as a future extension slot for the
+  [v2 design track](../v2-design/README.md), and non-empty values reject.
   [LAWPACKS-REQ-003]
 - Lowerability may classify an operation as adapted when exactly one
   digest-locked direct adapter satisfies the required semantic effect, write

@@ -8,6 +8,12 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added the v2 design topic shelf for adapter composition and
+  obligation-closure resolution, while preserving the v1 direct-adapter
+  lowerability boundary.
+
 ## [v0.6.0-alpha.1] - 2026-08-26
 
 ### Added
