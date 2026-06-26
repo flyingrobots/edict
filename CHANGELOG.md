@@ -8,6 +8,17 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added editor-facing lexical highlighting in `edict_syntax`:
+  `highlight_source`, `HighlightToken`, and stable `HighlightRole` values for
+  comments, identifiers, keywords, numbers, operators, punctuation, strings, and
+  type identifiers. The highlighter keeps comments visible for editor adapters
+  while leaving parsing, resolution, Core lowering, and admission behavior
+  unchanged.
+- Added the developer-tooling topic shelf and a deterministic highlighting
+  fixture for the `v0.6.0-alpha.1` tooling milestone.
+
 ## [v0.5.0-alpha.1] - 2026-08-12
 
 ### Added

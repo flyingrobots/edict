@@ -42,6 +42,8 @@ cargo xtask verify
   CDDL schema boundary for the Core contract.
 - [Documentation Standards](./documentation/README.md): reader-task page types,
   documentation coverage, examples, and docs-impact rules.
+- [Developer Tooling](./developer-tooling/README.md): editor-facing source
+  highlighting roles and fixture-backed tooling behavior.
 - [Lowerability](./lowerability/README.md): typed v1 lowering requirements,
   target-profile facts, and direct-only support classification.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
