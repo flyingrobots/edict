@@ -1116,6 +1116,46 @@ fn run() {}
     }
 
     #[test]
+    fn tree_sitter_query_operator_and_punctuation_roles_match_public_highlighter() {
+        let root = repo_root().expect("repo root");
+        let highlights =
+            fs::read_to_string(root.join("grammars/tree-sitter-edict/queries/highlights.scm"))
+                .expect("Tree-sitter highlight query");
+        let source = "= == != < <= > >= + - * / % ! && || => :: ... ; : , . @ ( ) { }";
+        let public_roles = edict_syntax::highlight_source(source)
+            .expect("operator and punctuation source lexes")
+            .into_iter()
+            .map(|token| (token.lexeme(source).to_owned(), token.role))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let query_operators = tree_sitter_query_atoms_for_capture(&highlights, "@operator");
+        let query_punctuation = tree_sitter_query_atoms_for_capture(&highlights, "@punctuation");
+
+        for duplicate in query_operators.intersection(&query_punctuation) {
+            panic!("Tree-sitter query assigns `{duplicate}` to both operator and punctuation");
+        }
+
+        for operator in query_operators {
+            if let Some(role) = public_roles.get(&operator) {
+                assert_eq!(
+                    *role,
+                    edict_syntax::HighlightRole::Operator,
+                    "Tree-sitter query marks `{operator}` as operator but public highlighter emits {role:?}"
+                );
+            }
+        }
+
+        for punctuation in query_punctuation {
+            if let Some(role) = public_roles.get(&punctuation) {
+                assert_eq!(
+                    *role,
+                    edict_syntax::HighlightRole::Punctuation,
+                    "Tree-sitter query marks `{punctuation}` as punctuation but public highlighter emits {role:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn tree_sitter_corpus_examples_match_reference_parser() {
         let root = repo_root().expect("repo root");
         let corpus = fs::read_to_string(
