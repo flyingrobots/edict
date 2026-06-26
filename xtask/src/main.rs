@@ -971,6 +971,14 @@ mod tests {
             .is_match(literal)
     }
 
+    fn textmate_regex_spans(pattern: &str, source: &str) -> Vec<(usize, usize)> {
+        Regex::new(pattern)
+            .unwrap_or_else(|err| panic!("TextMate regex `{pattern}` must compile: {err}"))
+            .find_iter(source)
+            .map(|match_| (match_.start(), match_.end()))
+            .collect()
+    }
+
     #[derive(Debug)]
     struct TreeSitterCorpusExample {
         title: String,
@@ -1298,6 +1306,29 @@ fn run() {}
                 | edict_syntax::HighlightRole::String => {}
             }
         }
+    }
+
+    #[test]
+    fn textmate_grammar_scopes_public_number_spans_in_version_labels() {
+        let grammar = textmate_grammar();
+        let number_regex = textmate_repository_match(&grammar, "numbers");
+        let source = "package examples.tooling@1_beta;";
+        let public_number = edict_syntax::highlight_source(source)
+            .expect("version label source lexes")
+            .into_iter()
+            .find(|token| {
+                token.role == edict_syntax::HighlightRole::Number && token.lexeme(source) == "1_"
+            })
+            .expect("public highlighter emits leading numeric version-label span");
+        let number_spans = textmate_regex_spans(number_regex, source);
+
+        assert!(
+            number_spans.iter().any(|(start, end)| {
+                *start == public_number.span.start && *end >= public_number.span.end
+            }),
+            "TextMate number regex must scope public version-label number span `{}`",
+            public_number.lexeme(source)
+        );
     }
 
     #[test]
