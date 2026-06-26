@@ -1,6 +1,6 @@
 # Developer Tooling
 
-The developer-tooling alpha now has three editor-facing surfaces:
+The developer-tooling alpha now has these editor-facing surfaces:
 
 - `edict_syntax::highlight_source`, which classifies source spans into stable
   `HighlightRole` values for editor adapters.
