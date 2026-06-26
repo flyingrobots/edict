@@ -205,6 +205,8 @@ Milestone: `v0.6.0-alpha.1`
 
 Primary issue: #7
 
+Release issue: #50
+
 Release labels: `release:developer-tools`
 
 Scope:
@@ -223,7 +225,7 @@ Scope:
 
 Exit gates:
 
-- #7 lands or has a reviewed release-scope split.
+- #7 and #50 land or have reviewed release-scope splits.
 - Highlighting roles are backed by deterministic fixtures before editor
   adapters consume them.
 - Tree-sitter grammar fixtures are deterministic, versioned with the source
@@ -259,7 +261,7 @@ Milestones:
 - `v0.3.0-alpha.1`: #10, #20, #21, #22
 - `v0.4.0-alpha.1`: #1, #5, #39
 - `v0.5.0-alpha.1`: #6, #11, #42
-- `v0.6.0-alpha.1`: #7
+- `v0.6.0-alpha.1`: #7, #50
 - `v2-design`: #4
 
 Alpha-train release labels:

@@ -46,6 +46,7 @@ Out of scope:
 | RELEASE-REQ-014 | implemented | Structured release policy captures the `v0.5.0-alpha.1` Gate C admission-boundary scope, release automation, and explicit Continuum-owned non-goal boundaries. | docs/topics/release-process/policy.toml |
 | RELEASE-REQ-015 | implemented | Manual auto-release recovery must only tag a requested `v*` release when the provided SHA is reachable from `origin/main`, has successful `main` CI, came from exactly one merged `release/*-prep` pull request, and derives the requested tag. | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-016 | implemented | Release preparation must audit `docs/topics/` coverage and accuracy, and releases are blocked unless both metrics are at least 90%. | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md |
+| RELEASE-REQ-017 | implemented | Structured release policy captures the `v0.6.0-alpha.1` developer-tooling scope, supported editor integration boundary, topic-shelf audit, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
 
 ## Fixtures
 
@@ -55,7 +56,8 @@ Out of scope:
 | docs/releases/v0.2.0-alpha.1.md | Published release notes for the Core semantic model and schema alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.3.0-alpha.1.md | Published release notes for the compiler-spine and canonical Core alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.4.0-alpha.1.md | Published release notes for the target-profile, lowerability, and contract-bundle validation alpha. | The release workflow looks up this file by full tag name. |
-| docs/releases/v0.5.0-alpha.1.md | Release notes for the Gate C admission-boundary alpha. | The release workflow looks up this file by full tag name after auto-tagging. |
+| docs/releases/v0.5.0-alpha.1.md | Published release notes for the Gate C admission-boundary alpha. | The release workflow looks up this file by full tag name. |
+| docs/releases/v0.6.0-alpha.1.md | Release notes for the developer-tooling alpha. | The release workflow looks up this file by full tag name after auto-tagging. |
 | .github/workflows/auto-release-tag.yml | Successful main-CI release-prep merges create immutable release tags and dispatch publication. | The workflow derives tags only from merged `release/*-prep` branches and refuses tag mutation. |
 | CHANGELOG.md | Release history for published and publish-ready alpha releases. | Scheduled alpha release sections use the matching release target date. |
 | docs/topics/release-process/policy.toml | Structured release-tag, runbook, and alpha boundary policy. | Tag mutation is forbidden, runbook phases are named, and release scope/non-goals are structured. |
@@ -76,6 +78,7 @@ Out of scope:
 | RELEASE-TP-009 | implemented | Boundary guard | RELEASE-REQ-014 | Structured policy captures the v0.5 admission-boundary scope and explicit non-goals for Continuum-owned policy, identity, delegation, revocation, ledger persistence, signature verification, target lowering, and crates.io publication. | release_policy_tracks_v0_5_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the Gate C admission milestone. |
 | RELEASE-TP-010 | implemented | Recovery guard | RELEASE-REQ-015 | The manual auto-release recovery path requires a successful main-CI release-prep merge, derives the tag from the merged release-prep PR, and rejects mismatched operator tag input before writing release outputs. | auto_release_tag_manual_dispatch_checks_verified_main_sha, auto_release_tag_workflow_is_guarded | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml | Keeps manual recovery idempotent without allowing arbitrary tag/SHA pairing. |
 | RELEASE-TP-011 | implemented | Audit guard | RELEASE-REQ-016 | Structured policy defines the `docs/topics/` coverage and accuracy formulas, requires issue-or-PR evidence before merge, records release-blocking evidence fields, requires stale current-truth claims to be corrected or removed before counting as accurate, and sets both floors to at least 90%. | release_topic_audit_policy_sets_minimums | docs/topics/release-process/policy.toml | Keeps release preparation from shipping stale or under-reviewed topic shelves. |
+| RELEASE-TP-012 | implemented | Boundary guard | RELEASE-REQ-017 | Structured policy captures the v0.6 developer-tooling scope, supported VS Code/Cursor integration, topic-shelf audit, and explicit non-goals for compiler CLI, language-server diagnostics, marketplace publication, target lowering, and admission tooling. | release_policy_tracks_v0_6_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the developer-tooling milestone. |
 
 ## Determinism Obligations
 

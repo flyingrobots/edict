@@ -502,7 +502,9 @@ What exists today:
 - Typed Gate C admission-boundary checks for Edict-owned bundle-subject,
   operation-requirement, hidden execution input rejection, receipt,
   invoked-operation, and invocation capability evidence semantics
-- Release notes for the `v0.5.0-alpha.1` Gate C admission-boundary alpha
+- Release notes for the `v0.6.0-alpha.1` developer-tooling alpha
+- Published `v0.5.0-alpha.1` release notes for the Gate C admission-boundary
+  alpha
 - Published `v0.4.0-alpha.1` release notes for the target-profile,
   lowerability, and contract-bundle validation alpha
 - Published `v0.3.0-alpha.1` release notes and release runbook for the
@@ -523,8 +525,8 @@ What doesn't exist yet:
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic
 
-The active implementation milestone is the developer-tooling alpha tracked as
-`v0.6.0-alpha.1`.
+The developer-tooling alpha is tracked as `v0.6.0-alpha.1`; release issue #50
+records the final prep checklist.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,
@@ -532,7 +534,8 @@ published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.3.0-alpha.1` release is a compiler-spine/canonical-Core milestone,
 `v0.4.0-alpha.1` is a target-profile, lowerability, and contract-bundle
 validation milestone, and `v0.5.0-alpha.1` is a Gate C admission-boundary
-milestone. None of these releases claims target lowerers or full admission
+milestone. The `v0.6.0-alpha.1` release prepares developer tooling artifacts for
+publication. None of these releases claims target lowerers or full admission
 execution tooling.
 
 ---

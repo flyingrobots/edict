@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.6.0-alpha.1] - 2026-08-26
+
 ### Added
 
 - Added editor-facing lexical highlighting in `edict_syntax`:
