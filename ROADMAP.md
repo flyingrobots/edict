@@ -246,7 +246,11 @@ Release labels: `release:v2-design`
 
 Scope:
 
-- Adapter composition and obligation-closure resolution design.
+- Adapter composition and obligation-closure resolution design, tracked as a
+  future design note in
+  [`docs/design/v2-obligation-closure.md`](./docs/design/v2-obligation-closure.md)
+  with current HEAD boundaries in
+  [`docs/topics/v2-design/`](./docs/topics/v2-design/).
 - Future work that must not block the v0.x alpha release train.
 
 This track has no release date until the v1 foundation is stable enough for the
