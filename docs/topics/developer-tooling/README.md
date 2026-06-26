@@ -1,6 +1,6 @@
 # Developer Tooling
 
-The developer-tooling alpha now has three editor-facing surfaces:
+The developer-tooling alpha now has these editor-facing surfaces:
 
 - `edict_syntax::highlight_source`, which classifies source spans into stable
   `HighlightRole` values for editor adapters.
@@ -12,6 +12,8 @@ The developer-tooling alpha now has three editor-facing surfaces:
   for the accepted fixture families.
 - [TextMate grammar](../../../grammars/textmate/edict.tmLanguage.json) for
   `.edict` lexical scopes in TextMate-compatible editors.
+- [VS Code/Cursor extension package](../../../editors/vscode/package.json) for
+  `.edict` language registration and TextMate-backed syntax highlighting.
 
 Highlighting is intentionally lexical. It does not parse, resolve, type-check,
 lower to Core, or evaluate admission policy. It keeps comments visible to
@@ -38,6 +40,10 @@ The TextMate grammar is a lexical artifact for `.edict` files. It exposes scopes
 for comments, strings, numbers, keywords, type identifiers, operators,
 punctuation, and bare identifiers, aligned with the public highlighter roles.
 
-Generated npm packages, VS Code, Vim, Zed, and jedit integration packages remain
-future `v0.6.0-alpha.1` work. This shelf owns the behavior those adapters must
-preserve.
+The VS Code/Cursor package is intentionally thin: it contributes the Edict
+language id, `.edict` extension mapping, comment and bracket metadata, and the
+canonical TextMate grammar. It does not ship diagnostics, a formatter, semantic
+tokens, a compiler command, or a language server.
+
+Generated Tree-sitter packages plus Vim, Zed, and jedit integration packages
+remain future work. This shelf owns the behavior those adapters must preserve.

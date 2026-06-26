@@ -33,6 +33,8 @@ cargo xtask verify
 
 - [Admission](./admission/README.md): typed Gate C admission-boundary checks
   for Edict-owned artifact and invocation evidence semantics.
+- [Assurance](./assurance/README.md): optional, hash-bound HOLMES, Watson, and
+  Moriarty evidence references at the contract-bundle boundary.
 - [Compiler Spine](./compiler-spine/README.md): executable source-AST to
   in-memory Core IR stage contract for the initial lowerable subset.
 - [Contract Bundles](./contract-bundles/README.md): typed v1
@@ -45,6 +47,10 @@ cargo xtask verify
 - [Developer Tooling](./developer-tooling/README.md): editor-facing source
   highlighting roles, Tree-sitter grammar source, TextMate grammar scopes, and
   fixture-backed tooling behavior.
+- [Fixtures](./fixtures/README.md): shared executable fixture corpus and
+  reviewed Core golden artifact contract.
+- [Lawpacks](./lawpacks/README.md): lawpack import, direct-adapter, bundle
+  reference, and deferred manifest-validation boundary.
 - [Lowerability](./lowerability/README.md): typed v1 lowering requirements,
   target-profile facts, and direct-only support classification.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release

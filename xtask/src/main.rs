@@ -979,6 +979,38 @@ mod tests {
             .collect()
     }
 
+    fn vscode_extension_manifest() -> Value {
+        let root = repo_root().expect("repo root");
+        let manifest = fs::read_to_string(root.join("editors/vscode/package.json"))
+            .expect("VS Code extension package manifest");
+        serde_json::from_str(&manifest).expect("VS Code extension manifest must be valid JSON")
+    }
+
+    fn read_json_file(path: &Path) -> Value {
+        let file = fs::read_to_string(path)
+            .unwrap_or_else(|err| panic!("JSON file `{}` must be readable: {err}", path.display()));
+        serde_json::from_str(&file)
+            .unwrap_or_else(|err| panic!("JSON file `{}` must parse: {err}", path.display()))
+    }
+
+    fn json_array<'a>(value: &'a Value, key: &str) -> &'a Vec<Value> {
+        value
+            .get(key)
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("JSON object missing array field `{key}`"))
+    }
+
+    fn json_object<'a>(value: &'a Value, key: &str) -> &'a serde_json::Map<String, Value> {
+        value
+            .get(key)
+            .and_then(Value::as_object)
+            .unwrap_or_else(|| panic!("JSON object missing object field `{key}`"))
+    }
+
+    fn json_string_array_contains(value: &Value, key: &str, expected: &str) -> bool {
+        json_array(value, key).iter().any(|item| item == expected)
+    }
+
     #[derive(Debug)]
     struct TreeSitterCorpusExample {
         title: String,
@@ -1329,6 +1361,116 @@ fn run() {}
             "TextMate number regex must exactly scope public version-label number span `{}`",
             public_number.lexeme(source)
         );
+    }
+
+    #[test]
+    fn vscode_extension_declares_textmate_language_contract() {
+        let root = repo_root().expect("repo root");
+        let manifest = vscode_extension_manifest();
+        assert_eq!(json_str(&manifest, "name"), "edict-vscode");
+        assert_eq!(json_str(&manifest, "publisher"), "flyingrobots");
+
+        let engines = json_object(&manifest, "engines");
+        assert_eq!(
+            engines.get("vscode").and_then(Value::as_str),
+            Some("^1.85.0")
+        );
+        assert!(
+            manifest.get("main").is_none()
+                && manifest.get("browser").is_none()
+                && manifest.get("activationEvents").is_none(),
+            "thin grammar extension must not declare a runtime activation surface"
+        );
+
+        let contributes = manifest
+            .get("contributes")
+            .expect("VS Code extension manifest must contribute editor behavior");
+        let languages = json_array(contributes, "languages");
+        let language = languages
+            .iter()
+            .find(|language| json_str(language, "id") == "edict")
+            .expect("VS Code extension must register the Edict language");
+        assert!(
+            json_string_array_contains(language, "extensions", ".edict"),
+            "VS Code extension must register .edict files"
+        );
+        assert!(
+            json_string_array_contains(language, "aliases", "Edict"),
+            "VS Code extension must expose the Edict language alias"
+        );
+        assert_eq!(
+            json_str(language, "configuration"),
+            "./language-configuration.json"
+        );
+
+        let grammars = json_array(contributes, "grammars");
+        let grammar = grammars
+            .iter()
+            .find(|grammar| json_str(grammar, "language") == "edict")
+            .expect("VS Code extension must map the Edict language to a grammar");
+        assert_eq!(json_str(grammar, "scopeName"), "source.edict");
+        assert_eq!(
+            json_str(grammar, "path"),
+            "./syntaxes/edict.tmLanguage.json"
+        );
+
+        let extension_grammar = read_json_file(
+            &root
+                .join("editors/vscode")
+                .join(json_str(grammar, "path").trim_start_matches("./")),
+        );
+        assert_eq!(
+            extension_grammar,
+            textmate_grammar(),
+            "VS Code extension grammar must match the canonical TextMate grammar"
+        );
+    }
+
+    #[test]
+    fn vscode_language_configuration_matches_lexer_boundaries() {
+        let root = repo_root().expect("repo root");
+        let manifest = vscode_extension_manifest();
+        let contributes = manifest
+            .get("contributes")
+            .expect("VS Code extension manifest must contribute editor behavior");
+        let language = json_array(contributes, "languages")
+            .iter()
+            .find(|language| json_str(language, "id") == "edict")
+            .expect("VS Code extension must register the Edict language");
+        let config = read_json_file(
+            &root
+                .join("editors/vscode")
+                .join(json_str(language, "configuration").trim_start_matches("./")),
+        );
+
+        let comments = config
+            .get("comments")
+            .expect("language configuration must declare comments");
+        assert_eq!(json_str(comments, "lineComment"), "//");
+        assert_eq!(
+            json_array(comments, "blockComment")
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<Vec<_>>(),
+            vec!["/*", "*/"]
+        );
+
+        let brackets = json_array(&config, "brackets")
+            .iter()
+            .map(|pair| {
+                pair.as_array()
+                    .expect("bracket pair must be an array")
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        for pair in [vec!["{", "}"], vec!["[", "]"], vec!["(", ")"]] {
+            assert!(
+                brackets.iter().any(|bracket| bracket == &pair),
+                "language configuration must expose bracket pair {pair:?}"
+            );
+        }
     }
 
     #[test]

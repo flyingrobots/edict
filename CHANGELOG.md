@@ -23,6 +23,10 @@ versions still track specification maturity rather than a released product.
   a current-subset corpus aligned with Edict's reference parser.
 - Added a TextMate grammar artifact for `.edict` lexical scopes aligned with the
   public editor-facing highlight roles.
+- Added a thin VS Code/Cursor extension package that registers `.edict` files
+  and uses the canonical TextMate grammar for syntax highlighting.
+- Added fixture, lawpack, and assurance topic shelves so the cross-cutting
+  contract surfaces have current-truth verification maps.
 - Added a release-prep topic-shelf audit gate requiring `docs/topics/` coverage
   and accuracy to both meet at least 90% before release.
 

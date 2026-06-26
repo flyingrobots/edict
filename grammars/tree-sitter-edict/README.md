@@ -11,8 +11,9 @@ developer tooling:
   Edict's reference parser.
 
 The grammar is intentionally a source artifact in this slice. Generated parser
-packages, npm publishing metadata, TextMate conversion, and editor extensions
-remain future `v0.6.0-alpha.1` work.
+packages and npm publishing metadata remain future work. The first packaged
+editor integration is the TextMate-backed VS Code/Cursor package in
+`../../editors/vscode/`.
 
 To validate the grammar when the Tree-sitter CLI is installed:
 
