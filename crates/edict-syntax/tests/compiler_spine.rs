@@ -6,6 +6,7 @@
 use edict_syntax::{
     compile_to_core, lower_core, parse_module, resolve_module, type_check, CompilerContext,
     CompilerErrorKind, CompilerStage, CoreBudget, CoreExpr, CoreNode, CorePredicate, CoreType,
+    WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -219,6 +220,49 @@ fn missing_return_rejects_in_type_check_stage() {
     assert!(errors
         .iter()
         .any(|err| err.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
+fn read_only_profile_rejects_write_effect_body() {
+    let module = parse_module(
+        "package a.b@1;\n\
+         type Input = { id: String<max=16>, };\n\
+         type Output = { id: String<max=16>, };\n\
+         intent t(input: Input) returns Output\n\
+           profile p.readOnly\n\
+           basis none\n\
+           budget <= p.tiny {\n\
+           target.replace(input.id) else domain.WriteRejected;\n\
+           return { id: input.id };\n\
+         }",
+    )
+    .expect("source parses");
+    let context = CompilerContext::new()
+        .with_operation_profile("p.readOnly", "continuum.profile.read-only/v1")
+        .with_operation_profile_write_classes("p.readOnly", [WriteClass::Read])
+        .with_effect_write_class("target.replace", WriteClass::Replace)
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 1,
+                max_allocated_bytes: 1,
+                max_output_bytes: 1,
+            },
+        );
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("write effect rejects under read-only profile");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|err| err.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::ProfileEffectMismatch]
+    );
 }
 
 #[test]

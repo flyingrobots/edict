@@ -26,6 +26,9 @@ The public compiler-spine surface lives in `edict_syntax`:
 `profile hello.readOnly` and `budget <= hello.tinyBudget` do not magically
 become Core facts; the caller must supply deterministic profile and budget facts
 before the resolver can produce Core-ready metadata. [CSPINE-REQ-005]
+The caller must also supply deterministic write-class facts for operation
+profiles and imported effect calls before the compiler can check profile/effect
+compatibility. [CSPINE-REQ-009]
 
 ## Current Contract
 
@@ -40,6 +43,9 @@ before the resolver can produce Core-ready metadata. [CSPINE-REQ-005]
 - Resolver/type-checker failures use stable `CompilerErrorKind` and
   `CompilerStage` values. Tests assert those structured values rather than
   diagnostic prose. [CSPINE-REQ-007]
+- Effectful source bodies are checked against the resolved operation profile's
+  allowed write classes before Core lowering. A write-class effect under a
+  read-only profile rejects with `ProfileEffectMismatch`. [CSPINE-REQ-009]
 - The lowerer output carries no embedded canonical bytes, exact digest, target
   IR, or admission fields. Canonical encoding is a separate Core IR surface, and
   reviewed golden bytes and exact digests are separate Core IR artifacts.
@@ -52,6 +58,7 @@ The following are not implemented by this compiler-spine slice:
 - target-profile lowering;
 - obstruction exhaustiveness against target/lawpack failure facts;
 - shape/lawpack schema loading;
+- target/lawpack file loading for operation-profile or effect facts;
 - full source language lowering.
 
 Those items remain assigned to later lowerability/admission milestones.
