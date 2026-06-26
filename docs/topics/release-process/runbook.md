@@ -50,7 +50,34 @@ scope, explicit non-goals, required verification, and tagging plan. Do not claim
 target lowering, admission, bundle integrity, or publication behavior before the
 owning topic shelf and tests exist.
 
-## 3. Verify Locally
+## 3. Audit Topic Shelves
+
+Audit `docs/topics/` before opening the release-prep pull request. The audit is
+a release blocker, not an optional editorial pass.
+
+Record these values in the release-prep issue before opening the pull request.
+Mirror or update them in the pull request body before merge when review fixes
+change the counts:
+
+- total topic shelves under `docs/topics/`;
+- audited topic shelves;
+- accurate audited topic shelves after fixes;
+- coverage percent: `audited_topic_shelves / total_topic_shelves * 100`;
+- accuracy percent:
+  `accurate_audited_topic_shelves / audited_topic_shelves * 100`;
+- findings fixed or still blocking release.
+
+Coverage and accuracy must both be at least 90%. A stale current-truth claim
+makes that shelf inaccurate until the claim is corrected or removed. Planned
+work and known gaps belong in the owning `test-plan.md`, but they do not make a
+false current-truth statement accurate.
+
+`cargo xtask contract-check` verifies the topic graph structure, links,
+fixtures, and executable evidence references. It does not replace the accuracy
+audit, because branch-specific prose truth still requires human review against
+the release scope.
+
+## 4. Verify Locally
 
 Run the focused release checks first when the release process changed:
 
@@ -67,7 +94,7 @@ cargo xtask verify
 Fix failures on the branch. Do not tag from a branch that has not passed the
 local gate.
 
-## 4. Open And Merge The Release-Prep PR
+## 5. Open And Merge The Release-Prep PR
 
 Push the branch and open a normal pull request against `main`. The PR body must
 include GitHub auto-close text for the release-prep issue, for example:
@@ -85,7 +112,7 @@ gh pr checks --watch
 Merge only when CI is green, required reviews are satisfied, and there are no
 unresolved blocking review threads.
 
-## 5. Let Automation Tag From Main
+## 6. Let Automation Tag From Main
 
 After the PR merges, the `CI` workflow runs on `main`. If that run succeeds,
 `.github/workflows/auto-release-tag.yml` checks whether the merge commit came
@@ -130,7 +157,7 @@ git push origin vX.Y.Z-alpha.N
 The release workflow rejects tags whose target commit is not reachable from
 `origin/main`.
 
-## 6. Watch Publication
+## 7. Watch Publication
 
 Find and watch the release workflow run:
 
@@ -156,7 +183,7 @@ gh api --paginate 'repos/flyingrobots/edict/milestones?state=all&per_page=100' -
 Record the release URL, tag object or target commit, workflow run, release
 issue, and milestone closure evidence in the final release report.
 
-## 7. Recover Without Tag Mutation
+## 8. Recover Without Tag Mutation
 
 Release tags are durable once pushed. If a workflow fails after a valid tag is
 pushed, do not move, delete, recreate, or force-push the tag.

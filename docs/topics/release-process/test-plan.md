@@ -15,6 +15,7 @@ In scope:
 - release-prep PR auto-tagging after successful `main` CI;
 - manual recovery dispatch for verified release-prep merge commits;
 - milestone closure after successful release publication;
+- docs/topics coverage and accuracy audit thresholds before release;
 - structured release metadata for alpha scope and non-goal boundaries;
 - deterministic local checks for workflow contract drift.
 
@@ -44,6 +45,7 @@ Out of scope:
 | RELEASE-REQ-013 | implemented | Release publication closes the matching GitHub milestone only after the release exists and the milestone has zero open issues. | .github/workflows/release.yml, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-014 | implemented | Structured release policy captures the `v0.5.0-alpha.1` Gate C admission-boundary scope, release automation, and explicit Continuum-owned non-goal boundaries. | docs/topics/release-process/policy.toml |
 | RELEASE-REQ-015 | implemented | Manual auto-release recovery must only tag a requested `v*` release when the provided SHA is reachable from `origin/main`, has successful `main` CI, came from exactly one merged `release/*-prep` pull request, and derives the requested tag. | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml |
+| RELEASE-REQ-016 | implemented | Release preparation must audit `docs/topics/` coverage and accuracy, and releases are blocked unless both metrics are at least 90%. | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md |
 
 ## Fixtures
 
@@ -73,6 +75,7 @@ Out of scope:
 | RELEASE-TP-008 | implemented | Automation guard | RELEASE-REQ-012, RELEASE-REQ-013 | The auto-release workflow watches successful `main` CI, derives tags from merged release-prep PRs, refuses tag moves, dispatches release publication, and the Release workflow closes zero-open milestones after publication. | release_automation_policy_is_structured, auto_release_tag_workflow_is_guarded, release_workflow_supports_dispatch_and_milestone_closure | .github/workflows/auto-release-tag.yml, .github/workflows/release.yml, docs/topics/release-process/policy.toml | Keeps release automation deterministic and non-mutating. |
 | RELEASE-TP-009 | implemented | Boundary guard | RELEASE-REQ-014 | Structured policy captures the v0.5 admission-boundary scope and explicit non-goals for Continuum-owned policy, identity, delegation, revocation, ledger persistence, signature verification, target lowering, and crates.io publication. | release_policy_tracks_v0_5_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the Gate C admission milestone. |
 | RELEASE-TP-010 | implemented | Recovery guard | RELEASE-REQ-015 | The manual auto-release recovery path requires a successful main-CI release-prep merge, derives the tag from the merged release-prep PR, and rejects mismatched operator tag input before writing release outputs. | auto_release_tag_manual_dispatch_checks_verified_main_sha, auto_release_tag_workflow_is_guarded | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml | Keeps manual recovery idempotent without allowing arbitrary tag/SHA pairing. |
+| RELEASE-TP-011 | implemented | Audit guard | RELEASE-REQ-016 | Structured policy defines the `docs/topics/` coverage and accuracy formulas, requires issue-or-PR evidence before merge, records release-blocking evidence fields, requires stale current-truth claims to be corrected or removed before counting as accurate, and sets both floors to at least 90%. | release_topic_audit_policy_sets_minimums | docs/topics/release-process/policy.toml | Keeps release preparation from shipping stale or under-reviewed topic shelves. |
 
 ## Determinism Obligations
 
@@ -86,6 +89,8 @@ Out of scope:
   prose or live GitHub state.
 - Automation tests inspect checked-in workflows and policy, not live GitHub PR,
   tag, release, or milestone state.
+- Topic audit tests assert numeric release-policy thresholds and required audit
+  evidence fields; the human audit records branch-specific accuracy findings.
 
 ## Open Gaps
 
