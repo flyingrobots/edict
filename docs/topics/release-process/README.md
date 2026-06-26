@@ -55,7 +55,9 @@ Every release-prep branch must audit `docs/topics/` coverage and accuracy before
 the release-prep pull request opens. Coverage is audited topic shelves divided
 by total topic shelves; accuracy is accurate audited topic shelves divided by
 audited topic shelves after fixes. Both metrics must be at least 90%, and the
-release report must record the denominators, percentages, and findings.
+release-prep issue must record the denominators, percentages, and findings
+before the pull request opens. The pull request body mirrors or updates the
+evidence before merge when review fixes change the counts.
 [RELEASE-REQ-016]
 
 ## Release Notes
