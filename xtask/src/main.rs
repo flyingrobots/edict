@@ -1944,19 +1944,57 @@ fn run() {}
         for required in [
             "[release_runbook]",
             "prepare_branch",
+            "write_release_thesis",
+            "diff_previous_tag",
+            "reconcile_signpost_docs",
             "merge_gate",
             "auto_tag_publish",
             "watch_workflow",
             "capture_evidence",
+            "capture_release_report",
             "manual_fallback_target = \"verified_main_merge_commit\"",
             "post_release_milestone_lookup = \"all_states_paginated\"",
             "cargo xtask verify",
+            "cargo test -p xtask release_",
+            "git diff --stat <previous-tag>..HEAD",
+            "git diff --name-status <previous-tag>..HEAD",
+            "git log --oneline <previous-tag>..HEAD",
             "gh pr checks",
             "gh release view",
+            "release_thesis",
+            "release_issue",
+            "previous_tag_diff_stat",
+            "previous_tag_diff_name_status",
+            "previous_tag_log",
+            "milestone_zero_open_at_tag_time",
+            "no_crates_io_publication",
+            "release_report",
+            "plan_versus_actual",
+            "fallout_issues",
+            "next_release_thesis",
         ] {
             assert!(
                 policy.contains(required),
                 "release runbook policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn rust_workspace_lints_define_safety_baseline() {
+        let root = repo_root().expect("repo root");
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).expect("workspace manifest");
+        for required in [
+            "[workspace.lints.rust]",
+            "unsafe_code = \"forbid\"",
+            "missing_debug_implementations = \"deny\"",
+            "[workspace.lints.clippy]",
+            "all = { level = \"deny\", priority = -1 }",
+            "pedantic = { level = \"deny\", priority = -1 }",
+        ] {
+            assert!(
+                manifest.contains(required),
+                "workspace lint baseline missing structured field: {required}"
             );
         }
     }

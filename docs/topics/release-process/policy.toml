@@ -39,6 +39,9 @@ manual_fallback_target = "verified_main_merge_commit"
 post_release_milestone_lookup = "all_states_paginated"
 steps = [
   "prepare_branch",
+  "write_release_thesis",
+  "diff_previous_tag",
+  "reconcile_signpost_docs",
   "audit_topic_shelves",
   "verify_local",
   "open_pull_request",
@@ -46,26 +49,68 @@ steps = [
   "auto_tag_publish",
   "watch_workflow",
   "capture_evidence",
+  "capture_release_report",
   "recover_without_tag_mutation",
 ]
 required_checks = [
+  "cargo test -p xtask release_",
   "cargo xtask verify",
+  "git diff --stat <previous-tag>..HEAD",
+  "git diff --name-status <previous-tag>..HEAD",
+  "git log --oneline <previous-tag>..HEAD",
   "docs_topics_audit_coverage_floor",
   "docs_topics_audit_accuracy_floor",
   "gh pr checks",
   "gh release view",
 ]
 required_evidence = [
+  "release_thesis",
   "release_issue",
   "release_prep_pull_request",
+  "previous_tag_diff_stat",
+  "previous_tag_diff_name_status",
+  "previous_tag_log",
   "docs_topics_coverage_percent",
   "docs_topics_accuracy_percent",
   "docs_topics_audit_findings",
+  "milestone_zero_open_at_tag_time",
   "main_ci_run",
   "auto_release_tag_run",
   "tag_object",
   "github_release_url",
+  "no_crates_io_publication",
+  "release_report",
+  "plan_versus_actual",
+  "fallout_issues",
+  "next_release_thesis",
 ]
+
+[release_thesis]
+required = true
+location = "release_issue_and_pr_body"
+v0_7_0_alpha_1 = "file_backed_authority_facts"
+
+[release_diff_reconciliation]
+previous_tag_diff_required = true
+commands = [
+  "git diff --stat <previous-tag>..HEAD",
+  "git diff --name-status <previous-tag>..HEAD",
+  "git log --oneline <previous-tag>..HEAD",
+]
+purpose = "justify_release_notes_changelog_roadmap_and_docs_impact"
+
+[release_report]
+required = true
+location = "release_issue_or_docs_releases_note"
+sections = [
+  "released",
+  "not_released",
+  "plan_versus_actual",
+  "evidence",
+  "fallout_issues",
+  "next_release_thesis",
+]
+must_record_no_crates_io_publication = true
 
 [release_topic_audit]
 scope = "docs/topics"

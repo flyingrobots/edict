@@ -11,6 +11,18 @@ rewriting docs, read the documentation workflow topic:
 
 - [Documentation Standards](docs/topics/documentation/README.md)
 
+Rust changes must preserve the project safety and determinism contract. Before
+changing public Rust APIs, validation behavior, compiler paths, dependencies, or
+generated artifacts, read:
+
+- [Rust Standards](docs/topics/rust-standards/README.md)
+
+Release-prep work follows the repo-local release process, not a generic tag
+flow. Before preparing a release branch, read:
+
+- [Release Process](docs/topics/release-process/README.md)
+- [Release Runbook](docs/topics/release-process/runbook.md)
+
 The short rule is RED/GREEN:
 
 1. Add or update the relevant topic-shelf `test-plan.md` first.

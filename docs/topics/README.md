@@ -57,6 +57,8 @@ cargo xtask verify
   target-profile facts, and direct-only support classification.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract, release runbook, and verification matrix.
+- [Rust Standards](./rust-standards/README.md): Rust safety, determinism, error
+  design, I/O boundary, dependency, generated-artifact, and review policy.
 - [Semantic Validation](./semantic-validation/README.md): source/surface
   `validate_surface` stage contract and verification matrix.
 - [Syntax](./syntax/README.md): Phase 1 `edict-syntax` lexer/parser contract and

@@ -31,6 +31,16 @@ Open or identify the release-prep issue in the matching GitHub milestone. The
 issue must name the release scope, documentation updates, local gate, CI gate,
 and milestone closure requirement.
 
+Write the release thesis before editing release artifacts. The thesis states
+what boundary the release advances, what evidence proves it, and which tempting
+claims are deliberately not included.
+
+Before the release-prep pull request merges, every open issue in the matching
+milestone must be closed by the pull request, moved to a later milestone, or
+explicitly cut from the release. When automation runs, the milestone must have
+zero open issues; the auto-release workflow checks this before creating the
+immutable tag.
+
 ## 2. Refresh Release Artifacts
 
 Update these artifacts together:
@@ -49,6 +59,24 @@ Each release notes file must state the release type, version policy, included
 scope, explicit non-goals, required verification, and tagging plan. Do not claim
 target lowering, admission, bundle integrity, or publication behavior before the
 owning topic shelf and tests exist.
+
+Reconcile the release diff against the previous version tag before finalizing
+the signposts:
+
+```bash
+git fetch origin --tags
+git diff --stat <previous-tag>..HEAD
+git diff --name-status <previous-tag>..HEAD
+git log --oneline <previous-tag>..HEAD
+```
+
+Use that diff to justify the changelog, release notes, `ROADMAP.md`, README,
+topic shelves, and every `docs-impact: none` claim. Quiet scope expansion is a
+release blocker until it is documented, cut, or moved to a later release.
+
+Update `docs/topics/release-process/policy.toml` for the release boundary and
+add or update the matching `xtask` release-policy regression. Structured release
+policy is a release artifact, not an optional bookkeeping pass.
 
 ## 3. Audit Topic Shelves
 
@@ -180,8 +208,22 @@ gh api --paginate 'repos/flyingrobots/edict/milestones?state=all&per_page=100' -
   '.[] | select(.title == "vX.Y.Z-alpha.N") | {title,state,open_issues}'
 ```
 
+Confirm no package publication happened. Current Edict releases create GitHub
+prereleases only; workspace packages remain `publish = false`, and no crates.io
+publication is expected.
+
 Record the release URL, tag object or target commit, workflow run, release
-issue, and milestone closure evidence in the final release report.
+issue, milestone closure evidence, and no-crates publication check in the final
+release report.
+
+The report must include:
+
+- released;
+- not released;
+- plan versus actual;
+- evidence;
+- fallout issues;
+- next release thesis.
 
 ## 8. Recover Without Tag Mutation
 

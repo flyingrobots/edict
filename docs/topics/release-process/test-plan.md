@@ -16,6 +16,8 @@ In scope:
 - manual recovery dispatch for verified release-prep merge commits;
 - milestone closure after successful release publication;
 - docs/topics coverage and accuracy audit thresholds before release;
+- release thesis, previous-tag diff reconciliation, no-crates verification, and
+  release-report evidence;
 - structured release metadata for alpha scope and non-goal boundaries;
 - deterministic local checks for workflow contract drift.
 
@@ -47,6 +49,7 @@ Out of scope:
 | RELEASE-REQ-015 | implemented | Manual auto-release recovery must only tag a requested `v*` release when the provided SHA is reachable from `origin/main`, has successful `main` CI, came from exactly one merged `release/*-prep` pull request, and derives the requested tag. | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-016 | implemented | Release preparation must audit `docs/topics/` coverage and accuracy, and releases are blocked unless both metrics are at least 90%. | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md |
 | RELEASE-REQ-017 | implemented | Structured release policy captures the `v0.6.0-alpha.1` developer-tooling scope, supported editor integration boundary, topic-shelf audit, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
+| RELEASE-REQ-018 | implemented | Release preparation must record a release thesis, previous-tag diff reconciliation, zero-open milestone evidence before tag creation, no-crates publication evidence, and a release report with plan-versus-actual, fallout, and next-thesis sections. | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md |
 
 ## Fixtures
 
@@ -79,6 +82,7 @@ Out of scope:
 | RELEASE-TP-010 | implemented | Recovery guard | RELEASE-REQ-015 | The manual auto-release recovery path requires a successful main-CI release-prep merge, derives the tag from the merged release-prep PR, and rejects mismatched operator tag input before writing release outputs. | auto_release_tag_manual_dispatch_checks_verified_main_sha, auto_release_tag_workflow_is_guarded | .github/workflows/auto-release-tag.yml, docs/topics/release-process/policy.toml | Keeps manual recovery idempotent without allowing arbitrary tag/SHA pairing. |
 | RELEASE-TP-011 | implemented | Audit guard | RELEASE-REQ-016 | Structured policy defines the `docs/topics/` coverage and accuracy formulas, requires issue-or-PR evidence before merge, records release-blocking evidence fields, requires stale current-truth claims to be corrected or removed before counting as accurate, and sets both floors to at least 90%. | release_topic_audit_policy_sets_minimums | docs/topics/release-process/policy.toml | Keeps release preparation from shipping stale or under-reviewed topic shelves. |
 | RELEASE-TP-012 | implemented | Boundary guard | RELEASE-REQ-017 | Structured policy captures the v0.6 developer-tooling scope, supported VS Code/Cursor integration, topic-shelf audit, and explicit non-goals for compiler CLI, language-server diagnostics, marketplace publication, target lowering, and admission tooling. | release_policy_tracks_v0_6_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the developer-tooling milestone. |
+| RELEASE-TP-013 | implemented | Runbook guard | RELEASE-REQ-018 | Structured policy requires release thesis, previous-tag diff reconciliation, milestone-zero evidence at tag time, no-crates verification, release-report sections, and next-release thesis evidence. | release_runbook_policy_is_structured | docs/topics/release-process/policy.toml | Makes release claim integrity durable before and after publication. |
 
 ## Determinism Obligations
 
@@ -94,6 +98,8 @@ Out of scope:
   tag, release, or milestone state.
 - Topic audit tests assert numeric release-policy thresholds and required audit
   evidence fields; the human audit records branch-specific accuracy findings.
+- Release report tests assert structured policy requirements, not chat summaries
+  or live GitHub state.
 
 ## Open Gaps
 
