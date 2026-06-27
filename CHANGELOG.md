@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added `PROJECT_HISTORY.md` as a contributor onboarding and roadmap-orientation
+  brief, plus the Authority Fact Governance design note and planned
+  `v0.7.0-alpha.1` through `v0.15.0-alpha.1` roadmap train.
 - Added the v2 design boundary topic shelf and non-topic obligation-closure
   design note, while preserving the v1 direct-adapter lowerability boundary.
 - Added compiler-spine enforcement for operation-profile write-class
