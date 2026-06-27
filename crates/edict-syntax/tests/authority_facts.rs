@@ -7,8 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use edict_syntax::{
-    compile_to_core, load_compiler_context_from_authority_fact_files,
-    AuthorityFactsLoadFailureKind, CompilerErrorKind, CompilerStage,
+    compile_to_core, compiler_context_from_authority_facts,
+    load_compiler_context_from_authority_fact_files, AuthorityFactSource, AuthorityFactSourceKind,
+    AuthorityFactsDocument, AuthorityFactsLoadFailureKind, BudgetFact, CompilerErrorKind,
+    CompilerStage, CoreBudget, EffectWriteClassFact, OperationProfileFact, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -281,6 +283,83 @@ fn non_abi_write_class_casing_rejects_with_stable_kind() {
     );
 }
 
+#[test]
+fn direct_authority_fact_documents_validate_before_context_merge() {
+    let document = AuthorityFactsDocument {
+        api_version: "edict.authority-facts/v0".to_owned(),
+        source: AuthorityFactSource {
+            kind: AuthorityFactSourceKind::TargetProfile,
+            coordinate: "echo profile".to_owned(),
+            digest: "sha256:not-a-review-digest".to_owned(),
+        },
+        operation_profiles: vec![OperationProfileFact {
+            source: "hello readOnly".to_owned(),
+            core: "continuum profile read-only/v1".to_owned(),
+            allowed_write_classes: vec![WriteClass::Custom("tenant".to_owned())],
+        }],
+        effect_write_classes: vec![EffectWriteClassFact {
+            effect: "target replace".to_owned(),
+            write_class: WriteClass::Custom("tenant".to_owned()),
+        }],
+        budgets: vec![BudgetFact {
+            source: "p tiny".to_owned(),
+            budget: CoreBudget {
+                max_steps: 1,
+                max_allocated_bytes: 1,
+                max_output_bytes: 1,
+            },
+        }],
+    };
+
+    let failures = compiler_context_from_authority_facts(&[document])
+        .expect_err("directly constructed invalid facts reject");
+    let observed = failure_field_set(&failures);
+
+    for expected in [
+        (
+            AuthorityFactsLoadFailureKind::InvalidApiVersion,
+            "apiVersion",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            "source.coordinate",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::NonDigestLockedSource,
+            "source.digest",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            "operationProfiles.source",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            "operationProfiles.core",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::InvalidWriteClass,
+            "operationProfiles.allowedWriteClasses",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            "effectWriteClasses.effect",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::InvalidWriteClass,
+            "effectWriteClasses.writeClass",
+        ),
+        (
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            "budgets.source",
+        ),
+    ] {
+        assert!(
+            observed.contains(&(expected.0, expected.1.to_owned())),
+            "missing failure for {expected:?}; observed {observed:?}"
+        );
+    }
+}
+
 fn temp_case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "edict-authority-facts-{name}-{}",
@@ -398,4 +477,13 @@ fn failure_kinds(
     failures: &[edict_syntax::AuthorityFactsLoadFailure],
 ) -> Vec<AuthorityFactsLoadFailureKind> {
     failures.iter().map(|failure| failure.kind).collect()
+}
+
+fn failure_field_set(
+    failures: &[edict_syntax::AuthorityFactsLoadFailure],
+) -> Vec<(AuthorityFactsLoadFailureKind, String)> {
+    failures
+        .iter()
+        .map(|failure| (failure.kind, failure.field.clone()))
+        .collect()
 }

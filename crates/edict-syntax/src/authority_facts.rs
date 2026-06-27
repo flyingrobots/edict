@@ -165,11 +165,15 @@ pub fn compiler_context_from_authority_facts(
     let mut failures = Vec::new();
 
     for document in documents {
-        let path = format!(
-            "{}@{}",
-            source_kind_name(document.source.kind),
-            document.source.coordinate
-        );
+        let path = authority_document_path(document);
+        validate_document(document, &path, &mut failures);
+    }
+    if !failures.is_empty() {
+        return Err(failures);
+    }
+
+    for document in documents {
+        let path = authority_document_path(document);
         insert_source_digest(document, &path, &mut source_digests, &mut failures);
         for profile in &document.operation_profiles {
             insert_profile_fact(&mut profiles, profile, &path, &mut failures);
@@ -213,6 +217,135 @@ pub fn compiler_context_from_authority_facts(
         context = context.with_budget(source, budget);
     }
     Ok(context)
+}
+
+fn authority_document_path(document: &AuthorityFactsDocument) -> String {
+    format!(
+        "{}@{}",
+        source_kind_name(document.source.kind),
+        document.source.coordinate
+    )
+}
+
+fn validate_document(
+    document: &AuthorityFactsDocument,
+    path: &str,
+    failures: &mut Vec<AuthorityFactsLoadFailure>,
+) {
+    if document.api_version != AUTHORITY_FACTS_API_VERSION {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidApiVersion,
+            path,
+            "apiVersion",
+            &document.api_version,
+        ));
+    }
+    validate_source(&document.source, path, failures);
+    for profile in &document.operation_profiles {
+        validate_profile_fact(profile, path, failures);
+    }
+    for effect in &document.effect_write_classes {
+        validate_effect_fact(effect, path, failures);
+    }
+    for budget in &document.budgets {
+        validate_budget_fact(budget, path, failures);
+    }
+}
+
+fn validate_source(
+    source: &AuthorityFactSource,
+    path: &str,
+    failures: &mut Vec<AuthorityFactsLoadFailure>,
+) {
+    if source.coordinate.is_empty() {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::MissingCoordinate,
+            path,
+            "source.coordinate",
+            "",
+        ));
+    } else if !is_authority_coordinate(&source.coordinate) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            path,
+            "source.coordinate",
+            &source.coordinate,
+        ));
+    }
+    if !is_sha256_review_digest(&source.digest) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::NonDigestLockedSource,
+            path,
+            "source.digest",
+            &source.coordinate,
+        ));
+    }
+}
+
+fn validate_profile_fact(
+    profile: &OperationProfileFact,
+    path: &str,
+    failures: &mut Vec<AuthorityFactsLoadFailure>,
+) {
+    validate_fact_coordinate(&profile.source, path, "operationProfiles.source", failures);
+    validate_fact_coordinate(&profile.core, path, "operationProfiles.core", failures);
+    for write_class in &profile.allowed_write_classes {
+        if !is_abi_write_class(write_class) {
+            failures.push(failure(
+                AuthorityFactsLoadFailureKind::InvalidWriteClass,
+                path,
+                "operationProfiles.allowedWriteClasses",
+                &profile.source,
+            ));
+        }
+    }
+}
+
+fn validate_effect_fact(
+    effect: &EffectWriteClassFact,
+    path: &str,
+    failures: &mut Vec<AuthorityFactsLoadFailure>,
+) {
+    validate_fact_coordinate(&effect.effect, path, "effectWriteClasses.effect", failures);
+    if !is_abi_write_class(&effect.write_class) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidWriteClass,
+            path,
+            "effectWriteClasses.writeClass",
+            &effect.effect,
+        ));
+    }
+}
+
+fn validate_budget_fact(
+    budget: &BudgetFact,
+    path: &str,
+    failures: &mut Vec<AuthorityFactsLoadFailure>,
+) {
+    validate_fact_coordinate(&budget.source, path, "budgets.source", failures);
+}
+
+fn validate_fact_coordinate(
+    coordinate: &str,
+    path: &str,
+    field: &str,
+    failures: &mut Vec<AuthorityFactsLoadFailure>,
+) {
+    if coordinate.is_empty() {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::MissingCoordinate,
+            path,
+            field,
+            "",
+        ));
+    } else if !is_authority_coordinate(coordinate) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            path,
+            field,
+            coordinate,
+        ));
+    }
 }
 
 fn insert_source_digest(
@@ -535,6 +668,19 @@ fn parse_write_class(value: &str) -> Option<WriteClass> {
         "custom" => Some(WriteClass::Custom("custom".to_owned())),
         _ => None,
     }
+}
+
+fn is_abi_write_class(write_class: &WriteClass) -> bool {
+    matches!(
+        write_class,
+        WriteClass::None
+            | WriteClass::Read
+            | WriteClass::Create
+            | WriteClass::Ensure
+            | WriteClass::Append
+            | WriteClass::Replace
+            | WriteClass::Delete
+    ) || matches!(write_class, WriteClass::Custom(value) if value == "custom")
 }
 
 fn failure(
