@@ -259,19 +259,20 @@ fn validate_raw_document(
             &raw.source.kind,
         ));
     }
-    if raw.source.coordinate.is_empty() {
+    let source_coordinate = raw.source.coordinate.unwrap_or_default();
+    if source_coordinate.is_empty() {
         failures.push(failure(
             AuthorityFactsLoadFailureKind::MissingCoordinate,
             path,
             "source.coordinate",
             "",
         ));
-    } else if !is_authority_coordinate(&raw.source.coordinate) {
+    } else if !is_authority_coordinate(&source_coordinate) {
         failures.push(failure(
             AuthorityFactsLoadFailureKind::InvalidCoordinate,
             path,
             "source.coordinate",
-            &raw.source.coordinate,
+            &source_coordinate,
         ));
     }
     let digest = raw.source.digest.unwrap_or_default();
@@ -280,7 +281,7 @@ fn validate_raw_document(
             AuthorityFactsLoadFailureKind::NonDigestLockedSource,
             path,
             "source.digest",
-            &raw.source.coordinate,
+            &source_coordinate,
         ));
     }
 
@@ -308,7 +309,7 @@ fn validate_raw_document(
         api_version: raw.api_version,
         source: AuthorityFactSource {
             kind: source_kind.expect("source kind already validated"),
-            coordinate: raw.source.coordinate,
+            coordinate: source_coordinate,
             digest,
         },
         operation_profiles,
@@ -567,7 +568,7 @@ struct RawAuthorityFactsDocument {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RawAuthorityFactSource {
     kind: String,
-    coordinate: String,
+    coordinate: Option<String>,
     digest: Option<String>,
 }
 

@@ -120,6 +120,33 @@ fn nondigest_authority_fact_source_rejects_with_stable_kind() {
 }
 
 #[test]
+fn omitted_authority_fact_source_coordinate_rejects_with_stable_kind() {
+    let dir = temp_case_dir("omitted-source-coordinate");
+    let path = write_json(
+        &dir,
+        "omitted-source-coordinate.json",
+        r#"{
+          "apiVersion": "edict.authority-facts/v1",
+          "source": {
+            "kind": "targetProfile",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "operationProfiles": [],
+          "effectWriteClasses": [],
+          "budgets": []
+        }"#,
+    );
+    let failures = load_compiler_context_from_authority_fact_files([path.as_path()])
+        .expect_err("omitted source coordinate rejects");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::MissingCoordinate]
+    );
+    assert_eq!(failures[0].field, "source.coordinate");
+}
+
+#[test]
 fn conflicting_file_backed_authority_facts_reject_before_context() {
     let dir = temp_case_dir("conflicting-facts");
     let read = write_json(&dir, "read-effect.json", lawpack_effect_facts("read"));
