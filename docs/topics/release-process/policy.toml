@@ -255,3 +255,34 @@ non_goals = [
   "no_lawpack_or_assurance_tooling",
   "no_crates_io_publish",
 ]
+
+[release_notes.v0_7_0_alpha_1]
+tag = "v0.7.0-alpha.1"
+target_date = "2026-09-09"
+status = "publish_ready"
+release_issue = 59
+scope = [
+  "file_backed_authority_facts",
+  "operation_profile_facts",
+  "profile_write_class_allowances",
+  "effect_write_classes",
+  "budget_facts",
+  "lawpack_source_identity",
+  "target_profile_source_identity",
+  "deterministic_loaded_fact_harness",
+  "stable_load_failure_kinds",
+  "authority_fact_governance_design_note",
+  "release_policy_and_rust_standards_hardening",
+  "review_bot_fallback_policy",
+]
+non_goals = [
+  "no_trusted_lawpack_or_target_profile_authorship",
+  "no_full_lawpack_manifest_loading",
+  "no_full_target_profile_manifest_loading",
+  "no_obstruction_obligation_adapter_footprint_cost_or_target_capability_corpus_loading",
+  "no_global_registry_trust_root_identity_system_or_revocation_model",
+  "no_target_ir_generation",
+  "no_full_effectful_source_lowering",
+  "no_admission_execution_workflow",
+  "no_crates_io_publish",
+]

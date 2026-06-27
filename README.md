@@ -511,6 +511,12 @@ What exists today:
 - Typed Gate C admission-boundary checks for Edict-owned bundle-subject,
   operation-requirement, hidden execution input rejection, receipt,
   invoked-operation, and invocation capability evidence semantics
+- File-backed authority-facts loading for the first compiler context facts:
+  digest-bound `lawpack` and `targetProfile` source identity, operation
+  profiles, profile write-class allowances, effect write classes, budgets,
+  deterministic merging, and stable load failure kinds
+- Publish-ready `v0.7.0-alpha.1` release notes for the file-backed
+  authority-facts alpha
 - Published `v0.6.0-alpha.1` release notes for the developer-tooling alpha
 - Published `v0.5.0-alpha.1` release notes for the Gate C admission-boundary
   alpha
@@ -545,12 +551,13 @@ published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.4.0-alpha.1` is a target-profile, lowerability, and contract-bundle
 validation milestone, and `v0.5.0-alpha.1` is a Gate C admission-boundary
 milestone. The `v0.6.0-alpha.1` release prepares developer tooling artifacts for
-publication. The next planned train starts with `v0.7.0-alpha.1` file-backed
-authority facts and opens the Authority Fact Governance design track before
-moving through effectful compiler lowering, target IR, CLI diagnostics, bundle
-assembly, admission workflow harnessing, trusted fact authorship, publication
-policy, and language-server diagnostics. None of the published releases claims
-target lowerers, full admission execution tooling, or trusted fact governance.
+publication. The publish-ready `v0.7.0-alpha.1` release covers file-backed
+authority facts and opens the Authority Fact Governance design track before the
+train moves through effectful compiler lowering, target IR, CLI diagnostics,
+bundle assembly, admission workflow harnessing, trusted fact authorship,
+publication policy, and language-server diagnostics. None of the published
+releases claims target lowerers, full admission execution tooling, or trusted
+fact governance.
 
 ---
 

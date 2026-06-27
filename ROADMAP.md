@@ -238,11 +238,13 @@ Exit gates:
 
 ## v0.7.0-alpha.1 - File-Backed Authority Facts Alpha
 
-Target date: TBD
+Target date: 2026-09-09
 
-Planned milestone: `v0.7.0-alpha.1`
+Status: release prep
 
-Primary issues: TBD
+Milestone: `v0.7.0-alpha.1` (#8)
+
+Primary issues: #59
 
 Release labels: `release:authority-facts`, `release:compiler-spine`,
 `release:lawpacks`, `release:target-profiles`
@@ -265,13 +267,15 @@ Scope:
 Exit gates:
 
 - Compiler-spine profile/effect compatibility tests cover file-backed fact
-  input, not only caller-supplied context.
+  input, not only caller-supplied context. Met by PR #57.
 - Authority-facts fixtures cover accepted and rejected lawpack and
-  target-profile source identities for the first compiler fact set.
+  target-profile source identities for the first compiler fact set. Met by
+  PR #57.
 - The loaded-fact harness is deterministic and does not fetch registries or
-  mutate dependency state.
+  mutate dependency state. Met by PR #57.
 - `docs/design/authority-fact-governance.md` captures the trusted-authorship
-  questions opened by this release without claiming implemented workflow.
+  questions opened by this release without claiming implemented workflow. Met
+  by PR #56.
 
 Non-goals:
 
@@ -283,6 +287,7 @@ Non-goals:
 - No target IR generation.
 - No full effectful source lowering.
 - No admission execution workflow.
+- No crates.io publication.
 
 ## v0.8.0-alpha.1 - Minimal Effectful Compiler Spine Alpha
 
@@ -621,7 +626,7 @@ Milestones:
 - `v0.4.0-alpha.1`: #1, #5, #39
 - `v0.5.0-alpha.1`: #6, #11, #42
 - `v0.6.0-alpha.1`: #7, #50
-- `v0.7.0-alpha.1`: planned, issues TBD
+- `v0.7.0-alpha.1`: #59
 - `v0.8.0-alpha.1`: planned, issues TBD
 - `v0.9.0-alpha.1`: planned, issues TBD
 - `v0.10.0-alpha.1`: planned, issues TBD

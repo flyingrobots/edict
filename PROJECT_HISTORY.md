@@ -615,13 +615,14 @@ specification maturity, not crates.io API stability.
 
 ### Follow The Next Alpha Train
 
-The current conceptual train starts with `v0.7.0-alpha.1` file-backed authority
-facts and keeps the Authority Fact Governance design track open. The keeper
-roadmap then moves through minimal effectful compiler lowering, first target IR,
-public CLI diagnostics, contract-bundle assembly, an admission workflow harness,
-trusted lawpack and target-profile authorship, publication policy, and
-language-server diagnostics. The v1 target is one honest source-to-admission
-slice with trusted fact provenance visible and digest-bound.
+The current alpha train has reached `v0.7.0-alpha.1` release prep for
+file-backed authority facts and keeps the Authority Fact Governance design track
+open. The keeper roadmap then moves through minimal effectful compiler
+lowering, first target IR, public CLI diagnostics, contract-bundle assembly, an
+admission workflow harness, trusted lawpack and target-profile authorship,
+publication policy, and language-server diagnostics. The v1 target is one
+honest source-to-admission slice with trusted fact provenance visible and
+digest-bound.
 
 ## Primary Evidence
 

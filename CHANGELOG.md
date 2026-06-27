@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.7.0-alpha.1] - 2026-09-09
+
 ### Added
 
 - Added `PROJECT_HISTORY.md` as a contributor onboarding and roadmap-orientation

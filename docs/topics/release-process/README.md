@@ -72,6 +72,8 @@ thesis. [RELEASE-REQ-018]
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
+- [`v0.7.0-alpha.1`](../../releases/v0.7.0-alpha.1.md): publish-ready
+  file-backed authority-facts alpha notes.
 - [`v0.6.0-alpha.1`](../../releases/v0.6.0-alpha.1.md): published
   developer-tooling alpha notes.
 - [`v0.5.0-alpha.1`](../../releases/v0.5.0-alpha.1.md): published Gate C
@@ -85,6 +87,15 @@ release workflow by full tag name. Current release-note files:
   model and normative schema alpha notes.
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
+
+The `v0.7.0-alpha.1` release is publish-ready for the release-prep flow:
+
+- Release issue: <https://github.com/flyingrobots/edict/issues/59>
+- Topic-shelf audit evidence: 19 of 19 shelves audited; 19 of 19 accurate after
+  release-prep edits; coverage 100%; accuracy 100%.
+- Publication plan: merge `release/v0.7.0-alpha.1-prep`, wait for successful
+  `main` CI, then let Auto Release Tag create `v0.7.0-alpha.1` and dispatch the
+  Release workflow.
 
 The `v0.6.0-alpha.1` release is published as a GitHub prerelease:
 
