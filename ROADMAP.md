@@ -249,15 +249,15 @@ Release labels: `release:authority-facts`, `release:compiler-spine`,
 
 Scope:
 
-- File-backed lawpack and target-profile fact loading for the first compiler
-  facts the in-memory `CompilerContext` already models.
-- Deterministic loading of operation profiles, budgets, write classes, effect
-  facts, obstruction facts, obligation facts, adapter facts, and target
-  capability facts for the supported subset.
+- File-backed authority-facts loading for the first compiler facts the
+  in-memory `CompilerContext` already models.
+- Deterministic loading of operation profiles, profile write-class allowances,
+  effect write classes, and budgets from digest-bound `lawpack` and
+  `targetProfile` source identities.
 - Executable harness that proves the compiler path consumes loaded facts rather
   than caller-constructed memory fixtures.
-- Structured diagnostics for missing, ambiguous, malformed, stale, or
-  incompatible authority facts.
+- Stable load failure kinds for missing, malformed, non-digest-locked, invalid,
+  or conflicting authority facts.
 - A non-topic Authority Fact Governance design note that identifies fact classes,
   provenance questions, review boundaries, and the later trusted-authorship
   alpha scope.
@@ -266,8 +266,8 @@ Exit gates:
 
 - Compiler-spine profile/effect compatibility tests cover file-backed fact
   input, not only caller-supplied context.
-- Lawpack and target-profile fixture corpora cover accepted and rejected fact
-  loading paths.
+- Authority-facts fixtures cover accepted and rejected lawpack and
+  target-profile source identities for the first compiler fact set.
 - The loaded-fact harness is deterministic and does not fetch registries or
   mutate dependency state.
 - `docs/design/authority-fact-governance.md` captures the trusted-authorship
@@ -276,6 +276,9 @@ Exit gates:
 Non-goals:
 
 - No trusted lawpack or target-profile authorship workflow.
+- No full lawpack or target-profile manifest loading.
+- No obstruction, obligation, adapter, footprint, cost, or target-capability
+  corpus loading.
 - No global registry, trust root, identity system, or revocation model.
 - No target IR generation.
 - No full effectful source lowering.
@@ -297,8 +300,8 @@ Scope:
 - Minimal effectful source subset lowered through the compiler spine.
 - Stable Core representation for the first accepted effectful body shape.
 - Obstruction mapping and effect-order preservation for the supported subset.
-- Profile, budget, effect, and obstruction checks wired to file-backed facts
-  where v0.7 made those facts available.
+- Profile, budget, and effect checks wired to file-backed facts where v0.7 made
+  those facts available.
 
 Exit gates:
 

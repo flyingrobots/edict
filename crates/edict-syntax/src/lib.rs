@@ -13,6 +13,9 @@
 //! Phase 3 begins the executable compiler spine with `resolve_module`,
 //! `type_check`, `lower_core`, and `compile_to_core`, currently covering the
 //! initial pure local-record subset and producing in-memory Core IR only.
+//! Authority-facts loading can build compiler context from explicit,
+//! digest-bound JSON files for the first supported profile, budget, and
+//! write-class facts.
 //! The crate also exposes typed v1 target-profile conformance, lowerability, and
 //! contract-bundle checks plus typed Gate C admission-boundary checks.
 //! Developer-tooling support begins with lexical highlighting roles for editor
@@ -37,6 +40,7 @@
 
 pub mod admission;
 pub mod ast;
+pub mod authority_facts;
 pub mod canonical;
 pub mod compiler;
 pub mod contract_bundle;
@@ -56,6 +60,12 @@ pub use admission::{
     CapabilityReceiptKind, ExecutionInputKind, ExecutionInputRef, GateCInvocation,
     OperationRequirementRef, ADMISSION_RECEIPT_API_VERSION, ADMISSION_REQUEST_API_VERSION,
     ADMISSION_REQUEST_DIGEST_DOMAIN,
+};
+pub use authority_facts::{
+    compiler_context_from_authority_facts, load_authority_facts_file,
+    load_compiler_context_from_authority_fact_files, AuthorityFactSource, AuthorityFactSourceKind,
+    AuthorityFactsDocument, AuthorityFactsLoadFailure, AuthorityFactsLoadFailureKind, BudgetFact,
+    EffectWriteClassFact, OperationProfileFact, AUTHORITY_FACTS_API_VERSION,
 };
 pub use canonical::{
     decode_canonical_cbor, digest_core_module, encode_canonical_cbor, encode_core_module,
@@ -97,6 +107,9 @@ pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
 
 #[cfg(doctest)]
 mod topic_shelf_doctests {
+    #[doc = include_str!("../../../docs/topics/authority-facts/README.md")]
+    pub struct AuthorityFactsTopicDocs;
+
     #[doc = include_str!("../../../docs/topics/core-ir/README.md")]
     pub struct CoreIrTopicDocs;
 

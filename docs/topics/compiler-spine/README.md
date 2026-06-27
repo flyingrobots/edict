@@ -29,6 +29,9 @@ before the resolver can produce Core-ready metadata. [CSPINE-REQ-005]
 The caller must also supply deterministic write-class facts for operation
 profiles and imported effect calls before the compiler can check profile/effect
 compatibility. [CSPINE-REQ-009]
+Those first compiler context facts may be supplied with builder methods or by
+loading explicit authority-facts files through
+`load_compiler_context_from_authority_fact_files`. [CSPINE-REQ-010]
 
 ## Current Contract
 
@@ -46,6 +49,9 @@ compatibility. [CSPINE-REQ-009]
 - Effectful source bodies are checked against the resolved operation profile's
   allowed write classes before Core lowering. A write-class effect under a
   read-only profile rejects with `ProfileEffectMismatch`. [CSPINE-REQ-009]
+- File-backed authority facts can supply the same profile, budget, profile
+  write-class, and effect write-class facts consumed by the compiler spine.
+  [CSPINE-REQ-010]
 - The lowerer output carries no embedded canonical bytes, exact digest, target
   IR, or admission fields. Canonical encoding is a separate Core IR surface, and
   reviewed golden bytes and exact digests are separate Core IR artifacts.
@@ -58,7 +64,8 @@ The following are not implemented by this compiler-spine slice:
 - target-profile lowering;
 - obstruction exhaustiveness against target/lawpack failure facts;
 - shape/lawpack schema loading;
-- target/lawpack file loading for operation-profile or effect facts;
+- full lawpack or target-profile manifest loading beyond authority-facts
+  documents;
 - full source language lowering.
 
 Those items remain assigned to later lowerability/admission milestones.

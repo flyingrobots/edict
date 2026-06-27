@@ -13,11 +13,13 @@ In scope:
 - accepted Core ABI requirements;
 - deferred lawpack-adapter ABI emptiness;
 - v1 atomic application doctrine.
+- authority-facts documents whose source kind is `targetProfile` for first
+  compiler operation-profile facts.
 
 Out of scope:
 
 - canonical-CBOR encode/decode helpers for `TargetProfileManifest`;
-- file-backed manifest loading;
+- full file-backed `edict.target-profile/v1` manifest loading;
 - full CDDL instance validation;
 - intrinsic and operation-profile corpus parsing;
 - target lowering;
@@ -37,6 +39,7 @@ Out of scope:
 | TPROF-REQ-005 | implemented | `acceptedLawpackAdapterAbi` is rejected when non-empty until the byte-level adapter ABI is specified. | EDICT-ABI-LAWPACK-ADAPTER-DEFER-001 |
 | TPROF-REQ-006 | implemented | `multiTarget: true` is rejected until composite profile validation exists. | ROADMAP.md |
 | TPROF-REQ-007 | implemented | V1 conformance requires atomic application, application-snapshot reads, precommit-atomic guard evaluation, and no-visible-effects obstruction rollback. | docs/SPEC_edict-target-profile-abi-v1.md |
+| TPROF-REQ-008 | implemented | Authority-facts loading accepts digest-locked `targetProfile` source identity for first compiler operation-profile facts without claiming full manifest loading. | docs/topics/authority-facts/test-plan.md |
 
 ## Fixtures
 
@@ -54,6 +57,7 @@ Out of scope:
 | TPROF-TP-004 | implemented | Boundary guard | TPROF-REQ-005 | Adding `edict.lawpack-adapter/v1` before that ABI is specified returns `DeferredLawpackAdapterAbiUnsupported`. | deferred_lawpack_adapter_abi_must_stay_empty_in_v1 | crates/edict-syntax/tests/target_profile.rs | Keeps adapter ABI claims out of this release. |
 | TPROF-TP-005 | implemented | Boundary guard | TPROF-REQ-006 | Setting `multiTarget` true returns `UnsupportedCompositeProfile`. | multi_target_profiles_are_rejected_until_composite_validation_exists | crates/edict-syntax/tests/target_profile.rs | Prevents unvalidated composite profiles from passing v1 conformance. |
 | TPROF-TP-006 | implemented | Boundary guard | TPROF-REQ-007 | Non-atomic application doctrine returns stable failure kinds for application model, read consistency, guard evaluation, and rollback. | atomic_application_semantics_are_required_for_v1_conformance | crates/edict-syntax/tests/target_profile.rs | Asserts structured behavior only. |
+| TPROF-TP-007 | implemented | Authority facts | TPROF-REQ-008 | A target-profile-sourced authority-facts file can provide operation-profile facts consumed by the compiler. | file_backed_authority_facts_compile_bounded_hello, file_backed_authority_facts_reject_write_effect_profile_mismatch | crates/edict-syntax/tests/authority_facts.rs | Asserts compiler behavior, not manifest prose. |
 
 ## Determinism Obligations
 
@@ -66,7 +70,7 @@ Out of scope:
 ## Open Gaps
 
 - Canonical-CBOR encode/decode helpers for `edict.target-profile/v1`.
-- File-backed target-profile manifest loading and conformance fixtures.
+- Full file-backed target-profile manifest loading and conformance fixtures.
 - Full CDDL instance validation.
 - Intrinsic and operation-profile corpus parsing.
 - Target lowerers and verifier reports.

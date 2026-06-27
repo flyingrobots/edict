@@ -11,10 +11,12 @@ In scope:
 - lowerability behavior for one-hop digest-locked direct adapters;
 - contract-bundle handling of lawpack artifact references as external,
   participant-neutral resources.
+- authority-facts documents whose source kind is `lawpack` for first compiler
+  budget and effect write-class facts.
 
 Out of scope:
 
-- lawpack manifest loading;
+- full `edict.lawpack/v1` manifest loading;
 - lawpack export-surface validation;
 - lawpack dependency DAG validation;
 - target adapter ABI validation;
@@ -29,6 +31,7 @@ Out of scope:
 | LAWPACKS-REQ-003 | implemented | v1 target-profile validation rejects non-empty `accepted_lawpack_adapter_abi` declarations until the adapter ABI is supported. | crates/edict-syntax/src/target_profile.rs |
 | LAWPACKS-REQ-004 | implemented | Contract-bundle validation treats lawpacks as external participant-neutral artifact references, not loaded or executed manifests. | crates/edict-syntax/src/contract_bundle.rs |
 | LAWPACKS-REQ-005 | gap | The `edict.lawpack/v1` CDDL manifest and export surface have no executable instance validator yet. | docs/abi/edict-lawpack.cddl, docs/SPEC_edict-lawpack-abi-v1.md |
+| LAWPACKS-REQ-006 | implemented | Authority-facts loading accepts digest-locked `lawpack` source identity for first compiler budget and effect write-class facts without claiming full manifest validation. | docs/topics/authority-facts/test-plan.md |
 
 ## Fixtures
 
@@ -46,6 +49,7 @@ Out of scope:
 | LAWPACKS-TP-003 | implemented | Target profile | LAWPACKS-REQ-003 | A non-empty lawpack adapter ABI declaration rejects from v1 target-profile conformance. | deferred_lawpack_adapter_abi_must_stay_empty_in_v1 | - | Keeps the future adapter slot from becoming an implicit claim. |
 | LAWPACKS-TP-004 | implemented | Contract bundle | LAWPACKS-REQ-004 | Runtime-neutral bundles can carry lawpack artifact references, and lawpacks remain optional artifact-list entries. | echo_and_kv_bundles_validate_with_the_same_runtime_neutral_contract, optional_artifact_lists_may_be_empty | - | Contract-bundle validation does not load lawpack manifests. |
 | LAWPACKS-TP-005 | gap | Manifest validation | LAWPACKS-REQ-005 | No executable lawpack manifest instance validator is claimed. | - | - | Add with lawpack loading or schema-validation work. |
+| LAWPACKS-TP-006 | implemented | Authority facts | LAWPACKS-REQ-006 | A lawpack-sourced authority-facts file can provide budget and effect write-class facts consumed by the compiler. | file_backed_authority_facts_compile_bounded_hello, file_backed_authority_facts_reject_write_effect_profile_mismatch | crates/edict-syntax/tests/authority_facts.rs | Asserts compiler behavior, not manifest prose. |
 
 ## Determinism Obligations
 
@@ -57,6 +61,6 @@ Out of scope:
 
 ## Open Gaps
 
-- No executable lawpack manifest validator exists.
+- No executable full lawpack manifest validator exists.
 - No checked-in lawpack fixture corpus exists.
 - No lawpack target adapter ABI is accepted in v1 target-profile manifests.
