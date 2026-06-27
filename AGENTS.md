@@ -131,6 +131,50 @@ When creating or changing documentation:
   workflow, or public-surface changes, or state `docs-impact: none` with a
   concise rationale.
 
+## Rust Standards
+
+Rust engineering policy lives in
+[docs/topics/rust-standards/](docs/topics/rust-standards/README.md).
+
+For Rust changes:
+
+- Preserve claim integrity: no public claim without executable evidence.
+- Keep compiler and validation paths deterministic and free of hidden I/O.
+- Prefer structured public failures with stable error kinds over prose-only
+  diagnostics.
+- Do not add dependencies without PR-body rationale and contract-impact notes.
+- Treat planned lint, dependency, and fuzzing ratchets as planned until their
+  executable checks land.
+
+## Pull Request Review Policy
+
+Review policy lives in
+[docs/topics/review-process/](docs/topics/review-process/README.md).
+
+- If CodeRabbit is actively reviewing, its approval is required before merge.
+- If CodeRabbit is rate limited, out of credits, or reports insufficient usage
+  credits, post `@codex review please` on the pull request and wait for the
+  alternate review response.
+- Do not treat CodeRabbit unavailability as approval. Without CodeRabbit
+  approval or an alternate review response, merge is blocked unless a maintainer
+  explicitly overrides the review-bot gate.
+
+## Release Discipline
+
+Release policy lives in
+[docs/topics/release-process/](docs/topics/release-process/README.md).
+
+For release-prep work:
+
+- Write the release thesis before editing release artifacts.
+- Reconcile the diff from the previous version tag before finalizing signposts.
+- Update structured release policy and matching release-policy tests.
+- Ensure the matching milestone has zero open issues before tag automation runs.
+- Verify no crates.io publication happened unless publication policy changes.
+- Capture a durable release report with released/not-released scope,
+  plan-versus-actual notes, evidence, fallout issues, and the next release
+  thesis.
+
 ## Local Verification
 
 Use the local gate before claiming a branch is ready:

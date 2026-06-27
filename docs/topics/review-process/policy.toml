@@ -1,0 +1,14 @@
+[review_bots]
+primary_bot = "CodeRabbit"
+primary_review_required_when = "actively_reviewing"
+primary_unavailable_states = [
+  "rate_limited",
+  "insufficient_usage_credits",
+  "out_of_credits",
+]
+fallback_request = "@codex review please"
+fallback_required_when_primary_unavailable = true
+fallback_response_required_before_merge = true
+goal = "at_least_one_automated_or_human_review"
+merge_without_review = "blocked"
+human_override = "explicit_maintainer_decision_required"

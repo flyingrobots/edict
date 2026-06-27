@@ -23,6 +23,12 @@ versions still track specification maturity rather than a released product.
   design note, while preserving the v1 direct-adapter lowerability boundary.
 - Added compiler-spine enforcement for operation-profile write-class
   compatibility with effectful source bodies.
+- Added the Rust standards topic shelf, tightened release-prep policy around
+  release thesis, previous-tag diff reconciliation, durable release reports, and
+  no-crates publication evidence, and promoted missing `Debug` implementations
+  to a deny-level workspace lint.
+- Added the review-process topic shelf and structured CodeRabbit-to-Codex
+  fallback policy for review-bot outages, rate limits, and credit exhaustion.
 
 ## [v0.6.0-alpha.1] - 2026-08-26
 

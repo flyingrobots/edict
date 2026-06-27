@@ -1944,21 +1944,97 @@ fn run() {}
         for required in [
             "[release_runbook]",
             "prepare_branch",
+            "write_release_thesis",
+            "diff_previous_tag",
+            "reconcile_signpost_docs",
             "merge_gate",
             "auto_tag_publish",
             "watch_workflow",
             "capture_evidence",
+            "capture_release_report",
             "manual_fallback_target = \"verified_main_merge_commit\"",
             "post_release_milestone_lookup = \"all_states_paginated\"",
             "cargo xtask verify",
+            "cargo test -p xtask release_",
+            "git diff --stat <previous-tag>..HEAD",
+            "git diff --name-status <previous-tag>..HEAD",
+            "git log --oneline <previous-tag>..HEAD",
             "gh pr checks",
             "gh release view",
+            "release_thesis",
+            "release_issue",
+            "previous_tag_diff_stat",
+            "previous_tag_diff_name_status",
+            "previous_tag_log",
+            "milestone_zero_open_at_tag_time",
+            "no_crates_io_publication",
+            "release_report",
+            "plan_versus_actual",
+            "fallout_issues",
+            "next_release_thesis",
         ] {
             assert!(
                 policy.contains(required),
                 "release runbook policy missing structured field: {required}"
             );
         }
+    }
+
+    #[test]
+    fn rust_workspace_lints_define_safety_baseline() {
+        let root = repo_root().expect("repo root");
+        let manifest = fs::read_to_string(root.join("Cargo.toml")).expect("workspace manifest");
+        for required in [
+            "[workspace.lints.rust]",
+            "unsafe_code = \"forbid\"",
+            "missing_debug_implementations = \"deny\"",
+            "[workspace.lints.clippy]",
+            "all = { level = \"deny\", priority = -1 }",
+            "pedantic = { level = \"deny\", priority = -1 }",
+        ] {
+            assert!(
+                manifest.contains(required),
+                "workspace lint baseline missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
+    fn review_bot_fallback_policy_is_structured() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/review-process/policy.toml"))
+            .expect("review policy");
+        let bots = toml_section(&policy, "[review_bots]");
+        assert_eq!(toml_string_value(&bots, "primary_bot"), "CodeRabbit");
+        assert_eq!(
+            toml_string_value(&bots, "primary_review_required_when"),
+            "actively_reviewing"
+        );
+        assert_eq!(
+            toml_array_values(&bots, "primary_unavailable_states"),
+            [
+                "rate_limited".to_owned(),
+                "insufficient_usage_credits".to_owned(),
+                "out_of_credits".to_owned(),
+            ]
+        );
+        assert_eq!(
+            toml_string_value(&bots, "fallback_request"),
+            "@codex review please"
+        );
+        assert!(toml_bool_value(
+            &bots,
+            "fallback_required_when_primary_unavailable"
+        ));
+        assert!(toml_bool_value(
+            &bots,
+            "fallback_response_required_before_merge"
+        ));
+        assert_eq!(
+            toml_string_value(&bots, "goal"),
+            "at_least_one_automated_or_human_review"
+        );
+        assert_eq!(toml_string_value(&bots, "merge_without_review"), "blocked");
     }
 
     #[test]
@@ -2010,6 +2086,48 @@ fn run() {}
                 }
             })
             .unwrap_or_else(|| panic!("release policy missing integer field `{key}`"))
+    }
+
+    fn toml_string_value(policy: &str, key: &str) -> String {
+        policy
+            .lines()
+            .find_map(|line| {
+                let (raw_key, raw_value) = line.trim().split_once('=')?;
+                (raw_key.trim() == key).then(|| raw_value.trim().trim_matches('"').to_owned())
+            })
+            .unwrap_or_else(|| panic!("policy missing string field `{key}`"))
+    }
+
+    fn toml_bool_value(policy: &str, key: &str) -> bool {
+        policy
+            .lines()
+            .find_map(|line| {
+                let (raw_key, raw_value) = line.trim().split_once('=')?;
+                (raw_key.trim() == key).then(|| raw_value.trim() == "true")
+            })
+            .unwrap_or_else(|| panic!("policy missing boolean field `{key}`"))
+    }
+
+    fn toml_array_values(policy: &str, key: &str) -> Vec<String> {
+        let mut lines = policy.lines().map(str::trim);
+        while let Some(line) = lines.next() {
+            if !line.starts_with(key) {
+                continue;
+            }
+            let mut values = Vec::new();
+            for value_line in lines.by_ref() {
+                if value_line == "]" {
+                    return values;
+                }
+                values.push(
+                    value_line
+                        .trim_end_matches(',')
+                        .trim_matches('"')
+                        .to_owned(),
+                );
+            }
+        }
+        panic!("policy missing array field `{key}`")
     }
 
     #[test]

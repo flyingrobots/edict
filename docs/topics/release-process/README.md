@@ -46,10 +46,11 @@ tags to paper over workflow mistakes. The stable recovery policy is captured in
 [`policy.toml`](./policy.toml). [RELEASE-REQ-006]
 
 Release preparation follows the operator runbook in [`runbook.md`](./runbook.md):
-prepare a release branch, refresh release artifacts, audit topic shelves, verify
-locally, merge a normal pull request to `main`, let automation tag from verified
-`main`, watch publication, and capture evidence. The structured runbook contract
-is captured in [`policy.toml`](./policy.toml). [RELEASE-REQ-009]
+prepare a release branch, write the release thesis, reconcile the diff since the
+previous tag, refresh release artifacts, audit topic shelves, verify locally,
+merge a normal pull request to `main`, let automation tag from verified `main`,
+watch publication, and capture evidence. The structured runbook contract is
+captured in [`policy.toml`](./policy.toml). [RELEASE-REQ-009]
 
 Every release-prep branch must audit `docs/topics/` coverage and accuracy before
 the release-prep pull request opens. Coverage is audited topic shelves divided
@@ -59,6 +60,12 @@ release-prep issue must record the denominators, percentages, and findings
 before the pull request opens. The pull request body mirrors or updates the
 evidence before merge when review fixes change the counts.
 [RELEASE-REQ-016]
+
+Every release-prep branch must record a release thesis, previous-tag diff
+reconciliation, zero-open milestone evidence before tag creation, no-crates.io
+publication evidence, and a final release report with released/not-released
+scope, plan-versus-actual notes, evidence, fallout issues, and the next release
+thesis. [RELEASE-REQ-018]
 
 ## Release Notes
 
