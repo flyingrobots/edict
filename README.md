@@ -527,12 +527,11 @@ What doesn't exist yet:
 - File-backed target profile and contract bundle manifest loading
 - File-backed lawpack/target loading for compiler-spine profile, budget, and
   effect facts
+- Trusted lawpack and target-profile authorship, review provenance, or
+  participant acceptance policy
 - Echo or KV/CAS target lowerers
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic
-
-The developer-tooling alpha is tracked as `v0.6.0-alpha.1`; release issue #50
-records the final prep checklist.
 
 The scheduled alpha train is tracked in [`ROADMAP.md`](./ROADMAP.md). The
 published `v0.1.0-alpha.1` release is a front-end milestone,
@@ -541,13 +540,23 @@ published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.4.0-alpha.1` is a target-profile, lowerability, and contract-bundle
 validation milestone, and `v0.5.0-alpha.1` is a Gate C admission-boundary
 milestone. The `v0.6.0-alpha.1` release prepares developer tooling artifacts for
-publication. None of these releases claims target lowerers or full admission
-execution tooling.
+publication. The next planned train starts with `v0.7.0-alpha.1` file-backed
+authority facts and opens the Authority Fact Governance design track before
+moving through effectful compiler lowering, target IR, CLI diagnostics, bundle
+assembly, admission workflow harnessing, trusted fact authorship, publication
+policy, and language-server diagnostics. None of the published releases claims
+target lowerers, full admission execution tooling, or trusted fact governance.
 
 ---
 
 ## Where To Go Next
 
+- **[PROJECT HISTORY](./PROJECT_HISTORY.md)** — the onboarding brief for why
+  Edict exists, how the alpha train got here, how the layers fit together, and
+  how to reason about roadmap direction.
+- **[Authority Fact Governance Design Note](./docs/design/authority-fact-governance.md)** —
+  the planning note for trusted lawpack and target-profile authorship,
+  provenance, review, and the Edict/Continuum trust-policy boundary.
 - **[SPEC — Edict Language v1](./docs/SPEC_edict-language-v1.md)** — the full
   language specification: syntax, type system, effect rules, A-normal form, Core
   IR, and canonical value semantics.

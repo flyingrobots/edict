@@ -11,6 +11,8 @@ The current specification set is:
   fixture reuse, and local verification workflow.
 - [v2 Design Topic](./topics/v2-design/): current HEAD boundary for future
   adapter composition work.
+- [Authority Fact Governance Design Note](./design/authority-fact-governance.md):
+  non-topic planning note for trusted lawpack and target-profile authorship.
 - [v2 Obligation-Closure Design Note](./design/v2-obligation-closure.md):
   non-topic planning note for future adapter composition and
   obligation-closure resolution.
