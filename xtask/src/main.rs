@@ -2000,6 +2000,44 @@ fn run() {}
     }
 
     #[test]
+    fn review_bot_fallback_policy_is_structured() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/review-process/policy.toml"))
+            .expect("review policy");
+        let bots = toml_section(&policy, "[review_bots]");
+        assert_eq!(toml_string_value(&bots, "primary_bot"), "CodeRabbit");
+        assert_eq!(
+            toml_string_value(&bots, "primary_review_required_when"),
+            "actively_reviewing"
+        );
+        assert_eq!(
+            toml_array_values(&bots, "primary_unavailable_states"),
+            [
+                "rate_limited".to_owned(),
+                "insufficient_usage_credits".to_owned(),
+                "out_of_credits".to_owned(),
+            ]
+        );
+        assert_eq!(
+            toml_string_value(&bots, "fallback_request"),
+            "@codex review please"
+        );
+        assert!(toml_bool_value(
+            &bots,
+            "fallback_required_when_primary_unavailable"
+        ));
+        assert!(toml_bool_value(
+            &bots,
+            "fallback_response_required_before_merge"
+        ));
+        assert_eq!(
+            toml_string_value(&bots, "goal"),
+            "at_least_one_automated_or_human_review"
+        );
+        assert_eq!(toml_string_value(&bots, "merge_without_review"), "blocked");
+    }
+
+    #[test]
     fn release_topic_audit_policy_sets_minimums() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
@@ -2048,6 +2086,48 @@ fn run() {}
                 }
             })
             .unwrap_or_else(|| panic!("release policy missing integer field `{key}`"))
+    }
+
+    fn toml_string_value(policy: &str, key: &str) -> String {
+        policy
+            .lines()
+            .find_map(|line| {
+                let (raw_key, raw_value) = line.trim().split_once('=')?;
+                (raw_key.trim() == key).then(|| raw_value.trim().trim_matches('"').to_owned())
+            })
+            .unwrap_or_else(|| panic!("policy missing string field `{key}`"))
+    }
+
+    fn toml_bool_value(policy: &str, key: &str) -> bool {
+        policy
+            .lines()
+            .find_map(|line| {
+                let (raw_key, raw_value) = line.trim().split_once('=')?;
+                (raw_key.trim() == key).then(|| raw_value.trim() == "true")
+            })
+            .unwrap_or_else(|| panic!("policy missing boolean field `{key}`"))
+    }
+
+    fn toml_array_values(policy: &str, key: &str) -> Vec<String> {
+        let mut lines = policy.lines().map(str::trim);
+        while let Some(line) = lines.next() {
+            if !line.starts_with(key) {
+                continue;
+            }
+            let mut values = Vec::new();
+            for value_line in lines.by_ref() {
+                if value_line == "]" {
+                    return values;
+                }
+                values.push(
+                    value_line
+                        .trim_end_matches(',')
+                        .trim_matches('"')
+                        .to_owned(),
+                );
+            }
+        }
+        panic!("policy missing array field `{key}`")
     }
 
     #[test]

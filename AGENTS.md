@@ -146,6 +146,19 @@ For Rust changes:
 - Treat planned lint, dependency, and fuzzing ratchets as planned until their
   executable checks land.
 
+## Pull Request Review Policy
+
+Review policy lives in
+[docs/topics/review-process/](docs/topics/review-process/README.md).
+
+- If CodeRabbit is actively reviewing, its approval is required before merge.
+- If CodeRabbit is rate limited, out of credits, or reports insufficient usage
+  credits, post `@codex review please` on the pull request and wait for the
+  alternate review response.
+- Do not treat CodeRabbit unavailability as approval. Without CodeRabbit
+  approval or an alternate review response, merge is blocked unless a maintainer
+  explicitly overrides the review-bot gate.
+
 ## Release Discipline
 
 Release policy lives in

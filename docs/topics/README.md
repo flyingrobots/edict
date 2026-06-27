@@ -57,6 +57,8 @@ cargo xtask verify
   target-profile facts, and direct-only support classification.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract, release runbook, and verification matrix.
+- [Review Process](./review-process/README.md): pull request review-bot fallback
+  policy for CodeRabbit outages and alternate bot review.
 - [Rust Standards](./rust-standards/README.md): Rust safety, determinism, error
   design, I/O boundary, dependency, generated-artifact, and review policy.
 - [Semantic Validation](./semantic-validation/README.md): source/surface

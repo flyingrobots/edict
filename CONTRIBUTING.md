@@ -23,6 +23,10 @@ flow. Before preparing a release branch, read:
 - [Release Process](docs/topics/release-process/README.md)
 - [Release Runbook](docs/topics/release-process/runbook.md)
 
+Pull request review follows the repo-local review-bot fallback policy:
+
+- [Review Process](docs/topics/review-process/README.md)
+
 The short rule is RED/GREEN:
 
 1. Add or update the relevant topic-shelf `test-plan.md` first.

@@ -35,6 +35,8 @@ The current specification set is:
   first front-end alpha milestone.
 - [Release Process Topic](./topics/release-process/): tag-triggered GitHub
   Release publication contract and verification matrix.
+- [Review Process Topic](./topics/review-process/): pull request review-bot
+  fallback policy for CodeRabbit outages and alternate bot review.
 - [Rust Standards Topic](./topics/rust-standards/): Rust safety, determinism,
   error design, I/O boundary, dependency, generated-artifact, and review policy.
 - [Admission Topic](./topics/admission/): typed Gate C admission-boundary checks
