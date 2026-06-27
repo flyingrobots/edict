@@ -194,6 +194,8 @@ fn invalid_loaded_profile_coordinates_reject_with_stable_kind() {
         failure_kinds(&failures),
         vec![AuthorityFactsLoadFailureKind::InvalidCoordinate]
     );
+    assert_eq!(failures[0].field, "operationProfiles.core");
+    assert_eq!(failures[0].coordinate, "continuum profile read-only/v1");
 }
 
 #[test]

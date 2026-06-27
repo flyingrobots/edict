@@ -353,7 +353,7 @@ fn validate_operation_profile(
             AuthorityFactsLoadFailureKind::InvalidCoordinate,
             path,
             "operationProfiles.core",
-            &raw.source,
+            &raw.core,
         ));
         valid = false;
     }
