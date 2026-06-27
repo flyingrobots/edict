@@ -523,7 +523,7 @@ fn is_authority_coordinate(value: &str) -> bool {
 }
 
 fn parse_write_class(value: &str) -> Option<WriteClass> {
-    match value.to_ascii_lowercase().as_str() {
+    match value {
         "none" => Some(WriteClass::None),
         "read" => Some(WriteClass::Read),
         "create" => Some(WriteClass::Create),

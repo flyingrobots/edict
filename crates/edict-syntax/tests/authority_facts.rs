@@ -220,6 +220,38 @@ fn abi_custom_write_class_loads_and_prefixed_custom_rejects() {
     );
 }
 
+#[test]
+fn non_abi_write_class_casing_rejects_with_stable_kind() {
+    let dir = temp_case_dir("mixed-case-write-class");
+    let path = write_json(&dir, "mixed-case.json", target_profile_facts("READ"));
+    let failures = load_compiler_context_from_authority_fact_files([path.as_path()])
+        .expect_err("mixed-case write class rejects");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![
+            AuthorityFactsLoadFailureKind::InvalidWriteClass,
+            AuthorityFactsLoadFailureKind::InvalidWriteClass
+        ]
+    );
+
+    let custom = write_json(
+        &dir,
+        "mixed-case-custom.json",
+        target_profile_facts("Custom"),
+    );
+    let failures = load_compiler_context_from_authority_fact_files([custom.as_path()])
+        .expect_err("mixed-case custom write class rejects");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![
+            AuthorityFactsLoadFailureKind::InvalidWriteClass,
+            AuthorityFactsLoadFailureKind::InvalidWriteClass
+        ]
+    );
+}
+
 fn temp_case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "edict-authority-facts-{name}-{}",

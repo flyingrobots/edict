@@ -47,7 +47,8 @@ Out of scope:
 | AUTHFACTS-TP-006 | implemented | Error handling | AUTHFACTS-REQ-004 | Repeated authority sources with the same kind and coordinate but different digests reject with `ConflictingFact`. | mixed_authority_source_digests_reject_before_context | crates/edict-syntax/tests/authority_facts.rs | Prevents merging facts from multiple reviewed source revisions. |
 | AUTHFACTS-TP-007 | implemented | Error handling | AUTHFACTS-REQ-004 | Malformed loaded profile coordinates reject with `InvalidCoordinate`. | invalid_loaded_profile_coordinates_reject_with_stable_kind | crates/edict-syntax/tests/authority_facts.rs | Prevents invalid profile identifiers from entering Core. |
 | AUTHFACTS-TP-008 | implemented | Error handling | AUTHFACTS-REQ-004 | ABI `custom` write classes load, while non-ABI prefixed custom spellings reject with `InvalidWriteClass`. | abi_custom_write_class_loads_and_prefixed_custom_rejects | crates/edict-syntax/tests/authority_facts.rs | Aligns authority-facts loading with target/lawpack write-class vocabulary. |
-| AUTHFACTS-TP-009 | gap | Governance | AUTHFACTS-REQ-005 | No author/reviewer trust workflow is claimed by this loader. | - | docs/design/authority-fact-governance.md | Planned for `v0.13.0-alpha.1`. |
+| AUTHFACTS-TP-009 | implemented | Error handling | AUTHFACTS-REQ-004 | Non-ABI mixed-case write-class spellings reject with `InvalidWriteClass`. | non_abi_write_class_casing_rejects_with_stable_kind | crates/edict-syntax/tests/authority_facts.rs | The authority-facts loader accepts exact ABI spellings only. |
+| AUTHFACTS-TP-010 | gap | Governance | AUTHFACTS-REQ-005 | No author/reviewer trust workflow is claimed by this loader. | - | docs/design/authority-fact-governance.md | Planned for `v0.13.0-alpha.1`. |
 
 ## Determinism Obligations
 
