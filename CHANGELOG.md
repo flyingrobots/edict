@@ -8,6 +8,12 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Changed
+
+- Marked `v0.7.0-alpha.1` as published in the release-process contract and
+  recorded durable release evidence for its tag, workflow runs, milestone
+  closure, and no-crates publication boundary.
+
 ## [v0.7.0-alpha.1] - 2026-09-09
 
 ### Added

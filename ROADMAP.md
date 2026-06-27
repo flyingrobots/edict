@@ -240,11 +240,16 @@ Exit gates:
 
 Target date: 2026-09-09
 
-Status: release prep
+Status: published
 
 Milestone: `v0.7.0-alpha.1` (#8)
 
-Primary issues: #59
+Primary issues: #59 (closed)
+
+Release: <https://github.com/flyingrobots/edict/releases/tag/v0.7.0-alpha.1>
+
+Tag: `v0.7.0-alpha.1` peels to
+`6f9c731b4f36d3283dcb448b14761832ab916b07`.
 
 Release labels: `release:authority-facts`, `release:compiler-spine`,
 `release:lawpacks`, `release:target-profiles`

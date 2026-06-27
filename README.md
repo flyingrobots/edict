@@ -515,7 +515,7 @@ What exists today:
   digest-bound `lawpack` and `targetProfile` source identity, operation
   profiles, profile write-class allowances, effect write classes, budgets,
   deterministic merging, and stable load failure kinds
-- Publish-ready `v0.7.0-alpha.1` release notes for the file-backed
+- Published `v0.7.0-alpha.1` release notes for the file-backed
   authority-facts alpha
 - Published `v0.6.0-alpha.1` release notes for the developer-tooling alpha
 - Published `v0.5.0-alpha.1` release notes for the Gate C admission-boundary
@@ -551,7 +551,7 @@ published `v0.1.0-alpha.1` release is a front-end milestone,
 `v0.4.0-alpha.1` is a target-profile, lowerability, and contract-bundle
 validation milestone, and `v0.5.0-alpha.1` is a Gate C admission-boundary
 milestone. The `v0.6.0-alpha.1` release prepares developer tooling artifacts for
-publication. The publish-ready `v0.7.0-alpha.1` release covers file-backed
+publication. The published `v0.7.0-alpha.1` release covers file-backed
 authority facts and opens the Authority Fact Governance design track before the
 train moves through effectful compiler lowering, target IR, CLI diagnostics,
 bundle assembly, admission workflow harnessing, trusted fact authorship,

@@ -62,9 +62,9 @@ Out of scope:
 | docs/releases/v0.4.0-alpha.1.md | Published release notes for the target-profile, lowerability, and contract-bundle validation alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.5.0-alpha.1.md | Published release notes for the Gate C admission-boundary alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.6.0-alpha.1.md | Published release notes for the developer-tooling alpha. | The release workflow looks up this file by full tag name. |
-| docs/releases/v0.7.0-alpha.1.md | Publish-ready release notes for the file-backed authority-facts alpha. | The release workflow looks up this file by full tag name after the release-prep PR merges. |
+| docs/releases/v0.7.0-alpha.1.md | Published release notes for the file-backed authority-facts alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
 | .github/workflows/auto-release-tag.yml | Successful main-CI release-prep merges create immutable release tags and dispatch publication. | The workflow derives tags only from merged `release/*-prep` branches and refuses tag mutation. |
-| CHANGELOG.md | Release history for published and publish-ready alpha releases. | Scheduled alpha release sections use the matching release target date. |
+| CHANGELOG.md | Release history for published and release-prep alpha releases. | Scheduled alpha release sections use the matching release target date. |
 | docs/topics/release-process/policy.toml | Structured release-tag, runbook, and alpha boundary policy. | Tag mutation is forbidden, runbook phases are named, and release scope/non-goals are structured. |
 | docs/topics/release-process/runbook.md | Operator steps for preparing, tagging, publishing, and recovering releases. | The structured policy names the phases and checks the runbook must cover. |
 
