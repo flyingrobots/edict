@@ -2267,6 +2267,46 @@ fn run() {}
     }
 
     #[test]
+    fn release_policy_tracks_v0_7_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        let v0_7_policy = toml_section(&policy, "[release_notes.v0_7_0_alpha_1]");
+        for required in [
+            "[release_notes.v0_7_0_alpha_1]",
+            "tag = \"v0.7.0-alpha.1\"",
+            "target_date = \"2026-09-09\"",
+            "status = \"publish_ready\"",
+            "file_backed_authority_facts",
+            "operation_profile_facts",
+            "profile_write_class_allowances",
+            "effect_write_classes",
+            "budget_facts",
+            "lawpack_source_identity",
+            "target_profile_source_identity",
+            "deterministic_loaded_fact_harness",
+            "stable_load_failure_kinds",
+            "authority_fact_governance_design_note",
+            "release_policy_and_rust_standards_hardening",
+            "review_bot_fallback_policy",
+            "no_trusted_lawpack_or_target_profile_authorship",
+            "no_full_lawpack_manifest_loading",
+            "no_full_target_profile_manifest_loading",
+            "no_obstruction_obligation_adapter_footprint_cost_or_target_capability_corpus_loading",
+            "no_global_registry_trust_root_identity_system_or_revocation_model",
+            "no_target_ir_generation",
+            "no_full_effectful_source_lowering",
+            "no_admission_execution_workflow",
+            "no_crates_io_publish",
+        ] {
+            assert!(
+                v0_7_policy.contains(required),
+                "v0.7 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
@@ -2278,6 +2318,7 @@ fn run() {}
             ("v0.4.0-alpha.1", "2026-07-29"),
             ("v0.5.0-alpha.1", "2026-08-12"),
             ("v0.6.0-alpha.1", "2026-08-26"),
+            ("v0.7.0-alpha.1", "2026-09-09"),
         ] {
             assert!(
                 policy.contains(&format!("tag = \"{tag}\"")),
