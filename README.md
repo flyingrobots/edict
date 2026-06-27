@@ -563,9 +563,6 @@ fact governance.
 
 ## Where To Go Next
 
-- **[PROJECT HISTORY](./PROJECT_HISTORY.md)** — the onboarding brief for why
-  Edict exists, how the alpha train got here, how the layers fit together, and
-  how to reason about roadmap direction.
 - **[Authority Fact Governance Design Note](./docs/design/authority-fact-governance.md)** —
   the planning note for trusted lawpack and target-profile authorship,
   provenance, review, and the Edict/Continuum trust-policy boundary.

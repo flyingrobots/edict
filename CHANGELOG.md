@@ -12,8 +12,7 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
-- Added `PROJECT_HISTORY.md` as a contributor onboarding and roadmap-orientation
-  brief, plus the Authority Fact Governance design note and planned
+- Added the Authority Fact Governance design note and planned
   `v0.7.0-alpha.1` through `v0.15.0-alpha.1` roadmap train.
 - Added the first file-backed authority-facts loader in `edict_syntax`, covering
   digest-bound `lawpack` and `targetProfile` source identity, operation-profile
