@@ -360,6 +360,63 @@ fn direct_authority_fact_documents_validate_before_context_merge() {
     }
 }
 
+#[test]
+fn loader_failure_kinds_cover_public_branches() {
+    let dir = temp_case_dir("loader-public-branches");
+
+    let missing = dir.join("missing.json");
+    let failures = load_compiler_context_from_authority_fact_files([missing.as_path()])
+        .expect_err("missing file rejects");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::Io]
+    );
+
+    let invalid_api = write_json(
+        &dir,
+        "invalid-api.json",
+        r#"{
+          "apiVersion": "edict.authority-facts/v0",
+          "source": {
+            "kind": "targetProfile",
+            "coordinate": "echo.dpo@1",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "operationProfiles": [],
+          "effectWriteClasses": [],
+          "budgets": []
+        }"#,
+    );
+    let failures = load_compiler_context_from_authority_fact_files([invalid_api.as_path()])
+        .expect_err("unsupported API version rejects");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::InvalidApiVersion]
+    );
+
+    let invalid_source_kind = write_json(
+        &dir,
+        "invalid-source-kind.json",
+        r#"{
+          "apiVersion": "edict.authority-facts/v1",
+          "source": {
+            "kind": "registry",
+            "coordinate": "echo.dpo@1",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "operationProfiles": [],
+          "effectWriteClasses": [],
+          "budgets": []
+        }"#,
+    );
+    let failures = load_compiler_context_from_authority_fact_files([invalid_source_kind.as_path()])
+        .expect_err("unsupported source kind rejects");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::InvalidSourceKind]
+    );
+}
+
 fn temp_case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "edict-authority-facts-{name}-{}",
