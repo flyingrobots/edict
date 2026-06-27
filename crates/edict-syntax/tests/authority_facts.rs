@@ -196,6 +196,30 @@ fn invalid_loaded_profile_coordinates_reject_with_stable_kind() {
     );
 }
 
+#[test]
+fn abi_custom_write_class_loads_and_prefixed_custom_rejects() {
+    let dir = temp_case_dir("custom-write-class");
+    let custom = write_json(&dir, "custom.json", target_profile_facts("custom"));
+    load_compiler_context_from_authority_fact_files([custom.as_path()])
+        .expect("ABI custom write class loads");
+
+    let prefixed = write_json(
+        &dir,
+        "prefixed-custom.json",
+        target_profile_facts("custom:tenant-specific"),
+    );
+    let failures = load_compiler_context_from_authority_fact_files([prefixed.as_path()])
+        .expect_err("prefixed custom write class rejects");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![
+            AuthorityFactsLoadFailureKind::InvalidWriteClass,
+            AuthorityFactsLoadFailureKind::InvalidWriteClass
+        ]
+    );
+}
+
 fn temp_case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "edict-authority-facts-{name}-{}",

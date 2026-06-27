@@ -531,9 +531,7 @@ fn parse_write_class(value: &str) -> Option<WriteClass> {
         "append" => Some(WriteClass::Append),
         "replace" => Some(WriteClass::Replace),
         "delete" => Some(WriteClass::Delete),
-        custom if custom.starts_with("custom:") && custom.len() > "custom:".len() => {
-            Some(WriteClass::Custom(value["custom:".len()..].to_owned()))
-        }
+        "custom" => Some(WriteClass::Custom("custom".to_owned())),
         _ => None,
     }
 }
