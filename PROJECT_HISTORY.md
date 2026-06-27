@@ -91,11 +91,12 @@ parse
   -> lower_core
   -> canonical Core bytes and digest fixtures
   -> lowerability checks
+  -> file-backed authority-facts loading for first compiler facts
   -> bundle and admission-boundary validation
   -> editor-facing syntax tooling
 
 Not implemented yet:
-file-backed lawpack and target fact loading
+full file-backed lawpack and target-profile manifest loading
 trusted lawpack and target-profile authorship workflow
 full effectful source lowering
 target IR generation
@@ -117,13 +118,16 @@ Profile
 
 Lawpack
 : A digest-locked package of domain law: types, pure helpers, semantic effect
-  signatures, obstruction payloads, obligations, and adapter facts. Full
-  file-backed lawpack loading is not implemented yet.
+  signatures, obstruction payloads, obligations, and adapter facts. Edict can
+  load first compiler facts from `lawpack` authority-facts documents, but full
+  file-backed lawpack manifest loading is not implemented yet.
 
 Target Profile
 : A digest-locked description of target runtime capabilities and lowering
   facts. Edict validates target-profile manifests and lowerability facts, but
-  does not yet execute target lowerers.
+  does not yet execute target lowerers. Edict can load first compiler facts from
+  `targetProfile` authority-facts documents, but full file-backed target-profile
+  manifest loading remains future work.
 
 Authority Fact Governance
 : The planned workflow for authoring, reviewing, revising, auditing, and
@@ -334,9 +338,18 @@ review, revision, and provenance inspectable. The design track does not block
 the next file-backed fact-loading release, but it prevents the project from
 mistaking "some JSON said so" for authority.
 
+Fourth, the first file-backed authority-facts slice made those compiler facts
+explicit inputs instead of only caller-built memory fixtures. The loader accepts
+digest-bound `lawpack` and `targetProfile` authority-facts documents for the
+first `CompilerContext` facts: operation profiles, profile write-class
+allowances, effect write classes, and budgets. It rejects malformed,
+non-digest-locked, invalid, or conflicting facts with stable failure kinds. This
+is still not full lawpack or target-profile manifest loading, and it is not
+trusted-authorship governance.
+
 ## What Exists Today
 
-As of `main` at merge commit `821f610`, Edict has these landed surfaces.
+As of current HEAD, Edict has these landed surfaces.
 
 ### Language Front End
 
@@ -358,7 +371,8 @@ The compiler spine exposes:
 
 It lowers the initial pure local-record subset to in-memory Core IR. It also
 checks known profile/effect write-class compatibility from deterministic
-compiler context facts before Core lowering.
+compiler context facts before Core lowering. Those first context facts can now
+come from explicit authority-facts files as well as caller-built memory fixtures.
 
 The lowerer does not embed canonical bytes, exact digests, target IR, or
 admission artifacts into Core modules.
@@ -378,6 +392,22 @@ rejected in v1 and tracked as future v2 design.
 Target-profile manifest validation checks runtime-neutral Echo and KV profile
 conformance, digest-locked components, accepted Core ABI, and atomic application
 semantics.
+
+### Authority Facts
+
+The authority-facts loader accepts explicit JSON files with digest-bound
+`lawpack` or `targetProfile` source identity and merges the first compiler
+context facts into `CompilerContext`: operation profiles, profile write-class
+allowances, effect write classes, and budgets.
+
+The loader is deterministic: callers pass exact file paths, and the loader does
+not discover directories, fetch registries, read environment configuration, or
+mutate dependency state. Malformed files, floating sources, invalid write
+classes, missing coordinates, and conflicting repeated facts fail before a
+compiler context is returned.
+
+This is not full lawpack or target-profile manifest loading, trusted authorship
+governance, or participant trust policy.
 
 ### Contract Bundles And Assurance
 
@@ -406,7 +436,7 @@ stack.
 
 ### Documentation And Verification Infrastructure
 
-The repo now has 16 topic shelves under `docs/topics/`. Each shelf records
+The repo now has 17 topic shelves under `docs/topics/`. Each shelf records
 current HEAD truth and a verification matrix. `cargo xtask contract-check`
 validates the contract graph, and `cargo xtask verify` is the local full gate.
 
@@ -464,9 +494,9 @@ A strong roadmap slice should:
 
 Near-term candidate directions:
 
-- File-backed facts: load operation profiles, budgets, write classes, and
-  effect facts from lawpack or target artifacts instead of caller-supplied
-  in-memory context.
+- Expand file-backed authority facts: move beyond the first compiler facts into
+  obstruction, obligation, adapter, footprint, cost, and target-capability
+  corpora, while keeping full manifest loading honest.
 - Authority fact governance: define how lawpacks and target profiles are
   authored, reviewed, revised, audited, and trusted without making Edict a
   participant-policy engine.
@@ -486,7 +516,7 @@ Near-term candidate directions:
 
 | Gap | Why It Matters | Likely Owning Topics |
 | --- | --- | --- |
-| File-backed target and lawpack facts | Current profile, budget, and effect checks depend on caller-supplied context. | compiler-spine, lawpacks, target-profiles |
+| Full lawpack and target-profile manifest loading | The first authority-facts loader covers compiler context facts, but not complete ABI manifest instances or export/capability corpora. | compiler-spine, lawpacks, target-profiles, authority-facts |
 | Trusted lawpack and target-profile authorship | File-backed facts are not enough; participants need inspectable provenance for who authored, reviewed, revised, and digest-bound authority claims. | lawpacks, target-profiles, assurance |
 | Effectful source lowering | Edict can reject some bad effects but cannot compile most useful effectful intents. | compiler-spine, core-ir |
 | Target IR generation | Lowerability is validation, not execution. | lowerability, target-profiles |
@@ -541,9 +571,11 @@ intentionally narrow.
 
 ### Load Real External Facts
 
-The compiler can use explicit in-memory context facts for profiles, budgets,
-and effect write classes. It does not yet load those facts from file-backed
-target profiles, lawpacks, or shape schemas.
+The compiler can now use explicit authority-facts files for the first profile,
+budget, profile write-class, and effect write-class facts. It does not yet load
+full lawpack manifests, full target-profile manifests, shape schemas,
+obstruction facts, obligation facts, adapter facts, footprint facts, cost
+corpora, or target-capability corpora.
 
 ### Govern Authority Facts
 
@@ -583,10 +615,10 @@ specification maturity, not crates.io API stability.
 
 ### Follow The Next Alpha Train
 
-The next conceptual train starts with `v0.7.0-alpha.1` file-backed authority
-facts and opens the Authority Fact Governance design track. The keeper roadmap
-then moves through minimal effectful compiler lowering, first target IR, public
-CLI diagnostics, contract-bundle assembly, an admission workflow harness,
+The current conceptual train starts with `v0.7.0-alpha.1` file-backed authority
+facts and keeps the Authority Fact Governance design track open. The keeper
+roadmap then moves through minimal effectful compiler lowering, first target IR,
+public CLI diagnostics, contract-bundle assembly, an admission workflow harness,
 trusted lawpack and target-profile authorship, publication policy, and
 language-server diagnostics. The v1 target is one honest source-to-admission
 slice with trusted fact provenance visible and digest-bound.
@@ -599,6 +631,8 @@ slice with trusted fact provenance visible and digest-bound.
 - `docs/topics/README.md`: current topic-shelf index.
 - `docs/releases/`: published alpha release notes.
 - `docs/topics/compiler-spine/README.md`: current compiler-spine contract.
+- `docs/topics/authority-facts/README.md`: current file-backed authority-facts
+  loader contract.
 - `docs/topics/release-process/README.md`: release automation and runbook
   contract.
 - `docs/design/authority-fact-governance.md`: future trusted fact authorship
@@ -609,8 +643,8 @@ slice with trusted fact provenance visible and digest-bound.
 
 Edict is no longer only a speculative language design. It is a Rust workspace
 with executable slices for syntax, surface validation, Core, canonicalization,
-lowerability, bundles, admission-boundary checks, and editor-facing syntax
-tooling.
+lowerability, authority-facts loading, bundles, admission-boundary checks, and
+editor-facing syntax tooling.
 
 It is also not yet the full end-to-end system promised by the README's long-term
 vision. The current truth is narrower and stronger: Edict has a mechanically

@@ -39,6 +39,8 @@ The current specification set is:
   for Edict-owned artifact and invocation evidence semantics.
 - [Assurance Topic](./topics/assurance/): optional, hash-bound HOLMES, Watson,
   and Moriarty evidence references at the contract-bundle boundary.
+- [Authority Facts Topic](./topics/authority-facts/): file-backed compiler
+  context facts with digest-bound source identity and stable load failures.
 - [Contract Bundles Topic](./topics/contract-bundles/): typed v1
   participant-neutral bundle and assurance evidence manifest validation.
 - [Fixtures Topic](./topics/fixtures/): shared executable fixture corpus and

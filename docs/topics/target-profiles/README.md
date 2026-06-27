@@ -6,7 +6,9 @@ This chapter describes the v1 target-profile manifest conformance contract that
 exists today. It validates typed manifest values for runtime-neutral profile
 metadata and atomic application doctrine before any target lowerer runs. It does
 not load manifest files, lower Core to Target IR, run a verifier, or make an
-admission claim.
+admission claim. The separate authority-facts loader can load first compiler
+context facts from digest-bound files whose source kind is `targetProfile`, but
+that is not full target-profile manifest loading.
 
 ## Public Surface
 
@@ -17,6 +19,9 @@ target-profile data structures for:
 - `TargetProfileConformanceReport`, including `Conformant` and `NonConformant`
   classifications;
 - stable `TargetProfileConformanceFailureKind` categories. [TPROF-REQ-001]
+
+The crate also exposes authority-facts loading for target-profile-sourced
+operation-profile facts consumed by the compiler context. [TPROF-REQ-008]
 
 The canonical artifact shape for `edict.target-profile/v1` is named in
 [`docs/abi/edict-target-profile.cddl`](../../abi/edict-target-profile.cddl).
@@ -44,13 +49,16 @@ The canonical artifact shape for `edict.target-profile/v1` is named in
 - The v1 application doctrine accepted by the checker is atomic application,
   application-snapshot reads, precommit-atomic guard evaluation, and
   no-visible-effects obstruction rollback. [TPROF-REQ-007]
+- Authority-facts documents may identify a `targetProfile` source and provide
+  operation-profile facts for the compiler context. This is not full
+  target-profile manifest file loading. [TPROF-REQ-008]
 
 ## Deferred
 
 The following are not implemented by this target-profile slice:
 
 - canonical-CBOR encode/decode helpers for `TargetProfileManifest`;
-- file-backed manifest loading;
+- full file-backed `edict.target-profile/v1` manifest loading;
 - CDDL instance validation;
 - intrinsic and operation-profile corpus parsing;
 - target lowerers;

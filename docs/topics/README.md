@@ -35,6 +35,8 @@ cargo xtask verify
   for Edict-owned artifact and invocation evidence semantics.
 - [Assurance](./assurance/README.md): optional, hash-bound HOLMES, Watson, and
   Moriarty evidence references at the contract-bundle boundary.
+- [Authority Facts](./authority-facts/README.md): file-backed compiler context
+  facts with digest-bound source identity and stable load failures.
 - [Compiler Spine](./compiler-spine/README.md): executable source-AST to
   in-memory Core IR stage contract for the initial lowerable subset.
 - [Contract Bundles](./contract-bundles/README.md): typed v1

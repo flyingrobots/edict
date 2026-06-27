@@ -144,8 +144,9 @@ intent sayHello(input: HelloInput)
 No ambient access. No clock. No filesystem. No network. No database. This intent
 compiles to a Core IR with zero runtime effects. The current compiler-spine can
 prove the pure subset and can reject known profile/effect write-class conflicts
-from deterministic compiler context facts. Loading those facts from imported
-lawpack and target signatures remains future target/lawpack work.
+from deterministic compiler context facts, including facts loaded from explicit
+authority-facts files. Loading full lawpack and target-profile manifests remains
+future target/lawpack work.
 
 A more realistic intent — one that actually reads from a backing store — looks like
 this:
@@ -185,10 +186,11 @@ Walk through this line by line:
   under which this intent will execute. Edict Core is runtime-neutral; it lowers
   to a specific target through an explicitly declared, hash-locked profile.
 - `profile echo.readOnly` — a claim the current compiler can check when the
-  caller supplies deterministic profile and effect write-class facts. If the
-  body contains a known write effect under a read-only profile, this claim fails
-  and compilation fails. Loading those facts from the target import is future
-  target-profile work.
+  caller supplies deterministic profile and effect write-class facts, including
+  facts loaded from explicit authority-facts files. If the body contains a known
+  write effect under a read-only profile, this claim fails and compilation
+  fails. Loading full target-profile manifests remains future target-profile
+  work.
 - `budget <= greeting.readGreetingBudget` — the current compiler resolves the
   budget through explicit deterministic context facts. Full inferred operation
   cost from imported effect signatures is future lowerability work.
@@ -491,6 +493,9 @@ What exists today:
   `compile_to_core` for the first pure local-record subset
 - Compiler-spine profile/effect compatibility checks for effectful source bodies
   against explicit in-memory profile and effect write-class facts
+- File-backed authority-facts loading for the first compiler context facts:
+  operation profiles, budgets, profile write-class allowances, and effect write
+  classes from digest-bound lawpack or target-profile source identities
 - Reference `edict.canonical-cbor/v1` Core encoder and canonical byte validation
   path for the current in-memory Core module model
 - Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for
@@ -524,9 +529,9 @@ What doesn't exist yet:
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
   expression literals)
 - Packaged Tree-sitter bindings plus Vim, Zed, and jedit integrations
-- File-backed target profile and contract bundle manifest loading
-- File-backed lawpack/target loading for compiler-spine profile, budget, and
-  effect facts
+- Full file-backed target-profile, lawpack, and contract-bundle manifest loading
+- Authority-facts loading for obstruction, obligation, adapter, footprint, cost,
+  and target-capability corpora beyond the first compiler context facts
 - Trusted lawpack and target-profile authorship, review provenance, or
   participant acceptance policy
 - Echo or KV/CAS target lowerers

@@ -10,6 +10,7 @@ In scope:
 - deterministic compiler context facts for profile and budget resolution;
 - deterministic compiler context facts for profile write permissions and effect
   write classes;
+- file-backed authority facts for the first compiler context fact set;
 - typed representation boundary distinct from source AST;
 - source-to-Core lowering for the initial pure local-record subset;
 - structured compiler error identity.
@@ -35,6 +36,7 @@ Out of scope:
 | CSPINE-REQ-007 | implemented | Compiler-spine errors expose stable stage and kind identities. | crates/edict-syntax/src/compiler.rs |
 | CSPINE-REQ-008 | implemented | The compiler-spine lowerer embeds no canonical bytes, exact digest, target lowering, or admission artifacts in Core modules. | ROADMAP.md |
 | CSPINE-REQ-009 | implemented | The compiler spine rejects source effect bodies whose effect write class is not allowed by the resolved operation profile. | issue #54 |
+| CSPINE-REQ-010 | implemented | The first compiler context fact set can be loaded from explicit authority-facts files instead of caller-built in-memory context. | ROADMAP.md, docs/topics/authority-facts/test-plan.md |
 
 ## Fixtures
 
@@ -52,8 +54,9 @@ Out of scope:
 | CSPINE-TP-004 | implemented | Error handling | CSPINE-REQ-002, CSPINE-REQ-007 | Unknown local named types return `CompilerStage::TypeCheck` plus `UnresolvedType`. | unresolved_local_types_reject_in_type_check_stage, unresolved_record_field_types_reject_in_type_check_stage | - | Surface validation still accepts the source. |
 | CSPINE-TP-005 | implemented | Error handling | CSPINE-REQ-002, CSPINE-REQ-007 | Returning a record with the wrong field shape, or failing to return, returns `CompilerStage::TypeCheck` plus `TypeMismatch`. | record_return_shape_mismatch_rejects_in_type_check_stage, missing_return_rejects_in_type_check_stage | - | Asserts type identity, not diagnostic prose. |
 | CSPINE-TP-006 | implemented | Boundary guard | CSPINE-REQ-008 | The lowered Core module carries no canonical bytes, digest, target IR, or admission fields. | initial_core_lowering_makes_no_canonical_or_target_claim | fixtures/lang/bounds/bounded-hello.edict | Keeps #21/#22 boundaries honest. |
-| CSPINE-TP-007 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-009 | A write-class effect body under a read-only operation profile rejects in `CompilerStage::TypeCheck` with `ProfileEffectMismatch`. | read_only_profile_rejects_write_effect_body | - | Uses in-memory context facts; no target/lawpack file loading. |
+| CSPINE-TP-007 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-009 | A write-class effect body under a read-only operation profile rejects in `CompilerStage::TypeCheck` with `ProfileEffectMismatch`. | read_only_profile_rejects_write_effect_body | - | Uses caller-built in-memory context facts. |
 | CSPINE-TP-008 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-009 | A write-class effect in a `let` initializer without an obstruction handler rejects in `CompilerStage::TypeCheck` with `ProfileEffectMismatch`. | read_only_profile_rejects_write_effect_let_without_else | - | The compatibility check is independent of source obstruction syntax. |
+| CSPINE-TP-009 | implemented | Golden path | CSPINE-REQ-005, CSPINE-REQ-009, CSPINE-REQ-010 | File-backed authority facts produce a compiler context that compiles `bounded-hello` and rejects a read-only profile/write-effect mismatch. | file_backed_authority_facts_compile_bounded_hello, file_backed_authority_facts_reject_write_effect_profile_mismatch | crates/edict-syntax/tests/authority_facts.rs | Proves file-loaded facts enter the same compiler path as in-memory facts. |
 
 ## Determinism Obligations
 
@@ -67,6 +70,7 @@ Out of scope:
 
 ## Open Gaps
 
-- Target/lawpack/shape artifact loading belongs to later lowerability work.
+- Full target/lawpack/shape artifact loading beyond authority-facts documents
+  belongs to later lowerability and lawpack work.
 - Effectful branches, loops, matches, variants, and obstruction maps are present
   in the source AST and Core schema but outside the first lowerable subset.
