@@ -74,6 +74,7 @@ pub enum AuthorityFactsLoadFailureKind {
     InvalidApiVersion,
     InvalidSourceKind,
     MissingCoordinate,
+    InvalidCoordinate,
     NonDigestLockedSource,
     InvalidWriteClass,
     ConflictingFact,
@@ -265,6 +266,13 @@ fn validate_raw_document(
             "source.coordinate",
             "",
         ));
+    } else if !is_authority_coordinate(&raw.source.coordinate) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            path,
+            "source.coordinate",
+            &raw.source.coordinate,
+        ));
     }
     let digest = raw.source.digest.unwrap_or_default();
     if !is_sha256_review_digest(&digest) {
@@ -323,10 +331,26 @@ fn validate_operation_profile(
             "",
         ));
         valid = false;
+    } else if !is_authority_coordinate(&raw.source) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            path,
+            "operationProfiles.source",
+            &raw.source,
+        ));
+        valid = false;
     }
     if raw.core.is_empty() {
         failures.push(failure(
             AuthorityFactsLoadFailureKind::MissingCoordinate,
+            path,
+            "operationProfiles.core",
+            &raw.source,
+        ));
+        valid = false;
+    } else if !is_authority_coordinate(&raw.core) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
             path,
             "operationProfiles.core",
             &raw.source,
@@ -370,6 +394,14 @@ fn validate_effect_write_class(
             "",
         ));
         valid = false;
+    } else if !is_authority_coordinate(&raw.effect) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            path,
+            "effectWriteClasses.effect",
+            &raw.effect,
+        ));
+        valid = false;
     }
     let write_class = if let Some(value) = parse_write_class(&raw.write_class) {
         value
@@ -401,6 +433,15 @@ fn validate_budget(
             path,
             "budgets.source",
             "",
+        ));
+        return None;
+    }
+    if !is_authority_coordinate(&raw.source) {
+        failures.push(failure(
+            AuthorityFactsLoadFailureKind::InvalidCoordinate,
+            path,
+            "budgets.source",
+            &raw.source,
         ));
         return None;
     }
@@ -472,6 +513,13 @@ fn source_kind_name(kind: AuthorityFactSourceKind) -> &'static str {
         AuthorityFactSourceKind::Lawpack => "lawpack",
         AuthorityFactSourceKind::TargetProfile => "targetProfile",
     }
+}
+
+fn is_authority_coordinate(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|b| {
+            b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_' | b'@' | b'/' | b':')
+        })
 }
 
 fn parse_write_class(value: &str) -> Option<WriteClass> {

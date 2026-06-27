@@ -45,7 +45,8 @@ Out of scope:
 | AUTHFACTS-TP-004 | implemented | Error handling | AUTHFACTS-REQ-004 | A source without a SHA-256 digest rejects with `NonDigestLockedSource`. | nondigest_authority_fact_source_rejects_with_stable_kind | crates/edict-syntax/tests/authority_facts.rs | Source identity must be digest-bound. |
 | AUTHFACTS-TP-005 | implemented | Error handling | AUTHFACTS-REQ-004 | Conflicting repeated facts reject with `ConflictingFact`. | conflicting_file_backed_authority_facts_reject_before_context | crates/edict-syntax/tests/authority_facts.rs | Prevents ambiguous compiler facts. |
 | AUTHFACTS-TP-006 | implemented | Error handling | AUTHFACTS-REQ-004 | Repeated authority sources with the same kind and coordinate but different digests reject with `ConflictingFact`. | mixed_authority_source_digests_reject_before_context | crates/edict-syntax/tests/authority_facts.rs | Prevents merging facts from multiple reviewed source revisions. |
-| AUTHFACTS-TP-007 | gap | Governance | AUTHFACTS-REQ-005 | No author/reviewer trust workflow is claimed by this loader. | - | docs/design/authority-fact-governance.md | Planned for `v0.13.0-alpha.1`. |
+| AUTHFACTS-TP-007 | implemented | Error handling | AUTHFACTS-REQ-004 | Malformed loaded profile coordinates reject with `InvalidCoordinate`. | invalid_loaded_profile_coordinates_reject_with_stable_kind | crates/edict-syntax/tests/authority_facts.rs | Prevents invalid profile identifiers from entering Core. |
+| AUTHFACTS-TP-008 | gap | Governance | AUTHFACTS-REQ-005 | No author/reviewer trust workflow is claimed by this loader. | - | docs/design/authority-fact-governance.md | Planned for `v0.13.0-alpha.1`. |
 
 ## Determinism Obligations
 

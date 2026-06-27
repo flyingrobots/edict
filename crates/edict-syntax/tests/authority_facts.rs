@@ -163,6 +163,39 @@ fn mixed_authority_source_digests_reject_before_context() {
     );
 }
 
+#[test]
+fn invalid_loaded_profile_coordinates_reject_with_stable_kind() {
+    let dir = temp_case_dir("invalid-profile-coordinate");
+    let path = write_json(
+        &dir,
+        "invalid-profile-coordinate.json",
+        r#"{
+          "apiVersion": "edict.authority-facts/v1",
+          "source": {
+            "kind": "targetProfile",
+            "coordinate": "echo.dpo@1",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "operationProfiles": [
+            {
+              "source": "hello.readOnly",
+              "core": "continuum profile read-only/v1",
+              "allowedWriteClasses": ["read"]
+            }
+          ],
+          "effectWriteClasses": [],
+          "budgets": []
+        }"#,
+    );
+    let failures = load_compiler_context_from_authority_fact_files([path.as_path()])
+        .expect_err("invalid profile coordinate rejects");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::InvalidCoordinate]
+    );
+}
+
 fn temp_case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "edict-authority-facts-{name}-{}",
@@ -189,6 +222,18 @@ fn target_profile_facts(allowed_write_class: &str) -> String {
 }
 
 fn target_profile_facts_with_digest(allowed_write_class: &str, digest: &str) -> String {
+    target_profile_facts_with_digest_and_core(
+        allowed_write_class,
+        digest,
+        "continuum.profile.read-only/v1",
+    )
+}
+
+fn target_profile_facts_with_digest_and_core(
+    allowed_write_class: &str,
+    digest: &str,
+    core_profile: &str,
+) -> String {
     format!(
         r#"{{
           "apiVersion": "edict.authority-facts/v1",
@@ -200,12 +245,12 @@ fn target_profile_facts_with_digest(allowed_write_class: &str, digest: &str) -> 
           "operationProfiles": [
             {{
               "source": "hello.readOnly",
-              "core": "continuum.profile.read-only/v1",
+              "core": "{core_profile}",
               "allowedWriteClasses": ["{allowed_write_class}"]
             }},
             {{
               "source": "p.readOnly",
-              "core": "continuum.profile.read-only/v1",
+              "core": "{core_profile}",
               "allowedWriteClasses": ["{allowed_write_class}"]
             }}
           ],
