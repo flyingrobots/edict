@@ -157,6 +157,7 @@ where
 pub fn compiler_context_from_authority_facts(
     documents: &[AuthorityFactsDocument],
 ) -> Result<CompilerContext, Vec<AuthorityFactsLoadFailure>> {
+    let mut source_digests = BTreeMap::<(AuthorityFactSourceKind, String), String>::new();
     let mut profiles = BTreeMap::<String, (String, BTreeSet<WriteClass>)>::new();
     let mut effects = BTreeMap::<String, WriteClass>::new();
     let mut budgets = BTreeMap::<String, CoreBudget>::new();
@@ -168,6 +169,7 @@ pub fn compiler_context_from_authority_facts(
             source_kind_name(document.source.kind),
             document.source.coordinate
         );
+        insert_source_digest(document, &path, &mut source_digests, &mut failures);
         for profile in &document.operation_profiles {
             insert_profile_fact(&mut profiles, profile, &path, &mut failures);
         }
@@ -210,6 +212,27 @@ pub fn compiler_context_from_authority_facts(
         context = context.with_budget(source, budget);
     }
     Ok(context)
+}
+
+fn insert_source_digest(
+    document: &AuthorityFactsDocument,
+    path: &str,
+    source_digests: &mut BTreeMap<(AuthorityFactSourceKind, String), String>,
+    failures: &mut Vec<AuthorityFactsLoadFailure>,
+) {
+    let key = (document.source.kind, document.source.coordinate.clone());
+    if let Some(existing_digest) = source_digests.get(&key) {
+        if existing_digest != &document.source.digest {
+            failures.push(failure(
+                AuthorityFactsLoadFailureKind::ConflictingFact,
+                path,
+                "source.digest",
+                &document.source.coordinate,
+            ));
+        }
+    } else {
+        source_digests.insert(key, document.source.digest.clone());
+    }
 }
 
 fn validate_raw_document(

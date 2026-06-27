@@ -134,6 +134,35 @@ fn conflicting_file_backed_authority_facts_reject_before_context() {
     );
 }
 
+#[test]
+fn mixed_authority_source_digests_reject_before_context() {
+    let dir = temp_case_dir("mixed-source-digests");
+    let first = write_json(
+        &dir,
+        "target-profile-a.json",
+        target_profile_facts_with_digest(
+            "read",
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        ),
+    );
+    let second = write_json(
+        &dir,
+        "target-profile-b.json",
+        target_profile_facts_with_digest(
+            "read",
+            "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        ),
+    );
+    let failures =
+        load_compiler_context_from_authority_fact_files([first.as_path(), second.as_path()])
+            .expect_err("mixed source digests reject");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::ConflictingFact]
+    );
+}
+
 fn temp_case_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "edict-authority-facts-{name}-{}",
@@ -153,13 +182,20 @@ fn write_json(dir: &Path, name: &str, contents: impl AsRef<str>) -> PathBuf {
 }
 
 fn target_profile_facts(allowed_write_class: &str) -> String {
+    target_profile_facts_with_digest(
+        allowed_write_class,
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    )
+}
+
+fn target_profile_facts_with_digest(allowed_write_class: &str, digest: &str) -> String {
     format!(
         r#"{{
           "apiVersion": "edict.authority-facts/v1",
           "source": {{
             "kind": "targetProfile",
             "coordinate": "echo.dpo@1",
-            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+            "digest": "{digest}"
           }},
           "operationProfiles": [
             {{
