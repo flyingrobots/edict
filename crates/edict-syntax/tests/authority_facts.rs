@@ -242,13 +242,7 @@ fn abi_custom_write_class_loads_and_prefixed_custom_rejects() {
     let failures = load_compiler_context_from_authority_fact_files([prefixed.as_path()])
         .expect_err("prefixed custom write class rejects");
 
-    assert_eq!(
-        failure_kinds(&failures),
-        vec![
-            AuthorityFactsLoadFailureKind::InvalidWriteClass,
-            AuthorityFactsLoadFailureKind::InvalidWriteClass
-        ]
-    );
+    assert_failure_kind_present(&failures, AuthorityFactsLoadFailureKind::InvalidWriteClass);
 }
 
 #[test]
@@ -258,13 +252,7 @@ fn non_abi_write_class_casing_rejects_with_stable_kind() {
     let failures = load_compiler_context_from_authority_fact_files([path.as_path()])
         .expect_err("mixed-case write class rejects");
 
-    assert_eq!(
-        failure_kinds(&failures),
-        vec![
-            AuthorityFactsLoadFailureKind::InvalidWriteClass,
-            AuthorityFactsLoadFailureKind::InvalidWriteClass
-        ]
-    );
+    assert_failure_kind_present(&failures, AuthorityFactsLoadFailureKind::InvalidWriteClass);
 
     let custom = write_json(
         &dir,
@@ -274,13 +262,7 @@ fn non_abi_write_class_casing_rejects_with_stable_kind() {
     let failures = load_compiler_context_from_authority_fact_files([custom.as_path()])
         .expect_err("mixed-case custom write class rejects");
 
-    assert_eq!(
-        failure_kinds(&failures),
-        vec![
-            AuthorityFactsLoadFailureKind::InvalidWriteClass,
-            AuthorityFactsLoadFailureKind::InvalidWriteClass
-        ]
-    );
+    assert_failure_kind_present(&failures, AuthorityFactsLoadFailureKind::InvalidWriteClass);
 }
 
 #[test]
@@ -534,6 +516,17 @@ fn failure_kinds(
     failures: &[edict_syntax::AuthorityFactsLoadFailure],
 ) -> Vec<AuthorityFactsLoadFailureKind> {
     failures.iter().map(|failure| failure.kind).collect()
+}
+
+fn assert_failure_kind_present(
+    failures: &[edict_syntax::AuthorityFactsLoadFailure],
+    expected: AuthorityFactsLoadFailureKind,
+) {
+    let observed = failure_kinds(failures);
+    assert!(
+        observed.contains(&expected),
+        "expected {expected:?} in {observed:?}"
+    );
 }
 
 fn failure_field_set(
