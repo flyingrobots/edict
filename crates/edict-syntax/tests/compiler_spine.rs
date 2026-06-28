@@ -495,6 +495,34 @@ fn chained_effect_calls_reject_before_core_lowering() {
 }
 
 #[test]
+fn typed_effect_calls_reject_before_core_lowering() {
+    let source = EFFECTFUL_REPLACE.replace(
+        "target.replace(input.id)",
+        "target.replace<Receipt>(input.id)",
+    );
+    let dir = temp_case_dir("typed-effect-call");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module = parse_module(&source).expect("typed effect-call source parses");
+
+    let errors = compile_to_core(&module, &context).expect_err("typed effect call rejects");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|err| err.kind == CompilerErrorKind::UnsupportedSourceShape));
+}
+
+#[test]
 fn initial_core_lowering_makes_no_canonical_or_target_claim() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");

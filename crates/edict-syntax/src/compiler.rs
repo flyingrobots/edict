@@ -922,10 +922,22 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<(String, CoreExpr)> {
         let effect = effect_coordinate(call)?;
-        let Expr::Call { args, .. } = call else {
+        let Expr::Call {
+            args, type_args, ..
+        } = call
+        else {
             self.unsupported_stmt(span, "effect call");
             return None;
         };
+        if !type_args.is_empty() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "effectful `let ... else` does not support effect type arguments",
+                span,
+            ));
+            return None;
+        }
         let [arg] = args.as_slice() else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,

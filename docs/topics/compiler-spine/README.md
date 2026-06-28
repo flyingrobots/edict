@@ -51,9 +51,11 @@ loading explicit authority-facts files through
   allowed write classes before Core lowering. A write-class effect under a
   read-only profile rejects with `ProfileEffectMismatch`. [CSPINE-REQ-009]
 - The first lowerable effectful body shape is an annotated
-  `let name: Type = effect(arg) else { failure(binder) => Obstruction };`.
-  It lowers to a semantic Core effect node with the effect coordinate, input
-  expression, result binding, and deterministic obstruction map. [CSPINE-REQ-011]
+  `let name: Type = effect(arg) else { failure(binder) => Obstruction };`
+  where `effect` is an untyped plain dotted callee. It lowers to a semantic
+  Core effect node with the effect coordinate, input expression, result binding,
+  and deterministic obstruction map. [CSPINE-REQ-011] [CSPINE-REQ-014]
+  [CSPINE-REQ-015]
 - Effectful branch-yield and other unsupported effectful forms still reject
   with stable compiler stage and kind identities before Core lowering.
   [CSPINE-REQ-012]
