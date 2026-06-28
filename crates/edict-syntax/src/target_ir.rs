@@ -33,7 +33,7 @@ impl TargetIrLoweringFacts {
     /// not select native support. The first Echo Target IR bridge does not
     /// derive target facts from unsupported or adapter-backed reports.
     pub fn from_lowerability_report(
-        target_profile_digest: Option<String>,
+        target_profile: ResourceRef,
         target_ir_domain: impl Into<String>,
         report: &LowerabilityReport,
     ) -> Result<Self, TargetLoweringFailure> {
@@ -45,12 +45,27 @@ impl TargetIrLoweringFacts {
                 detail: format!("{:?}", report.status),
             });
         }
+        if target_profile.coordinate != report.target_profile {
+            return Err(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UnsupportedTargetProfile,
+                intent: None,
+                node_index: None,
+                detail: target_profile.coordinate,
+            });
+        }
+        if !target_profile.is_digest_locked() {
+            return Err(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UndigestedTargetProfile,
+                intent: None,
+                node_index: None,
+                detail: target_profile
+                    .digest
+                    .unwrap_or_else(|| "<missing>".to_owned()),
+            });
+        }
 
         Ok(Self {
-            target_profile: ResourceRef {
-                coordinate: report.target_profile.clone(),
-                digest: target_profile_digest,
-            },
+            target_profile,
             target_ir_domain: target_ir_domain.into(),
             operation_profiles: vec![report.operation_profile.clone()],
             obstruction_coordinates: report.obstruction_coordinates.clone(),

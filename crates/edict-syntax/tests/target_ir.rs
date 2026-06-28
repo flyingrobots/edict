@@ -115,6 +115,13 @@ fn echo_profile_digest() -> String {
     ECHO_PROFILE_DIGEST.to_owned()
 }
 
+fn echo_profile_ref() -> ResourceRef {
+    ResourceRef {
+        coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
+        digest: Some(echo_profile_digest()),
+    }
+}
+
 fn echo_profile_facts() -> TargetProfileFacts {
     TargetProfileFacts {
         coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
@@ -201,7 +208,7 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
     assert!(lowerability.failures.is_empty());
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        Some(echo_profile_digest()),
+        echo_profile_ref(),
         ECHO_SPAN_IR_DOMAIN,
         &lowerability,
     )
@@ -231,7 +238,7 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
     assert!(lowerability.failures.is_empty());
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        Some(echo_profile_digest()),
+        echo_profile_ref(),
         ECHO_SPAN_IR_DOMAIN,
         &lowerability,
     )
@@ -257,7 +264,7 @@ fn lowerability_bridge_deduplicates_identical_native_effect_selection() {
     assert_eq!(lowerability.effect_results.len(), 2);
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        Some(echo_profile_digest()),
+        echo_profile_ref(),
         ECHO_SPAN_IR_DOMAIN,
         &lowerability,
     )
@@ -305,7 +312,7 @@ fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
     assert_eq!(lowerability.status, LowerabilityStatus::Unsupported);
 
     let error = TargetIrLoweringFacts::from_lowerability_report(
-        Some(echo_profile_digest()),
+        echo_profile_ref(),
         ECHO_SPAN_IR_DOMAIN,
         &lowerability,
     )
@@ -324,20 +331,14 @@ fn lowerability_bridge_uses_report_target_profile_identity() {
     let lowerability = check_lowerability(&echo_requirements(), &profile_facts);
     assert_eq!(lowerability.status, LowerabilityStatus::Native);
 
-    let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        Some(echo_profile_digest()),
+    let error = TargetIrLoweringFacts::from_lowerability_report(
+        echo_profile_ref(),
         ECHO_SPAN_IR_DOMAIN,
         &lowerability,
     )
-    .expect("native lowerability builds target facts");
-    let report = lower_to_target_ir(&effectful_core(), &target_facts);
+    .expect_err("target profile reference must match lowerability report");
 
-    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
-    assert!(report.artifact.is_none());
-    assert_eq!(
-        failure_kinds(&report),
-        vec![TargetLoweringFailureKind::UnsupportedTargetProfile]
-    );
+    assert_eq!(error.kind, TargetLoweringFailureKind::UnsupportedTargetProfile);
 }
 
 #[test]
@@ -346,7 +347,7 @@ fn lowerability_bridge_uses_report_operation_profile_identity() {
     assert_eq!(lowerability.status, LowerabilityStatus::Native);
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        Some(echo_profile_digest()),
+        echo_profile_ref(),
         ECHO_SPAN_IR_DOMAIN,
         &lowerability,
     )
@@ -365,6 +366,24 @@ fn lowerability_bridge_uses_report_operation_profile_identity() {
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::MissingOperationProfile]
     );
+}
+
+#[test]
+fn lowerability_bridge_requires_matching_target_profile_reference() {
+    let lowerability = check_lowerability(&echo_requirements(), &echo_profile_facts());
+    assert_eq!(lowerability.status, LowerabilityStatus::Native);
+
+    let error = TargetIrLoweringFacts::from_lowerability_report(
+        ResourceRef {
+            coordinate: "gitwarp.ref_crdt@1".to_owned(),
+            digest: Some(echo_profile_digest()),
+        },
+        ECHO_SPAN_IR_DOMAIN,
+        &lowerability,
+    )
+    .expect_err("target profile reference must match lowerability report");
+
+    assert_eq!(error.kind, TargetLoweringFailureKind::UnsupportedTargetProfile);
 }
 
 #[test]

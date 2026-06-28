@@ -29,11 +29,13 @@ registries.
 effect-to-intrinsic lowering table from accepted native lowerability reports.
 The derived facts use the target-profile coordinate and operation profile from
 the lowerability report, along with the obstruction coordinates proven by that
-report, with the caller supplying only the digest for the selected profile
-reference. Repeated identical native effect selections are coalesced. Rejected
-lowerability reports cannot build target-lowering facts. The v0.9 bridge is
-native-only: it consumes selected native effect support and does not perform
-adapter-chain search or general target plugin dispatch.
+report. The caller supplies a prevalidated target-profile reference, and the
+bridge rejects references whose coordinate does not match the lowerability
+report or whose digest is missing or malformed. Repeated identical native effect
+selections are coalesced. Rejected lowerability reports cannot build
+target-lowering facts. The v0.9 bridge is native-only: it consumes selected
+native effect support and does not perform adapter-chain search or general
+target plugin dispatch.
 
 Target-lowering facts also carry the operation profiles selected by
 lowerability. A Core intent whose `required_operation_profile` is absent from
