@@ -165,6 +165,46 @@ fn check_accepts_path_directory_path_list_glob_and_source_records() {
     assert_status(&stdout, "ok", 0);
 }
 
+#[test]
+fn cli_schema_constants_match_checked_in_artifacts() {
+    // Every schema identifier the binary emits or accepts must equal the
+    // `properties.schema.const` of its checked-in JSON Schema artifact, so the
+    // contract files cannot silently drift from the runtime constants.
+    let schemas = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/schemas");
+    let cases = [
+        (
+            edict_cli::COMPILER_SETTINGS_SCHEMA,
+            "edict.compiler-settings.v1.schema.json",
+        ),
+        (
+            edict_cli::COMPILER_INPUT_SCHEMA,
+            "edict.compiler-input.v1.schema.json",
+        ),
+        (
+            edict_cli::CHECK_RESULT_SCHEMA,
+            "edict.cli-check-result.v1.schema.json",
+        ),
+        (
+            edict_cli::DIAGNOSTIC_SCHEMA,
+            "edict.cli-diagnostic.v1.schema.json",
+        ),
+        (edict_cli::EVENT_SCHEMA, "edict.cli-event.v1.schema.json"),
+    ];
+    for (constant, file) in cases {
+        let text = fs::read_to_string(schemas.join(file))
+            .unwrap_or_else(|err| panic!("read schema artifact `{file}`: {err}"));
+        let schema: Value = serde_json::from_str(&text)
+            .unwrap_or_else(|err| panic!("parse schema artifact `{file}`: {err}"));
+        let declared = schema["properties"]["schema"]["const"]
+            .as_str()
+            .unwrap_or_else(|| panic!("`{file}` missing `properties.schema.const`"));
+        assert_eq!(
+            declared, constant,
+            "`{file}` const must match the runtime schema constant"
+        );
+    }
+}
+
 fn compiler_settings() -> Value {
     json!({
         "schema": "edict.compiler.settings/v1",

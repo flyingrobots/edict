@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/cli-event/v1",
+  "title": "Edict CLI Event v1",
+  "description": "JSONL terminal status record emitted as the final line of every `check` run.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "command", "status", "checked", "errors", "exitCode"],
+  "properties": {
+    "schema": {
+      "const": "edict.cli.event/v1"
+    },
+    "type": {
+      "const": "status"
+    },
+    "command": {
+      "const": "check"
+    },
+    "status": {
+      "enum": ["ok", "error"]
+    },
+    "checked": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of source inputs that produced a result record."
+    },
+    "errors": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Count of diagnostic records emitted for this run."
+    },
+    "exitCode": {
+      "enum": [0, 1, 2],
+      "description": "Process exit code: 0 ok, 1 check diagnostics, 2 CLI input error."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "ok" } }
+      },
+      "then": {
+        "properties": { "exitCode": { "const": 0 } }
+      },
+      "else": {
+        "properties": { "exitCode": { "enum": [1, 2] } }
+      }
+    }
+  ]
+}

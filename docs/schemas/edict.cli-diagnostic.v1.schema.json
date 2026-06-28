@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/cli-diagnostic/v1",
+  "title": "Edict CLI Diagnostic v1",
+  "description": "JSONL diagnostic record emitted to stderr for parse, semantic, and CLI input errors.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "command", "severity", "stage", "kind", "input"],
+  "properties": {
+    "schema": {
+      "const": "edict.cli.diagnostic/v1"
+    },
+    "type": {
+      "const": "diagnostic"
+    },
+    "command": {
+      "const": "check"
+    },
+    "severity": {
+      "enum": ["error"]
+    },
+    "stage": {
+      "enum": ["parse", "semantic", "cli"]
+    },
+    "kind": {
+      "type": "string",
+      "description": "Stable failure-kind discriminator for the originating stage."
+    },
+    "input": {
+      "$ref": "#/$defs/inputDescriptor"
+    },
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "description": "Source byte span for parse and semantic diagnostics."
+    },
+    "line": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based JSONL record line for CLI input diagnostics."
+    },
+    "message": {
+      "type": "string",
+      "description": "Human-readable detail carried inside a JSON string field for CLI diagnostics."
+    }
+  },
+  "$defs": {
+    "inputDescriptor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

@@ -24,15 +24,29 @@ Each input is represented by a JSON object whose `schema` is
 the `source` field of a JSONL input record. [CLI-REQ-002]
 
 Compiler settings are represented by a JSON object whose `schema` is
-`edict.compiler.settings/v1`. The schema for those settings is checked in as a
-stable contract artifact at
-[`docs/schemas/edict.compiler-settings.v1.schema.json`](../../schemas/edict.compiler-settings.v1.schema.json).
-[CLI-REQ-003]
+`edict.compiler.settings/v1`. [CLI-REQ-003]
 
 Successful compiler results are emitted to stdout. Compiler diagnostics, CLI
 input errors, and failure status records are emitted to stderr. Both streams use
 one JSON object per line with no banners, spinners, blank lines, or direct human
 prose outside JSON string fields. [CLI-REQ-001]
+
+## Stream Contract Artifacts
+
+Every record family on the CLI boundary has a checked-in JSON Schema. These
+schemas are the stable contract for callers; the CLI does not embed a schema
+validation engine. The schemas pin `additionalProperties` closed and may be
+stricter than the parser, which ignores fields it does not recognize. Records
+that conform to the schema are always accepted; callers must not rely on the
+parser tolerating extra fields.
+
+| Record `schema` | Direction | Artifact |
+| --- | --- | --- |
+| `edict.compiler.settings/v1` | stdin | [`compiler-settings`](../../schemas/edict.compiler-settings.v1.schema.json) [CLI-REQ-003] |
+| `edict.compiler.input/v1` | stdin | [`compiler-input`](../../schemas/edict.compiler-input.v1.schema.json) [CLI-REQ-004] |
+| `edict.cli.check-result/v1` | stdout | [`cli-check-result`](../../schemas/edict.cli-check-result.v1.schema.json) [CLI-REQ-005] |
+| `edict.cli.diagnostic/v1` | stderr | [`cli-diagnostic`](../../schemas/edict.cli-diagnostic.v1.schema.json) [CLI-REQ-006] |
+| `edict.cli.event/v1` | stdout/stderr | [`cli-event`](../../schemas/edict.cli-event.v1.schema.json) [CLI-REQ-007] |
 
 ## Exit Codes
 

@@ -29,6 +29,10 @@ Out of scope:
 | CLI-REQ-001 | implemented | The `edict` CLI accepts JSONL request records on stdin and emits only JSONL records on stdout and stderr. | crates/edict-cli/tests/jsonl_cli.rs |
 | CLI-REQ-002 | implemented | The `check` operation accepts source, path, directory, path-list, and glob input records without ad hoc text input modes. | crates/edict-cli/tests/jsonl_cli.rs |
 | CLI-REQ-003 | implemented | Compiler settings are declared as `edict.compiler.settings/v1` and have a checked-in JSON Schema contract. | docs/schemas/edict.compiler-settings.v1.schema.json |
+| CLI-REQ-004 | implemented | Compiler input records are declared as `edict.compiler.input/v1` and have a checked-in JSON Schema contract covering every supported input kind. | docs/schemas/edict.compiler-input.v1.schema.json |
+| CLI-REQ-005 | implemented | Success results are declared as `edict.cli.check-result/v1` and have a checked-in JSON Schema contract. | docs/schemas/edict.cli-check-result.v1.schema.json |
+| CLI-REQ-006 | implemented | Diagnostics are declared as `edict.cli.diagnostic/v1` and have a checked-in JSON Schema contract spanning parse, semantic, and CLI stages. | docs/schemas/edict.cli-diagnostic.v1.schema.json |
+| CLI-REQ-007 | implemented | Terminal status events are declared as `edict.cli.event/v1` and have a checked-in JSON Schema contract. | docs/schemas/edict.cli-event.v1.schema.json |
 
 ## Fixtures
 
@@ -36,6 +40,10 @@ Out of scope:
 | --- | --- | --- |
 | crates/edict-cli/tests/jsonl_cli.rs | Runtime-created JSONL requests and source files for CLI behavior. | Tests parse every stdout and stderr line as JSON objects and assert stable fields. |
 | docs/schemas/edict.compiler-settings.v1.schema.json | Stable JSON Schema for compiler settings records. | The schema contract test validates the schema identifier, required fields, and supported operation values. |
+| docs/schemas/edict.compiler-input.v1.schema.json | Stable JSON Schema for compiler input records. | The schema contract test validates the identifier, required fields, supported input kinds, and per-kind variant fields. |
+| docs/schemas/edict.cli-check-result.v1.schema.json | Stable JSON Schema for success result records. | The schema contract test validates the identifier, required fields, and pinned `command`, `type`, and `status` values. |
+| docs/schemas/edict.cli-diagnostic.v1.schema.json | Stable JSON Schema for diagnostic records. | The schema contract test validates the identifier, required fields, supported stages, and optional span, line, and message fields. |
+| docs/schemas/edict.cli-event.v1.schema.json | Stable JSON Schema for terminal status records. | The schema contract test validates the identifier, required fields, terminal status values, and supported exit codes. |
 
 ## Test Cases
 
@@ -46,6 +54,10 @@ Out of scope:
 | CLI-TP-003 | implemented | Error handling | CLI-REQ-001 | Non-JSONL stdin exits 2 and writes a structured CLI diagnostic plus status to stderr. | non_jsonl_input_rejects_with_jsonl_cli_diagnostic | crates/edict-cli/tests/jsonl_cli.rs | Prevents ad hoc text input modes. |
 | CLI-TP-004 | implemented | Golden path | CLI-REQ-002 | Path, directory, path-list, glob, and source input records all feed the `check` operation and produce deterministic JSONL result records. | check_accepts_path_directory_path_list_glob_and_source_records | crates/edict-cli/tests/jsonl_cli.rs | Directory and glob expansion order is sorted. |
 | CLI-TP-005 | implemented | Schema guard | CLI-REQ-003 | The compiler settings JSON Schema declares `edict.compiler.settings/v1`, `compilerSettings`, the `check` operation, and supported deterministic input-expansion fields. | compiler_settings_schema_declares_jsonl_contract | docs/schemas/edict.compiler-settings.v1.schema.json | Contract-artifact test, not prose matching. |
+| CLI-TP-006 | implemented | Schema guard | CLI-REQ-004 | The compiler input JSON Schema declares `edict.compiler.input/v1`, `compilerInput`, every supported input kind, and the per-kind variant fields. | compiler_input_schema_declares_jsonl_contract | docs/schemas/edict.compiler-input.v1.schema.json | Contract-artifact test, not prose matching. |
+| CLI-TP-007 | implemented | Schema guard | CLI-REQ-005 | The check result JSON Schema declares `edict.cli.check-result/v1`, `checkResult`, the `check` command, the `ok` status, and the input descriptor. | check_result_schema_declares_jsonl_contract | docs/schemas/edict.cli-check-result.v1.schema.json | Contract-artifact test, not prose matching. |
+| CLI-TP-008 | implemented | Schema guard | CLI-REQ-006 | The diagnostic JSON Schema declares `edict.cli.diagnostic/v1`, `diagnostic`, the parse, semantic, and cli stages, and optional span, line, and message fields. | diagnostic_schema_declares_jsonl_contract | docs/schemas/edict.cli-diagnostic.v1.schema.json | Contract-artifact test, not prose matching. |
+| CLI-TP-009 | implemented | Schema guard | CLI-REQ-007 | The event JSON Schema declares `edict.cli.event/v1`, `status`, the `ok` and `error` terminal statuses, and exit codes 0, 1, and 2. | event_schema_declares_jsonl_contract | docs/schemas/edict.cli-event.v1.schema.json | Contract-artifact test, not prose matching. |
 
 ## Determinism Obligations
 

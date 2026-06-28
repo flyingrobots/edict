@@ -2057,6 +2057,246 @@ fn run() {}
         );
     }
 
+    fn cli_record_schema(root: &Path, file: &str, id: &str, record_schema: &str) -> Value {
+        let schema = read_json_file(&root.join("docs/schemas").join(file));
+        assert_eq!(
+            json_str(&schema, "$schema"),
+            "https://json-schema.org/draft/2020-12/schema"
+        );
+        assert_eq!(json_str(&schema, "$id"), id);
+        assert_eq!(json_str(&schema, "type"), "object");
+        assert_eq!(
+            schema.get("additionalProperties").and_then(Value::as_bool),
+            Some(false),
+            "{file} must forbid additional properties"
+        );
+        let properties = json_object(&schema, "properties");
+        assert_eq!(
+            property_const(properties, "schema"),
+            Some(record_schema),
+            "{file} `schema` field must pin `{record_schema}`"
+        );
+        schema
+    }
+
+    fn property_const<'a>(
+        properties: &'a serde_json::Map<String, Value>,
+        key: &str,
+    ) -> Option<&'a str> {
+        properties.get(key)?.get("const")?.as_str()
+    }
+
+    fn property_enum_has_int(
+        properties: &serde_json::Map<String, Value>,
+        key: &str,
+        expected: i64,
+    ) -> bool {
+        properties
+            .get(key)
+            .map(|property| json_array(property, "enum"))
+            .is_some_and(|values| values.iter().any(|value| value.as_i64() == Some(expected)))
+    }
+
+    fn one_of_branch<'a>(schema: &'a Value, kind: &str) -> &'a Value {
+        json_array(schema, "oneOf")
+            .iter()
+            .find(|branch| {
+                branch
+                    .pointer("/properties/kind/const")
+                    .and_then(Value::as_str)
+                    == Some(kind)
+            })
+            .unwrap_or_else(|| panic!("schema missing `oneOf` branch for kind `{kind}`"))
+    }
+
+    #[test]
+    fn compiler_input_schema_declares_jsonl_contract() {
+        let root = repo_root().expect("repo root");
+        let schema = cli_record_schema(
+            &root,
+            "edict.compiler-input.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/compiler-input/v1",
+            "edict.compiler.input/v1",
+        );
+        for required in ["schema", "type", "kind"] {
+            assert!(
+                json_string_array_contains(&schema, "required", required),
+                "compiler input schema must require `{required}`"
+            );
+        }
+        let properties = json_object(&schema, "properties");
+        assert_eq!(property_const(properties, "type"), Some("compilerInput"));
+        let kind = properties
+            .get("kind")
+            .unwrap_or_else(|| panic!("compiler input schema missing `kind` property"));
+        for variant in ["source", "path", "pathList", "directory", "glob"] {
+            assert!(
+                json_string_array_contains(kind, "enum", variant),
+                "compiler input schema must declare the `{variant}` input kind"
+            );
+        }
+        for field in ["name", "source", "path", "paths", "pattern"] {
+            assert!(
+                properties.contains_key(field),
+                "compiler input schema missing variant field `{field}`"
+            );
+        }
+
+        // Input kinds must be mutually exclusive: one `oneOf` branch per kind,
+        // each forbidding the other kinds' variant fields so hybrid records
+        // (e.g. a `source` record that also carries `path`) cannot validate.
+        let branches = json_array(&schema, "oneOf");
+        assert_eq!(
+            branches.len(),
+            5,
+            "compiler input schema must declare one `oneOf` branch per input kind"
+        );
+        let exclusivity = [
+            ("source", ["path", "paths", "pattern"].as_slice()),
+            ("path", ["name", "source", "paths", "pattern"].as_slice()),
+            ("pathList", ["name", "source", "path", "pattern"].as_slice()),
+            (
+                "directory",
+                ["name", "source", "paths", "pattern"].as_slice(),
+            ),
+            ("glob", ["name", "source", "path", "paths"].as_slice()),
+        ];
+        for (kind, forbidden) in exclusivity {
+            let branch = one_of_branch(&schema, kind);
+            for field in forbidden {
+                assert_eq!(
+                    branch.pointer(&format!("/properties/{field}")),
+                    Some(&Value::Bool(false)),
+                    "`{kind}` input branch must forbid `{field}` for mutual exclusivity"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn check_result_schema_declares_jsonl_contract() {
+        let root = repo_root().expect("repo root");
+        let schema = cli_record_schema(
+            &root,
+            "edict.cli-check-result.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/cli-check-result/v1",
+            "edict.cli.check-result/v1",
+        );
+        for required in ["schema", "type", "command", "input", "status"] {
+            assert!(
+                json_string_array_contains(&schema, "required", required),
+                "check result schema must require `{required}`"
+            );
+        }
+        let properties = json_object(&schema, "properties");
+        assert_eq!(property_const(properties, "type"), Some("checkResult"));
+        assert_eq!(property_const(properties, "command"), Some("check"));
+        assert_eq!(property_const(properties, "status"), Some("ok"));
+        assert!(
+            properties.contains_key("input"),
+            "check result schema missing `input` descriptor field"
+        );
+    }
+
+    #[test]
+    fn diagnostic_schema_declares_jsonl_contract() {
+        let root = repo_root().expect("repo root");
+        let schema = cli_record_schema(
+            &root,
+            "edict.cli-diagnostic.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/cli-diagnostic/v1",
+            "edict.cli.diagnostic/v1",
+        );
+        for required in [
+            "schema", "type", "command", "severity", "stage", "kind", "input",
+        ] {
+            assert!(
+                json_string_array_contains(&schema, "required", required),
+                "diagnostic schema must require `{required}`"
+            );
+        }
+        let properties = json_object(&schema, "properties");
+        assert_eq!(property_const(properties, "type"), Some("diagnostic"));
+        assert_eq!(property_const(properties, "command"), Some("check"));
+        let stage = properties
+            .get("stage")
+            .unwrap_or_else(|| panic!("diagnostic schema missing `stage` property"));
+        for value in ["parse", "semantic", "cli"] {
+            assert!(
+                json_string_array_contains(stage, "enum", value),
+                "diagnostic schema must declare the `{value}` stage"
+            );
+        }
+        for optional in ["span", "line", "message"] {
+            assert!(
+                properties.contains_key(optional),
+                "diagnostic schema missing optional field `{optional}`"
+            );
+        }
+    }
+
+    #[test]
+    fn event_schema_declares_jsonl_contract() {
+        let root = repo_root().expect("repo root");
+        let schema = cli_record_schema(
+            &root,
+            "edict.cli-event.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/cli-event/v1",
+            "edict.cli.event/v1",
+        );
+        for required in [
+            "schema", "type", "command", "status", "checked", "errors", "exitCode",
+        ] {
+            assert!(
+                json_string_array_contains(&schema, "required", required),
+                "event schema must require `{required}`"
+            );
+        }
+        let properties = json_object(&schema, "properties");
+        assert_eq!(property_const(properties, "type"), Some("status"));
+        assert_eq!(property_const(properties, "command"), Some("check"));
+        let status = properties
+            .get("status")
+            .unwrap_or_else(|| panic!("event schema missing `status` property"));
+        for value in ["ok", "error"] {
+            assert!(
+                json_string_array_contains(status, "enum", value),
+                "event schema must declare the `{value}` terminal status"
+            );
+        }
+        for code in [0, 1, 2] {
+            assert!(
+                property_enum_has_int(properties, "exitCode", code),
+                "event schema must declare exit code `{code}`"
+            );
+        }
+
+        // `status` and `exitCode` must be coupled so the schema cannot accept
+        // contradictory terminal records (e.g. `status: ok` with `exitCode: 1`).
+        let coupling = json_array(&schema, "allOf");
+        let rule = coupling
+            .first()
+            .unwrap_or_else(|| panic!("event schema must couple `status` to `exitCode`"));
+        assert_eq!(
+            rule.pointer("/then/properties/exitCode/const")
+                .and_then(Value::as_i64),
+            Some(0),
+            "event schema must require exit code 0 when status is `ok`"
+        );
+        let error_codes = rule
+            .pointer("/else/properties/exitCode/enum")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| {
+                panic!("event schema must constrain exit code when status is `error`")
+            });
+        for code in [1, 2] {
+            assert!(
+                error_codes.iter().any(|value| value.as_i64() == Some(code)),
+                "event schema must allow exit code `{code}` when status is `error`"
+            );
+        }
+    }
+
     #[test]
     fn review_bot_fallback_policy_is_structured() {
         let root = repo_root().expect("repo root");

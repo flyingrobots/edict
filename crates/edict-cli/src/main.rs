@@ -2,14 +2,13 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+use edict_cli::{
+    CHECK_RESULT_SCHEMA, COMPILER_INPUT_SCHEMA as INPUT_SCHEMA, DIAGNOSTIC_SCHEMA, EVENT_SCHEMA,
+};
 use edict_syntax::{parse_module, validate_surface, ParseError, SemanticError, Span};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-const INPUT_SCHEMA: &str = "edict.compiler.input/v1";
-const CHECK_RESULT_SCHEMA: &str = "edict.cli.check-result/v1";
-const EVENT_SCHEMA: &str = "edict.cli.event/v1";
-const DIAGNOSTIC_SCHEMA: &str = "edict.cli.diagnostic/v1";
 const COMMAND_CHECK: &str = "check";
 const EXIT_OK: i32 = 0;
 const EXIT_CHECK_FAILED: i32 = 1;
