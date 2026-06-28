@@ -32,6 +32,15 @@ fn effectful_core() -> edict_syntax::CoreModule {
     compile_to_core(&module, &effectful_context()).expect("effectful source compiles to Core")
 }
 
+fn effectful_artifact(source: &str) -> edict_syntax::TargetIrArtifact {
+    let module = edict_syntax::parse_module(source).expect("effectful source parses");
+    let core =
+        compile_to_core(&module, &effectful_context()).expect("effectful source compiles to Core");
+    lower_to_target_ir(&core, &echo_facts())
+        .artifact
+        .expect("supported source lowers to Target IR")
+}
+
 fn pure_core() -> edict_syntax::CoreModule {
     let module = edict_syntax::parse_module(PURE_LOCAL_RECORD).expect("pure source parses");
     compile_to_core(&module, &pure_context()).expect("pure source compiles to Core")
@@ -221,6 +230,16 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
         .expect("unselected native support does not make target lowering ambiguous");
     let step = &artifact.intents.get("t").expect("intent t").steps[0];
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
+}
+
+#[test]
+fn obstruction_arm_values_are_preserved_in_echo_span_ir() {
+    let base = effectful_artifact(EFFECTFUL_REPLACE);
+    let changed = effectful_artifact(
+        &EFFECTFUL_REPLACE.replace("domain.WriteRejected", "domain.WriteDifferentlyRejected"),
+    );
+
+    assert_ne!(base, changed);
 }
 
 #[test]

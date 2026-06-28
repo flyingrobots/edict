@@ -37,7 +37,7 @@ deterministic Target IR step that records:
 - the source Core effect coordinate;
 - the selected Echo target intrinsic;
 - the structured Core input expression;
-- sorted obstruction failure keys.
+- sorted obstruction failure keys and their structured obstruction arm values.
 
 Selecting a non-Echo target profile rejects with
 `TargetLoweringFailureKind::UnsupportedTargetProfile`. Supplying Core nodes

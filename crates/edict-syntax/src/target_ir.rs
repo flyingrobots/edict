@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::core_ir::{CoreExpr, CoreModule, CoreNode, ResourceRef};
+use crate::core_ir::{CoreExpr, CoreModule, CoreNode, CoreObstructionArm, ResourceRef};
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
@@ -104,6 +104,7 @@ pub struct TargetIrStep {
     pub target_intrinsic: String,
     pub input: CoreExpr,
     pub obstruction_failures: Vec<String>,
+    pub obstruction_arms: BTreeMap<String, CoreObstructionArm>,
 }
 
 #[must_use]
@@ -152,6 +153,7 @@ pub fn lower_to_target_ir(
                             target_intrinsic: lowering.target_intrinsic.clone(),
                             input: input.clone(),
                             obstruction_failures: obstruction_map.keys().cloned().collect(),
+                            obstruction_arms: obstruction_map.clone(),
                         }),
                         [] => failures.push(TargetLoweringFailure {
                             kind: TargetLoweringFailureKind::MissingEffectLowering,
