@@ -24,7 +24,13 @@ pub struct TargetIrLoweringFacts {
 }
 
 impl TargetIrLoweringFacts {
-    #[must_use]
+    /// Build Target IR lowering facts from an accepted native lowerability report.
+    ///
+    /// # Errors
+    ///
+    /// Returns `UnsupportedLowerabilityReport` when the lowerability report did
+    /// not select native support. The first Echo Target IR bridge does not
+    /// derive target facts from unsupported or adapter-backed reports.
     pub fn from_lowerability_report(
         target_profile_digest: Option<String>,
         target_ir_domain: impl Into<String>,

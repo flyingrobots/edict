@@ -98,7 +98,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
     TargetIrLoweringFacts {
         target_profile: ResourceRef {
             coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
-            digest: echo_profile_digest(),
+            digest: Some(echo_profile_digest()),
         },
         target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
         operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
@@ -109,8 +109,8 @@ fn echo_facts() -> TargetIrLoweringFacts {
     }
 }
 
-fn echo_profile_digest() -> Option<String> {
-    Some(ECHO_PROFILE_DIGEST.to_owned())
+fn echo_profile_digest() -> String {
+    ECHO_PROFILE_DIGEST.to_owned()
 }
 
 fn echo_profile_facts() -> TargetProfileFacts {
@@ -199,7 +199,7 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
     assert!(lowerability.failures.is_empty());
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        echo_profile_digest(),
+        Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
@@ -230,7 +230,7 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
     assert!(lowerability.failures.is_empty());
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        echo_profile_digest(),
+        Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
@@ -257,7 +257,7 @@ fn lowerability_bridge_deduplicates_identical_native_effect_selection() {
     assert_eq!(lowerability.effect_results.len(), 2);
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        echo_profile_digest(),
+        Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
@@ -306,7 +306,7 @@ fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
     assert_eq!(lowerability.status, LowerabilityStatus::Unsupported);
 
     let error = TargetIrLoweringFacts::from_lowerability_report(
-        echo_profile_digest(),
+        Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
@@ -327,7 +327,7 @@ fn lowerability_bridge_uses_report_target_profile_identity() {
     assert_eq!(lowerability.status, LowerabilityStatus::Native);
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        echo_profile_digest(),
+        Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
