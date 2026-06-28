@@ -46,20 +46,7 @@ impl TargetIrLoweringFacts {
             },
             target_ir_domain: target_ir_domain.into(),
             operation_profiles: vec![operation_profile.into()],
-            effect_lowerings: report
-                .effect_results
-                .iter()
-                .filter_map(|effect| {
-                    let LowerabilityEffectStatus::Native { target_intrinsic } = &effect.status
-                    else {
-                        return None;
-                    };
-                    Some(TargetEffectLowering {
-                        effect: effect.semantic_effect.clone(),
-                        target_intrinsic: target_intrinsic.clone(),
-                    })
-                })
-                .collect(),
+            effect_lowerings: selected_native_effect_lowerings(report),
         })
     }
 }
@@ -68,6 +55,23 @@ impl TargetIrLoweringFacts {
 pub struct TargetEffectLowering {
     pub effect: String,
     pub target_intrinsic: String,
+}
+
+fn selected_native_effect_lowerings(report: &LowerabilityReport) -> Vec<TargetEffectLowering> {
+    let mut seen = BTreeSet::new();
+    let mut lowerings = Vec::new();
+    for effect in &report.effect_results {
+        let LowerabilityEffectStatus::Native { target_intrinsic } = &effect.status else {
+            continue;
+        };
+        if seen.insert((effect.semantic_effect.as_str(), target_intrinsic.as_str())) {
+            lowerings.push(TargetEffectLowering {
+                effect: effect.semantic_effect.clone(),
+                target_intrinsic: target_intrinsic.clone(),
+            });
+        }
+    }
+    lowerings
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -247,6 +247,34 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
 }
 
 #[test]
+fn lowerability_bridge_deduplicates_identical_native_effect_selection() {
+    let mut requirements = echo_requirements();
+    requirements
+        .semantic_effects
+        .push(requirements.semantic_effects[0].clone());
+    let lowerability = check_lowerability(&requirements, &echo_profile_facts());
+    assert_eq!(lowerability.status, LowerabilityStatus::Native);
+    assert_eq!(lowerability.effect_results.len(), 2);
+
+    let target_facts = TargetIrLoweringFacts::from_lowerability_report(
+        echo_profile_digest(),
+        ECHO_SPAN_IR_DOMAIN,
+        "continuum.profile.write/v1",
+        &lowerability,
+    )
+    .expect("native lowerability builds target facts");
+    let report = lower_to_target_ir(&effectful_core(), &target_facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    let artifact = report
+        .artifact
+        .expect("duplicate selected effect still lowers once");
+    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
+}
+
+#[test]
 fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
     let mut profile_facts = echo_profile_facts();
     profile_facts.operation_profiles.clear();
