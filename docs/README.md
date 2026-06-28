@@ -20,7 +20,9 @@ The current specification set is:
   types, documentation coverage, examples, and docs-impact rules.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
   and the GitHub issue/milestone map.
-- [v0.7 Release Notes](./releases/v0.7.0-alpha.1.md): publish-ready notes for
+- [v0.8 Release Notes](./releases/v0.8.0-alpha.1.md): publish-ready notes for
+  the minimal effectful compiler-spine alpha.
+- [v0.7 Release Notes](./releases/v0.7.0-alpha.1.md): published notes for
   the file-backed authority-facts alpha.
 - [v0.6 Release Notes](./releases/v0.6.0-alpha.1.md): published notes for the
   developer-tooling alpha.

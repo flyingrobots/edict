@@ -51,6 +51,7 @@ Out of scope:
 | RELEASE-REQ-017 | implemented | Structured release policy captures the `v0.6.0-alpha.1` developer-tooling scope, supported editor integration boundary, topic-shelf audit, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
 | RELEASE-REQ-018 | implemented | Release preparation must record a release thesis, previous-tag diff reconciliation, zero-open milestone evidence before tag creation, no-crates publication evidence, and a release report with plan-versus-actual, fallout, and next-thesis sections. | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md |
 | RELEASE-REQ-019 | implemented | Structured release policy captures the `v0.7.0-alpha.1` file-backed authority-facts scope, governance-design boundary, policy hardening, review fallback, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
+| RELEASE-REQ-020 | implemented | Structured release policy captures the `v0.8.0-alpha.1` minimal effectful compiler-spine scope, Core effect-node boundary, unsupported-form rejection boundary, pure-golden stability boundary, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
 
 ## Fixtures
 
@@ -63,6 +64,7 @@ Out of scope:
 | docs/releases/v0.5.0-alpha.1.md | Published release notes for the Gate C admission-boundary alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.6.0-alpha.1.md | Published release notes for the developer-tooling alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.7.0-alpha.1.md | Published release notes for the file-backed authority-facts alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
+| docs/releases/v0.8.0-alpha.1.md | Publish-ready release notes for the minimal effectful compiler-spine alpha. | The release workflow will look up this file by full tag name after the release-prep PR merges. |
 | .github/workflows/auto-release-tag.yml | Successful main-CI release-prep merges create immutable release tags and dispatch publication. | The workflow derives tags only from merged `release/*-prep` branches and refuses tag mutation. |
 | CHANGELOG.md | Release history for published and release-prep alpha releases. | Scheduled alpha release sections use the matching release target date. |
 | docs/topics/release-process/policy.toml | Structured release-tag, runbook, and alpha boundary policy. | Tag mutation is forbidden, runbook phases are named, and release scope/non-goals are structured. |
@@ -86,6 +88,7 @@ Out of scope:
 | RELEASE-TP-012 | implemented | Boundary guard | RELEASE-REQ-017 | Structured policy captures the v0.6 developer-tooling scope, supported VS Code/Cursor integration, topic-shelf audit, and explicit non-goals for compiler CLI, language-server diagnostics, marketplace publication, target lowering, and admission tooling. | release_policy_tracks_v0_6_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the developer-tooling milestone. |
 | RELEASE-TP-013 | implemented | Runbook guard | RELEASE-REQ-018 | Structured policy requires release thesis, previous-tag diff reconciliation, milestone-zero evidence at tag time, no-crates verification, release-report sections, and next-release thesis evidence. | release_runbook_policy_is_structured | docs/topics/release-process/policy.toml | Makes release claim integrity durable before and after publication. |
 | RELEASE-TP-014 | implemented | Boundary guard | RELEASE-REQ-019 | Structured policy captures the v0.7 file-backed authority-facts scope, first compiler fact classes, governance design note, policy hardening, review fallback, and explicit non-goals for trusted authorship, full manifests, broader fact corpora, target IR, admission execution, and crates.io publication. | release_policy_tracks_v0_7_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the authority-facts milestone. |
+| RELEASE-TP-015 | implemented | Boundary guard | RELEASE-REQ-020 | Structured policy captures the v0.8 minimal effectful compiler-spine scope, Core effect-node model, file-backed fact dependency, unsupported-form rejection boundary, pure Core golden stability, and explicit non-goals for target IR, runtime execution, CLI, admission, governance, and crates.io publication. | release_policy_tracks_v0_8_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the effectful compiler-spine milestone. |
 
 ## Determinism Obligations
 

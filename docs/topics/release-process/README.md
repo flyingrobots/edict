@@ -72,6 +72,8 @@ thesis. [RELEASE-REQ-018]
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
+- [`v0.8.0-alpha.1`](../../releases/v0.8.0-alpha.1.md): publish-ready minimal
+  effectful compiler-spine alpha notes.
 - [`v0.7.0-alpha.1`](../../releases/v0.7.0-alpha.1.md): published
   file-backed authority-facts alpha notes.
 - [`v0.6.0-alpha.1`](../../releases/v0.6.0-alpha.1.md): published
@@ -102,6 +104,12 @@ The `v0.7.0-alpha.1` release is published as a GitHub prerelease:
   release-prep edits; coverage 100%; accuracy 100%.
 - No crates.io publication occurred: `edict-syntax` remains `publish = false`,
   and the GitHub prerelease has zero package assets.
+
+The `v0.8.0-alpha.1` release notes are publish-ready for the minimal effectful
+compiler-spine alpha. Publication is pending merge of
+`release/v0.8.0-alpha.1-prep`, successful `main` CI, automatic immutable tag
+creation, and GitHub prerelease publication. The matching milestone is
+`v0.8.0-alpha.1` (#9), and the release issue is #62.
 
 The `v0.6.0-alpha.1` release is published as a GitHub prerelease:
 
