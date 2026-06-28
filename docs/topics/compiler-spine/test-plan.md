@@ -39,6 +39,7 @@ Out of scope:
 | CSPINE-REQ-010 | implemented | The first compiler context fact set can be loaded from explicit authority-facts files instead of caller-built in-memory context. | ROADMAP.md, docs/topics/authority-facts/test-plan.md |
 | CSPINE-REQ-011 | implemented | The compiler spine lowers one annotated effectful `let ... else` shape into typed Core using file-backed profile, budget, and effect write-class facts. | issue #62 |
 | CSPINE-REQ-012 | implemented | Effectful source shapes outside the first supported subset reject with stable compiler stage and kind identities before Core lowering. | issue #62 |
+| CSPINE-REQ-013 | implemented | Duplicate failure keys in effect obstruction maps reject with a stable compiler error instead of silently dropping effects. | issue #62 |
 
 ## Fixtures
 
@@ -61,6 +62,7 @@ Out of scope:
 | CSPINE-TP-009 | implemented | Golden path | CSPINE-REQ-005, CSPINE-REQ-009, CSPINE-REQ-010 | File-backed authority facts produce a compiler context that compiles `bounded-hello` and rejects a read-only profile/write-effect mismatch. | file_backed_authority_facts_compile_bounded_hello, file_backed_authority_facts_reject_write_effect_profile_mismatch | crates/edict-syntax/tests/authority_facts.rs | Proves file-loaded facts enter the same compiler path as in-memory facts. |
 | CSPINE-TP-010 | implemented | Golden path | CSPINE-REQ-003, CSPINE-REQ-004, CSPINE-REQ-010, CSPINE-REQ-011 | A minimal annotated effectful `let ... else` source shape compiles through typed Core with a semantic effect node and deterministic obstruction mapping. | effectful_write_intent_lowers_to_typed_core_from_file_backed_facts | - | Uses explicit authority-facts files for profile, budget, and effect write-class facts. |
 | CSPINE-TP-011 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-012 | An unsupported effectful branch-yield source shape rejects in `CompilerStage::TypeCheck` with `UnsupportedSourceShape` before Core lowering. | unsupported_effectful_branch_yield_rejects_before_core_lowering | - | Keeps v0.8 to one lowerable effectful shape. |
+| CSPINE-TP-012 | implemented | Error handling | CSPINE-REQ-007, CSPINE-REQ-013 | Duplicate failure keys in a supported obstruction map reject in `CompilerStage::TypeCheck` with `DuplicateObstructionFailure`. | duplicate_obstruction_failures_reject_before_core_lowering | - | Prevents silent effect-node omission when map keys collide. |
 
 ## Determinism Obligations
 

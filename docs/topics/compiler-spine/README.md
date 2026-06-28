@@ -57,6 +57,8 @@ loading explicit authority-facts files through
 - Effectful branch-yield and other unsupported effectful forms still reject
   with stable compiler stage and kind identities before Core lowering.
   [CSPINE-REQ-012]
+- Duplicate failure keys in an obstruction map reject with
+  `DuplicateObstructionFailure` before Core lowering. [CSPINE-REQ-013]
 - File-backed authority facts can supply the same profile, budget, profile
   write-class, and effect write-class facts consumed by the compiler spine.
   [CSPINE-REQ-010]

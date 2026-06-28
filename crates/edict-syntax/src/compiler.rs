@@ -39,6 +39,7 @@ pub enum CompilerErrorKind {
     TypeMismatch,
     ExpectedPredicate,
     ProfileEffectMismatch,
+    DuplicateObstructionFailure,
 }
 
 /// A compiler-spine failure with stable stage/kind identity.
@@ -957,6 +958,18 @@ impl<'a> TypeChecker<'a> {
         };
         let mut out = BTreeMap::new();
         for arm in arms {
+            if out.contains_key(&arm.failure) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::DuplicateObstructionFailure,
+                    format!(
+                        "obstruction map repeats failure key `{}` in effect `{effect}`",
+                        arm.failure
+                    ),
+                    arm.span,
+                ));
+                continue;
+            }
             let Some((failure, obstruction_arm)) =
                 self.check_obstruction_arm(effect, arm, *obstruction_index)
             else {

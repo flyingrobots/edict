@@ -40,6 +40,21 @@ const EFFECTFUL_BRANCH_YIELD: &str = "package a.b@1;\n\
       };\n\
       return { id };\n\
     }";
+const DUPLICATE_OBSTRUCTION_FAILURE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else {\n\
+          rejected(reason) => domain.WriteRejected,\n\
+          rejected(other) => domain.WriteRejectedAgain,\n\
+        };\n\
+      return { id: input.id };\n\
+    }";
 
 fn hello_context() -> CompilerContext {
     CompilerContext::new()
@@ -419,6 +434,36 @@ fn unsupported_effectful_branch_yield_rejects_before_core_lowering() {
     assert!(!errors
         .iter()
         .any(|err| err.kind == CompilerErrorKind::ProfileEffectMismatch));
+}
+
+#[test]
+fn duplicate_obstruction_failures_reject_before_core_lowering() {
+    let dir = temp_case_dir("duplicate-obstruction-failure");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module =
+        parse_module(DUPLICATE_OBSTRUCTION_FAILURE).expect("duplicate obstruction source parses");
+
+    let errors =
+        compile_to_core(&module, &context).expect_err("duplicate obstruction failure keys reject");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|err| err.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::DuplicateObstructionFailure]
+    );
 }
 
 #[test]

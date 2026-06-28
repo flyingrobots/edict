@@ -14,8 +14,8 @@ versions still track specification maturity rather than a released product.
   `let ... = effect(arg) else { failure(binder) => Obstruction }` source shape
   can lower through file-backed authority facts into typed Core with a semantic
   effect node and deterministic obstruction map. Unsupported effectful
-  branch-yield still fails before Core lowering with a stable compiler error
-  kind.
+  branch-yield and duplicate obstruction failure keys still fail before Core
+  lowering with stable compiler error kinds.
 
 ### Changed
 
