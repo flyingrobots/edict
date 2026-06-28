@@ -1544,18 +1544,20 @@ fn path_key(path: &[String]) -> String {
 
 fn effect_coordinate(call: &Expr) -> Option<String> {
     if let Expr::Call { callee, .. } = call {
-        callee_coordinate(callee)
+        plain_callee_coordinate(callee)
     } else {
         None
     }
 }
 
-fn callee_coordinate(expr: &Expr) -> Option<String> {
+fn plain_callee_coordinate(expr: &Expr) -> Option<String> {
     match expr {
         Expr::Ident { name, .. } => Some(name.clone()),
-        Expr::Field { base, field, .. } => Some(format!("{}.{}", callee_coordinate(base)?, field)),
-        Expr::Call { callee, .. } => callee_coordinate(callee),
-        Expr::Int { .. }
+        Expr::Field { base, field, .. } => {
+            Some(format!("{}.{}", plain_callee_coordinate(base)?, field))
+        }
+        Expr::Call { .. }
+        | Expr::Int { .. }
         | Expr::Str { .. }
         | Expr::Bool { .. }
         | Expr::Digest { .. }
