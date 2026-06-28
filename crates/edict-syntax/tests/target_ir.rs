@@ -9,8 +9,7 @@ use edict_syntax::{
     CoreBudget, CoreExpr, CoreImport, CoreImportKind, GuardKind, LowerabilityStatus,
     LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
     TargetEffectLowering, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
-    TargetProfileFacts, WriteClass,
-    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -338,7 +337,10 @@ fn lowerability_bridge_uses_report_target_profile_identity() {
     )
     .expect_err("target profile reference must match lowerability report");
 
-    assert_eq!(error.kind, TargetLoweringFailureKind::UnsupportedTargetProfile);
+    assert_eq!(
+        error.kind,
+        TargetLoweringFailureKind::UnsupportedTargetProfile
+    );
 }
 
 #[test]
@@ -383,7 +385,10 @@ fn lowerability_bridge_requires_matching_target_profile_reference() {
     )
     .expect_err("target profile reference must match lowerability report");
 
-    assert_eq!(error.kind, TargetLoweringFailureKind::UnsupportedTargetProfile);
+    assert_eq!(
+        error.kind,
+        TargetLoweringFailureKind::UnsupportedTargetProfile
+    );
 }
 
 #[test]
@@ -391,12 +396,7 @@ fn obstruction_arm_values_are_preserved_in_echo_span_ir() {
     let artifact = effectful_artifact(
         &EFFECTFUL_REPLACE.replace("domain.WriteRejected", "domain.WriteDifferentlyRejected"),
     );
-    let arm = &artifact
-        .intents
-        .get("t")
-        .expect("intent t")
-        .steps[0]
-        .obstruction_arms["rejected"];
+    let arm = &artifact.intents.get("t").expect("intent t").steps[0].obstruction_arms["rejected"];
 
     let CoreExpr::Call {
         callee,
