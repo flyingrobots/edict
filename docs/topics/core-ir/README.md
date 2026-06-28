@@ -44,6 +44,9 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 - Core blocks contain explicit locals, ordered nodes, and a result expression.
   Nodes cover local binding, semantic effects, guards, branches, bounded loops,
   match blocks, and proof obligations. [COREIR-REQ-004]
+- The Rust Core IR model and reference canonical encoder currently represent
+  the first semantic effect-node shape: binding, effect coordinate, input
+  expression, and deterministic obstruction map. [COREIR-REQ-015]
 - Local references are alpha-stable: each `local-ref` carries a compiler-owned
   `id`, normalized `alphaName`, and type reference. Source binder spelling is
   not identity. [COREIR-REQ-005]
@@ -70,9 +73,9 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   `cargo xtask core-goldens --write`. [COREIR-REQ-014]
 - Canonical encoder behavior is covered for map-order independence, mutation
   sensitivity, decode/re-encode stability, primitive integer width stability,
-  digest stability, digest mutation sensitivity, and source alpha-renaming
-  invariance. [COREIR-REQ-005] [COREIR-REQ-012] [COREIR-REQ-013]
-  [COREIR-REQ-014]
+  effect-node mutation sensitivity, digest stability, digest mutation
+  sensitivity, and source alpha-renaming invariance. [COREIR-REQ-005]
+  [COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014] [COREIR-REQ-015]
 
 ## Deferred
 

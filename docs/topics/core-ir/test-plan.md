@@ -44,6 +44,7 @@ Out of scope:
 | COREIR-REQ-012 | implemented | Core modules have a reference `edict.canonical-cbor/v1` encoder that emits deterministic bytes from semantic Core values. | issue #21, crates/edict-syntax/src/canonical.rs |
 | COREIR-REQ-013 | implemented | Canonical Core bytes can be decoded to a canonical value and re-encoded without byte changes; non-canonical encodings reject. | issue #21, crates/edict-syntax/src/canonical.rs |
 | COREIR-REQ-014 | implemented | Reviewed Core golden byte fixtures and exact digest fixtures are produced from the executable canonical encoder and checked for stability. | issue #22, docs/SPEC_continuum-contract-bundle-v1.md |
+| COREIR-REQ-015 | implemented | The Rust Core IR model and reference canonical encoder represent the first supported semantic effect-node shape. | issue #62, docs/abi/edict-core.cddl |
 
 ## Fixtures
 
@@ -86,6 +87,7 @@ Out of scope:
 | COREIR-TP-019 | implemented | Canonical encoding | COREIR-REQ-012 | Reordering the same Core input constraints does not change canonical bytes. | canonical_core_bytes_are_independent_of_input_constraint_order | fixtures/lang/bounds/bounded-hello.edict | Tests coordinate-keyed constraint facts are sorted before encoding. |
 | COREIR-TP-020 | implemented | Golden artifact | COREIR-REQ-014 | Core module digests are stable for equivalent canonical Core values and change when Core meaning changes. | core_module_digest_is_stable_for_equivalent_core_ordering, core_module_digest_changes_when_core_meaning_changes | fixtures/lang/bounds/bounded-hello.edict, fixtures/core/canonical/bounded-hello.core.sha256 | Tests digest stability and mutation sensitivity. |
 | COREIR-TP-021 | implemented | Local identity | COREIR-REQ-005, COREIR-REQ-012, COREIR-REQ-014 | Changing a Core local identity changes canonical bytes and the Core module digest. | canonical_core_bytes_change_when_local_identity_changes, core_module_digest_changes_when_local_identity_changes | fixtures/lang/bounds/bounded-hello.edict, fixtures/core/canonical/bounded-hello.core.sha256 | Tests compiler-owned local `id` participates in the canonical preimage. |
+| COREIR-TP-022 | implemented | Canonical encoding | COREIR-REQ-004, COREIR-REQ-012, COREIR-REQ-015 | Changing a semantic effect node coordinate changes canonical Core bytes. | canonical_core_bytes_change_when_effect_coordinate_changes | - | Tests effect-node meaning participates in the canonical preimage without adding a reviewed golden fixture. |
 
 ## Determinism Obligations
 

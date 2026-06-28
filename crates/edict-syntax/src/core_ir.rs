@@ -215,5 +215,21 @@ pub struct CoreBlock {
 /// Core node subset used by the first source-to-Core slice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreNode {
-    Let { binding: LocalRef, value: CoreExpr },
+    Let {
+        binding: LocalRef,
+        value: CoreExpr,
+    },
+    Effect {
+        binding: LocalRef,
+        effect: String,
+        input: CoreExpr,
+        obstruction_map: BTreeMap<String, CoreObstructionArm>,
+    },
+}
+
+/// Core obstruction arm for a semantic effect failure.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreObstructionArm {
+    pub binder: LocalRef,
+    pub value: CoreExpr,
 }

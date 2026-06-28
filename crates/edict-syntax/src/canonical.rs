@@ -13,8 +13,8 @@ use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreIntent, CoreModule, CoreNode,
-    CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef,
+    CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource,
+    LocalRef, ResourceRef,
 };
 
 /// Canonical encoding profile for Core artifacts.
@@ -418,7 +418,31 @@ fn core_node_value(node: &CoreNode) -> Result<CanonicalValue, CanonicalError> {
             ("binding", local_ref_value(binding)),
             ("value", core_expr_value(value)?),
         ])),
+        CoreNode::Effect {
+            binding,
+            effect,
+            input,
+            obstruction_map,
+        } => Ok(map([
+            ("kind", text("effect")),
+            ("binding", local_ref_value(binding)),
+            ("effect", text(effect)),
+            ("input", core_expr_value(input)?),
+            (
+                "obstructionMap",
+                string_map_results(obstruction_map.iter().map(|(failure, arm)| {
+                    Ok((failure.as_str(), core_obstruction_arm_value(arm)?))
+                }))?,
+            ),
+        ])),
     }
+}
+
+fn core_obstruction_arm_value(arm: &CoreObstructionArm) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("binder", local_ref_value(&arm.binder)),
+        ("value", core_expr_value(&arm.value)?),
+    ]))
 }
 
 fn core_expr_value(expr: &CoreExpr) -> Result<CanonicalValue, CanonicalError> {

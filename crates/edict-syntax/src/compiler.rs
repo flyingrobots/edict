@@ -7,12 +7,13 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldDecl, Import, ImportKind, IntentClause,
-    IntentDecl, Module, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
+    IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, RecordEntry,
+    ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
 };
 use crate::core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef, CORE_API_VERSION,
+    CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint,
+    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -416,6 +417,23 @@ struct TypedValue {
     ty: TypeShape,
 }
 
+#[derive(Debug, Default)]
+struct BodyState {
+    nodes: Vec<CoreNode>,
+    result: Option<CoreExpr>,
+    local_index: usize,
+    obstruction_index: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct LetStatement<'a> {
+    name: &'a str,
+    ty: Option<&'a TypeRef>,
+    value: &'a Expr,
+    handler: Option<&'a ObstructionHandler>,
+    span: Span,
+}
+
 #[derive(Debug)]
 struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
@@ -660,96 +678,16 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
     ) -> Option<CoreBlock> {
         let source = &intent.source;
-        let mut nodes = Vec::new();
-        let mut result = None;
-        let mut local_index = 0usize;
+        let mut state = BodyState::default();
 
         for stmt in &source.body.stmts {
-            match stmt {
-                Stmt::Let {
-                    name,
-                    ty,
-                    value,
-                    els,
-                    span,
-                } => {
-                    if els.is_some() {
-                        if self.check_effect_profile(intent, value, *span) {
-                            self.unsupported_stmt(*span, "effectful `let ... else`");
-                        }
-                        continue;
-                    }
-                    if !self.check_known_effect_profiles(intent, value) {
-                        continue;
-                    }
-                    let Some(value) = self.check_expr(value, env) else {
-                        continue;
-                    };
-                    let binding_shape = if let Some(annotation) = ty {
-                        let Some(annotation_shape) = self.type_ref_shape(annotation, *span, None)
-                        else {
-                            continue;
-                        };
-                        if !compatible(&annotation_shape, &value.ty) {
-                            self.errors.push(error(
-                                CompilerStage::TypeCheck,
-                                CompilerErrorKind::TypeMismatch,
-                                format!("`{name}` initializer does not match annotation"),
-                                *span,
-                            ));
-                            continue;
-                        }
-                        annotation_shape
-                    } else {
-                        value.ty.clone()
-                    };
-                    let local = LocalRef {
-                        id: format!("local.{local_index}"),
-                        alpha_name: format!("$local{local_index}"),
-                        ty: binding_shape.coord.clone(),
-                    };
-                    local_index += 1;
-                    nodes.push(CoreNode::Let {
-                        binding: local.clone(),
-                        value: value.expr,
-                    });
-                    locals.push(local.clone());
-                    env.insert(name.clone(), (local, binding_shape));
-                }
-                Stmt::Return { value, .. } => {
-                    let Some(value) = self.check_expr(value, env) else {
-                        continue;
-                    };
-                    if compatible(output_shape, &value.ty) {
-                        result = Some(value.expr);
-                    } else {
-                        self.errors.push(error(
-                            CompilerStage::TypeCheck,
-                            CompilerErrorKind::TypeMismatch,
-                            "return value does not match declared output type",
-                            source.span,
-                        ));
-                    }
-                }
-                Stmt::Effect { call, span, .. } => {
-                    if self.check_effect_profile(intent, call, *span) {
-                        self.unsupported_stmt(*span, "effect statement");
-                    }
-                }
-                Stmt::Require { span, .. }
-                | Stmt::Guarantee { span, .. }
-                | Stmt::Assert { span, .. }
-                | Stmt::If { span, .. }
-                | Stmt::For { span, .. } => {
-                    self.unsupported_stmt(*span, "statement");
-                }
-            }
+            self.check_body_stmt(intent, output_shape, stmt, env, locals, &mut state);
         }
 
-        if let Some(result) = result {
+        if let Some(result) = state.result {
             Some(CoreBlock {
                 locals: locals.clone(),
-                nodes,
+                nodes: state.nodes,
                 result,
             })
         } else {
@@ -761,6 +699,164 @@ impl<'a> TypeChecker<'a> {
             ));
             None
         }
+    }
+
+    fn check_body_stmt(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        stmt: &Stmt,
+        env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
+        locals: &mut Vec<LocalRef>,
+        state: &mut BodyState,
+    ) {
+        match stmt {
+            Stmt::Let {
+                name,
+                ty,
+                value,
+                els,
+                span,
+            } => self.check_let_stmt(
+                intent,
+                LetStatement {
+                    name,
+                    ty: ty.as_ref(),
+                    value,
+                    handler: els.as_ref(),
+                    span: *span,
+                },
+                env,
+                locals,
+                state,
+            ),
+            Stmt::Return { value, .. } => {
+                let Some(value) = self.check_expr(value, env) else {
+                    return;
+                };
+                if compatible(output_shape, &value.ty) {
+                    state.result = Some(value.expr);
+                } else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::TypeMismatch,
+                        "return value does not match declared output type",
+                        intent.source.span,
+                    ));
+                }
+            }
+            Stmt::Effect { call, span, .. } => {
+                if self.check_effect_profile(intent, call, *span) {
+                    self.unsupported_stmt(*span, "effect statement");
+                }
+            }
+            Stmt::Require { span, .. }
+            | Stmt::Guarantee { span, .. }
+            | Stmt::Assert { span, .. }
+            | Stmt::If { span, .. }
+            | Stmt::For { span, .. } => self.unsupported_stmt(*span, "statement"),
+        }
+    }
+
+    fn check_let_stmt(
+        &mut self,
+        intent: &ResolvedIntent,
+        stmt: LetStatement<'_>,
+        env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
+        locals: &mut Vec<LocalRef>,
+        state: &mut BodyState,
+    ) {
+        if let Some(handler) = stmt.handler {
+            self.check_effectful_let(intent, stmt, handler, env, locals, state);
+        } else {
+            self.check_pure_let(intent, stmt, env, locals, state);
+        }
+    }
+
+    fn check_pure_let(
+        &mut self,
+        intent: &ResolvedIntent,
+        stmt: LetStatement<'_>,
+        env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
+        locals: &mut Vec<LocalRef>,
+        state: &mut BodyState,
+    ) {
+        if !self.check_known_effect_profiles(intent, stmt.value) {
+            return;
+        }
+        let Some(value) = self.check_expr(stmt.value, env) else {
+            return;
+        };
+        let Some(binding_shape) = self.pure_let_binding_shape(&stmt, &value) else {
+            return;
+        };
+        let local = next_local(&mut state.local_index, binding_shape.coord.clone());
+        state.nodes.push(CoreNode::Let {
+            binding: local.clone(),
+            value: value.expr,
+        });
+        locals.push(local.clone());
+        env.insert(stmt.name.to_owned(), (local, binding_shape));
+    }
+
+    fn pure_let_binding_shape(
+        &mut self,
+        stmt: &LetStatement<'_>,
+        value: &TypedValue,
+    ) -> Option<TypeShape> {
+        let Some(annotation) = stmt.ty else {
+            return Some(value.ty.clone());
+        };
+        let annotation_shape = self.type_ref_shape(annotation, stmt.span, None)?;
+        if compatible(&annotation_shape, &value.ty) {
+            Some(annotation_shape)
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!("`{}` initializer does not match annotation", stmt.name),
+                stmt.span,
+            ));
+            None
+        }
+    }
+
+    fn check_effectful_let(
+        &mut self,
+        intent: &ResolvedIntent,
+        stmt: LetStatement<'_>,
+        handler: &ObstructionHandler,
+        env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
+        locals: &mut Vec<LocalRef>,
+        state: &mut BodyState,
+    ) {
+        if !self.check_effect_profile(intent, stmt.value, stmt.span) {
+            return;
+        }
+        let Some(binding_shape) = self.effect_binding_shape(stmt.ty, stmt.span) else {
+            return;
+        };
+        let Some((effect, input)) = self.check_effect_call(stmt.value, env, stmt.span) else {
+            return;
+        };
+        let local = next_local(&mut state.local_index, binding_shape.coord.clone());
+        locals.push(local.clone());
+        let Some(obstruction_map) = self.check_obstruction_handler(
+            handler,
+            &effect,
+            &mut state.obstruction_index,
+            locals,
+            stmt.span,
+        ) else {
+            return;
+        };
+        state.nodes.push(CoreNode::Effect {
+            binding: local.clone(),
+            effect,
+            input,
+            obstruction_map,
+        });
+        env.insert(stmt.name.to_owned(), (local, binding_shape));
     }
 
     fn check_effect_profile(&mut self, intent: &ResolvedIntent, call: &Expr, span: Span) -> bool {
@@ -803,6 +899,119 @@ impl<'a> TypeChecker<'a> {
             ));
             false
         }
+    }
+
+    fn effect_binding_shape(&mut self, ty: Option<&TypeRef>, span: Span) -> Option<TypeShape> {
+        let Some(ty) = ty else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "effectful `let ... else` requires an explicit result type annotation",
+                span,
+            ));
+            return None;
+        };
+        self.type_ref_shape(ty, span, None)
+    }
+
+    fn check_effect_call(
+        &mut self,
+        call: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<(String, CoreExpr)> {
+        let effect = effect_coordinate(call)?;
+        let Expr::Call { args, .. } = call else {
+            self.unsupported_stmt(span, "effect call");
+            return None;
+        };
+        let [arg] = args.as_slice() else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "effectful `let ... else` supports exactly one effect argument",
+                span,
+            ));
+            return None;
+        };
+        let input = self.check_expr(arg, env)?;
+        Some((effect, input.expr))
+    }
+
+    fn check_obstruction_handler(
+        &mut self,
+        handler: &ObstructionHandler,
+        effect: &str,
+        obstruction_index: &mut usize,
+        locals: &mut Vec<LocalRef>,
+        span: Span,
+    ) -> Option<BTreeMap<String, CoreObstructionArm>> {
+        let ObstructionHandler::Map(arms) = handler else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "effectful `let ... else` supports obstruction maps only",
+                span,
+            ));
+            return None;
+        };
+        let mut out = BTreeMap::new();
+        for arm in arms {
+            let Some((failure, obstruction_arm)) =
+                self.check_obstruction_arm(effect, arm, *obstruction_index)
+            else {
+                continue;
+            };
+            *obstruction_index += 1;
+            locals.push(obstruction_arm.binder.clone());
+            out.insert(failure, obstruction_arm);
+        }
+        if out.len() == arms.len() {
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    fn check_obstruction_arm(
+        &mut self,
+        effect: &str,
+        arm: &ObstructionArm,
+        obstruction_index: usize,
+    ) -> Option<(String, CoreObstructionArm)> {
+        if arm.binder.is_none() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "effect obstruction map arms require binders in the first lowerable subset",
+                arm.span,
+            ));
+            return None;
+        }
+        let binder = LocalRef {
+            id: format!("obstruction.{obstruction_index}"),
+            alpha_name: format!("$obstruction{obstruction_index}"),
+            ty: format!("{effect}.{}", arm.failure),
+        };
+        let value = self.check_obstruction_target(&arm.target)?;
+        Some((arm.failure.clone(), CoreObstructionArm { binder, value }))
+    }
+
+    fn check_obstruction_target(&mut self, target: &ObstructionTarget) -> Option<CoreExpr> {
+        if target.payload.is_some() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "obstruction payload expressions are outside the first effectful Core subset",
+                target.span,
+            ));
+            return None;
+        }
+        Some(CoreExpr::Call {
+            callee: path_key(&target.coordinate),
+            type_args: Vec::new(),
+            args: Vec::new(),
+        })
     }
 
     fn check_known_effect_profiles(&mut self, intent: &ResolvedIntent, expr: &Expr) -> bool {
@@ -1253,6 +1462,16 @@ fn string_value(value: &str) -> TypedValue {
             coord: string_type_coord(max, &canonical),
             kind: TypeKind::String { max, canonical },
         },
+    }
+}
+
+fn next_local(index: &mut usize, ty: String) -> LocalRef {
+    let current = *index;
+    *index += 1;
+    LocalRef {
+        id: format!("local.{current}"),
+        alpha_name: format!("$local{current}"),
+        ty,
     }
 }
 
