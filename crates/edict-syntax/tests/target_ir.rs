@@ -6,7 +6,7 @@
 
 use edict_syntax::{
     check_lowerability, compile_to_core, lower_to_target_ir, AtomicityRequirement, CompilerContext,
-    CoreBudget, CoreExpr, CoreImport, CoreImportKind, GuardKind, LowerabilityStatus,
+    CoreBudget, CoreExpr, CoreImport, CoreImportKind, CorePredicate, GuardKind, LowerabilityStatus,
     LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
     TargetEffectLowering, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
     TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
@@ -426,6 +426,31 @@ fn intent_result_is_preserved_in_echo_span_ir() {
     };
     assert_eq!(field, "id");
     assert!(matches!(base.as_ref(), CoreExpr::Local { reference } if reference.id == "local.0"));
+}
+
+#[test]
+fn intent_constraints_and_budget_are_preserved_in_echo_span_ir() {
+    let constrained_source = EFFECTFUL_REPLACE.replace(
+        "budget <= p.tiny {",
+        "budget <= p.tiny\n      where input.id != \"\" {",
+    );
+    let artifact = effectful_artifact(&constrained_source);
+    let intent = artifact.intents.get("t").expect("intent t");
+
+    assert_eq!(
+        intent.core_evaluation_budget,
+        CoreBudget {
+            max_steps: 8,
+            max_allocated_bytes: 1024,
+            max_output_bytes: 256,
+        }
+    );
+    assert_eq!(intent.input_constraints.len(), 1);
+    assert_eq!(intent.input_constraints[0].coordinate, "where.0");
+    assert!(matches!(
+        intent.input_constraints[0].predicate,
+        CorePredicate::Compare { .. }
+    ));
 }
 
 #[test]

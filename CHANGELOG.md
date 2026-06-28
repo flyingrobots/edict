@@ -23,7 +23,9 @@ versions still track specification maturity rather than a released product.
   versions, unsupported Core capability flags, undigested target-profile
   references, non-Echo target intrinsics, operation profiles unsupported by the
   selected target facts, and intents with no target-owned steps before Target IR
-  emission.
+  emission. Echo Target IR intents also preserve Core input constraints and Core
+  evaluation budgets so supported artifacts do not drop preconditions or
+  evaluation limits.
 
 ### Changed
 

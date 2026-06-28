@@ -50,9 +50,10 @@ deterministic Target IR step that records:
 - the structured Core input expression;
 - sorted obstruction failure keys and their structured obstruction arm values.
 
-Each Target IR intent also preserves the structured Core result expression for
-the supported slice. This records success-output semantics without executing
-Echo or admitting a bundle.
+Each Target IR intent also preserves the Core input constraints, Core evaluation
+budget, and structured Core result expression for the supported slice. This
+records preconditions, evaluation limits, and success-output semantics without
+executing Echo or admitting a bundle.
 
 Selecting a non-Echo target profile rejects with
 `TargetLoweringFailureKind::UnsupportedTargetProfile`. Selecting an unsupported

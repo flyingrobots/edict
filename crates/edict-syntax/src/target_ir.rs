@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, LocalRef, ResourceRef,
-    CORE_API_VERSION,
+    CoreBudget, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, InputConstraint,
+    LocalRef, ResourceRef, CORE_API_VERSION,
 };
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
 
@@ -147,6 +147,8 @@ pub struct TargetIrArtifact {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetIrIntent {
     pub operation_profile: String,
+    pub input_constraints: Vec<InputConstraint>,
+    pub core_evaluation_budget: CoreBudget,
     pub steps: Vec<TargetIrStep>,
     pub result: CoreExpr,
 }
@@ -332,6 +334,8 @@ fn lower_intent(
 
     TargetIrIntent {
         operation_profile: intent.required_operation_profile.clone(),
+        input_constraints: intent.input_constraints.clone(),
+        core_evaluation_budget: intent.core_evaluation_budget.clone(),
         steps,
         result: intent.body.result.clone(),
     }
