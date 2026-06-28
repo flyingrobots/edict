@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use crate::core_ir::{CoreExpr, CoreModule, CoreNode, ResourceRef};
+use crate::lowerability::TargetProfileFacts;
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
 pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
@@ -16,6 +17,28 @@ pub struct TargetIrLoweringFacts {
     pub target_profile: ResourceRef,
     pub target_ir_domain: String,
     pub effect_lowerings: Vec<TargetEffectLowering>,
+}
+
+impl TargetIrLoweringFacts {
+    #[must_use]
+    pub fn from_target_profile_facts(
+        target_profile: ResourceRef,
+        target_ir_domain: impl Into<String>,
+        facts: &TargetProfileFacts,
+    ) -> Self {
+        Self {
+            target_profile,
+            target_ir_domain: target_ir_domain.into(),
+            effect_lowerings: facts
+                .native_effects
+                .iter()
+                .map(|effect| TargetEffectLowering {
+                    effect: effect.coordinate.clone(),
+                    target_intrinsic: effect.target_intrinsic.clone(),
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

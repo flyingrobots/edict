@@ -5,9 +5,11 @@
 //! layout, or implementation-private lowering helpers.
 
 use edict_syntax::{
-    compile_to_core, lower_to_target_ir, CompilerContext, CoreBudget, CoreExpr, ResourceRef,
-    TargetEffectLowering, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
-    WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    check_lowerability, compile_to_core, lower_to_target_ir, AtomicityRequirement, CompilerContext,
+    CoreBudget, CoreExpr, GuardKind, LowerabilityStatus, LoweringRequirements, NativeEffectSupport,
+    ResourceRef, SemanticEffectRequirement, TargetEffectLowering, TargetIrLoweringFacts,
+    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, WriteClass,
+    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -80,6 +82,50 @@ fn echo_facts() -> TargetIrLoweringFacts {
     }
 }
 
+fn echo_profile_facts() -> TargetProfileFacts {
+    TargetProfileFacts {
+        coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
+        operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
+        native_effects: vec![NativeEffectSupport {
+            coordinate: "target.replace".to_owned(),
+            target_intrinsic: "echo.dpo@1.replace".to_owned(),
+            write_class: WriteClass::Replace,
+            guard_kinds: vec![GuardKind::PrecommitAtomic],
+        }],
+        direct_adapters: Vec::new(),
+        write_classes: vec![WriteClass::Replace],
+        guard_kinds: vec![GuardKind::PrecommitAtomic],
+        atomicity: vec![AtomicityRequirement::Atomic],
+        postcondition_support: true,
+        obstruction_coordinates: vec!["rejected".to_owned()],
+        footprint_obligations: vec!["target.replace.footprint".to_owned()],
+        cost_obligations: vec!["target.replace.cost".to_owned()],
+        optic_contracts: vec!["replace-point".to_owned()],
+    }
+}
+
+fn echo_requirements() -> LoweringRequirements {
+    LoweringRequirements {
+        operation_profile: "continuum.profile.write/v1".to_owned(),
+        semantic_effects: vec![SemanticEffectRequirement {
+            coordinate: "target.replace".to_owned(),
+            write_class: WriteClass::Replace,
+            guard_kinds: vec![GuardKind::PrecommitAtomic],
+            obstruction_coordinates: vec!["rejected".to_owned()],
+            footprint_obligations: vec!["target.replace.footprint".to_owned()],
+            cost_obligations: vec!["target.replace.cost".to_owned()],
+        }],
+        required_write_classes: vec![WriteClass::Replace],
+        guard_kinds: vec![GuardKind::PrecommitAtomic],
+        atomicity: AtomicityRequirement::Atomic,
+        postcondition_support: true,
+        obstruction_coordinates: vec!["rejected".to_owned()],
+        footprint_obligations: vec!["target.replace.footprint".to_owned()],
+        cost_obligations: vec!["target.replace.cost".to_owned()],
+        optic_contract: "replace-point".to_owned(),
+    }
+}
+
 fn failure_kinds(report: &edict_syntax::TargetLoweringReport) -> Vec<TargetLoweringFailureKind> {
     report.failures.iter().map(|failure| failure.kind).collect()
 }
@@ -112,6 +158,35 @@ fn supported_effectful_core_lowers_to_echo_span_ir() {
         panic!("effect input is preserved structurally");
     };
     assert_eq!(field, "id");
+}
+
+#[test]
+fn lowerability_native_support_feeds_echo_target_lowering() {
+    let profile_facts = echo_profile_facts();
+    let lowerability = check_lowerability(&echo_requirements(), &profile_facts);
+    assert_eq!(lowerability.status, LowerabilityStatus::Native);
+    assert!(lowerability.failures.is_empty());
+
+    let target_facts = TargetIrLoweringFacts::from_target_profile_facts(
+        ResourceRef {
+            coordinate: profile_facts.coordinate.clone(),
+            digest: Some(
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    .to_owned(),
+            ),
+        },
+        ECHO_SPAN_IR_DOMAIN,
+        &profile_facts,
+    );
+    let report = lower_to_target_ir(&effectful_core(), &target_facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    let artifact = report
+        .artifact
+        .expect("native lowerability feeds target IR");
+    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    assert_eq!(step.effect, "target.replace");
+    assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
 }
 
 #[test]

@@ -25,6 +25,12 @@ The `edict_syntax` crate exposes `lower_to_target_ir`,
 not read target facts from ambient environment, discover runtimes, or fetch
 registries.
 
+`TargetIrLoweringFacts::from_target_profile_facts` can derive the first Echo
+effect-to-intrinsic lowering table from the same `TargetProfileFacts` used by
+the lowerability checker. The v0.9 bridge is native-only: it consumes native
+effect support facts and does not perform adapter-chain search or general target
+plugin dispatch.
+
 For the supported Echo slice, each supported Core effect node becomes a
 deterministic Target IR step that records:
 
