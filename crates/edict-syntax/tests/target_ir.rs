@@ -167,7 +167,7 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
     assert_eq!(lowerability.status, LowerabilityStatus::Native);
     assert!(lowerability.failures.is_empty());
 
-    let target_facts = TargetIrLoweringFacts::from_target_profile_facts(
+    let target_facts = TargetIrLoweringFacts::from_lowerability_report(
         ResourceRef {
             coordinate: profile_facts.coordinate.clone(),
             digest: Some(
@@ -176,7 +176,7 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
             ),
         },
         ECHO_SPAN_IR_DOMAIN,
-        &profile_facts,
+        &lowerability,
     );
     let report = lower_to_target_ir(&effectful_core(), &target_facts);
 
@@ -186,6 +186,40 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
         .expect("native lowerability feeds target IR");
     let step = &artifact.intents.get("t").expect("intent t").steps[0];
     assert_eq!(step.effect, "target.replace");
+    assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
+}
+
+#[test]
+fn lowerability_bridge_carries_only_selected_native_effect() {
+    let mut profile_facts = echo_profile_facts();
+    profile_facts.native_effects.push(NativeEffectSupport {
+        coordinate: "target.replace".to_owned(),
+        target_intrinsic: "echo.dpo@1.replace.unselected".to_owned(),
+        write_class: WriteClass::Replace,
+        guard_kinds: Vec::new(),
+    });
+    let lowerability = check_lowerability(&echo_requirements(), &profile_facts);
+    assert_eq!(lowerability.status, LowerabilityStatus::Native);
+    assert!(lowerability.failures.is_empty());
+
+    let target_facts = TargetIrLoweringFacts::from_lowerability_report(
+        ResourceRef {
+            coordinate: profile_facts.coordinate.clone(),
+            digest: Some(
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    .to_owned(),
+            ),
+        },
+        ECHO_SPAN_IR_DOMAIN,
+        &lowerability,
+    );
+    let report = lower_to_target_ir(&effectful_core(), &target_facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    let artifact = report
+        .artifact
+        .expect("unselected native support does not make target lowering ambiguous");
+    let step = &artifact.intents.get("t").expect("intent t").steps[0];
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
 }
 

@@ -15,9 +15,9 @@ versions still track specification maturity rather than a released product.
   deterministic in-memory `echo.span-ir/v1` review artifact, while non-Echo
   targets and unsupported Core nodes reject with stable target-lowering failure
   kinds before any artifact is emitted. Target IR lowering facts can also be
-  derived from the native `TargetProfileFacts` consumed by the lowerability
-  checker, keeping the first Echo artifact path tied to explicit lowerability
-  evidence.
+  derived from selected native lowerability results, keeping the first Echo
+  artifact path tied to explicit lowerability evidence without carrying
+  unselected native support facts.
 
 ### Changed
 
