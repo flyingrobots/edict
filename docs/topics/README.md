@@ -65,6 +65,8 @@ cargo xtask verify
   `validate_surface` stage contract and verification matrix.
 - [Syntax](./syntax/README.md): Phase 1 `edict-syntax` lexer/parser contract and
   verification matrix.
+- [Target IR](./target-ir/README.md): first target-owned artifact generation
+  boundary for Echo Span IR and later target profiles.
 - [Target Profiles](./target-profiles/README.md): typed v1 target-profile
   manifest conformance and runtime-neutral profile validation.
 - [Testing Workflow](./tests/README.md): RED/GREEN development discipline,

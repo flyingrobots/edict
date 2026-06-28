@@ -17,7 +17,8 @@
 //! digest-bound JSON files for the first supported profile, budget, and
 //! write-class facts.
 //! The crate also exposes typed v1 target-profile conformance, lowerability, and
-//! contract-bundle checks plus typed Gate C admission-boundary checks.
+//! first Echo Target IR lowering, contract-bundle checks, and typed Gate C
+//! admission-boundary checks.
 //! Developer-tooling support begins with lexical highlighting roles for editor
 //! adapters.
 //! Conformance validates runtime-neutral target-profile manifests. Lowerability
@@ -28,11 +29,11 @@
 //! artifact and invocation evidence bindings without evaluating participant
 //! policy.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
-//! list/map/unit expression literals, full source-language lowering, target
-//! lowering, and full admission execution tooling are deferred. The crate
-//! exposes the reference canonical Core encoder for `edict.canonical-cbor/v1`
-//! and the domain-separated `edict.core.module/v1` Core digest used by reviewed
-//! golden fixtures.
+//! list/map/unit expression literals, full source-language lowering, general
+//! target lowering, and full admission execution tooling are deferred. The
+//! crate exposes the reference canonical Core encoder for
+//! `edict.canonical-cbor/v1` and the domain-separated `edict.core.module/v1`
+//! Core digest used by reviewed golden fixtures.
 //!
 //! Assurance tooling (HOLMES / Watson / Moriarty) remains shared platform
 //! machinery. This crate validates typed references to its evidence; it does not
@@ -49,6 +50,7 @@ pub mod highlight;
 pub mod lowerability;
 pub mod parser;
 pub mod semantic;
+pub mod target_ir;
 pub mod target_profile;
 pub mod token;
 
@@ -97,6 +99,11 @@ pub use lowerability::{
 };
 pub use parser::{parse_module, ParseError, ParseErrorKind};
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
+pub use target_ir::{
+    lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
+    TargetIrLoweringFacts, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
+    TargetLoweringReport, TargetLoweringStatus, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+};
 pub use target_profile::{
     validate_target_profile_manifest, TargetProfileConformanceFailure,
     TargetProfileConformanceFailureKind, TargetProfileConformanceReport,

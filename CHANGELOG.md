@@ -8,6 +8,14 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added the first Target IR lowering surface in `edict_syntax`: explicit
+  `echo.dpo@1` target facts can lower the supported effectful Core shape into a
+  deterministic in-memory `echo.span-ir/v1` review artifact, while non-Echo
+  targets and unsupported Core nodes reject with stable target-lowering failure
+  kinds before any artifact is emitted.
+
 ### Changed
 
 - Marked `v0.8.0-alpha.1` as published in the release-process contract and
