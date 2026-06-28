@@ -1,8 +1,8 @@
 //! First target-owned IR generation surface.
 //!
-//! This module starts with the narrow v0.9 Echo slice. It lowers supported Core
-//! effect nodes into an in-memory `echo.span-ir/v1` review artifact. It does not
-//! execute Echo, run a verifier, assemble bundles, or perform admission.
+//! This module contains the narrow v0.9 target slices. It lowers supported Core
+//! effect nodes into in-memory Echo or git-warp review artifacts. It does not
+//! execute a runtime, run a verifier, assemble bundles, or perform admission.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,6 +14,36 @@ use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, Lowerabi
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
 pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
+pub const GITWARP_REF_CRDT_TARGET_PROFILE: &str = "gitwarp.ref_crdt@1";
+pub const GITWARP_COMMIT_REDUCER_IR_DOMAIN: &str = "gitwarp.commit-reducer-ir/v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TargetSelection {
+    target_ir_domain: &'static str,
+    target_intrinsic_prefix: &'static str,
+}
+
+impl TargetSelection {
+    fn supports_intrinsic(self, target_intrinsic: &str) -> bool {
+        target_intrinsic
+            .strip_prefix(self.target_intrinsic_prefix)
+            .is_some_and(|suffix| suffix.starts_with('.'))
+    }
+}
+
+fn target_selection_for_profile(target_profile: &str) -> Option<TargetSelection> {
+    match target_profile {
+        ECHO_DPO_TARGET_PROFILE => Some(TargetSelection {
+            target_ir_domain: ECHO_SPAN_IR_DOMAIN,
+            target_intrinsic_prefix: ECHO_DPO_TARGET_PROFILE,
+        }),
+        GITWARP_REF_CRDT_TARGET_PROFILE => Some(TargetSelection {
+            target_ir_domain: GITWARP_COMMIT_REDUCER_IR_DOMAIN,
+            target_intrinsic_prefix: GITWARP_REF_CRDT_TARGET_PROFILE,
+        }),
+        _ => None,
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetIrLoweringFacts {
@@ -30,7 +60,7 @@ impl TargetIrLoweringFacts {
     /// # Errors
     ///
     /// Returns `UnsupportedLowerabilityReport` when the lowerability report did
-    /// not select native support. The first Echo Target IR bridge does not
+    /// not select native support. The v0.9 Target IR bridge does not
     /// derive target facts from unsupported or adapter-backed reports.
     pub fn from_lowerability_report(
         target_profile: ResourceRef,
@@ -169,10 +199,10 @@ pub fn lower_to_target_ir(
     core: &CoreModule,
     facts: &TargetIrLoweringFacts,
 ) -> TargetLoweringReport {
-    let target_failures = validate_target_selection(facts);
-    if !target_failures.is_empty() {
-        return unsupported(target_failures);
-    }
+    let target_selection = match validate_target_selection(facts) {
+        Ok(target_selection) => target_selection,
+        Err(failures) => return unsupported(failures),
+    };
     let core_failures = validate_core_module(core);
     if !core_failures.is_empty() {
         return unsupported(core_failures);
@@ -189,6 +219,11 @@ pub fn lower_to_target_ir(
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
+    let context = TargetLoweringContext {
+        target_selection,
+        obstruction_coordinates: &obstruction_coordinates,
+        effect_lowerings: &effect_lowerings,
+    };
     let mut failures = Vec::new();
     let mut intents = BTreeMap::new();
 
@@ -197,8 +232,7 @@ pub fn lower_to_target_ir(
             intent_name,
             intent,
             &operation_profiles,
-            &obstruction_coordinates,
-            &effect_lowerings,
+            &context,
             &mut failures,
         );
         intents.insert(intent_name.clone(), lowered);
@@ -220,17 +254,20 @@ pub fn lower_to_target_ir(
     }
 }
 
-fn validate_target_selection(facts: &TargetIrLoweringFacts) -> Vec<TargetLoweringFailure> {
-    if facts.target_profile.coordinate != ECHO_DPO_TARGET_PROFILE {
-        return vec![TargetLoweringFailure {
+fn validate_target_selection(
+    facts: &TargetIrLoweringFacts,
+) -> Result<TargetSelection, Vec<TargetLoweringFailure>> {
+    let Some(target_selection) = target_selection_for_profile(&facts.target_profile.coordinate)
+    else {
+        return Err(vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetProfile,
             intent: None,
             node_index: None,
             detail: facts.target_profile.coordinate.clone(),
-        }];
-    }
+        }]);
+    };
     if !facts.target_profile.is_digest_locked() {
-        return vec![TargetLoweringFailure {
+        return Err(vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UndigestedTargetProfile,
             intent: None,
             node_index: None,
@@ -239,17 +276,17 @@ fn validate_target_selection(facts: &TargetIrLoweringFacts) -> Vec<TargetLowerin
                 .digest
                 .clone()
                 .unwrap_or_else(|| "<missing>".to_owned()),
-        }];
+        }]);
     }
-    if facts.target_ir_domain != ECHO_SPAN_IR_DOMAIN {
-        return vec![TargetLoweringFailure {
+    if facts.target_ir_domain != target_selection.target_ir_domain {
+        return Err(vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetIrDomain,
             intent: None,
             node_index: None,
             detail: facts.target_ir_domain.clone(),
-        }];
+        }]);
     }
-    Vec::new()
+    Ok(target_selection)
 }
 
 fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
@@ -298,8 +335,7 @@ fn lower_intent(
     intent_name: &str,
     intent: &CoreIntent,
     operation_profiles: &BTreeSet<&str>,
-    obstruction_coordinates: &BTreeSet<&str>,
-    effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
+    context: &TargetLoweringContext<'_>,
     failures: &mut Vec<TargetLoweringFailure>,
 ) -> TargetIrIntent {
     if !operation_profiles.contains(intent.required_operation_profile.as_str()) {
@@ -313,15 +349,7 @@ fn lower_intent(
 
     let mut steps = Vec::new();
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
-        lower_node(
-            intent_name,
-            node_index,
-            node,
-            obstruction_coordinates,
-            effect_lowerings,
-            &mut steps,
-            failures,
-        );
+        lower_node(intent_name, node_index, node, context, &mut steps, failures);
     }
     if steps.is_empty() && intent.body.nodes.is_empty() {
         failures.push(TargetLoweringFailure {
@@ -341,12 +369,17 @@ fn lower_intent(
     }
 }
 
+struct TargetLoweringContext<'a> {
+    target_selection: TargetSelection,
+    obstruction_coordinates: &'a BTreeSet<&'a str>,
+    effect_lowerings: &'a BTreeMap<&'a str, Vec<&'a TargetEffectLowering>>,
+}
+
 fn lower_node(
     intent_name: &str,
     node_index: usize,
     node: &CoreNode,
-    obstruction_coordinates: &BTreeSet<&str>,
-    effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
+    context: &TargetLoweringContext<'_>,
     steps: &mut Vec<TargetIrStep>,
     failures: &mut Vec<TargetLoweringFailure>,
 ) {
@@ -365,8 +398,7 @@ fn lower_node(
                 input,
                 obstruction_map,
             },
-            obstruction_coordinates,
-            effect_lowerings,
+            context,
             steps,
             failures,
         ),
@@ -391,16 +423,20 @@ fn lower_effect_node(
     intent_name: &str,
     node_index: usize,
     node: EffectNodeParts<'_>,
-    obstruction_coordinates: &BTreeSet<&str>,
-    effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
+    context: &TargetLoweringContext<'_>,
     steps: &mut Vec<TargetIrStep>,
     failures: &mut Vec<TargetLoweringFailure>,
 ) {
-    let lowerings = effect_lowerings
+    let lowerings = context
+        .effect_lowerings
         .get(node.effect)
         .map_or([].as_slice(), Vec::as_slice);
     match lowerings {
-        [lowering] if !is_echo_target_intrinsic(&lowering.target_intrinsic) => {
+        [lowering]
+            if !context
+                .target_selection
+                .supports_intrinsic(&lowering.target_intrinsic) =>
+        {
             failures.push(TargetLoweringFailure {
                 kind: TargetLoweringFailureKind::UnsupportedTargetIntrinsic,
                 intent: Some(intent_name.to_owned()),
@@ -412,7 +448,7 @@ fn lower_effect_node(
             let unsupported_obstructions = node
                 .obstruction_map
                 .keys()
-                .filter(|failure| !obstruction_coordinates.contains(failure.as_str()))
+                .filter(|failure| !context.obstruction_coordinates.contains(failure.as_str()))
                 .cloned()
                 .collect::<Vec<_>>();
             if !unsupported_obstructions.is_empty() {
@@ -449,12 +485,6 @@ fn lower_effect_node(
             detail: node.effect.to_owned(),
         }),
     }
-}
-
-fn is_echo_target_intrinsic(target_intrinsic: &str) -> bool {
-    target_intrinsic
-        .strip_prefix(ECHO_DPO_TARGET_PROFILE)
-        .is_some_and(|suffix| suffix.starts_with('.'))
 }
 
 fn effect_lowerings_by_coordinate(

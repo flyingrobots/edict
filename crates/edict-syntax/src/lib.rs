@@ -17,7 +17,7 @@
 //! digest-bound JSON files for the first supported profile, budget, and
 //! write-class facts.
 //! The crate also exposes typed v1 target-profile conformance, lowerability, and
-//! first Echo Target IR lowering, contract-bundle checks, and typed Gate C
+//! Echo/git-warp Target IR lowering, contract-bundle checks, and typed Gate C
 //! admission-boundary checks.
 //! Developer-tooling support begins with lexical highlighting roles for editor
 //! adapters.
@@ -103,6 +103,7 @@ pub use target_ir::{
     lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
     TargetIrLoweringFacts, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
     TargetLoweringReport, TargetLoweringStatus, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 pub use target_profile::{
     validate_target_profile_manifest, TargetProfileConformanceFailure,

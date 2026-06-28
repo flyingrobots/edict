@@ -10,6 +10,7 @@ use edict_syntax::{
     LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
     TargetEffectLowering, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
     TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -38,10 +39,25 @@ const CHAINED_EFFECT_RESULTS: &str = "package a.b@1;\n\
         else { rejected(reason) => domain.WriteRejected };\n\
       return { id: second.id };\n\
     }";
+const GITWARP_APPEND_EVENT: &str = "package a.git@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.gitwarp\n\
+      basis none\n\
+      budget <= p.tiny\n\
+      where input.id != \"\" {\n\
+      let receipt: Receipt = gitwarp.appendEvent(input.id)\n\
+        else { conflict(reason) => domain.MergeConflict };\n\
+      return { id: receipt.id };\n\
+    }";
 
 const PURE_LOCAL_RECORD: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
 const ECHO_PROFILE_DIGEST: &str =
     "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+const GITWARP_PROFILE_DIGEST: &str =
+    "sha256:2222222222222222222222222222222222222222222222222222222222222222";
 
 fn effectful_core() -> edict_syntax::CoreModule {
     let module = edict_syntax::parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
@@ -60,6 +76,11 @@ fn effectful_artifact(source: &str) -> edict_syntax::TargetIrArtifact {
 fn pure_core() -> edict_syntax::CoreModule {
     let module = edict_syntax::parse_module(PURE_LOCAL_RECORD).expect("pure source parses");
     compile_to_core(&module, &pure_context()).expect("pure source compiles to Core")
+}
+
+fn gitwarp_core() -> edict_syntax::CoreModule {
+    let module = edict_syntax::parse_module(GITWARP_APPEND_EVENT).expect("git-warp source parses");
+    compile_to_core(&module, &gitwarp_context()).expect("git-warp source compiles to Core")
 }
 
 fn effectful_context() -> CompilerContext {
@@ -94,6 +115,21 @@ fn pure_context() -> CompilerContext {
         )
 }
 
+fn gitwarp_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("p.gitwarp", "continuum.profile.append/v1")
+        .with_operation_profile_write_classes("p.gitwarp", [WriteClass::Append])
+        .with_effect_write_class("gitwarp.appendEvent", WriteClass::Append)
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 13,
+                max_allocated_bytes: 2048,
+                max_output_bytes: 512,
+            },
+        )
+}
+
 fn echo_facts() -> TargetIrLoweringFacts {
     TargetIrLoweringFacts {
         target_profile: ResourceRef {
@@ -110,14 +146,41 @@ fn echo_facts() -> TargetIrLoweringFacts {
     }
 }
 
+fn gitwarp_facts() -> TargetIrLoweringFacts {
+    TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: GITWARP_REF_CRDT_TARGET_PROFILE.to_owned(),
+            digest: Some(gitwarp_profile_digest()),
+        },
+        target_ir_domain: GITWARP_COMMIT_REDUCER_IR_DOMAIN.to_owned(),
+        operation_profiles: vec!["continuum.profile.append/v1".to_owned()],
+        obstruction_coordinates: vec!["conflict".to_owned()],
+        effect_lowerings: vec![TargetEffectLowering {
+            effect: "gitwarp.appendEvent".to_owned(),
+            target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
+        }],
+    }
+}
+
 fn echo_profile_digest() -> String {
     ECHO_PROFILE_DIGEST.to_owned()
+}
+
+fn gitwarp_profile_digest() -> String {
+    GITWARP_PROFILE_DIGEST.to_owned()
 }
 
 fn echo_profile_ref() -> ResourceRef {
     ResourceRef {
         coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
         digest: Some(echo_profile_digest()),
+    }
+}
+
+fn gitwarp_profile_ref() -> ResourceRef {
+    ResourceRef {
+        coordinate: GITWARP_REF_CRDT_TARGET_PROFILE.to_owned(),
+        digest: Some(gitwarp_profile_digest()),
     }
 }
 
@@ -143,6 +206,28 @@ fn echo_profile_facts() -> TargetProfileFacts {
     }
 }
 
+fn gitwarp_profile_facts() -> TargetProfileFacts {
+    TargetProfileFacts {
+        coordinate: GITWARP_REF_CRDT_TARGET_PROFILE.to_owned(),
+        operation_profiles: vec!["continuum.profile.append/v1".to_owned()],
+        native_effects: vec![NativeEffectSupport {
+            coordinate: "gitwarp.appendEvent".to_owned(),
+            target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
+            write_class: WriteClass::Append,
+            guard_kinds: vec![GuardKind::PrecommitAtomic],
+        }],
+        direct_adapters: Vec::new(),
+        write_classes: vec![WriteClass::Append],
+        guard_kinds: vec![GuardKind::PrecommitAtomic],
+        atomicity: vec![AtomicityRequirement::Atomic],
+        postcondition_support: true,
+        obstruction_coordinates: vec!["conflict".to_owned()],
+        footprint_obligations: vec!["gitwarp.appendEvent.footprint".to_owned()],
+        cost_obligations: vec!["gitwarp.appendEvent.cost".to_owned()],
+        optic_contracts: vec!["append-event".to_owned()],
+    }
+}
+
 fn echo_requirements() -> LoweringRequirements {
     LoweringRequirements {
         operation_profile: "continuum.profile.write/v1".to_owned(),
@@ -162,6 +247,28 @@ fn echo_requirements() -> LoweringRequirements {
         footprint_obligations: vec!["target.replace.footprint".to_owned()],
         cost_obligations: vec!["target.replace.cost".to_owned()],
         optic_contract: "replace-point".to_owned(),
+    }
+}
+
+fn gitwarp_requirements() -> LoweringRequirements {
+    LoweringRequirements {
+        operation_profile: "continuum.profile.append/v1".to_owned(),
+        semantic_effects: vec![SemanticEffectRequirement {
+            coordinate: "gitwarp.appendEvent".to_owned(),
+            write_class: WriteClass::Append,
+            guard_kinds: vec![GuardKind::PrecommitAtomic],
+            obstruction_coordinates: vec!["conflict".to_owned()],
+            footprint_obligations: vec!["gitwarp.appendEvent.footprint".to_owned()],
+            cost_obligations: vec!["gitwarp.appendEvent.cost".to_owned()],
+        }],
+        required_write_classes: vec![WriteClass::Append],
+        guard_kinds: vec![GuardKind::PrecommitAtomic],
+        atomicity: AtomicityRequirement::Atomic,
+        postcondition_support: true,
+        obstruction_coordinates: vec!["conflict".to_owned()],
+        footprint_obligations: vec!["gitwarp.appendEvent.footprint".to_owned()],
+        cost_obligations: vec!["gitwarp.appendEvent.cost".to_owned()],
+        optic_contract: "append-event".to_owned(),
     }
 }
 
@@ -221,6 +328,79 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
     let step = &artifact.intents.get("t").expect("intent t").steps[0];
     assert_eq!(step.effect, "target.replace");
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
+}
+
+#[test]
+fn supported_gitwarp_core_lowers_to_commit_reducer_ir() {
+    let core = gitwarp_core();
+    let report = lower_to_target_ir(&core, &gitwarp_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+
+    let artifact = report.artifact.expect("supported Core emits Target IR");
+    assert_eq!(artifact.domain, GITWARP_COMMIT_REDUCER_IR_DOMAIN);
+    assert_eq!(
+        artifact.target_profile.coordinate,
+        GITWARP_REF_CRDT_TARGET_PROFILE
+    );
+    assert_eq!(artifact.source_core_coordinate, "a.git@1");
+
+    let intent = artifact.intents.get("t").expect("lowered intent t");
+    assert_eq!(intent.operation_profile, "continuum.profile.append/v1");
+    assert_eq!(
+        intent.core_evaluation_budget,
+        CoreBudget {
+            max_steps: 13,
+            max_allocated_bytes: 2048,
+            max_output_bytes: 512,
+        }
+    );
+    assert_eq!(intent.input_constraints.len(), 1);
+    assert!(matches!(
+        intent.input_constraints[0].predicate,
+        CorePredicate::Compare { .. }
+    ));
+    assert_eq!(intent.steps.len(), 1);
+
+    let step = &intent.steps[0];
+    assert_eq!(step.effect, "gitwarp.appendEvent");
+    assert_eq!(step.target_intrinsic, "gitwarp.ref_crdt@1.appendEvent");
+    assert_eq!(step.obstruction_failures, vec!["conflict".to_owned()]);
+    assert!(step.obstruction_arms.contains_key("conflict"));
+
+    let CoreExpr::Field { field, .. } = &step.input else {
+        panic!("git-warp effect input is preserved structurally");
+    };
+    assert_eq!(field, "id");
+
+    let CoreExpr::Record { fields } = &intent.result else {
+        panic!("git-warp intent result is preserved structurally");
+    };
+    assert!(fields.contains_key("id"));
+}
+
+#[test]
+fn lowerability_native_support_feeds_gitwarp_target_lowering() {
+    let lowerability = check_lowerability(&gitwarp_requirements(), &gitwarp_profile_facts());
+    assert_eq!(lowerability.status, LowerabilityStatus::Native);
+    assert!(lowerability.failures.is_empty());
+
+    let target_facts = TargetIrLoweringFacts::from_lowerability_report(
+        gitwarp_profile_ref(),
+        GITWARP_COMMIT_REDUCER_IR_DOMAIN,
+        &lowerability,
+    )
+    .expect("native git-warp lowerability builds target facts");
+    let report = lower_to_target_ir(&gitwarp_core(), &target_facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    let artifact = report
+        .artifact
+        .expect("native git-warp lowerability feeds target IR");
+    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    assert_eq!(step.effect, "gitwarp.appendEvent");
+    assert_eq!(step.target_intrinsic, "gitwarp.ref_crdt@1.appendEvent");
 }
 
 #[test]
@@ -470,11 +650,11 @@ fn effect_result_bindings_are_preserved_in_echo_span_ir() {
 }
 
 #[test]
-fn non_echo_target_profile_rejects_without_artifact() {
+fn unsupported_target_profile_rejects_without_artifact() {
     let core = effectful_core();
     let mut facts = echo_facts();
-    facts.target_profile.coordinate = "gitwarp.ref_crdt@1".to_owned();
-    facts.target_ir_domain = "gitwarp.commit-reducer-ir/v1".to_owned();
+    facts.target_profile.coordinate = "kv.transactional@1".to_owned();
+    facts.target_ir_domain = "kv.transaction-ir/v1".to_owned();
 
     let report = lower_to_target_ir(&core, &facts);
 

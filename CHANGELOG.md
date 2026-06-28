@@ -12,20 +12,24 @@ versions still track specification maturity rather than a released product.
 
 - Added the first Target IR lowering surface in `edict_syntax`: explicit
   `echo.dpo@1` target facts can lower the supported effectful Core shape into a
-  deterministic in-memory `echo.span-ir/v1` review artifact, while non-Echo
+  deterministic in-memory `echo.span-ir/v1` review artifact, while unsupported
   targets and unsupported Core nodes reject with stable target-lowering failure
-  kinds before any artifact is emitted. Echo Target IR preserves effect result
+  kinds before any artifact is emitted. Target IR preserves effect result
   bindings, effect inputs, obstruction failure keys, obstruction arm values, and
   intent result expressions. Target IR lowering facts can also be derived from
-  selected native lowerability results, keeping the first Echo artifact path
+  selected native lowerability results, keeping target artifact paths
   tied to the lowerability report's target profile, operation profile, and
   selected native effect support. The lowerer rejects unsupported Core ABI
   versions, unsupported Core capability flags, undigested target-profile
   references, non-Echo target intrinsics, operation profiles unsupported by the
   selected target facts, and intents with no target-owned steps before Target IR
-  emission. Echo Target IR intents also preserve Core input constraints and Core
+  emission. Target IR intents also preserve Core input constraints and Core
   evaluation budgets so supported artifacts do not drop preconditions or
-  evaluation limits.
+  evaluation limits. Added the second supported target slice:
+  `gitwarp.ref_crdt@1` can lower the same supported effectful Core shape into a
+  deterministic in-memory `gitwarp.commit-reducer-ir/v1` review artifact without
+  runtime execution, commit creation, reducer verification, or general target
+  plugin dispatch.
 
 ### Changed
 
