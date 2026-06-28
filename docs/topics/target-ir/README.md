@@ -54,9 +54,9 @@ Selecting a non-Echo target profile rejects with
 `TargetLoweringFailureKind::UnsupportedTargetProfile`. Supplying Core nodes
 outside the first supported effect shape rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Missing or ambiguous effect
-lowering facts and missing operation-profile support also reject before any
-artifact is emitted. A Core intent with no target-owned steps rejects with
-`TargetLoweringFailureKind::NoTargetSteps`.
+lowering facts, non-Echo target intrinsics, and missing operation-profile
+support also reject before any artifact is emitted. A Core intent with no
+target-owned steps rejects with `TargetLoweringFailureKind::NoTargetSteps`.
 
 `gitwarp.ref_crdt@1` is the next target after Echo. It is not part of the first
 Echo Target IR slice.

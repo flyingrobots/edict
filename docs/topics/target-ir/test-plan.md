@@ -50,6 +50,7 @@ Out of scope:
 | TIR-TP-005 | policy | Release boundary | TIR-REQ-006 | Roadmap and release scope keep runtime execution, admission, git-warp lowering, and general plugin dispatch outside the first Echo slice. | - | - | Non-goal boundary; not a substitute for behavior tests. |
 | TIR-TP-006 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core intent whose required operation profile is absent from the selected target-lowering facts returns `TargetLoweringFailureKind::MissingOperationProfile` with no artifact. | unsupported_operation_profile_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Prevents effect-only support from bypassing lowerability profile selection. |
 | TIR-TP-007 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core intent with no target-owned steps returns `TargetLoweringFailureKind::NoTargetSteps` with no artifact. | empty_target_step_intents_reject_without_artifact | crates/edict-syntax/tests/target_ir.rs | Prevents empty Echo artifacts from standing in for unsupported work. |
+| TIR-TP-008 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-003 | A matched effect lowering whose target intrinsic belongs to a non-Echo profile returns `TargetLoweringFailureKind::UnsupportedTargetIntrinsic` with no artifact. | foreign_target_intrinsic_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Keeps nominal Echo artifacts from carrying another target's intrinsic. |
 
 ## Determinism Obligations
 

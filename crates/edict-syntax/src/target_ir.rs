@@ -85,6 +85,7 @@ pub enum TargetLoweringFailureKind {
     MissingEffectLowering,
     AmbiguousEffectLowering,
     UnsupportedLowerabilityReport,
+    UnsupportedTargetIntrinsic,
     NoTargetSteps,
 }
 
@@ -294,15 +295,25 @@ fn lower_effect_node(
         .get(node.effect)
         .map_or([].as_slice(), Vec::as_slice);
     match lowerings {
-        [lowering] => steps.push(TargetIrStep {
-            id: format!("{}.step.{}", intent_name, steps.len()),
-            binding: node.binding.clone(),
-            effect: node.effect.to_owned(),
-            target_intrinsic: lowering.target_intrinsic.clone(),
-            input: node.input.clone(),
-            obstruction_failures: node.obstruction_map.keys().cloned().collect(),
-            obstruction_arms: node.obstruction_map.clone(),
-        }),
+        [lowering] if !is_echo_target_intrinsic(&lowering.target_intrinsic) => {
+            failures.push(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UnsupportedTargetIntrinsic,
+                intent: Some(intent_name.to_owned()),
+                node_index: Some(node_index),
+                detail: lowering.target_intrinsic.clone(),
+            });
+        }
+        [lowering] => {
+            steps.push(TargetIrStep {
+                id: format!("{}.step.{}", intent_name, steps.len()),
+                binding: node.binding.clone(),
+                effect: node.effect.to_owned(),
+                target_intrinsic: lowering.target_intrinsic.clone(),
+                input: node.input.clone(),
+                obstruction_failures: node.obstruction_map.keys().cloned().collect(),
+                obstruction_arms: node.obstruction_map.clone(),
+            });
+        }
         [] => failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::MissingEffectLowering,
             intent: Some(intent_name.to_owned()),
@@ -311,6 +322,12 @@ fn lower_effect_node(
         }),
         _ => {}
     }
+}
+
+fn is_echo_target_intrinsic(target_intrinsic: &str) -> bool {
+    target_intrinsic
+        .strip_prefix(ECHO_DPO_TARGET_PROFILE)
+        .is_some_and(|suffix| suffix.starts_with('.'))
 }
 
 fn effect_lowerings_by_coordinate(

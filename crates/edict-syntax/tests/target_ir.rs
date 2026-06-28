@@ -364,6 +364,21 @@ fn unsupported_operation_profile_rejects_without_artifact() {
 }
 
 #[test]
+fn foreign_target_intrinsic_rejects_without_artifact() {
+    let mut facts = echo_facts();
+    facts.effect_lowerings[0].target_intrinsic = "kv.transactional@1.get".to_owned();
+
+    let report = lower_to_target_ir(&effectful_core(), &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedTargetIntrinsic]
+    );
+}
+
+#[test]
 fn empty_target_step_intents_reject_without_artifact() {
     let mut core = effectful_core();
     core.intents
