@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/compiler-input/v1",
+  "title": "Edict Compiler Input v1",
+  "description": "JSONL compiler input record for the public Edict CLI `check` operation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "kind"],
+  "properties": {
+    "schema": {
+      "const": "edict.compiler.input/v1"
+    },
+    "type": {
+      "const": "compilerInput"
+    },
+    "kind": {
+      "enum": ["source", "path", "pathList", "directory", "glob"]
+    },
+    "name": {
+      "type": "string",
+      "description": "Optional display name for inline `source` input; defaults to `inline.edict`."
+    },
+    "source": {
+      "type": "string",
+      "description": "Inline Edict source text for `source` input records."
+    },
+    "path": {
+      "type": "string",
+      "description": "Single file or directory path for `path` and `directory` input records."
+    },
+    "paths": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Ordered list of file paths for `pathList` input records."
+    },
+    "pattern": {
+      "type": "string",
+      "description": "Glob pattern for `glob` input records."
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "kind": { "const": "source" } } },
+      "then": { "required": ["source"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "path" } } },
+      "then": { "required": ["path"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "pathList" } } },
+      "then": { "required": ["paths"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "directory" } } },
+      "then": { "required": ["path"] }
+    },
+    {
+      "if": { "properties": { "kind": { "const": "glob" } } },
+      "then": { "required": ["pattern"] }
+    }
+  ]
+}

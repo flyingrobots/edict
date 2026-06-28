@@ -16,6 +16,12 @@ versions still track specification maturity rather than a released product.
   path lists, and glob patterns, and emits only JSONL records on stdout and
   stderr with stable status, result, and diagnostic fields. Added the CLI topic
   shelf and the checked `edict.compiler.settings/v1` JSON Schema artifact.
+- Added checked-in JSON Schema contract artifacts for the remaining CLI stream
+  record families — `edict.compiler.input/v1`, `edict.cli.check-result/v1`,
+  `edict.cli.diagnostic/v1`, and `edict.cli.event/v1` — so every record on the
+  CLI boundary has a stable schema. Added matching contract-artifact guard tests
+  (`CLI-TP-006`..`CLI-TP-009`) and documented all five schemas in the CLI topic
+  shelf.
 
 ### Changed
 
