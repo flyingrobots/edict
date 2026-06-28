@@ -6,7 +6,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::core_ir::{CoreExpr, CoreModule, CoreNode, CoreObstructionArm, LocalRef, ResourceRef};
+use crate::core_ir::{
+    CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, LocalRef, ResourceRef,
+};
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
@@ -119,21 +121,9 @@ pub fn lower_to_target_ir(
     core: &CoreModule,
     facts: &TargetIrLoweringFacts,
 ) -> TargetLoweringReport {
-    if facts.target_profile.coordinate != ECHO_DPO_TARGET_PROFILE {
-        return unsupported(vec![TargetLoweringFailure {
-            kind: TargetLoweringFailureKind::UnsupportedTargetProfile,
-            intent: None,
-            node_index: None,
-            detail: facts.target_profile.coordinate.clone(),
-        }]);
-    }
-    if facts.target_ir_domain != ECHO_SPAN_IR_DOMAIN {
-        return unsupported(vec![TargetLoweringFailure {
-            kind: TargetLoweringFailureKind::UnsupportedTargetIrDomain,
-            intent: None,
-            node_index: None,
-            detail: facts.target_ir_domain.clone(),
-        }]);
+    let target_failures = validate_target_selection(facts);
+    if !target_failures.is_empty() {
+        return unsupported(target_failures);
     }
 
     let effect_lowerings = effect_lowerings_by_coordinate(facts);
@@ -146,69 +136,14 @@ pub fn lower_to_target_ir(
     let mut intents = BTreeMap::new();
 
     for (intent_name, intent) in &core.intents {
-        if !operation_profiles.contains(intent.required_operation_profile.as_str()) {
-            failures.push(TargetLoweringFailure {
-                kind: TargetLoweringFailureKind::MissingOperationProfile,
-                intent: Some(intent_name.clone()),
-                node_index: None,
-                detail: intent.required_operation_profile.clone(),
-            });
-        }
-        let mut steps = Vec::new();
-        for (node_index, node) in intent.body.nodes.iter().enumerate() {
-            match node {
-                CoreNode::Effect {
-                    binding,
-                    effect,
-                    input,
-                    obstruction_map,
-                } => {
-                    let lowerings = effect_lowerings
-                        .get(effect.as_str())
-                        .map_or([].as_slice(), Vec::as_slice);
-                    match lowerings {
-                        [lowering] => steps.push(TargetIrStep {
-                            id: format!("{}.step.{}", intent_name, steps.len()),
-                            binding: binding.clone(),
-                            effect: effect.clone(),
-                            target_intrinsic: lowering.target_intrinsic.clone(),
-                            input: input.clone(),
-                            obstruction_failures: obstruction_map.keys().cloned().collect(),
-                            obstruction_arms: obstruction_map.clone(),
-                        }),
-                        [] => failures.push(TargetLoweringFailure {
-                            kind: TargetLoweringFailureKind::MissingEffectLowering,
-                            intent: Some(intent_name.clone()),
-                            node_index: Some(node_index),
-                            detail: effect.clone(),
-                        }),
-                        _ => {}
-                    }
-                }
-                CoreNode::Let { .. } => failures.push(TargetLoweringFailure {
-                    kind: TargetLoweringFailureKind::UnsupportedCoreNode,
-                    intent: Some(intent_name.clone()),
-                    node_index: Some(node_index),
-                    detail: "let".to_owned(),
-                }),
-            }
-        }
-        if steps.is_empty() && intent.body.nodes.is_empty() {
-            failures.push(TargetLoweringFailure {
-                kind: TargetLoweringFailureKind::NoTargetSteps,
-                intent: Some(intent_name.clone()),
-                node_index: None,
-                detail: "intent has no target-owned steps".to_owned(),
-            });
-        }
-        intents.insert(
-            intent_name.clone(),
-            TargetIrIntent {
-                operation_profile: intent.required_operation_profile.clone(),
-                steps,
-                result: intent.body.result.clone(),
-            },
+        let lowered = lower_intent(
+            intent_name,
+            intent,
+            &operation_profiles,
+            &effect_lowerings,
+            &mut failures,
         );
+        intents.insert(intent_name.clone(), lowered);
     }
 
     if failures.is_empty() {
@@ -224,6 +159,144 @@ pub fn lower_to_target_ir(
         }
     } else {
         unsupported(failures)
+    }
+}
+
+fn validate_target_selection(facts: &TargetIrLoweringFacts) -> Vec<TargetLoweringFailure> {
+    if facts.target_profile.coordinate != ECHO_DPO_TARGET_PROFILE {
+        return vec![TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedTargetProfile,
+            intent: None,
+            node_index: None,
+            detail: facts.target_profile.coordinate.clone(),
+        }];
+    }
+    if facts.target_ir_domain != ECHO_SPAN_IR_DOMAIN {
+        return vec![TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedTargetIrDomain,
+            intent: None,
+            node_index: None,
+            detail: facts.target_ir_domain.clone(),
+        }];
+    }
+    Vec::new()
+}
+
+fn lower_intent(
+    intent_name: &str,
+    intent: &CoreIntent,
+    operation_profiles: &BTreeSet<&str>,
+    effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
+    failures: &mut Vec<TargetLoweringFailure>,
+) -> TargetIrIntent {
+    if !operation_profiles.contains(intent.required_operation_profile.as_str()) {
+        failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::MissingOperationProfile,
+            intent: Some(intent_name.to_owned()),
+            node_index: None,
+            detail: intent.required_operation_profile.clone(),
+        });
+    }
+
+    let mut steps = Vec::new();
+    for (node_index, node) in intent.body.nodes.iter().enumerate() {
+        lower_node(
+            intent_name,
+            node_index,
+            node,
+            effect_lowerings,
+            &mut steps,
+            failures,
+        );
+    }
+    if steps.is_empty() && intent.body.nodes.is_empty() {
+        failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::NoTargetSteps,
+            intent: Some(intent_name.to_owned()),
+            node_index: None,
+            detail: "intent has no target-owned steps".to_owned(),
+        });
+    }
+
+    TargetIrIntent {
+        operation_profile: intent.required_operation_profile.clone(),
+        steps,
+        result: intent.body.result.clone(),
+    }
+}
+
+fn lower_node(
+    intent_name: &str,
+    node_index: usize,
+    node: &CoreNode,
+    effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
+    steps: &mut Vec<TargetIrStep>,
+    failures: &mut Vec<TargetLoweringFailure>,
+) {
+    match node {
+        CoreNode::Effect {
+            binding,
+            effect,
+            input,
+            obstruction_map,
+        } => lower_effect_node(
+            intent_name,
+            node_index,
+            EffectNodeParts {
+                binding,
+                effect,
+                input,
+                obstruction_map,
+            },
+            effect_lowerings,
+            steps,
+            failures,
+        ),
+        CoreNode::Let { .. } => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "let".to_owned(),
+        }),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct EffectNodeParts<'a> {
+    binding: &'a LocalRef,
+    effect: &'a str,
+    input: &'a CoreExpr,
+    obstruction_map: &'a BTreeMap<String, CoreObstructionArm>,
+}
+
+fn lower_effect_node(
+    intent_name: &str,
+    node_index: usize,
+    node: EffectNodeParts<'_>,
+    effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
+    steps: &mut Vec<TargetIrStep>,
+    failures: &mut Vec<TargetLoweringFailure>,
+) {
+    let lowerings = effect_lowerings
+        .get(node.effect)
+        .map_or([].as_slice(), Vec::as_slice);
+    match lowerings {
+        [lowering] => steps.push(TargetIrStep {
+            id: format!("{}.step.{}", intent_name, steps.len()),
+            binding: node.binding.clone(),
+            effect: node.effect.to_owned(),
+            target_intrinsic: lowering.target_intrinsic.clone(),
+            input: node.input.clone(),
+            obstruction_failures: node.obstruction_map.keys().cloned().collect(),
+            obstruction_arms: node.obstruction_map.clone(),
+        }),
+        [] => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::MissingEffectLowering,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: node.effect.to_owned(),
+        }),
+        _ => {}
     }
 }
 
