@@ -21,7 +21,9 @@ versions still track specification maturity rather than a released product.
   `edict.cli.diagnostic/v1`, and `edict.cli.event/v1` — so every record on the
   CLI boundary has a stable schema. Added matching contract-artifact guard tests
   (`CLI-TP-006`..`CLI-TP-009`) and documented all five schemas in the CLI topic
-  shelf.
+  shelf. Hoisted the CLI stream schema identifiers into `edict_cli` as the single
+  source of truth and added a test that pins each runtime constant to its
+  checked-in JSON Schema artifact, guarding against record/schema drift.
 
 ### Changed
 

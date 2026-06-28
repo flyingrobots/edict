@@ -69,6 +69,14 @@ The current specification set is:
   for the `edict.core/v1` semantic model and CDDL schema.
 - [Compiler Settings JSON Schema](./schemas/edict.compiler-settings.v1.schema.json):
   stable JSON Schema artifact for `edict.compiler.settings/v1` input records.
+- [Compiler Input JSON Schema](./schemas/edict.compiler-input.v1.schema.json):
+  stable JSON Schema artifact for `edict.compiler.input/v1` input records.
+- [CLI Check Result JSON Schema](./schemas/edict.cli-check-result.v1.schema.json):
+  stable JSON Schema artifact for `edict.cli.check-result/v1` stdout records.
+- [CLI Diagnostic JSON Schema](./schemas/edict.cli-diagnostic.v1.schema.json):
+  stable JSON Schema artifact for `edict.cli.diagnostic/v1` stderr records.
+- [CLI Event JSON Schema](./schemas/edict.cli-event.v1.schema.json):
+  stable JSON Schema artifact for `edict.cli.event/v1` terminal status records.
 - [Syntax Topic](./topics/syntax/): current contract and verification matrix for
   the Phase 1 `edict-syntax` lexer/parser.
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type

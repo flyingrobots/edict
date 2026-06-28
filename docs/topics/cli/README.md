@@ -35,7 +35,10 @@ prose outside JSON string fields. [CLI-REQ-001]
 
 Every record family on the CLI boundary has a checked-in JSON Schema. These
 schemas are the stable contract for callers; the CLI does not embed a schema
-validation engine.
+validation engine. The schemas pin `additionalProperties` closed and may be
+stricter than the parser, which ignores fields it does not recognize. Records
+that conform to the schema are always accepted; callers must not rely on the
+parser tolerating extra fields.
 
 | Record `schema` | Direction | Artifact |
 | --- | --- | --- |
