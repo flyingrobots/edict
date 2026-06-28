@@ -373,6 +373,23 @@ fn non_echo_target_profile_rejects_without_artifact() {
 }
 
 #[test]
+fn undigested_target_profile_rejects_without_artifact() {
+    for digest in [None, Some("sha256:not-a-review-digest".to_owned())] {
+        let mut facts = echo_facts();
+        facts.target_profile.digest = digest;
+
+        let report = lower_to_target_ir(&effectful_core(), &facts);
+
+        assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+        assert!(report.artifact.is_none());
+        assert_eq!(
+            failure_kinds(&report),
+            vec![TargetLoweringFailureKind::UndigestedTargetProfile]
+        );
+    }
+}
+
+#[test]
 fn unsupported_operation_profile_rejects_without_artifact() {
     let module = edict_syntax::parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
     let core = compile_to_core(

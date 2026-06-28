@@ -52,7 +52,9 @@ the supported slice. This records success-output semantics without executing
 Echo or admitting a bundle.
 
 Selecting a non-Echo target profile rejects with
-`TargetLoweringFailureKind::UnsupportedTargetProfile`. Supplying a Core module
+`TargetLoweringFailureKind::UnsupportedTargetProfile`. Selecting Echo without a
+digest-locked target-profile reference rejects with
+`TargetLoweringFailureKind::UndigestedTargetProfile`. Supplying a Core module
 with an unsupported ABI rejects with
 `TargetLoweringFailureKind::UnsupportedCoreAbi`. Supplying unsupported Core
 capability flags rejects with

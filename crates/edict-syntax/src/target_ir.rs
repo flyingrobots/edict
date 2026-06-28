@@ -85,6 +85,7 @@ pub enum TargetLoweringStatus {
 pub enum TargetLoweringFailureKind {
     UnsupportedTargetProfile,
     UnsupportedTargetIrDomain,
+    UndigestedTargetProfile,
     UnsupportedCoreNode,
     MissingOperationProfile,
     MissingEffectLowering,
@@ -194,6 +195,18 @@ fn validate_target_selection(facts: &TargetIrLoweringFacts) -> Vec<TargetLowerin
             intent: None,
             node_index: None,
             detail: facts.target_profile.coordinate.clone(),
+        }];
+    }
+    if !facts.target_profile.is_digest_locked() {
+        return vec![TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UndigestedTargetProfile,
+            intent: None,
+            node_index: None,
+            detail: facts
+                .target_profile
+                .digest
+                .clone()
+                .unwrap_or_else(|| "<missing>".to_owned()),
         }];
     }
     if facts.target_ir_domain != ECHO_SPAN_IR_DOMAIN {
