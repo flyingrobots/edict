@@ -25,7 +25,7 @@ pub struct TargetIrLoweringFacts {
 impl TargetIrLoweringFacts {
     #[must_use]
     pub fn from_lowerability_report(
-        target_profile: ResourceRef,
+        target_profile_digest: Option<String>,
         target_ir_domain: impl Into<String>,
         operation_profile: impl Into<String>,
         report: &LowerabilityReport,
@@ -40,7 +40,10 @@ impl TargetIrLoweringFacts {
         }
 
         Ok(Self {
-            target_profile,
+            target_profile: ResourceRef {
+                coordinate: report.target_profile.clone(),
+                digest: target_profile_digest,
+            },
             target_ir_domain: target_ir_domain.into(),
             operation_profiles: vec![operation_profile.into()],
             effect_lowerings: report

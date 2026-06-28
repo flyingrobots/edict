@@ -40,6 +40,8 @@ const CHAINED_EFFECT_RESULTS: &str = "package a.b@1;\n\
     }";
 
 const PURE_LOCAL_RECORD: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
+const ECHO_PROFILE_DIGEST: &str =
+    "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
 fn effectful_core() -> edict_syntax::CoreModule {
     let module = edict_syntax::parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
@@ -96,10 +98,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
     TargetIrLoweringFacts {
         target_profile: ResourceRef {
             coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
-            digest: Some(
-                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-                    .to_owned(),
-            ),
+            digest: echo_profile_digest(),
         },
         target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
         operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
@@ -108,6 +107,10 @@ fn echo_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
         }],
     }
+}
+
+fn echo_profile_digest() -> Option<String> {
+    Some(ECHO_PROFILE_DIGEST.to_owned())
 }
 
 fn echo_profile_facts() -> TargetProfileFacts {
@@ -196,13 +199,7 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
     assert!(lowerability.failures.is_empty());
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        ResourceRef {
-            coordinate: profile_facts.coordinate.clone(),
-            digest: Some(
-                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-                    .to_owned(),
-            ),
-        },
+        echo_profile_digest(),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
@@ -233,13 +230,7 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
     assert!(lowerability.failures.is_empty());
 
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
-        ResourceRef {
-            coordinate: profile_facts.coordinate.clone(),
-            digest: Some(
-                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-                    .to_owned(),
-            ),
-        },
+        echo_profile_digest(),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
@@ -263,13 +254,7 @@ fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
     assert_eq!(lowerability.status, LowerabilityStatus::Unsupported);
 
     let error = TargetIrLoweringFacts::from_lowerability_report(
-        ResourceRef {
-            coordinate: profile_facts.coordinate.clone(),
-            digest: Some(
-                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-                    .to_owned(),
-            ),
-        },
+        echo_profile_digest(),
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
@@ -279,6 +264,30 @@ fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
     assert_eq!(
         error.kind,
         TargetLoweringFailureKind::UnsupportedLowerabilityReport
+    );
+}
+
+#[test]
+fn lowerability_bridge_uses_report_target_profile_identity() {
+    let mut profile_facts = echo_profile_facts();
+    profile_facts.coordinate = "gitwarp.ref_crdt@1".to_owned();
+    let lowerability = check_lowerability(&echo_requirements(), &profile_facts);
+    assert_eq!(lowerability.status, LowerabilityStatus::Native);
+
+    let target_facts = TargetIrLoweringFacts::from_lowerability_report(
+        echo_profile_digest(),
+        ECHO_SPAN_IR_DOMAIN,
+        "continuum.profile.write/v1",
+        &lowerability,
+    )
+    .expect("native lowerability builds target facts");
+    let report = lower_to_target_ir(&effectful_core(), &target_facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedTargetProfile]
     );
 }
 
