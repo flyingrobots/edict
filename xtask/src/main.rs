@@ -2283,7 +2283,7 @@ fn run() {}
             "tag_object = \"f7888160f7f9a0d7b9b82d4f78bb38b886856a1e\"",
             "peeled_commit = \"6f9c731b4f36d3283dcb448b14761832ab916b07\"",
             "release_notes_source_commit = \"6f9c731b4f36d3283dcb448b14761832ab916b07\"",
-            "post_publication_evidence_commit = \"d3afa8e1a0a3aecc20026687f362c84bac481f4b\"",
+            "post_publication_evidence_pr = 61",
             "main_ci_run = 28303787401",
             "auto_release_tag_run = 28303801200",
             "release_workflow_run = 28303809157",
