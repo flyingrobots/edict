@@ -92,6 +92,7 @@ pub enum TargetLoweringFailureKind {
     UnsupportedLowerabilityReport,
     UnsupportedTargetIntrinsic,
     UnsupportedCoreAbi,
+    UnsupportedCoreCapability,
     NoTargetSteps,
 }
 
@@ -215,7 +216,15 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
             detail: core.api_version.clone(),
         }];
     }
-    Vec::new()
+    core.required_core_capabilities
+        .iter()
+        .map(|capability| TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreCapability,
+            intent: None,
+            node_index: None,
+            detail: capability.clone(),
+        })
+        .collect()
 }
 
 fn lower_intent(

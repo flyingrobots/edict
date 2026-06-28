@@ -457,3 +457,19 @@ fn unsupported_core_abi_rejects_without_artifact() {
         vec![TargetLoweringFailureKind::UnsupportedCoreAbi]
     );
 }
+
+#[test]
+fn unsupported_core_capability_rejects_without_artifact() {
+    let mut core = effectful_core();
+    core.required_core_capabilities
+        .push("edict.core.capability.variant-map/v1".to_owned());
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedCoreCapability]
+    );
+}
