@@ -206,7 +206,8 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
-    );
+    )
+    .expect("native lowerability builds target facts");
     let report = lower_to_target_ir(&effectful_core(), &target_facts);
 
     assert_eq!(report.status, TargetLoweringStatus::Lowered);
@@ -242,7 +243,8 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
         ECHO_SPAN_IR_DOMAIN,
         "continuum.profile.write/v1",
         &lowerability,
-    );
+    )
+    .expect("native lowerability builds target facts");
     let report = lower_to_target_ir(&effectful_core(), &target_facts);
 
     assert_eq!(report.status, TargetLoweringStatus::Lowered);
@@ -251,6 +253,33 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
         .expect("unselected native support does not make target lowering ambiguous");
     let step = &artifact.intents.get("t").expect("intent t").steps[0];
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
+}
+
+#[test]
+fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
+    let mut profile_facts = echo_profile_facts();
+    profile_facts.operation_profiles.clear();
+    let lowerability = check_lowerability(&echo_requirements(), &profile_facts);
+    assert_eq!(lowerability.status, LowerabilityStatus::Unsupported);
+
+    let error = TargetIrLoweringFacts::from_lowerability_report(
+        ResourceRef {
+            coordinate: profile_facts.coordinate.clone(),
+            digest: Some(
+                "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                    .to_owned(),
+            ),
+        },
+        ECHO_SPAN_IR_DOMAIN,
+        "continuum.profile.write/v1",
+        &lowerability,
+    )
+    .expect_err("unsupported lowerability cannot build target facts");
+
+    assert_eq!(
+        error.kind,
+        TargetLoweringFailureKind::UnsupportedLowerabilityReport
+    );
 }
 
 #[test]

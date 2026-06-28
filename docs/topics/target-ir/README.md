@@ -26,10 +26,10 @@ not read target facts from ambient environment, discover runtimes, or fetch
 registries.
 
 `TargetIrLoweringFacts::from_lowerability_report` derives the first Echo
-effect-to-intrinsic lowering table from the selected native effects reported by
-the lowerability checker. The v0.9 bridge is native-only: it consumes selected
-native effect support and does not perform adapter-chain search or general
-target plugin dispatch.
+effect-to-intrinsic lowering table from accepted native lowerability reports.
+Rejected lowerability reports cannot build target-lowering facts. The v0.9
+bridge is native-only: it consumes selected native effect support and does not
+perform adapter-chain search or general target plugin dispatch.
 
 Target-lowering facts also carry the operation profiles selected by
 lowerability. A Core intent whose `required_operation_profile` is absent from

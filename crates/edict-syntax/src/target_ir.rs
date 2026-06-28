@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::core_ir::{
     CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, LocalRef, ResourceRef,
 };
-use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport};
+use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
 pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
@@ -29,8 +29,17 @@ impl TargetIrLoweringFacts {
         target_ir_domain: impl Into<String>,
         operation_profile: impl Into<String>,
         report: &LowerabilityReport,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, TargetLoweringFailure> {
+        if report.status != LowerabilityStatus::Native {
+            return Err(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UnsupportedLowerabilityReport,
+                intent: None,
+                node_index: None,
+                detail: format!("{:?}", report.status),
+            });
+        }
+
+        Ok(Self {
             target_profile,
             target_ir_domain: target_ir_domain.into(),
             operation_profiles: vec![operation_profile.into()],
@@ -48,7 +57,7 @@ impl TargetIrLoweringFacts {
                     })
                 })
                 .collect(),
-        }
+        })
     }
 }
 
@@ -72,6 +81,7 @@ pub enum TargetLoweringFailureKind {
     MissingOperationProfile,
     MissingEffectLowering,
     AmbiguousEffectLowering,
+    UnsupportedLowerabilityReport,
     NoTargetSteps,
 }
 
