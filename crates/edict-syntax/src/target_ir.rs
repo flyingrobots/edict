@@ -95,6 +95,7 @@ pub struct TargetIrArtifact {
 pub struct TargetIrIntent {
     pub operation_profile: String,
     pub steps: Vec<TargetIrStep>,
+    pub result: CoreExpr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,6 +178,7 @@ pub fn lower_to_target_ir(
             TargetIrIntent {
                 operation_profile: intent.required_operation_profile.clone(),
                 steps,
+                result: intent.body.result.clone(),
             },
         );
     }

@@ -243,6 +243,16 @@ fn obstruction_arm_values_are_preserved_in_echo_span_ir() {
 }
 
 #[test]
+fn intent_result_is_preserved_in_echo_span_ir() {
+    let base = effectful_artifact(EFFECTFUL_REPLACE);
+    let changed = effectful_artifact(
+        &EFFECTFUL_REPLACE.replace("return { id: input.id };", "return { id: receipt.id };"),
+    );
+
+    assert_ne!(base, changed);
+}
+
+#[test]
 fn non_echo_target_profile_rejects_without_artifact() {
     let core = effectful_core();
     let mut facts = echo_facts();
