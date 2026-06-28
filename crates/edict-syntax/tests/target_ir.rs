@@ -24,6 +24,20 @@ const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
         else { rejected(reason) => domain.WriteRejected };\n\
       return { id: input.id };\n\
     }";
+const CHAINED_EFFECT_RESULTS: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let first: Receipt = target.replace(input.id)\n\
+        else { rejected(reason) => domain.WriteRejected };\n\
+      let second: Receipt = target.replace(first.id)\n\
+        else { rejected(reason) => domain.WriteRejected };\n\
+      return { id: second.id };\n\
+    }";
 
 const PURE_LOCAL_RECORD: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
 
@@ -250,6 +264,22 @@ fn intent_result_is_preserved_in_echo_span_ir() {
     );
 
     assert_ne!(base, changed);
+}
+
+#[test]
+fn effect_result_bindings_are_preserved_in_echo_span_ir() {
+    let artifact = effectful_artifact(CHAINED_EFFECT_RESULTS);
+    let intent = artifact.intents.get("t").expect("intent t");
+
+    assert_eq!(intent.steps.len(), 2);
+    assert_eq!(intent.steps[0].binding.id, "local.0");
+    assert_eq!(intent.steps[1].binding.id, "local.1");
+
+    let CoreExpr::Field { base, field } = &intent.steps[1].input else {
+        panic!("second effect input reads from first effect result");
+    };
+    assert_eq!(field, "id");
+    assert!(matches!(base.as_ref(), CoreExpr::Local { reference } if reference.id == "local.0"));
 }
 
 #[test]

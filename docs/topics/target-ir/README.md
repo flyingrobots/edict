@@ -35,6 +35,7 @@ For the supported Echo slice, each supported Core effect node becomes a
 deterministic Target IR step that records:
 
 - the source Core effect coordinate;
+- the effect result binding;
 - the selected Echo target intrinsic;
 - the structured Core input expression;
 - sorted obstruction failure keys and their structured obstruction arm values.

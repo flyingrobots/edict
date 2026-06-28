@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::core_ir::{CoreExpr, CoreModule, CoreNode, CoreObstructionArm, ResourceRef};
+use crate::core_ir::{CoreExpr, CoreModule, CoreNode, CoreObstructionArm, LocalRef, ResourceRef};
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
@@ -101,6 +101,7 @@ pub struct TargetIrIntent {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetIrStep {
     pub id: String,
+    pub binding: LocalRef,
     pub effect: String,
     pub target_intrinsic: String,
     pub input: CoreExpr,
@@ -139,10 +140,10 @@ pub fn lower_to_target_ir(
         for (node_index, node) in intent.body.nodes.iter().enumerate() {
             match node {
                 CoreNode::Effect {
+                    binding,
                     effect,
                     input,
                     obstruction_map,
-                    ..
                 } => {
                     let lowerings = effect_lowerings
                         .get(effect.as_str())
@@ -150,6 +151,7 @@ pub fn lower_to_target_ir(
                     match lowerings {
                         [lowering] => steps.push(TargetIrStep {
                             id: format!("{}.step.{}", intent_name, steps.len()),
+                            binding: binding.clone(),
                             effect: effect.clone(),
                             target_intrinsic: lowering.target_intrinsic.clone(),
                             input: input.clone(),

@@ -14,9 +14,9 @@ versions still track specification maturity rather than a released product.
   `echo.dpo@1` target facts can lower the supported effectful Core shape into a
   deterministic in-memory `echo.span-ir/v1` review artifact, while non-Echo
   targets and unsupported Core nodes reject with stable target-lowering failure
-  kinds before any artifact is emitted. Echo Target IR preserves effect inputs,
-  obstruction failure keys, obstruction arm values, and intent result
-  expressions. Target IR lowering facts can also be derived from selected
+  kinds before any artifact is emitted. Echo Target IR preserves effect result
+  bindings, effect inputs, obstruction failure keys, obstruction arm values, and
+  intent result expressions. Target IR lowering facts can also be derived from selected
   native lowerability results, keeping the first Echo artifact path tied to
   explicit lowerability evidence without carrying unselected native support
   facts.
