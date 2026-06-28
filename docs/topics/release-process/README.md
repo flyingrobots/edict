@@ -72,7 +72,7 @@ thesis. [RELEASE-REQ-018]
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
-- [`v0.7.0-alpha.1`](../../releases/v0.7.0-alpha.1.md): publish-ready
+- [`v0.7.0-alpha.1`](../../releases/v0.7.0-alpha.1.md): published
   file-backed authority-facts alpha notes.
 - [`v0.6.0-alpha.1`](../../releases/v0.6.0-alpha.1.md): published
   developer-tooling alpha notes.
@@ -88,14 +88,20 @@ release workflow by full tag name. Current release-note files:
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
 
-The `v0.7.0-alpha.1` release is publish-ready for the release-prep flow:
+The `v0.7.0-alpha.1` release is published as a GitHub prerelease:
 
 - Release issue: <https://github.com/flyingrobots/edict/issues/59>
+- Release URL: <https://github.com/flyingrobots/edict/releases/tag/v0.7.0-alpha.1>
+- Tag object: `f7888160f7f9a0d7b9b82d4f78bb38b886856a1e`; peeled commit:
+  `6f9c731b4f36d3283dcb448b14761832ab916b07`.
+- Main CI run: `28303787401`; Auto Release Tag run: `28303801200`; Release
+  workflow run: `28303809157`.
+- Milestone `v0.7.0-alpha.1` (#8) closed at `2026-06-27T22:31:50Z` with zero
+  open issues.
 - Topic-shelf audit evidence: 19 of 19 shelves audited; 19 of 19 accurate after
   release-prep edits; coverage 100%; accuracy 100%.
-- Publication plan: merge `release/v0.7.0-alpha.1-prep`, wait for successful
-  `main` CI, then let Auto Release Tag create `v0.7.0-alpha.1` and dispatch the
-  Release workflow.
+- No crates.io publication occurred: `edict-syntax` remains `publish = false`,
+  and the GitHub prerelease has zero package assets.
 
 The `v0.6.0-alpha.1` release is published as a GitHub prerelease:
 
