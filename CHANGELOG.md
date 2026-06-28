@@ -13,9 +13,10 @@ versions still track specification maturity rather than a released product.
 - Added the first minimal effectful compiler-spine path: an annotated
   `let ... = effect(arg) else { failure(binder) => Obstruction }` source shape
   can lower through file-backed authority facts into typed Core with a semantic
-  effect node and deterministic obstruction map. Unsupported effectful
-  branch-yield and duplicate obstruction failure keys still fail before Core
-  lowering with stable compiler error kinds.
+  effect node and a source-order-stable obstruction map. Unsupported effectful
+  branch-yield, chained effect calls, typed effect calls, and duplicate
+  obstruction failure keys still fail before Core lowering with stable compiler
+  error kinds.
 
 ### Changed
 
