@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
     CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, LocalRef, ResourceRef,
+    CORE_API_VERSION,
 };
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
 
@@ -90,6 +91,7 @@ pub enum TargetLoweringFailureKind {
     AmbiguousEffectLowering,
     UnsupportedLowerabilityReport,
     UnsupportedTargetIntrinsic,
+    UnsupportedCoreAbi,
     NoTargetSteps,
 }
 
@@ -143,6 +145,10 @@ pub fn lower_to_target_ir(
     if !target_failures.is_empty() {
         return unsupported(target_failures);
     }
+    let core_failures = validate_core_module(core);
+    if !core_failures.is_empty() {
+        return unsupported(core_failures);
+    }
 
     let effect_lowerings = effect_lowerings_by_coordinate(facts);
     let operation_profiles = facts
@@ -195,6 +201,18 @@ fn validate_target_selection(facts: &TargetIrLoweringFacts) -> Vec<TargetLowerin
             intent: None,
             node_index: None,
             detail: facts.target_ir_domain.clone(),
+        }];
+    }
+    Vec::new()
+}
+
+fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
+    if core.api_version != CORE_API_VERSION {
+        return vec![TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreAbi,
+            intent: None,
+            node_index: None,
+            detail: core.api_version.clone(),
         }];
     }
     Vec::new()

@@ -52,8 +52,10 @@ the supported slice. This records success-output semantics without executing
 Echo or admitting a bundle.
 
 Selecting a non-Echo target profile rejects with
-`TargetLoweringFailureKind::UnsupportedTargetProfile`. Supplying Core nodes
-outside the first supported effect shape rejects with
+`TargetLoweringFailureKind::UnsupportedTargetProfile`. Supplying a Core module
+with an unsupported ABI rejects with
+`TargetLoweringFailureKind::UnsupportedCoreAbi`. Supplying Core nodes outside
+the first supported effect shape rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Missing or ambiguous effect
 lowering facts, non-Echo target intrinsics, and missing operation-profile
 support also reject before any artifact is emitted. A Core intent with no
