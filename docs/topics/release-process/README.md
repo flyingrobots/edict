@@ -72,7 +72,7 @@ thesis. [RELEASE-REQ-018]
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
-- [`v0.9.0-alpha.1`](../../releases/v0.9.0-alpha.1.md): publish-ready first
+- [`v0.9.0-alpha.1`](../../releases/v0.9.0-alpha.1.md): published first
   Target IR alpha notes.
 - [`v0.8.0-alpha.1`](../../releases/v0.8.0-alpha.1.md): published minimal
   effectful compiler-spine alpha notes.
@@ -92,19 +92,20 @@ release workflow by full tag name. Current release-note files:
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
 
-The `v0.9.0-alpha.1` release is publish-ready on the release-prep branch:
+The `v0.9.0-alpha.1` release is published as a GitHub prerelease:
 
 - Release issue: <https://github.com/flyingrobots/edict/issues/70>
-- Release-prep branch:
-  `release/v0.9.0-alpha.1-prep`
-- Planned tag: `v0.9.0-alpha.1`
-- Milestone `v0.9.0-alpha.1` (#10) has only the release-prep issue open before
-  PR merge; the prep PR closes that issue before auto-tagging checks for zero
-  open milestone issues.
+- Release URL: <https://github.com/flyingrobots/edict/releases/tag/v0.9.0-alpha.1>
+- Tag object: `c6a4ea6b10d438cd407cd7f273fecf1fd012b2d3`; peeled commit:
+  `81bacc5a240bd3ea50af934a3611ce6b3f505043`.
+- Main CI run: `28314566818`; Auto Release Tag run: `28314582826`; Release
+  workflow run: `28314590143`.
+- Milestone `v0.9.0-alpha.1` (#10) closed at `2026-06-28T07:04:06Z` with zero
+  open issues.
 - Topic-shelf audit evidence: 20 of 20 shelves audited; 20 of 20 accurate after
   release-prep edits; coverage 100%; accuracy 100%.
-- No crates.io publication is planned: `edict-syntax` remains
-  `publish = false`, and the GitHub prerelease publishes notes only.
+- No crates.io publication occurred: `edict-syntax` remains `publish = false`,
+  and the GitHub prerelease has zero package assets.
 
 The `v0.7.0-alpha.1` release is published as a GitHub prerelease:
 
