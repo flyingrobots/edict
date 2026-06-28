@@ -201,7 +201,6 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
         Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
-        "continuum.profile.write/v1",
         &lowerability,
     )
     .expect("native lowerability builds target facts");
@@ -232,7 +231,6 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
         Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
-        "continuum.profile.write/v1",
         &lowerability,
     )
     .expect("native lowerability builds target facts");
@@ -259,7 +257,6 @@ fn lowerability_bridge_deduplicates_identical_native_effect_selection() {
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
         Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
-        "continuum.profile.write/v1",
         &lowerability,
     )
     .expect("native lowerability builds target facts");
@@ -308,7 +305,6 @@ fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
     let error = TargetIrLoweringFacts::from_lowerability_report(
         Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
-        "continuum.profile.write/v1",
         &lowerability,
     )
     .expect_err("unsupported lowerability cannot build target facts");
@@ -329,7 +325,6 @@ fn lowerability_bridge_uses_report_target_profile_identity() {
     let target_facts = TargetIrLoweringFacts::from_lowerability_report(
         Some(echo_profile_digest()),
         ECHO_SPAN_IR_DOMAIN,
-        "continuum.profile.write/v1",
         &lowerability,
     )
     .expect("native lowerability builds target facts");
@@ -340,6 +335,33 @@ fn lowerability_bridge_uses_report_target_profile_identity() {
     assert_eq!(
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::UnsupportedTargetProfile]
+    );
+}
+
+#[test]
+fn lowerability_bridge_uses_report_operation_profile_identity() {
+    let lowerability = check_lowerability(&echo_requirements(), &echo_profile_facts());
+    assert_eq!(lowerability.status, LowerabilityStatus::Native);
+
+    let target_facts = TargetIrLoweringFacts::from_lowerability_report(
+        Some(echo_profile_digest()),
+        ECHO_SPAN_IR_DOMAIN,
+        &lowerability,
+    )
+    .expect("native lowerability builds target facts");
+    let module = edict_syntax::parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
+    let core = compile_to_core(
+        &module,
+        &effectful_context_with_profile("continuum.profile.unreviewed/v1"),
+    )
+    .expect("effectful source compiles to Core with caller-supplied profile");
+    let report = lower_to_target_ir(&core, &target_facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::MissingOperationProfile]
     );
 }
 

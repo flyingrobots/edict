@@ -174,6 +174,7 @@ impl LowerabilityEffectResult {
 pub struct LowerabilityReport {
     pub status: LowerabilityStatus,
     pub target_profile: String,
+    pub operation_profile: String,
     pub effect_results: Vec<LowerabilityEffectResult>,
     pub failures: Vec<LowerabilityFailure>,
 }
@@ -288,6 +289,7 @@ pub fn check_lowerability(
     LowerabilityReport {
         status,
         target_profile: facts.coordinate.clone(),
+        operation_profile: requirements.operation_profile.clone(),
         effect_results,
         failures,
     }

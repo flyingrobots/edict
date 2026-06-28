@@ -18,10 +18,12 @@ versions still track specification maturity rather than a released product.
   bindings, effect inputs, obstruction failure keys, obstruction arm values, and
   intent result expressions. Target IR lowering facts can also be derived from
   selected native lowerability results, keeping the first Echo artifact path
-  tied to explicit lowerability evidence without carrying unselected native
-  support facts, and operation profiles unsupported by the selected target facts
-  reject before Target IR emission. Intents with no target-owned steps also
-  reject instead of producing empty Echo artifacts.
+  tied to the lowerability report's target profile, operation profile, and
+  selected native effect support. The lowerer rejects unsupported Core ABI
+  versions, unsupported Core capability flags, undigested target-profile
+  references, non-Echo target intrinsics, operation profiles unsupported by the
+  selected target facts, and intents with no target-owned steps before Target IR
+  emission.
 
 ### Changed
 

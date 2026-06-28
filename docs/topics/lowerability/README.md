@@ -14,8 +14,8 @@ data structures for:
 
 - `LoweringRequirements`, the typed pre-lowering question;
 - `TargetProfileFacts`, explicit target-profile support facts;
-- `LowerabilityReport`, including `Native`, `Adapted`, and `Unsupported`
-  classifications;
+- `LowerabilityReport`, including the checked operation profile, selected target
+  profile, and `Native`, `Adapted`, or `Unsupported` classification;
 - stable `LowerabilityFailureKind` categories. [LOWER-REQ-001]
   [LOWER-REQ-002]
 

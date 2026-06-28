@@ -34,7 +34,6 @@ impl TargetIrLoweringFacts {
     pub fn from_lowerability_report(
         target_profile_digest: Option<String>,
         target_ir_domain: impl Into<String>,
-        operation_profile: impl Into<String>,
         report: &LowerabilityReport,
     ) -> Result<Self, TargetLoweringFailure> {
         if report.status != LowerabilityStatus::Native {
@@ -52,7 +51,7 @@ impl TargetIrLoweringFacts {
                 digest: target_profile_digest,
             },
             target_ir_domain: target_ir_domain.into(),
-            operation_profiles: vec![operation_profile.into()],
+            operation_profiles: vec![report.operation_profile.clone()],
             effect_lowerings: selected_native_effect_lowerings(report),
         })
     }
