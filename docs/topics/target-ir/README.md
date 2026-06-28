@@ -57,8 +57,9 @@ Selecting a non-Echo target profile rejects with
 digest-locked target-profile reference rejects with
 `TargetLoweringFailureKind::UndigestedTargetProfile`. Supplying a Core module
 with an unsupported ABI rejects with
-`TargetLoweringFailureKind::UnsupportedCoreAbi`. Supplying unsupported Core
-capability flags rejects with
+`TargetLoweringFailureKind::UnsupportedCoreAbi`. Supplying a Core module with
+floating imports rejects with `TargetLoweringFailureKind::UndigestedCoreImport`.
+Supplying unsupported Core capability flags rejects with
 `TargetLoweringFailureKind::UnsupportedCoreCapability`. Supplying Core nodes
 outside the first supported effect shape rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Missing or ambiguous effect

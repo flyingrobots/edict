@@ -102,6 +102,7 @@ pub enum TargetLoweringFailureKind {
     UnsupportedTargetIntrinsic,
     UnsupportedCoreAbi,
     UnsupportedCoreCapability,
+    UndigestedCoreImport,
     NoTargetSteps,
 }
 
@@ -250,6 +251,20 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
             node_index: None,
             detail: "core module has no target-owned intents".to_owned(),
         }];
+    }
+    let floating_imports = core
+        .imports
+        .iter()
+        .filter(|import| !import.resource.is_digest_locked())
+        .map(|import| TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UndigestedCoreImport,
+            intent: None,
+            node_index: None,
+            detail: import.resource.coordinate.clone(),
+        })
+        .collect::<Vec<_>>();
+    if !floating_imports.is_empty() {
+        return floating_imports;
     }
     core.required_core_capabilities
         .iter()

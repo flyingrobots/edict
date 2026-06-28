@@ -56,6 +56,7 @@ Out of scope:
 | TIR-TP-011 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-003 | Selecting Echo with a missing or invalid target-profile digest returns `TargetLoweringFailureKind::UndigestedTargetProfile` with no artifact. | undigested_target_profile_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Keeps emitted Target IR bound to a reproducible selected target profile. |
 | TIR-TP-012 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | Duplicate lowerings for an unused effect do not reject an otherwise supported Core module. | unused_duplicate_effect_lowerings_do_not_reject_supported_effect | crates/edict-syntax/tests/target_ir.rs | Ambiguity is scoped to effects the Core module actually uses. |
 | TIR-TP-013 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core effect obstruction key absent from the selected target facts returns `TargetLoweringFailureKind::MissingObstruction` with no artifact. | unsupported_obstruction_key_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Prevents lowerability evidence for one obstruction set from being reused for another. |
+| TIR-TP-014 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core module with a floating import returns `TargetLoweringFailureKind::UndigestedCoreImport` with no artifact. | undigested_core_import_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Keeps Target IR generation aligned with canonical Core reproducibility. |
 
 ## Determinism Obligations
 

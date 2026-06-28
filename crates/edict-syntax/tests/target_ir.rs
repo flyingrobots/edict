@@ -6,9 +6,10 @@
 
 use edict_syntax::{
     check_lowerability, compile_to_core, lower_to_target_ir, AtomicityRequirement, CompilerContext,
-    CoreBudget, CoreExpr, GuardKind, LowerabilityStatus, LoweringRequirements, NativeEffectSupport,
-    ResourceRef, SemanticEffectRequirement, TargetEffectLowering, TargetIrLoweringFacts,
-    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, WriteClass,
+    CoreBudget, CoreExpr, CoreImport, CoreImportKind, GuardKind, LowerabilityStatus,
+    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
+    TargetEffectLowering, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
+    TargetProfileFacts, WriteClass,
     ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
 };
 
@@ -569,5 +570,27 @@ fn unsupported_core_capability_rejects_without_artifact() {
     assert_eq!(
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::UnsupportedCoreCapability]
+    );
+}
+
+#[test]
+fn undigested_core_import_rejects_without_artifact() {
+    let mut core = effectful_core();
+    core.imports.push(CoreImport {
+        kind: CoreImportKind::Lawpack,
+        resource: ResourceRef {
+            coordinate: "hello.optics@1".to_owned(),
+            digest: None,
+        },
+        alias: Some("hello".to_owned()),
+    });
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UndigestedCoreImport]
     );
 }
