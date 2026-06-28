@@ -48,7 +48,7 @@ becomes a deterministic Target IR step that records:
 
 - the source Core effect coordinate;
 - the effect result binding;
-- the selected Echo target intrinsic;
+- the selected target intrinsic;
 - the structured Core input expression;
 - sorted obstruction failure keys and their structured obstruction arm values.
 
