@@ -396,9 +396,9 @@ Non-goals:
 
 Target date: TBD
 
-Planned milestone: `v0.10.0-alpha.1`
+Milestone: `v0.10.0-alpha.1`
 
-Primary issues: TBD
+Primary issues: #75, #76
 
 Release labels: `release:cli`, `release:developer-tools`,
 `release:compiler-spine`

@@ -510,23 +510,11 @@ fn check_result_record(input: &Value) -> Value {
 }
 
 fn parse_diagnostic(input: &Value, error: &ParseError) -> Value {
-    diagnostic_record(
-        "parse",
-        &format!("{:?}", error.kind),
-        input,
-        Some(error.span),
-        None,
-    )
+    diagnostic_record("parse", error.kind.code(), input, Some(error.span), None)
 }
 
 fn semantic_diagnostic(input: &Value, error: &SemanticError) -> Value {
-    diagnostic_record(
-        "semantic",
-        &format!("{:?}", error.kind),
-        input,
-        Some(error.span),
-        None,
-    )
+    diagnostic_record("semantic", error.kind.code(), input, Some(error.span), None)
 }
 
 fn cli_diagnostic(failure: &CliFailure) -> Value {

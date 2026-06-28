@@ -33,6 +33,38 @@ pub enum ParseErrorKind {
     InvalidTypeCall,
 }
 
+impl ParseErrorKind {
+    /// Stable wire identifier for this category.
+    ///
+    /// This is the string emitted as the `kind` field of the public CLI
+    /// `edict.cli.diagnostic/v1` contract. It is defined by an explicit,
+    /// exhaustive match rather than `Debug`, so the wire contract cannot
+    /// silently change when a variant is renamed, and adding a variant forces
+    /// a compile error here until a stable code is assigned.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            ParseErrorKind::Lex => "Lex",
+            ParseErrorKind::ExpectedToken => "ExpectedToken",
+            ParseErrorKind::ExpectedKeyword => "ExpectedKeyword",
+            ParseErrorKind::ExpectedIdentifier => "ExpectedIdentifier",
+            ParseErrorKind::ExpectedExpression => "ExpectedExpression",
+            ParseErrorKind::InvalidInteger => "InvalidInteger",
+            ParseErrorKind::InvalidDigest => "InvalidDigest",
+            ParseErrorKind::InvalidVersion => "InvalidVersion",
+            ParseErrorKind::ReservedKeyword => "ReservedKeyword",
+            ParseErrorKind::UnsupportedSyntax => "UnsupportedSyntax",
+            ParseErrorKind::InvalidName => "InvalidName",
+            ParseErrorKind::EmptyEnum => "EmptyEnum",
+            ParseErrorKind::EmptyObstructionMap => "EmptyObstructionMap",
+            ParseErrorKind::EmptyMatch => "EmptyMatch",
+            ParseErrorKind::NonCallEffect => "NonCallEffect",
+            ParseErrorKind::ReturnInYieldBlock => "ReturnInYieldBlock",
+            ParseErrorKind::InvalidTypeCall => "InvalidTypeCall",
+        }
+    }
+}
+
 /// A parse failure: a stable kind, message, plus the source span where it was
 /// detected.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1467,5 +1499,36 @@ impl Parser {
             entries,
             span: Span::new(start, self.prev_end()),
         })
+    }
+}
+
+#[cfg(test)]
+mod parse_error_kind_codes {
+    use super::ParseErrorKind;
+
+    #[test]
+    fn each_variant_has_its_stable_wire_code() {
+        let cases = [
+            (ParseErrorKind::Lex, "Lex"),
+            (ParseErrorKind::ExpectedToken, "ExpectedToken"),
+            (ParseErrorKind::ExpectedKeyword, "ExpectedKeyword"),
+            (ParseErrorKind::ExpectedIdentifier, "ExpectedIdentifier"),
+            (ParseErrorKind::ExpectedExpression, "ExpectedExpression"),
+            (ParseErrorKind::InvalidInteger, "InvalidInteger"),
+            (ParseErrorKind::InvalidDigest, "InvalidDigest"),
+            (ParseErrorKind::InvalidVersion, "InvalidVersion"),
+            (ParseErrorKind::ReservedKeyword, "ReservedKeyword"),
+            (ParseErrorKind::UnsupportedSyntax, "UnsupportedSyntax"),
+            (ParseErrorKind::InvalidName, "InvalidName"),
+            (ParseErrorKind::EmptyEnum, "EmptyEnum"),
+            (ParseErrorKind::EmptyObstructionMap, "EmptyObstructionMap"),
+            (ParseErrorKind::EmptyMatch, "EmptyMatch"),
+            (ParseErrorKind::NonCallEffect, "NonCallEffect"),
+            (ParseErrorKind::ReturnInYieldBlock, "ReturnInYieldBlock"),
+            (ParseErrorKind::InvalidTypeCall, "InvalidTypeCall"),
+        ];
+        for (kind, code) in cases {
+            assert_eq!(kind.code(), code, "wire code for {kind:?} must be stable");
+        }
     }
 }
