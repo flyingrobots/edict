@@ -40,26 +40,60 @@
       "description": "Glob pattern for `glob` input records."
     }
   },
-  "allOf": [
+  "oneOf": [
     {
-      "if": { "properties": { "kind": { "const": "source" } } },
-      "then": { "required": ["source"] }
+      "title": "source",
+      "required": ["source"],
+      "properties": {
+        "kind": { "const": "source" },
+        "path": false,
+        "paths": false,
+        "pattern": false
+      }
     },
     {
-      "if": { "properties": { "kind": { "const": "path" } } },
-      "then": { "required": ["path"] }
+      "title": "path",
+      "required": ["path"],
+      "properties": {
+        "kind": { "const": "path" },
+        "name": false,
+        "source": false,
+        "paths": false,
+        "pattern": false
+      }
     },
     {
-      "if": { "properties": { "kind": { "const": "pathList" } } },
-      "then": { "required": ["paths"] }
+      "title": "pathList",
+      "required": ["paths"],
+      "properties": {
+        "kind": { "const": "pathList" },
+        "name": false,
+        "source": false,
+        "path": false,
+        "pattern": false
+      }
     },
     {
-      "if": { "properties": { "kind": { "const": "directory" } } },
-      "then": { "required": ["path"] }
+      "title": "directory",
+      "required": ["path"],
+      "properties": {
+        "kind": { "const": "directory" },
+        "name": false,
+        "source": false,
+        "paths": false,
+        "pattern": false
+      }
     },
     {
-      "if": { "properties": { "kind": { "const": "glob" } } },
-      "then": { "required": ["pattern"] }
+      "title": "glob",
+      "required": ["pattern"],
+      "properties": {
+        "kind": { "const": "glob" },
+        "name": false,
+        "source": false,
+        "path": false,
+        "paths": false
+      }
     }
   ]
 }

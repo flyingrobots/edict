@@ -33,5 +33,18 @@
       "enum": [0, 1, 2],
       "description": "Process exit code: 0 ok, 1 check diagnostics, 2 CLI input error."
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "ok" } }
+      },
+      "then": {
+        "properties": { "exitCode": { "const": 0 } }
+      },
+      "else": {
+        "properties": { "exitCode": { "enum": [1, 2] } }
+      }
+    }
+  ]
 }
