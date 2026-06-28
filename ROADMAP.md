@@ -349,11 +349,16 @@ Non-goals:
 
 Target date: 2026-10-07
 
-Status: release prep
+Status: published
 
 Milestone: `v0.9.0-alpha.1` (#10)
 
-Primary issues: #66, #68, #70
+Primary issues: #66, #68, #70 (closed)
+
+Release: <https://github.com/flyingrobots/edict/releases/tag/v0.9.0-alpha.1>
+
+Tag: `v0.9.0-alpha.1` peels to
+`81bacc5a240bd3ea50af934a3611ce6b3f505043`.
 
 Release labels: `release:target-ir`, `release:lowerability`,
 `release:target-profiles`
