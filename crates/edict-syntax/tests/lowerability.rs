@@ -91,6 +91,11 @@ fn native_target_facts_satisfy_lowering_requirements() {
     let report = check_lowerability(&read_requirements(), &profile_facts());
 
     assert_eq!(report.status, LowerabilityStatus::Native);
+    assert_eq!(report.operation_profile, "kv.transactional@1.readOnly");
+    assert_eq!(
+        report.obstruction_coordinates,
+        vec!["hello.optics@1.GreetingMissing".to_owned()]
+    );
     assert!(report.failures.is_empty());
     assert_eq!(report.effect_results.len(), 1);
     assert!(report.effect_results[0].is_native());

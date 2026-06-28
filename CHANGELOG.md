@@ -8,6 +8,25 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added the first Target IR lowering surface in `edict_syntax`: explicit
+  `echo.dpo@1` target facts can lower the supported effectful Core shape into a
+  deterministic in-memory `echo.span-ir/v1` review artifact, while non-Echo
+  targets and unsupported Core nodes reject with stable target-lowering failure
+  kinds before any artifact is emitted. Echo Target IR preserves effect result
+  bindings, effect inputs, obstruction failure keys, obstruction arm values, and
+  intent result expressions. Target IR lowering facts can also be derived from
+  selected native lowerability results, keeping the first Echo artifact path
+  tied to the lowerability report's target profile, operation profile, and
+  selected native effect support. The lowerer rejects unsupported Core ABI
+  versions, unsupported Core capability flags, undigested target-profile
+  references, non-Echo target intrinsics, operation profiles unsupported by the
+  selected target facts, and intents with no target-owned steps before Target IR
+  emission. Echo Target IR intents also preserve Core input constraints and Core
+  evaluation budgets so supported artifacts do not drop preconditions or
+  evaluation limits.
+
 ### Changed
 
 - Marked `v0.8.0-alpha.1` as published in the release-process contract and

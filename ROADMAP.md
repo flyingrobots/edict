@@ -349,16 +349,17 @@ Non-goals:
 
 Target date: TBD
 
-Planned milestone: `v0.9.0-alpha.1`
+Planned milestone: `v0.9.0-alpha.1` (#10)
 
-Primary issues: TBD
+Primary issue: #66
 
 Release labels: `release:target-ir`, `release:lowerability`,
 `release:target-profiles`
 
 Scope:
 
-- First target-specific IR for one deliberately narrow runtime profile.
+- First target-specific IR for one deliberately narrow runtime profile:
+  `echo.dpo@1` lowering to `echo.span-ir/v1`.
 - Lowering evidence that connects accepted Core obligations to the selected
   target IR artifact.
 - Structured target-lowering diagnostics for unsupported Core obligations.
@@ -376,6 +377,7 @@ Non-goals:
 
 - No general target-lowering framework.
 - No runtime execution guarantee.
+- No git-warp lowering; `gitwarp.ref_crdt@1` is the next target after Echo.
 - No v2 chained or composite adapter resolution.
 
 ## v0.10.0-alpha.1 - Public CLI And Structured Diagnostics Alpha
