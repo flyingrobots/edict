@@ -388,22 +388,44 @@ fn lowerability_bridge_requires_matching_target_profile_reference() {
 
 #[test]
 fn obstruction_arm_values_are_preserved_in_echo_span_ir() {
-    let base = effectful_artifact(EFFECTFUL_REPLACE);
-    let changed = effectful_artifact(
+    let artifact = effectful_artifact(
         &EFFECTFUL_REPLACE.replace("domain.WriteRejected", "domain.WriteDifferentlyRejected"),
     );
+    let arm = &artifact
+        .intents
+        .get("t")
+        .expect("intent t")
+        .steps[0]
+        .obstruction_arms["rejected"];
 
-    assert_ne!(base, changed);
+    let CoreExpr::Call {
+        callee,
+        type_args,
+        args,
+    } = &arm.value
+    else {
+        panic!("obstruction arm value is preserved as a call expression");
+    };
+    assert_eq!(callee, "domain.WriteDifferentlyRejected");
+    assert!(type_args.is_empty());
+    assert!(args.is_empty());
 }
 
 #[test]
 fn intent_result_is_preserved_in_echo_span_ir() {
-    let base = effectful_artifact(EFFECTFUL_REPLACE);
-    let changed = effectful_artifact(
+    let artifact = effectful_artifact(
         &EFFECTFUL_REPLACE.replace("return { id: input.id };", "return { id: receipt.id };"),
     );
+    let result = &artifact.intents.get("t").expect("intent t").result;
 
-    assert_ne!(base, changed);
+    let CoreExpr::Record { fields } = result else {
+        panic!("intent result is preserved as a record expression");
+    };
+    let CoreExpr::Field { base, field } = &fields["id"] else {
+        panic!("result id field is preserved as a field expression");
+    };
+    assert_eq!(field, "id");
+    assert!(matches!(base.as_ref(), CoreExpr::Local { reference } if reference.id == "local.0"));
 }
 
 #[test]
