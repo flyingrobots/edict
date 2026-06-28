@@ -405,12 +405,14 @@ Release labels: `release:cli`, `release:developer-tools`,
 
 Scope:
 
-- Public `edict` CLI boundary for the first compile, check, explain, and
-  diagnostic workflows.
-- Machine-readable diagnostic output for stable error kinds and structured
-  coordinates.
-- Human-readable explanations layered over structured diagnostics.
-- Golden CLI fixtures for success, rejection, and explain paths.
+- Public `edict` CLI boundary for the first `check` workflow.
+- JSONL request records on stdin for compiler settings, inline source, file
+  paths, directories, ordered path lists, and glob patterns.
+- JSONL-only stdout and stderr records for success results, structured
+  diagnostics, and terminal status events.
+- Checked compiler-settings JSON Schema for `edict.compiler.settings/v1`.
+- Golden CLI fixtures for success, compiler rejection, CLI-input rejection, and
+  deterministic input expansion paths.
 
 Exit gates:
 
@@ -421,6 +423,8 @@ Exit gates:
 
 Non-goals:
 
+- No compile, lower, explain, bundle, or admission command workflows.
+- No human-pretty output mode.
 - No full language server.
 - No marketplace packaging.
 - No participant policy execution.

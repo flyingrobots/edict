@@ -20,6 +20,8 @@ The current specification set is:
   types, documentation coverage, examples, and docs-impact rules.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
   and the GitHub issue/milestone map.
+- [v0.9 Release Notes](./releases/v0.9.0-alpha.1.md): published notes for the
+  Echo and git-warp Target IR alpha.
 - [v0.8 Release Notes](./releases/v0.8.0-alpha.1.md): published notes for
   the minimal effectful compiler-spine alpha.
 - [v0.7 Release Notes](./releases/v0.7.0-alpha.1.md): published notes for
@@ -49,6 +51,8 @@ The current specification set is:
   and Moriarty evidence references at the contract-bundle boundary.
 - [Authority Facts Topic](./topics/authority-facts/): file-backed compiler
   context facts with digest-bound source identity and stable load failures.
+- [CLI Topic](./topics/cli/): JSONL-only `edict` command-line boundary for
+  stdin request records, structured stdout/stderr events, and compiler settings.
 - [Contract Bundles Topic](./topics/contract-bundles/): typed v1
   participant-neutral bundle and assurance evidence manifest validation.
 - [Fixtures Topic](./topics/fixtures/): shared executable fixture corpus and
@@ -63,6 +67,8 @@ The current specification set is:
   source-AST-to-in-memory-Core stage contract for the initial lowerable subset.
 - [Core IR Topic](./topics/core-ir/): current contract and verification matrix
   for the `edict.core/v1` semantic model and CDDL schema.
+- [Compiler Settings JSON Schema](./schemas/edict.compiler-settings.v1.schema.json):
+  stable JSON Schema artifact for `edict.compiler.settings/v1` input records.
 - [Syntax Topic](./topics/syntax/): current contract and verification matrix for
   the Phase 1 `edict-syntax` lexer/parser.
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type

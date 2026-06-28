@@ -520,6 +520,10 @@ What exists today:
 - Published `v0.9.0-alpha.1` release notes for the first Target IR alpha:
   `echo.dpo@1` lowers to `echo.span-ir/v1`, and `gitwarp.ref_crdt@1` lowers to
   `gitwarp.commit-reducer-ir/v1` review artifacts without runtime execution
+- First JSONL-only `edict` CLI surface: the `check` operation reads compiler
+  settings and compiler input records from stdin as JSONL, accepts inline
+  source, file paths, directories, path lists, and glob patterns, and emits only
+  JSONL records on stdout and stderr
 - Published `v0.8.0-alpha.1` release notes for the minimal effectful
   compiler-spine alpha
 - Published `v0.7.0-alpha.1` release notes for the file-backed
@@ -539,7 +543,8 @@ What doesn't exist yet:
 
 - Full source-language lowering beyond the initial pure local-record subset and
   first annotated effectful `let ... else` shape
-- A compiler CLI
+- Compiler CLI workflows beyond JSONL `check`, including compile, lower,
+  explain, bundle, admission, and human-pretty output modes
 - Deferred minimal-v1 syntax (`fn`/`const`, `record` effects, list/map/unit
   expression literals)
 - Packaged Tree-sitter bindings plus Vim, Zed, and jedit integrations
@@ -564,7 +569,7 @@ publication. The published `v0.7.0-alpha.1` release covers file-backed
 authority facts and opens the Authority Fact Governance design track. The
 published `v0.8.0-alpha.1` release covers one minimal effectful source-to-Core
 path. The published `v0.9.0-alpha.1` release covers the first Echo and git-warp
-target-owned IR review artifacts before the train moves through CLI diagnostics,
+target-owned IR review artifacts before the train moves through the JSONL CLI,
 bundle assembly, admission workflow harnessing, trusted fact authorship,
 publication policy, and language-server diagnostics. None of the published
 releases claims target-runtime execution, full admission execution tooling, or

@@ -37,6 +37,8 @@ cargo xtask verify
   Moriarty evidence references at the contract-bundle boundary.
 - [Authority Facts](./authority-facts/README.md): file-backed compiler context
   facts with digest-bound source identity and stable load failures.
+- [CLI](./cli/README.md): JSONL-only `edict` command-line boundary for stdin
+  request records, structured stdout/stderr events, and compiler settings.
 - [Compiler Spine](./compiler-spine/README.md): executable source-AST to
   in-memory Core IR stage contract for the initial lowerable subset.
 - [Contract Bundles](./contract-bundles/README.md): typed v1
