@@ -2375,6 +2375,44 @@ fn run() {}
     }
 
     #[test]
+    fn release_policy_tracks_v0_9_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        let v0_9_policy = toml_section(&policy, "[release_notes.v0_9_0_alpha_1]");
+        for required in [
+            "[release_notes.v0_9_0_alpha_1]",
+            "tag = \"v0.9.0-alpha.1\"",
+            "target_date = \"2026-10-07\"",
+            "status = \"publish_ready\"",
+            "release_issue = 70",
+            "first_target_ir_alpha",
+            "echo_span_ir_review_artifact",
+            "gitwarp_commit_reducer_ir_review_artifact",
+            "lowerability_to_target_ir_bridge",
+            "explicit_target_profile_selection",
+            "stable_target_lowering_failure_kinds",
+            "core_obligation_preservation",
+            "target_ir_topic_shelf",
+            "no_runtime_execution",
+            "no_echo_verifier",
+            "no_gitwarp_commit_creation",
+            "no_gitwarp_crdt_reducer_verification",
+            "no_general_target_plugin_dispatch",
+            "no_canonical_target_ir_bytes_or_digests",
+            "no_bundle_or_admission_generation",
+            "no_v2_adapter_composition",
+            "no_public_cli",
+            "no_crates_io_publish",
+        ] {
+            assert!(
+                v0_9_policy.contains(required),
+                "v0.9 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
@@ -2388,6 +2426,7 @@ fn run() {}
             ("v0.6.0-alpha.1", "2026-08-26"),
             ("v0.7.0-alpha.1", "2026-09-09"),
             ("v0.8.0-alpha.1", "2026-09-23"),
+            ("v0.9.0-alpha.1", "2026-10-07"),
         ] {
             assert!(
                 policy.contains(&format!("tag = \"{tag}\"")),

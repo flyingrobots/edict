@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.9.0-alpha.1] - 2026-10-07
+
 ### Added
 
 - Added the first Target IR lowering surface in `edict_syntax`: explicit
