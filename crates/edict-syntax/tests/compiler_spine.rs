@@ -55,6 +55,36 @@ const DUPLICATE_OBSTRUCTION_FAILURE: &str = "package a.b@1;\n\
         };\n\
       return { id: input.id };\n\
     }";
+const ORDERED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else {\n\
+          rejected(reason) => domain.WriteRejected,\n\
+          timeout(wait) => domain.WriteTimedOut,\n\
+        };\n\
+      return { id: input.id };\n\
+    }";
+const REVERSED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else {\n\
+          timeout(wait) => domain.WriteTimedOut,\n\
+          rejected(reason) => domain.WriteRejected,\n\
+        };\n\
+      return { id: input.id };\n\
+    }";
 
 fn hello_context() -> CompilerContext {
     CompilerContext::new()
@@ -523,6 +553,14 @@ fn typed_effect_calls_reject_before_core_lowering() {
 }
 
 #[test]
+fn obstruction_binder_ids_are_stable_by_failure_key() {
+    let ordered = compile_effectful_source(ORDERED_OBSTRUCTION_FAILURES);
+    let reversed = compile_effectful_source(REVERSED_OBSTRUCTION_FAILURES);
+
+    assert_eq!(ordered, reversed);
+}
+
+#[test]
 fn initial_core_lowering_makes_no_canonical_or_target_claim() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
@@ -533,6 +571,21 @@ fn initial_core_lowering_makes_no_canonical_or_target_claim() {
         .iter()
         .all(|import| import.kind.as_str() != "target"));
     assert_eq!(core.api_version, "edict.core/v1");
+}
+
+fn compile_effectful_source(source: &str) -> edict_syntax::CoreModule {
+    let dir = temp_case_dir("compile-effectful-source");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module = parse_module(source).expect("effectful source parses");
+    compile_to_core(&module, &context).expect("effectful source compiles")
 }
 
 fn temp_case_dir(name: &str) -> PathBuf {

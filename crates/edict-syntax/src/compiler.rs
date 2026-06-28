@@ -968,9 +968,10 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        let mut out = BTreeMap::new();
+        let mut arms_by_failure = BTreeMap::new();
+        let mut accepted = true;
         for arm in arms {
-            if out.contains_key(&arm.failure) {
+            if arms_by_failure.insert(arm.failure.as_str(), arm).is_some() {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
                     CompilerErrorKind::DuplicateObstructionFailure,
@@ -980,8 +981,15 @@ impl<'a> TypeChecker<'a> {
                     ),
                     arm.span,
                 ));
-                continue;
+                accepted = false;
             }
+        }
+        if !accepted {
+            return None;
+        }
+
+        let mut out = BTreeMap::new();
+        for arm in arms_by_failure.values() {
             let Some((failure, obstruction_arm)) =
                 self.check_obstruction_arm(effect, arm, *obstruction_index)
             else {

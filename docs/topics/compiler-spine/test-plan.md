@@ -42,6 +42,7 @@ Out of scope:
 | CSPINE-REQ-013 | implemented | Duplicate failure keys in effect obstruction maps reject with a stable compiler error instead of silently dropping effects. | issue #62 |
 | CSPINE-REQ-014 | implemented | Chained effect-call shapes reject instead of lowering as plain one-argument effects. | issue #62 |
 | CSPINE-REQ-015 | implemented | Typed effect-call shapes reject instead of dropping unsupported type arguments. | issue #62 |
+| CSPINE-REQ-016 | implemented | Obstruction binder identities are stable under source obstruction-arm reordering. | issue #62 |
 
 ## Fixtures
 
@@ -67,6 +68,7 @@ Out of scope:
 | CSPINE-TP-012 | implemented | Error handling | CSPINE-REQ-007, CSPINE-REQ-013 | Duplicate failure keys in a supported obstruction map reject in `CompilerStage::TypeCheck` with `DuplicateObstructionFailure`. | duplicate_obstruction_failures_reject_before_core_lowering | - | Prevents silent effect-node omission when map keys collide. |
 | CSPINE-TP-013 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-012, CSPINE-REQ-014 | A chained effect-call RHS rejects in `CompilerStage::TypeCheck` with `UnsupportedSourceShape`. | chained_effect_calls_reject_before_core_lowering | - | Prevents the lowerer from discarding the inner call shape. |
 | CSPINE-TP-014 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-012, CSPINE-REQ-015 | A typed effect-call RHS rejects in `CompilerStage::TypeCheck` with `UnsupportedSourceShape`. | typed_effect_calls_reject_before_core_lowering | - | Prevents unsupported effect type arguments from disappearing during Core lowering. |
+| CSPINE-TP-015 | implemented | Determinism | CSPINE-REQ-011, CSPINE-REQ-016 | Equivalent obstruction maps with the same arms in different source orders lower to identical Core. | obstruction_binder_ids_are_stable_by_failure_key | - | Ensures binder identities are derived after failure-key normalization. |
 
 ## Determinism Obligations
 
