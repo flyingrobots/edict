@@ -347,11 +347,13 @@ Non-goals:
 
 ## v0.9.0-alpha.1 - First Target IR Alpha
 
-Target date: TBD
+Target date: 2026-10-07
 
-Planned milestone: `v0.9.0-alpha.1` (#10)
+Status: release prep
 
-Primary issues: #66, #68
+Milestone: `v0.9.0-alpha.1` (#10)
+
+Primary issues: #66, #68, #70
 
 Release labels: `release:target-ir`, `release:lowerability`,
 `release:target-profiles`
@@ -361,16 +363,17 @@ Scope:
 - First target-specific IRs for two deliberately narrow runtime profiles:
   `echo.dpo@1` lowering to `echo.span-ir/v1`, and `gitwarp.ref_crdt@1`
   lowering to `gitwarp.commit-reducer-ir/v1`.
-- Lowering evidence that connects accepted Core obligations to the selected
+- Lowerability evidence that connects accepted Core obligations to the selected
   target IR artifact.
 - Structured target-lowering diagnostics for unsupported Core obligations.
-- Fixture-backed target IR identity and hash-impact expectations where the
-  artifact format is stable enough to bind.
+- Explicit preservation of Core input constraints, evaluation budgets, effect
+  inputs, effect result bindings, obstruction arms, and result expressions in
+  the selected Target IR review artifact.
 
 Exit gates:
 
 - One source intent can compile to Core and lower to a concrete target IR
-  artifact for the selected profile.
+  artifact for the selected Echo or git-warp profile.
 - Lowerability evidence and target IR generation agree on the same fact set.
 - Unsupported target features fail loudly rather than falling back silently.
 
@@ -379,6 +382,9 @@ Non-goals:
 - No general target-lowering framework.
 - No runtime execution guarantee.
 - No git-warp commit object creation or CRDT reducer verification.
+- No canonical Target IR bytes or digests.
+- No bundle or admission generation.
+- No public CLI.
 - No v2 chained or composite adapter resolution.
 
 ## v0.10.0-alpha.1 - Public CLI And Structured Diagnostics Alpha
@@ -654,7 +660,7 @@ Milestones:
 - `v0.6.0-alpha.1`: #7, #50
 - `v0.7.0-alpha.1`: #59
 - `v0.8.0-alpha.1`: #62
-- `v0.9.0-alpha.1`: planned, issues TBD
+- `v0.9.0-alpha.1`: #10, #66, #68, #70
 - `v0.10.0-alpha.1`: planned, issues TBD
 - `v0.11.0-alpha.1`: planned, issues TBD
 - `v0.12.0-alpha.1`: planned, issues TBD

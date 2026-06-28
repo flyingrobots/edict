@@ -517,6 +517,9 @@ What exists today:
   invoked-operation, and invocation capability evidence semantics
 - Deterministic file-backed authority-facts merging with stable load failure
   kinds for conflicting, malformed, invalid, or non-digest-locked facts
+- Publish-ready `v0.9.0-alpha.1` release notes for the first Target IR alpha:
+  `echo.dpo@1` lowers to `echo.span-ir/v1`, and `gitwarp.ref_crdt@1` lowers to
+  `gitwarp.commit-reducer-ir/v1` review artifacts without runtime execution
 - Published `v0.8.0-alpha.1` release notes for the minimal effectful
   compiler-spine alpha
 - Published `v0.7.0-alpha.1` release notes for the file-backed
@@ -545,7 +548,8 @@ What doesn't exist yet:
   and target-capability corpora beyond the first compiler context facts
 - Trusted lawpack and target-profile authorship, review provenance, or
   participant acceptance policy
-- Echo or KV/CAS target lowerers
+- Target-runtime execution, Echo verifier reports, git-warp commit object
+  creation, or git-warp CRDT reducer verification
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic
 
@@ -559,10 +563,13 @@ milestone. The `v0.6.0-alpha.1` release prepares developer tooling artifacts for
 publication. The published `v0.7.0-alpha.1` release covers file-backed
 authority facts and opens the Authority Fact Governance design track. The
 published `v0.8.0-alpha.1` release covers one minimal effectful source-to-Core
-path before the train moves through target IR, CLI diagnostics, bundle assembly,
-admission workflow harnessing, trusted fact authorship, publication policy, and
-language-server diagnostics. None of the published releases claims target
-lowerers, full admission execution tooling, or trusted fact governance.
+path. The publish-ready `v0.9.0-alpha.1` release covers the first Echo and
+git-warp target-owned IR review artifacts before the train moves through CLI
+diagnostics, bundle assembly, admission workflow harnessing, trusted fact
+authorship, publication policy, and language-server diagnostics. None of the
+published releases, and not the publish-ready `v0.9.0-alpha.1` notes, claims
+target-runtime execution, full admission execution tooling, or trusted fact
+governance.
 
 ---
 

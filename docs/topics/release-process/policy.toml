@@ -90,6 +90,7 @@ required = true
 location = "release_issue_and_pr_body"
 v0_7_0_alpha_1 = "file_backed_authority_facts"
 v0_8_0_alpha_1 = "minimal_effectful_compiler_spine"
+v0_9_0_alpha_1 = "first_target_ir_alpha"
 
 [release_diff_reconciliation]
 previous_tag_diff_required = true
@@ -348,5 +349,35 @@ non_goals = [
   "no_obstruction_payload_lowering",
   "no_target_or_lawpack_failure_fact_exhaustiveness",
   "no_full_lawpack_or_target_profile_manifest_loading",
+  "no_crates_io_publish",
+]
+
+[release_notes.v0_9_0_alpha_1]
+tag = "v0.9.0-alpha.1"
+target_date = "2026-10-07"
+status = "publish_ready"
+release_issue = 70
+milestone_number = 10
+scope = [
+  "first_target_ir_alpha",
+  "target_ir_api",
+  "echo_span_ir_review_artifact",
+  "gitwarp_commit_reducer_ir_review_artifact",
+  "lowerability_to_target_ir_bridge",
+  "explicit_target_profile_selection",
+  "stable_target_lowering_failure_kinds",
+  "core_obligation_preservation",
+  "target_ir_topic_shelf",
+]
+non_goals = [
+  "no_runtime_execution",
+  "no_echo_verifier",
+  "no_gitwarp_commit_creation",
+  "no_gitwarp_crdt_reducer_verification",
+  "no_general_target_plugin_dispatch",
+  "no_canonical_target_ir_bytes_or_digests",
+  "no_bundle_or_admission_generation",
+  "no_v2_adapter_composition",
+  "no_public_cli",
   "no_crates_io_publish",
 ]
