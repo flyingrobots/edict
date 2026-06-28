@@ -61,8 +61,12 @@ fn pure_core() -> edict_syntax::CoreModule {
 }
 
 fn effectful_context() -> CompilerContext {
+    effectful_context_with_profile("continuum.profile.write/v1")
+}
+
+fn effectful_context_with_profile(profile: &str) -> CompilerContext {
     CompilerContext::new()
-        .with_operation_profile("p.effectful", "continuum.profile.write/v1")
+        .with_operation_profile("p.effectful", profile)
         .with_operation_profile_write_classes("p.effectful", [WriteClass::Replace])
         .with_effect_write_class("target.replace", WriteClass::Replace)
         .with_budget(
@@ -98,6 +102,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
             ),
         },
         target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
+        operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
         effect_lowerings: vec![TargetEffectLowering {
             effect: "target.replace".to_owned(),
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
@@ -199,6 +204,7 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
             ),
         },
         ECHO_SPAN_IR_DOMAIN,
+        "continuum.profile.write/v1",
         &lowerability,
     );
     let report = lower_to_target_ir(&effectful_core(), &target_facts);
@@ -234,6 +240,7 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
             ),
         },
         ECHO_SPAN_IR_DOMAIN,
+        "continuum.profile.write/v1",
         &lowerability,
     );
     let report = lower_to_target_ir(&effectful_core(), &target_facts);
@@ -300,9 +307,32 @@ fn non_echo_target_profile_rejects_without_artifact() {
 }
 
 #[test]
+fn unsupported_operation_profile_rejects_without_artifact() {
+    let module = edict_syntax::parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
+    let core = compile_to_core(
+        &module,
+        &effectful_context_with_profile("continuum.profile.unreviewed/v1"),
+    )
+    .expect("effectful source compiles to Core with caller-supplied profile");
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::MissingOperationProfile]
+    );
+}
+
+#[test]
 fn unsupported_core_nodes_reject_without_artifact() {
     let core = pure_core();
-    let report = lower_to_target_ir(&core, &echo_facts());
+    let mut facts = echo_facts();
+    facts
+        .operation_profiles
+        .push("continuum.profile.read-only/v1".to_owned());
+    let report = lower_to_target_ir(&core, &facts);
 
     assert_eq!(report.status, TargetLoweringStatus::Unsupported);
     assert!(report.artifact.is_none());

@@ -31,6 +31,10 @@ the lowerability checker. The v0.9 bridge is native-only: it consumes selected
 native effect support and does not perform adapter-chain search or general
 target plugin dispatch.
 
+Target-lowering facts also carry the operation profiles selected by
+lowerability. A Core intent whose `required_operation_profile` is absent from
+that explicit set rejects before Target IR is emitted.
+
 For the supported Echo slice, each supported Core effect node becomes a
 deterministic Target IR step that records:
 
@@ -48,7 +52,8 @@ Selecting a non-Echo target profile rejects with
 `TargetLoweringFailureKind::UnsupportedTargetProfile`. Supplying Core nodes
 outside the first supported effect shape rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Missing or ambiguous effect
-lowering facts also reject before any artifact is emitted.
+lowering facts and missing operation-profile support also reject before any
+artifact is emitted.
 
 `gitwarp.ref_crdt@1` is the next target after Echo. It is not part of the first
 Echo Target IR slice.

@@ -16,10 +16,11 @@ versions still track specification maturity rather than a released product.
   targets and unsupported Core nodes reject with stable target-lowering failure
   kinds before any artifact is emitted. Echo Target IR preserves effect result
   bindings, effect inputs, obstruction failure keys, obstruction arm values, and
-  intent result expressions. Target IR lowering facts can also be derived from selected
-  native lowerability results, keeping the first Echo artifact path tied to
-  explicit lowerability evidence without carrying unselected native support
-  facts.
+  intent result expressions. Target IR lowering facts can also be derived from
+  selected native lowerability results, keeping the first Echo artifact path
+  tied to explicit lowerability evidence without carrying unselected native
+  support facts, and operation profiles unsupported by the selected target facts
+  reject before Target IR emission.
 
 ### Changed
 

@@ -4,7 +4,7 @@
 //! effect nodes into an in-memory `echo.span-ir/v1` review artifact. It does not
 //! execute Echo, run a verifier, assemble bundles, or perform admission.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{CoreExpr, CoreModule, CoreNode, CoreObstructionArm, LocalRef, ResourceRef};
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport};
@@ -16,6 +16,7 @@ pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
 pub struct TargetIrLoweringFacts {
     pub target_profile: ResourceRef,
     pub target_ir_domain: String,
+    pub operation_profiles: Vec<String>,
     pub effect_lowerings: Vec<TargetEffectLowering>,
 }
 
@@ -24,11 +25,13 @@ impl TargetIrLoweringFacts {
     pub fn from_lowerability_report(
         target_profile: ResourceRef,
         target_ir_domain: impl Into<String>,
+        operation_profile: impl Into<String>,
         report: &LowerabilityReport,
     ) -> Self {
         Self {
             target_profile,
             target_ir_domain: target_ir_domain.into(),
+            operation_profiles: vec![operation_profile.into()],
             effect_lowerings: report
                 .effect_results
                 .iter()
@@ -64,6 +67,7 @@ pub enum TargetLoweringFailureKind {
     UnsupportedTargetProfile,
     UnsupportedTargetIrDomain,
     UnsupportedCoreNode,
+    MissingOperationProfile,
     MissingEffectLowering,
     AmbiguousEffectLowering,
 }
@@ -132,10 +136,23 @@ pub fn lower_to_target_ir(
     }
 
     let effect_lowerings = effect_lowerings_by_coordinate(facts);
+    let operation_profiles = facts
+        .operation_profiles
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     let mut failures = duplicate_effect_failures(&effect_lowerings);
     let mut intents = BTreeMap::new();
 
     for (intent_name, intent) in &core.intents {
+        if !operation_profiles.contains(intent.required_operation_profile.as_str()) {
+            failures.push(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::MissingOperationProfile,
+                intent: Some(intent_name.clone()),
+                node_index: None,
+                detail: intent.required_operation_profile.clone(),
+            });
+        }
         let mut steps = Vec::new();
         for (node_index, node) in intent.body.nodes.iter().enumerate() {
             match node {

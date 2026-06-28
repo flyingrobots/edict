@@ -29,7 +29,7 @@ Out of scope:
 | TIR-REQ-001 | implemented | `edict_syntax` exposes a typed target-lowering API that consumes Core and explicit target-profile facts without reading ambient environment or runtime state. | issue #66 |
 | TIR-REQ-002 | implemented | The first target lowerer supports `echo.dpo@1` and emits a deterministic `echo.span-ir/v1` review artifact for the supported effectful Core shape. | issue #66, docs/SPEC_edict-target-profile-abi-v1.md |
 | TIR-REQ-003 | implemented | Target lowering rejects unsupported target profiles with stable structured failure kinds before producing an artifact. | issue #66 |
-| TIR-REQ-004 | implemented | Target lowering rejects unsupported Core obligations with stable structured failure kinds before producing an artifact. | issue #66 |
+| TIR-REQ-004 | implemented | Target lowering rejects unsupported Core or operation-profile obligations with stable structured failure kinds before producing an artifact. | issue #66 |
 | TIR-REQ-005 | implemented | Target IR lowering facts can be derived from selected native lowerability results, so lowerability evidence and Target IR generation select the same target profile and effect support. | issue #66, ROADMAP.md |
 | TIR-REQ-006 | policy | The Echo Target IR slice does not execute Echo, run admission, implement git-warp, or claim general target-lowering plugin dispatch. | ROADMAP.md |
 
@@ -48,6 +48,7 @@ Out of scope:
 | TIR-TP-003 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-003 | Selecting a non-Echo target profile returns `TargetLoweringFailureKind::UnsupportedTargetProfile` with no artifact. | non_echo_target_profile_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Keeps the first slice explicitly Echo-only. |
 | TIR-TP-004 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core module with an unsupported node returns `TargetLoweringFailureKind::UnsupportedCoreNode` with no artifact. | unsupported_core_nodes_reject_without_artifact | crates/edict-syntax/tests/target_ir.rs | No silent fallback or partial artifact. |
 | TIR-TP-005 | policy | Release boundary | TIR-REQ-006 | Roadmap and release scope keep runtime execution, admission, git-warp lowering, and general plugin dispatch outside the first Echo slice. | - | - | Non-goal boundary; not a substitute for behavior tests. |
+| TIR-TP-006 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core intent whose required operation profile is absent from the selected target-lowering facts returns `TargetLoweringFailureKind::MissingOperationProfile` with no artifact. | unsupported_operation_profile_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Prevents effect-only support from bypassing lowerability profile selection. |
 
 ## Determinism Obligations
 
