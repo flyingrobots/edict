@@ -31,6 +31,11 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Derived the CLI diagnostic `kind` field from explicit, exhaustive
+  `ParseErrorKind::code` / `SemanticErrorKind::code` mappings instead of `Debug`
+  formatting, so the `edict.cli.diagnostic/v1` wire contract cannot change when a
+  variant is renamed and a new variant forces a compile error until it is given a
+  stable code. The emitted strings are unchanged.
 - Marked `v0.9.0-alpha.1` as published in the release-process contract and
   recorded durable release evidence for its tag, workflow runs, milestone
   closure, and no-crates publication boundary.

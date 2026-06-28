@@ -21,6 +21,28 @@ pub enum SemanticErrorKind {
     ShadowedName,
 }
 
+impl SemanticErrorKind {
+    /// Stable wire identifier for this category.
+    ///
+    /// This is the string emitted as the `kind` field of the public CLI
+    /// `edict.cli.diagnostic/v1` contract. It is defined by an explicit,
+    /// exhaustive match rather than `Debug`, so the wire contract cannot
+    /// silently change when a variant is renamed, and adding a variant forces
+    /// a compile error here until a stable code is assigned.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            SemanticErrorKind::UnboundedScalar => "UnboundedScalar",
+            SemanticErrorKind::MissingOperationMode => "MissingOperationMode",
+            SemanticErrorKind::MissingBudget => "MissingBudget",
+            SemanticErrorKind::MissingBasis => "MissingBasis",
+            SemanticErrorKind::DuplicateIntentClause => "DuplicateIntentClause",
+            SemanticErrorKind::DuplicateName => "DuplicateName",
+            SemanticErrorKind::ShadowedName => "ShadowedName",
+        }
+    }
+}
+
 /// A semantic validation failure with a stable kind and source span.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SemanticError {
@@ -515,5 +537,32 @@ fn error(kind: SemanticErrorKind, message: impl Into<String>, span: Span) -> Sem
         kind,
         message: message.into(),
         span,
+    }
+}
+
+#[cfg(test)]
+mod semantic_error_kind_codes {
+    use super::SemanticErrorKind;
+
+    #[test]
+    fn each_variant_has_its_stable_wire_code() {
+        let cases = [
+            (SemanticErrorKind::UnboundedScalar, "UnboundedScalar"),
+            (
+                SemanticErrorKind::MissingOperationMode,
+                "MissingOperationMode",
+            ),
+            (SemanticErrorKind::MissingBudget, "MissingBudget"),
+            (SemanticErrorKind::MissingBasis, "MissingBasis"),
+            (
+                SemanticErrorKind::DuplicateIntentClause,
+                "DuplicateIntentClause",
+            ),
+            (SemanticErrorKind::DuplicateName, "DuplicateName"),
+            (SemanticErrorKind::ShadowedName, "ShadowedName"),
+        ];
+        for (kind, code) in cases {
+            assert_eq!(kind.code(), code, "wire code for {kind:?} must be stable");
+        }
     }
 }
