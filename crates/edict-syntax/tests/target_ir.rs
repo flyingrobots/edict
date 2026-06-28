@@ -326,6 +326,26 @@ fn unsupported_operation_profile_rejects_without_artifact() {
 }
 
 #[test]
+fn empty_target_step_intents_reject_without_artifact() {
+    let mut core = effectful_core();
+    core.intents
+        .get_mut("t")
+        .expect("intent t")
+        .body
+        .nodes
+        .clear();
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::NoTargetSteps]
+    );
+}
+
+#[test]
 fn unsupported_core_nodes_reject_without_artifact() {
     let core = pure_core();
     let mut facts = echo_facts();

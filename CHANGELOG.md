@@ -20,7 +20,8 @@ versions still track specification maturity rather than a released product.
   selected native lowerability results, keeping the first Echo artifact path
   tied to explicit lowerability evidence without carrying unselected native
   support facts, and operation profiles unsupported by the selected target facts
-  reject before Target IR emission.
+  reject before Target IR emission. Intents with no target-owned steps also
+  reject instead of producing empty Echo artifacts.
 
 ### Changed
 

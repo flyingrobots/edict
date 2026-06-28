@@ -70,6 +70,7 @@ pub enum TargetLoweringFailureKind {
     MissingOperationProfile,
     MissingEffectLowering,
     AmbiguousEffectLowering,
+    NoTargetSteps,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -191,6 +192,14 @@ pub fn lower_to_target_ir(
                     detail: "let".to_owned(),
                 }),
             }
+        }
+        if steps.is_empty() && intent.body.nodes.is_empty() {
+            failures.push(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::NoTargetSteps,
+                intent: Some(intent_name.clone()),
+                node_index: None,
+                detail: "intent has no target-owned steps".to_owned(),
+            });
         }
         intents.insert(
             intent_name.clone(),
