@@ -20,6 +20,7 @@ pub struct TargetIrLoweringFacts {
     pub target_profile: ResourceRef,
     pub target_ir_domain: String,
     pub operation_profiles: Vec<String>,
+    pub obstruction_coordinates: Vec<String>,
     pub effect_lowerings: Vec<TargetEffectLowering>,
 }
 
@@ -52,6 +53,7 @@ impl TargetIrLoweringFacts {
             },
             target_ir_domain: target_ir_domain.into(),
             operation_profiles: vec![report.operation_profile.clone()],
+            obstruction_coordinates: report.obstruction_coordinates.clone(),
             effect_lowerings: selected_native_effect_lowerings(report),
         })
     }
@@ -93,6 +95,7 @@ pub enum TargetLoweringFailureKind {
     UndigestedTargetProfile,
     UnsupportedCoreNode,
     MissingOperationProfile,
+    MissingObstruction,
     MissingEffectLowering,
     AmbiguousEffectLowering,
     UnsupportedLowerabilityReport,
@@ -163,6 +166,11 @@ pub fn lower_to_target_ir(
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
+    let obstruction_coordinates = facts
+        .obstruction_coordinates
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
     let mut failures = Vec::new();
     let mut intents = BTreeMap::new();
 
@@ -171,6 +179,7 @@ pub fn lower_to_target_ir(
             intent_name,
             intent,
             &operation_profiles,
+            &obstruction_coordinates,
             &effect_lowerings,
             &mut failures,
         );
@@ -257,6 +266,7 @@ fn lower_intent(
     intent_name: &str,
     intent: &CoreIntent,
     operation_profiles: &BTreeSet<&str>,
+    obstruction_coordinates: &BTreeSet<&str>,
     effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
     failures: &mut Vec<TargetLoweringFailure>,
 ) -> TargetIrIntent {
@@ -275,6 +285,7 @@ fn lower_intent(
             intent_name,
             node_index,
             node,
+            obstruction_coordinates,
             effect_lowerings,
             &mut steps,
             failures,
@@ -300,6 +311,7 @@ fn lower_node(
     intent_name: &str,
     node_index: usize,
     node: &CoreNode,
+    obstruction_coordinates: &BTreeSet<&str>,
     effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
     steps: &mut Vec<TargetIrStep>,
     failures: &mut Vec<TargetLoweringFailure>,
@@ -319,6 +331,7 @@ fn lower_node(
                 input,
                 obstruction_map,
             },
+            obstruction_coordinates,
             effect_lowerings,
             steps,
             failures,
@@ -344,6 +357,7 @@ fn lower_effect_node(
     intent_name: &str,
     node_index: usize,
     node: EffectNodeParts<'_>,
+    obstruction_coordinates: &BTreeSet<&str>,
     effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
     steps: &mut Vec<TargetIrStep>,
     failures: &mut Vec<TargetLoweringFailure>,
@@ -361,6 +375,23 @@ fn lower_effect_node(
             });
         }
         [lowering] => {
+            let unsupported_obstructions = node
+                .obstruction_map
+                .keys()
+                .filter(|failure| !obstruction_coordinates.contains(failure.as_str()))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !unsupported_obstructions.is_empty() {
+                failures.extend(unsupported_obstructions.into_iter().map(|failure| {
+                    TargetLoweringFailure {
+                        kind: TargetLoweringFailureKind::MissingObstruction,
+                        intent: Some(intent_name.to_owned()),
+                        node_index: Some(node_index),
+                        detail: failure,
+                    }
+                }));
+                return;
+            }
             steps.push(TargetIrStep {
                 id: format!("{}.step.{}", intent_name, steps.len()),
                 binding: node.binding.clone(),

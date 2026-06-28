@@ -102,6 +102,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
         },
         target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
         operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
+        obstruction_coordinates: vec!["rejected".to_owned()],
         effect_lowerings: vec![TargetEffectLowering {
             effect: "target.replace".to_owned(),
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
@@ -466,6 +467,25 @@ fn foreign_target_intrinsic_rejects_without_artifact() {
     assert_eq!(
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::UnsupportedTargetIntrinsic]
+    );
+}
+
+#[test]
+fn unsupported_obstruction_key_rejects_without_artifact() {
+    let module = edict_syntax::parse_module(
+        &EFFECTFUL_REPLACE.replace("rejected(reason) =>", "unexpected(reason) =>"),
+    )
+    .expect("effectful source parses");
+    let core =
+        compile_to_core(&module, &effectful_context()).expect("effectful source compiles to Core");
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::MissingObstruction]
     );
 }
 
