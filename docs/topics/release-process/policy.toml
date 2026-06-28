@@ -89,6 +89,7 @@ required_evidence = [
 required = true
 location = "release_issue_and_pr_body"
 v0_7_0_alpha_1 = "file_backed_authority_facts"
+v0_8_0_alpha_1 = "minimal_effectful_compiler_spine"
 
 [release_diff_reconciliation]
 previous_tag_diff_required = true
@@ -298,5 +299,41 @@ non_goals = [
   "no_target_ir_generation",
   "no_full_effectful_source_lowering",
   "no_admission_execution_workflow",
+  "no_crates_io_publish",
+]
+
+[release_notes.v0_8_0_alpha_1]
+tag = "v0.8.0-alpha.1"
+target_date = "2026-09-23"
+status = "publish_ready"
+release_issue = 62
+scope = [
+  "minimal_effectful_compiler_spine",
+  "core_effect_node_model",
+  "core_obstruction_arm_model",
+  "canonical_effect_node_encoding",
+  "file_backed_effectful_compiler_context",
+  "annotated_effectful_let_lowering",
+  "deterministic_obstruction_map_lowering",
+  "source_order_stable_obstruction_binders",
+  "unsupported_effectful_branch_yield_rejection",
+  "chained_effect_call_rejection",
+  "typed_effect_call_rejection",
+  "duplicate_obstruction_failure_rejection",
+  "pure_core_golden_stability",
+]
+non_goals = [
+  "no_target_ir_generation",
+  "no_target_runtime_execution",
+  "no_adapter_composition",
+  "no_public_cli",
+  "no_admission_execution_workflow",
+  "no_lawpack_governance_implementation",
+  "no_broad_source_language_lowering",
+  "no_bare_effect_statement_lowering",
+  "no_effectful_branch_yield_lowering",
+  "no_obstruction_payload_lowering",
+  "no_target_or_lawpack_failure_fact_exhaustiveness",
+  "no_full_lawpack_or_target_profile_manifest_loading",
   "no_crates_io_publish",
 ]

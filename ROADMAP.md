@@ -296,36 +296,49 @@ Non-goals:
 
 ## v0.8.0-alpha.1 - Minimal Effectful Compiler Spine Alpha
 
-Target date: TBD
+Target date: 2026-09-23
 
-Planned milestone: `v0.8.0-alpha.1`
+Status: release prep
 
-Primary issues: #62
+Milestone: `v0.8.0-alpha.1` (#9)
+
+Primary issue: #62
 
 Release labels: `release:compiler-spine`, `release:semantic-validation`,
 `release:core-ir`
 
 Scope:
 
-- Minimal effectful source subset lowered through the compiler spine.
-- Stable Core representation for the first accepted effectful body shape.
-- Obstruction mapping and effect-order preservation for the supported subset.
-- Profile, budget, and effect checks wired to file-backed facts where v0.7 made
-  those facts available.
+- One annotated effectful `let ... else` source shape lowered through the
+  compiler spine into typed Core.
+- Stable Core representation for semantic effect nodes and obstruction arms.
+- Deterministic obstruction mapping and source-order-stable obstruction binders
+  for the supported subset.
+- Profile, budget, profile write-class, and effect write-class checks wired to
+  file-backed authority facts where v0.7 made those facts available.
+- Boundary rejections for effectful branch-yield, chained effect calls, typed
+  effect calls, and duplicate obstruction failure keys before Core lowering.
 
 Exit gates:
 
 - At least one effectful intent compiles from source through typed Core with
-  deterministic fixtures.
-- Unsupported effectful forms fail with stable diagnostics before lowering.
+  deterministic fixtures. Met by PR #63.
+- Unsupported effectful forms fail with stable diagnostics before lowering. Met
+  by PR #63.
 - Existing pure Core golden behavior remains unchanged except for intentional,
-  reviewed schema or canonicalization changes.
+  reviewed schema or canonicalization changes. Met by PR #63 and checked during
+  release prep with `cargo xtask core-goldens --check`.
+- Release notes and structured release policy record the explicit non-goals.
 
 Non-goals:
 
 - No target IR generation.
 - No target-runtime execution.
 - No adapter composition.
+- No public CLI.
+- No admission execution workflow.
+- No lawpack governance implementation.
+- No crates.io publication.
 
 ## v0.9.0-alpha.1 - First Target IR Alpha
 
@@ -632,7 +645,7 @@ Milestones:
 - `v0.5.0-alpha.1`: #6, #11, #42
 - `v0.6.0-alpha.1`: #7, #50
 - `v0.7.0-alpha.1`: #59
-- `v0.8.0-alpha.1`: planned, issues TBD
+- `v0.8.0-alpha.1`: #62
 - `v0.9.0-alpha.1`: planned, issues TBD
 - `v0.10.0-alpha.1`: planned, issues TBD
 - `v0.11.0-alpha.1`: planned, issues TBD
