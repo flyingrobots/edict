@@ -3,13 +3,88 @@
 //! These tests assert public stage boundaries and structured values. They do
 //! not inspect stdout, stderr, diagnostic prose, canonical bytes, or hashes.
 
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use edict_syntax::{
-    compile_to_core, lower_core, parse_module, resolve_module, type_check, CompilerContext,
-    CompilerErrorKind, CompilerStage, CoreBudget, CoreExpr, CoreNode, CorePredicate, CoreType,
-    WriteClass,
+    compile_to_core, load_compiler_context_from_authority_fact_files, lower_core, parse_module,
+    resolve_module, type_check, CompilerContext, CompilerErrorKind, CompilerStage, CoreBudget,
+    CoreExpr, CoreNode, CorePredicate, CoreType, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
+const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else { rejected(reason) => domain.WriteRejected };\n\
+      return { id: input.id };\n\
+    }";
+const EFFECTFUL_BRANCH_YIELD: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let id = if true {\n\
+        target.replace(input.id) else { rejected(reason) => domain.WriteRejected };\n\
+        yield input.id;\n\
+      } else {\n\
+        yield input.id;\n\
+      };\n\
+      return { id };\n\
+    }";
+const DUPLICATE_OBSTRUCTION_FAILURE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else {\n\
+          rejected(reason) => domain.WriteRejected,\n\
+          rejected(other) => domain.WriteRejectedAgain,\n\
+        };\n\
+      return { id: input.id };\n\
+    }";
+const ORDERED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else {\n\
+          rejected(reason) => domain.WriteRejected,\n\
+          timeout(wait) => domain.WriteTimedOut,\n\
+        };\n\
+      return { id: input.id };\n\
+    }";
+const REVERSED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else {\n\
+          timeout(wait) => domain.WriteTimedOut,\n\
+          rejected(reason) => domain.WriteRejected,\n\
+        };\n\
+      return { id: input.id };\n\
+    }";
 
 fn hello_context() -> CompilerContext {
     CompilerContext::new()
@@ -309,6 +384,183 @@ fn read_only_profile_rejects_write_effect_let_without_else() {
 }
 
 #[test]
+fn effectful_write_intent_lowers_to_typed_core_from_file_backed_facts() {
+    let dir = temp_case_dir("effectful-write");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module = parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
+    let core = compile_to_core(&module, &context).expect("effectful source compiles to Core");
+    let intent = core.intents.get("t").expect("compiled effectful intent");
+
+    assert_eq!(
+        intent.required_operation_profile,
+        "continuum.profile.write/v1"
+    );
+    assert_eq!(intent.body.nodes.len(), 1);
+
+    let CoreNode::Effect {
+        binding,
+        effect,
+        input,
+        obstruction_map,
+    } = &intent.body.nodes[0]
+    else {
+        panic!("effectful source lowers to a semantic effect node");
+    };
+
+    assert_eq!(binding.id, "local.0");
+    assert_eq!(binding.alpha_name, "$local0");
+    assert_eq!(binding.ty, "a.b@1.Receipt");
+    assert_eq!(effect, "target.replace");
+
+    let CoreExpr::Field { base, field } = input else {
+        panic!("effect input preserves the source argument expression");
+    };
+    assert_eq!(field, "id");
+    assert!(matches!(base.as_ref(), CoreExpr::Local { reference } if reference.id == "arg.0"));
+
+    let arm = obstruction_map
+        .get("rejected")
+        .expect("failure arm is keyed by low-level failure coordinate");
+    assert_eq!(arm.binder.id, "obstruction.0");
+    assert_eq!(arm.binder.alpha_name, "$obstruction0");
+    assert_eq!(arm.binder.ty, "target.replace.rejected");
+    assert!(matches!(
+        &arm.value,
+        CoreExpr::Call { callee, args, .. } if callee == "domain.WriteRejected" && args.is_empty()
+    ));
+}
+
+#[test]
+fn unsupported_effectful_branch_yield_rejects_before_core_lowering() {
+    let dir = temp_case_dir("effectful-branch-yield");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module = parse_module(EFFECTFUL_BRANCH_YIELD).expect("unsupported effectful source parses");
+
+    let errors =
+        compile_to_core(&module, &context).expect_err("unsupported effectful shape rejects");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|err| err.kind == CompilerErrorKind::UnsupportedSourceShape));
+    assert!(!errors
+        .iter()
+        .any(|err| err.kind == CompilerErrorKind::ProfileEffectMismatch));
+}
+
+#[test]
+fn duplicate_obstruction_failures_reject_before_core_lowering() {
+    let dir = temp_case_dir("duplicate-obstruction-failure");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module =
+        parse_module(DUPLICATE_OBSTRUCTION_FAILURE).expect("duplicate obstruction source parses");
+
+    let errors =
+        compile_to_core(&module, &context).expect_err("duplicate obstruction failure keys reject");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|err| err.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::DuplicateObstructionFailure]
+    );
+}
+
+#[test]
+fn chained_effect_calls_reject_before_core_lowering() {
+    let source = EFFECTFUL_REPLACE.replace(
+        "target.replace(input.id)",
+        "target.replace(input.id)(input.id)",
+    );
+    let dir = temp_case_dir("chained-effect-call");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module = parse_module(&source).expect("chained effect-call source parses");
+
+    let errors = compile_to_core(&module, &context).expect_err("chained effect call rejects");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|err| err.kind == CompilerErrorKind::UnsupportedSourceShape));
+}
+
+#[test]
+fn typed_effect_calls_reject_before_core_lowering() {
+    let source = EFFECTFUL_REPLACE.replace(
+        "target.replace(input.id)",
+        "target.replace<Receipt>(input.id)",
+    );
+    let dir = temp_case_dir("typed-effect-call");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module = parse_module(&source).expect("typed effect-call source parses");
+
+    let errors = compile_to_core(&module, &context).expect_err("typed effect call rejects");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|err| err.kind == CompilerErrorKind::UnsupportedSourceShape));
+}
+
+#[test]
+fn obstruction_binder_ids_are_stable_by_failure_key() {
+    let ordered = compile_effectful_source(ORDERED_OBSTRUCTION_FAILURES);
+    let reversed = compile_effectful_source(REVERSED_OBSTRUCTION_FAILURES);
+
+    assert_eq!(ordered, reversed);
+}
+
+#[test]
 fn initial_core_lowering_makes_no_canonical_or_target_claim() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
@@ -319,4 +571,83 @@ fn initial_core_lowering_makes_no_canonical_or_target_claim() {
         .iter()
         .all(|import| import.kind.as_str() != "target"));
     assert_eq!(core.api_version, "edict.core/v1");
+}
+
+fn compile_effectful_source(source: &str) -> edict_syntax::CoreModule {
+    let dir = temp_case_dir("compile-effectful-source");
+    let target = write_json(
+        &dir,
+        "target-profile-facts.json",
+        effectful_target_profile_facts(),
+    );
+    let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    let module = parse_module(source).expect("effectful source parses");
+    compile_to_core(&module, &context).expect("effectful source compiles")
+}
+
+fn temp_case_dir(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!(
+        "edict-compiler-spine-{name}-{}",
+        std::process::id()
+    ));
+    if dir.exists() {
+        fs::remove_dir_all(&dir).expect("remove stale temp compiler-spine directory");
+    }
+    fs::create_dir_all(&dir).expect("create temp compiler-spine directory");
+    dir
+}
+
+fn write_json(dir: &Path, name: &str, contents: impl AsRef<str>) -> PathBuf {
+    let path = dir.join(name);
+    fs::write(&path, contents.as_ref()).expect("write authority-facts JSON");
+    path
+}
+
+fn effectful_target_profile_facts() -> &'static str {
+    r#"{
+      "apiVersion": "edict.authority-facts/v1",
+      "source": {
+        "kind": "targetProfile",
+        "coordinate": "echo.dpo@1",
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "operationProfiles": [
+        {
+          "source": "p.effectful",
+          "core": "continuum.profile.write/v1",
+          "allowedWriteClasses": ["replace"]
+        }
+      ],
+      "effectWriteClasses": [],
+      "budgets": []
+    }"#
+}
+
+fn effectful_lawpack_facts() -> &'static str {
+    r#"{
+      "apiVersion": "edict.authority-facts/v1",
+      "source": {
+        "kind": "lawpack",
+        "coordinate": "hello.optics@1",
+        "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "operationProfiles": [],
+      "effectWriteClasses": [
+        {
+          "effect": "target.replace",
+          "writeClass": "replace"
+        }
+      ],
+      "budgets": [
+        {
+          "source": "p.tiny",
+          "maxSteps": 8,
+          "maxAllocatedBytes": 1024,
+          "maxOutputBytes": 256
+        }
+      ]
+    }"#
 }

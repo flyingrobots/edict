@@ -35,11 +35,12 @@ loading explicit authority-facts files through
 
 ## Current Contract
 
-- The initial lowerable subset is deliberately narrow: local record type
-  declarations, one-parameter intents, `profile`, `basis none`, `budget <=`,
-  `where` predicates, pure `let` bindings, `return`, strings, booleans,
-  integers, field access, record literals, equality predicates, and string
-  concatenation. [CSPINE-REQ-006]
+- The lowerable subset is deliberately narrow: local record type declarations,
+  one-parameter intents, `profile`, `basis none`, `budget <=`, `where`
+  predicates, pure `let` bindings, one annotated effectful `let ... else`
+  shape, `return`, strings, booleans, integers, field access, record literals,
+  equality predicates, and string concatenation. [CSPINE-REQ-006]
+  [CSPINE-REQ-011]
 - Core lowering produces structured in-memory `CoreModule` values with module
   coordinate, imports, types, intents, input constraints, budgets, locals,
   ordered nodes, and result expressions. [CSPINE-REQ-003]
@@ -49,6 +50,17 @@ loading explicit authority-facts files through
 - Effectful source bodies are checked against the resolved operation profile's
   allowed write classes before Core lowering. A write-class effect under a
   read-only profile rejects with `ProfileEffectMismatch`. [CSPINE-REQ-009]
+- The first lowerable effectful body shape is an annotated
+  `let name: Type = effect(arg) else { failure(binder) => Obstruction };`
+  where `effect` is an untyped plain dotted callee. It lowers to a semantic
+  Core effect node with the effect coordinate, input expression, result binding,
+  and deterministic obstruction map. [CSPINE-REQ-011] [CSPINE-REQ-014]
+  [CSPINE-REQ-015]
+- Effectful branch-yield and other unsupported effectful forms still reject
+  with stable compiler stage and kind identities before Core lowering.
+  [CSPINE-REQ-012]
+- Duplicate failure keys in an obstruction map reject with
+  `DuplicateObstructionFailure` before Core lowering. [CSPINE-REQ-013]
 - File-backed authority facts can supply the same profile, budget, profile
   write-class, and effect write-class facts consumed by the compiler spine.
   [CSPINE-REQ-010]
@@ -63,6 +75,9 @@ The following are not implemented by this compiler-spine slice:
 
 - target-profile lowering;
 - obstruction exhaustiveness against target/lawpack failure facts;
+- obstruction payload lowering;
+- bare effect-statement lowering;
+- effectful branch-yield lowering;
 - shape/lawpack schema loading;
 - full lawpack or target-profile manifest loading beyond authority-facts
   documents;

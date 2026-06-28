@@ -300,7 +300,7 @@ Target date: TBD
 
 Planned milestone: `v0.8.0-alpha.1`
 
-Primary issues: TBD
+Primary issues: #62
 
 Release labels: `release:compiler-spine`, `release:semantic-validation`,
 `release:core-ir`

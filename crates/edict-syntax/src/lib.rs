@@ -85,8 +85,8 @@ pub use contract_bundle::{
 };
 pub use core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef, CORE_API_VERSION,
+    CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint,
+    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
 };
 pub use highlight::{highlight_source, HighlightRole, HighlightToken};
 pub use lowerability::{

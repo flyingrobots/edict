@@ -7,11 +7,13 @@
 
 mod common;
 
+use std::collections::BTreeMap;
+
 use common::{bounded_hello_core, hello_context, BOUNDED_HELLO};
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, encode_canonical_cbor, encode_core_module,
-    parse_module, CanonicalErrorKind, CanonicalValue, CoreImport, CoreImportKind, CorePredicate,
-    InputConstraint, InputConstraintSource, ResourceRef,
+    parse_module, CanonicalErrorKind, CanonicalValue, CoreImport, CoreImportKind, CoreNode,
+    CorePredicate, InputConstraint, InputConstraintSource, ResourceRef,
 };
 
 #[test]
@@ -53,6 +55,51 @@ fn canonical_core_bytes_change_when_core_meaning_changes() {
     assert_ne!(
         encode_core_module(&core).expect("canonical encoding succeeds"),
         encode_core_module(&changed).expect("canonical encoding succeeds")
+    );
+}
+
+#[test]
+fn canonical_core_bytes_change_when_effect_coordinate_changes() {
+    let mut core = bounded_hello_core();
+    let binding = core
+        .intents
+        .get("sayHello")
+        .expect("intent exists")
+        .body
+        .locals
+        .last()
+        .expect("local exists")
+        .clone();
+    core.intents
+        .get_mut("sayHello")
+        .expect("intent exists")
+        .body
+        .nodes
+        .push(CoreNode::Effect {
+            binding,
+            effect: "target.replace".to_owned(),
+            input: edict_syntax::CoreExpr::Const(edict_syntax::CoreValue::String(
+                "input".to_owned(),
+            )),
+            obstruction_map: BTreeMap::default(),
+        });
+    let mut changed = core.clone();
+    let CoreNode::Effect { effect, .. } = changed
+        .intents
+        .get_mut("sayHello")
+        .expect("intent exists")
+        .body
+        .nodes
+        .last_mut()
+        .expect("effect node exists")
+    else {
+        panic!("effect node");
+    };
+    *effect = "target.archive".to_owned();
+
+    assert_ne!(
+        encode_core_module(&core).expect("canonical encoding succeeds"),
+        encode_core_module(&changed).expect("changed effect encoding succeeds")
     );
 }
 
