@@ -275,6 +275,30 @@ fn lowerability_bridge_deduplicates_identical_native_effect_selection() {
 }
 
 #[test]
+fn unused_duplicate_effect_lowerings_do_not_reject_supported_effect() {
+    let mut facts = echo_facts();
+    facts.effect_lowerings.push(TargetEffectLowering {
+        effect: "target.archive".to_owned(),
+        target_intrinsic: "echo.dpo@1.archive".to_owned(),
+    });
+    facts.effect_lowerings.push(TargetEffectLowering {
+        effect: "target.archive".to_owned(),
+        target_intrinsic: "echo.dpo@1.archive.v2".to_owned(),
+    });
+
+    let report = lower_to_target_ir(&effectful_core(), &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    let artifact = report
+        .artifact
+        .expect("unused duplicate lowerings do not block supported effect");
+    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    assert_eq!(step.effect, "target.replace");
+    assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
+}
+
+#[test]
 fn unsupported_lowerability_report_does_not_build_target_ir_facts() {
     let mut profile_facts = echo_profile_facts();
     profile_facts.operation_profiles.clear();

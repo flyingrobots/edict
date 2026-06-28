@@ -64,6 +64,9 @@ outside the first supported effect shape rejects with
 lowering facts, non-Echo target intrinsics, and missing operation-profile
 support also reject before any artifact is emitted. A Core intent with no
 target-owned steps rejects with `TargetLoweringFailureKind::NoTargetSteps`.
+Duplicate target-lowering facts are ambiguous only when they match an effect
+used by the Core module being lowered; unrelated duplicate facts do not block
+the supported artifact.
 
 `gitwarp.ref_crdt@1` is the next target after Echo. It is not part of the first
 Echo Target IR slice.

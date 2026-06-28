@@ -158,7 +158,7 @@ pub fn lower_to_target_ir(
         .iter()
         .map(String::as_str)
         .collect::<BTreeSet<_>>();
-    let mut failures = duplicate_effect_failures(&effect_lowerings);
+    let mut failures = Vec::new();
     let mut intents = BTreeMap::new();
 
     for (intent_name, intent) in &core.intents {
@@ -364,7 +364,12 @@ fn lower_effect_node(
             node_index: Some(node_index),
             detail: node.effect.to_owned(),
         }),
-        _ => {}
+        _ => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::AmbiguousEffectLowering,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: node.effect.to_owned(),
+        }),
     }
 }
 
@@ -382,21 +387,6 @@ fn effect_lowerings_by_coordinate(
         out.entry(&lowering.effect).or_default().push(lowering);
     }
     out
-}
-
-fn duplicate_effect_failures(
-    effect_lowerings: &BTreeMap<&str, Vec<&TargetEffectLowering>>,
-) -> Vec<TargetLoweringFailure> {
-    effect_lowerings
-        .iter()
-        .filter(|(_, lowerings)| lowerings.len() > 1)
-        .map(|(effect, _)| TargetLoweringFailure {
-            kind: TargetLoweringFailureKind::AmbiguousEffectLowering,
-            intent: None,
-            node_index: None,
-            detail: (*effect).to_owned(),
-        })
-        .collect()
 }
 
 fn unsupported(failures: Vec<TargetLoweringFailure>) -> TargetLoweringReport {

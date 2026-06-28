@@ -54,6 +54,7 @@ Out of scope:
 | TIR-TP-009 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core module whose ABI is not `edict.core/v1` returns `TargetLoweringFailureKind::UnsupportedCoreAbi` with no artifact. | unsupported_core_abi_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Prevents Echo Target IR from silently reinterpreting future or stale Core shapes. |
 | TIR-TP-010 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core module with unsupported required Core capability flags returns `TargetLoweringFailureKind::UnsupportedCoreCapability` with no artifact. | unsupported_core_capability_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Prevents Echo Target IR from omitting hash-significant Core obligations. |
 | TIR-TP-011 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-003 | Selecting Echo with a missing or invalid target-profile digest returns `TargetLoweringFailureKind::UndigestedTargetProfile` with no artifact. | undigested_target_profile_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Keeps emitted Target IR bound to a reproducible selected target profile. |
+| TIR-TP-012 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | Duplicate lowerings for an unused effect do not reject an otherwise supported Core module. | unused_duplicate_effect_lowerings_do_not_reject_supported_effect | crates/edict-syntax/tests/target_ir.rs | Ambiguity is scoped to effects the Core module actually uses. |
 
 ## Determinism Obligations
 
