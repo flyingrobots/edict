@@ -55,7 +55,9 @@ the supported slice. This records success-output semantics without executing
 Echo or admitting a bundle.
 
 Selecting a non-Echo target profile rejects with
-`TargetLoweringFailureKind::UnsupportedTargetProfile`. Selecting Echo without a
+`TargetLoweringFailureKind::UnsupportedTargetProfile`. Selecting an unsupported
+Target IR domain rejects with
+`TargetLoweringFailureKind::UnsupportedTargetIrDomain`. Selecting Echo without a
 digest-locked target-profile reference rejects with
 `TargetLoweringFailureKind::UndigestedTargetProfile`. Supplying a Core module
 with an unsupported ABI rejects with

@@ -462,6 +462,21 @@ fn non_echo_target_profile_rejects_without_artifact() {
 }
 
 #[test]
+fn unsupported_target_ir_domain_rejects_without_artifact() {
+    let mut facts = echo_facts();
+    facts.target_ir_domain = "echo.span-ir/v2".to_owned();
+
+    let report = lower_to_target_ir(&effectful_core(), &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedTargetIrDomain]
+    );
+}
+
+#[test]
 fn undigested_target_profile_rejects_without_artifact() {
     for digest in [None, Some("sha256:not-a-review-digest".to_owned())] {
         let mut facts = echo_facts();
@@ -476,6 +491,39 @@ fn undigested_target_profile_rejects_without_artifact() {
             vec![TargetLoweringFailureKind::UndigestedTargetProfile]
         );
     }
+}
+
+#[test]
+fn missing_effect_lowering_rejects_without_artifact() {
+    let mut facts = echo_facts();
+    facts.effect_lowerings.clear();
+
+    let report = lower_to_target_ir(&effectful_core(), &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::MissingEffectLowering]
+    );
+}
+
+#[test]
+fn ambiguous_effect_lowering_rejects_without_artifact() {
+    let mut facts = echo_facts();
+    facts.effect_lowerings.push(TargetEffectLowering {
+        effect: "target.replace".to_owned(),
+        target_intrinsic: "echo.dpo@1.replace.alternate".to_owned(),
+    });
+
+    let report = lower_to_target_ir(&effectful_core(), &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::AmbiguousEffectLowering]
+    );
 }
 
 #[test]
