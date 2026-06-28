@@ -63,7 +63,8 @@ outside the first supported effect shape rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Missing or ambiguous effect
 lowering facts, non-Echo target intrinsics, and missing operation-profile
 support also reject before any artifact is emitted. A Core intent with no
-target-owned steps rejects with `TargetLoweringFailureKind::NoTargetSteps`.
+target-owned steps, or a Core module with no intents, rejects with
+`TargetLoweringFailureKind::NoTargetSteps`.
 Duplicate target-lowering facts are ambiguous only when they match an effect
 used by the Core module being lowered; unrelated duplicate facts do not block
 the supported artifact.

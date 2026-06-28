@@ -234,6 +234,14 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
             detail: core.api_version.clone(),
         }];
     }
+    if core.intents.is_empty() {
+        return vec![TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::NoTargetSteps,
+            intent: None,
+            node_index: None,
+            detail: "core module has no target-owned intents".to_owned(),
+        }];
+    }
     core.required_core_capabilities
         .iter()
         .map(|capability| TargetLoweringFailure {
