@@ -298,11 +298,16 @@ Non-goals:
 
 Target date: 2026-09-23
 
-Status: release prep
+Status: published
 
 Milestone: `v0.8.0-alpha.1` (#9)
 
-Primary issue: #62
+Primary issue: #62 (closed)
+
+Release: <https://github.com/flyingrobots/edict/releases/tag/v0.8.0-alpha.1>
+
+Tag: `v0.8.0-alpha.1` peels to
+`c6a166ccea0fcb61fff9b8d76bfb5d51d613e2eb`.
 
 Release labels: `release:compiler-spine`, `release:semantic-validation`,
 `release:core-ir`

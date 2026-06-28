@@ -305,8 +305,21 @@ non_goals = [
 [release_notes.v0_8_0_alpha_1]
 tag = "v0.8.0-alpha.1"
 target_date = "2026-09-23"
-status = "publish_ready"
+status = "published"
 release_issue = 62
+published_at = "2026-06-28T01:41:16Z"
+release_url = "https://github.com/flyingrobots/edict/releases/tag/v0.8.0-alpha.1"
+tag_object = "32e843c5e5f7b9252078c2b8a99afa23daeab411"
+peeled_commit = "c6a166ccea0fcb61fff9b8d76bfb5d51d613e2eb"
+release_notes_source_commit = "c6a166ccea0fcb61fff9b8d76bfb5d51d613e2eb"
+main_ci_run = 28307840316
+auto_release_tag_run = 28307856119
+release_workflow_run = 28307864582
+milestone_number = 9
+milestone_closed_at = "2026-06-28T01:41:16Z"
+milestone_open_issues = 0
+release_assets = 0
+crates_io_published = false
 scope = [
   "minimal_effectful_compiler_spine",
   "core_effect_node_model",

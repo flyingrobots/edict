@@ -517,7 +517,7 @@ What exists today:
   invoked-operation, and invocation capability evidence semantics
 - Deterministic file-backed authority-facts merging with stable load failure
   kinds for conflicting, malformed, invalid, or non-digest-locked facts
-- Publish-ready `v0.8.0-alpha.1` release notes for the minimal effectful
+- Published `v0.8.0-alpha.1` release notes for the minimal effectful
   compiler-spine alpha
 - Published `v0.7.0-alpha.1` release notes for the file-backed
   authority-facts alpha
@@ -558,12 +558,11 @@ validation milestone, and `v0.5.0-alpha.1` is a Gate C admission-boundary
 milestone. The `v0.6.0-alpha.1` release prepares developer tooling artifacts for
 publication. The published `v0.7.0-alpha.1` release covers file-backed
 authority facts and opens the Authority Fact Governance design track. The
-publish-ready `v0.8.0-alpha.1` release covers one minimal effectful
-source-to-Core path before the train moves through target IR, CLI diagnostics,
-bundle assembly, admission workflow harnessing, trusted fact authorship,
-publication policy, and language-server diagnostics. None of the published or
-publish-ready releases claims target lowerers, full admission execution tooling,
-or trusted fact governance.
+published `v0.8.0-alpha.1` release covers one minimal effectful source-to-Core
+path before the train moves through target IR, CLI diagnostics, bundle assembly,
+admission workflow harnessing, trusted fact authorship, publication policy, and
+language-server diagnostics. None of the published releases claims target
+lowerers, full admission execution tooling, or trusted fact governance.
 
 ---
 
