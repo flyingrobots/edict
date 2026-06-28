@@ -8,6 +8,15 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added the first JSONL-only public `edict` CLI surface in `edict-cli`: the
+  `check` operation reads compiler settings and compiler input records from
+  stdin as JSON Lines, accepts inline source, file paths, directories, ordered
+  path lists, and glob patterns, and emits only JSONL records on stdout and
+  stderr with stable status, result, and diagnostic fields. Added the CLI topic
+  shelf and the checked `edict.compiler.settings/v1` JSON Schema artifact.
+
 ### Changed
 
 - Marked `v0.9.0-alpha.1` as published in the release-process contract and

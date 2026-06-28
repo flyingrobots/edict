@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/compiler-settings/v1",
+  "title": "Edict Compiler Settings v1",
+  "description": "JSONL compiler settings record for the public Edict CLI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "operation"],
+  "properties": {
+    "schema": {
+      "const": "edict.compiler.settings/v1"
+    },
+    "type": {
+      "const": "compilerSettings"
+    },
+    "operation": {
+      "enum": ["check"]
+    },
+    "directoryExtensions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^\\.[A-Za-z0-9_-]+$"
+      },
+      "uniqueItems": true,
+      "default": [".edict"]
+    },
+    "followSymlinks": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

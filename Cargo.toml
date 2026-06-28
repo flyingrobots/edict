@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/edict-syntax", "xtask"]
+members = ["crates/edict-cli", "crates/edict-syntax", "xtask"]
 resolver = "2"
 
 [workspace.package]

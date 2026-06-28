@@ -2000,6 +2000,64 @@ fn run() {}
     }
 
     #[test]
+    fn compiler_settings_schema_declares_jsonl_contract() {
+        let root = repo_root().expect("repo root");
+        let schema =
+            read_json_file(&root.join("docs/schemas/edict.compiler-settings.v1.schema.json"));
+
+        assert_eq!(
+            json_str(&schema, "$schema"),
+            "https://json-schema.org/draft/2020-12/schema"
+        );
+        assert_eq!(
+            json_str(&schema, "$id"),
+            "https://flyingrobots.dev/schemas/edict/compiler-settings/v1"
+        );
+        assert_eq!(json_str(&schema, "type"), "object");
+        assert_eq!(
+            schema.get("additionalProperties").and_then(Value::as_bool),
+            Some(false)
+        );
+        for required in ["schema", "type", "operation"] {
+            assert!(
+                json_string_array_contains(&schema, "required", required),
+                "compiler settings schema must require `{required}`"
+            );
+        }
+
+        let properties = json_object(&schema, "properties");
+        let record_schema = properties
+            .get("schema")
+            .unwrap_or_else(|| panic!("compiler settings schema missing `schema` property"));
+        assert_eq!(
+            record_schema.get("const").and_then(Value::as_str),
+            Some("edict.compiler.settings/v1")
+        );
+        let record_type = properties
+            .get("type")
+            .unwrap_or_else(|| panic!("compiler settings schema missing `type` property"));
+        assert_eq!(
+            record_type.get("const").and_then(Value::as_str),
+            Some("compilerSettings")
+        );
+        let operation = properties
+            .get("operation")
+            .unwrap_or_else(|| panic!("compiler settings schema missing `operation` property"));
+        assert!(
+            json_string_array_contains(operation, "enum", "check"),
+            "compiler settings schema must declare the `check` operation"
+        );
+        assert!(
+            properties.contains_key("directoryExtensions"),
+            "compiler settings schema missing deterministic directory extension field"
+        );
+        assert!(
+            properties.contains_key("followSymlinks"),
+            "compiler settings schema missing symlink traversal field"
+        );
+    }
+
+    #[test]
     fn review_bot_fallback_policy_is_structured() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/review-process/policy.toml"))
