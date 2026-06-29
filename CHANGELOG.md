@@ -28,6 +28,12 @@ versions still track specification maturity rather than a released product.
   coupled the event schema's terminal `status` to its `exitCode`, with xtask
   guards pinning both invariants, so the artifacts reject hybrid input records
   and contradictory terminal status records.
+- Added a checked-in golden CLI fixture corpus under `fixtures/cli/`, replayed
+  end-to-end through the `edict` binary by `golden_cli_fixtures_replay_exactly`,
+  matching stdout, stderr, and exit code byte-for-byte across success, parse
+  rejection, semantic rejection, CLI-input rejection, and the deterministic
+  path, directory, path-list, and glob expansion paths (`CLI-TP-010`,
+  `CLI-TP-011`).
 
 ### Changed
 

@@ -55,6 +55,15 @@ parser tolerating extra fields.
   source input.
 - `2`: CLI input or usage was invalid before compiler validation could run.
 
+## Golden Fixtures
+
+The CLI contract is pinned by a checked-in golden corpus under
+[`fixtures/cli/`](../../../fixtures/cli/). Each case is replayed end-to-end
+through the binary and its stdout, stderr, and exit code are matched
+byte-for-byte. The corpus covers success, parse and semantic rejection,
+CLI-input rejection, and the deterministic path, directory, path-list, and glob
+expansion paths. [CLI-REQ-008]
+
 ## Deferred
 
 The following are not implemented by this first CLI slice:
