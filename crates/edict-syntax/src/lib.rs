@@ -174,7 +174,7 @@ pub fn check(source: &str) -> CheckOutcome {
 
 #[cfg(test)]
 mod check_facade_tests {
-    use super::{check, CheckOutcome};
+    use super::{check, CheckOutcome, ParseErrorKind, SemanticErrorKind};
 
     #[test]
     fn valid_source_is_valid() {
@@ -182,20 +182,26 @@ mod check_facade_tests {
     }
 
     #[test]
-    fn unparsable_source_is_parse_failed() {
-        assert!(matches!(
-            check("@@@ not edict"),
-            CheckOutcome::ParseFailed(_)
-        ));
+    fn unparsable_source_is_parse_failed_with_stable_kind() {
+        let outcome = check("@@@ not edict");
+        let CheckOutcome::ParseFailed(error) = outcome else {
+            panic!("expected parse failure, got {outcome:?}");
+        };
+        assert_eq!(error.kind, ParseErrorKind::ExpectedKeyword);
     }
 
     #[test]
-    fn unbounded_scalar_is_semantic_failed() {
+    fn unbounded_scalar_is_semantic_failed_with_stable_kind() {
         let outcome = check("package examples.unbounded@1;\ntype Bad = { name: String };\n");
         let CheckOutcome::SemanticFailed(errors) = outcome else {
             panic!("expected semantic failure, got {outcome:?}");
         };
-        assert!(!errors.is_empty(), "semantic failure must carry errors");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.kind == SemanticErrorKind::UnboundedScalar),
+            "expected an UnboundedScalar semantic error, got {errors:?}"
+        );
     }
 }
 
