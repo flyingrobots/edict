@@ -165,6 +165,7 @@ dependents," not "the alpha is unsafe."
   `docs/schemas/edict.compiler-input.v1.schema.json` is strict. Consumers who
   validate against the schema and consumers who feed the binary can disagree.
   - **Mitigation Prompt 9:** `Tighten CLI input parsing to match the schema: deny unknown fields and reject hybrid input-kind field combinations, so the binary and the checked-in schema accept exactly the same records; add negative golden fixtures for an extra-field and a hybrid-kind request.`
+  - **✅ Addressed (2026-06-29, #103):** the parser now rejects unknown fields and hybrid input kinds with `InvalidInputRecord`; golden cases `10-input-extra-field` / `11-input-hybrid-kind` (`CLI-TP-015`). Binary and schema now accept the same records.
 
 ### 2.2 Security Posture (2 overlooked items — local-CLI threat model)
 

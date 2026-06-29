@@ -258,6 +258,24 @@ fn parse_compiler_input(
     })?;
 
     let kind = require_string_field(object, "kind", line)?;
+    let allowed: &[&str] = match kind {
+        "source" => &["name", "source"],
+        "path" | "directory" => &["path"],
+        "pathList" => &["paths"],
+        "glob" => &["pattern"],
+        _ => {
+            return Err(CliFailure {
+                kind: "InvalidInputRecord",
+                line: Some(line),
+                message: format!("unsupported compiler input kind `{kind}`"),
+            });
+        }
+    };
+    // Match the published `edict.compiler.input/v1` schema, which pins
+    // `additionalProperties: false` and mutually exclusive input kinds: reject
+    // any field outside the envelope and this kind's own variant fields so the
+    // binary accepts exactly what the schema accepts.
+    reject_foreign_input_fields(object, kind, allowed, line)?;
     match kind {
         "source" => Ok(CompilerInput::Source {
             name: optional_string_field(object, "name")
@@ -299,6 +317,26 @@ fn parse_compiler_input(
             message: format!("unsupported compiler input kind `{kind}`"),
         }),
     }
+}
+
+fn reject_foreign_input_fields(
+    object: &serde_json::Map<String, Value>,
+    kind: &str,
+    allowed: &[&str],
+    line: usize,
+) -> Result<(), CliFailure> {
+    for key in object.keys() {
+        let key = key.as_str();
+        if matches!(key, "schema" | "type" | "kind") || allowed.contains(&key) {
+            continue;
+        }
+        return Err(CliFailure {
+            kind: "InvalidInputRecord",
+            line: Some(line),
+            message: format!("`{kind}` compiler input record has unexpected field `{key}`"),
+        });
+    }
+    Ok(())
 }
 
 fn require_string_field<'a>(
