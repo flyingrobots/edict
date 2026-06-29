@@ -39,6 +39,7 @@ Out of scope:
 | BUNDLE-REQ-005 | implemented | HOLMES, Watson, and Moriarty evidence entries are optional in the typed bundle; when present, each entry must bind to the manifest's selected bundle subject digest, target profile digest, and target IR digest. | issue #1, docs/GUIDE_edict-assurance-transparency.md |
 | BUNDLE-REQ-006 | implemented | Admission artifacts remain out of the participant-neutral contract bundle manifest; non-empty admission references are rejected. | docs/SPEC_continuum-contract-bundle-v1.md |
 | BUNDLE-REQ-007 | implemented | The typed bundle pins `canonicalization_profile.coordinate` to `edict.canonical-cbor/v1`. | docs/SPEC_continuum-contract-bundle-v1.md |
+| BUNDLE-REQ-008 | planned | The crate can assemble a `ContractBundleManifest`, computing `semanticBundleDigest` and `releaseBundleDigest` per the exact spec preimages from digest-locked references, with `coreIrDigest` computed from a real compiled Core module and `targetIrDigest` plus other layer hashes supplied as typed references; the assembled manifest validates. | docs/SPEC_continuum-contract-bundle-v1.md, docs/design/contract-bundle-assembly-v0.11.md |
 
 ## Fixtures
 
@@ -59,6 +60,10 @@ Out of scope:
 | BUNDLE-TP-007 | implemented | Boundary guard | BUNDLE-REQ-001 | Removing the release-only build-provenance digest returns `InvalidArtifactReference` on `build_provenance`. | release_bundle_inputs_must_be_digest_locked | crates/edict-syntax/tests/contract_bundle.rs | Proves release digest preimage inputs are represented by the typed manifest. |
 | BUNDLE-TP-008 | implemented | Boundary guard | BUNDLE-REQ-007 | Changing `canonicalization_profile.coordinate` returns `UnsupportedCanonicalizationProfile`. | canonicalization_profile_must_be_the_v1_cbor_profile | crates/edict-syntax/tests/contract_bundle.rs | Pins the v1 bundle to the canonical CBOR profile. |
 | BUNDLE-TP-009 | implemented | Golden path | BUNDLE-REQ-001 | Empty lawpack, generated-artifact, and conformance-corpus lists remain valid because optional lists bind what is present without creating non-empty obligations. | optional_artifact_lists_may_be_empty | crates/edict-syntax/tests/contract_bundle.rs | Source artifacts remain the required artifact set. |
+| BUNDLE-TP-010 | planned | Golden path | BUNDLE-REQ-008 | Assembling a bundle from a real compiled Core module plus supplied digest-locked references produces a manifest that `validate_contract_bundle_manifest` returns `Valid` for. | - | - | Validation consumes the assembled artifact, not a hand-written fixture. |
+| BUNDLE-TP-011 | planned | Boundary guard | BUNDLE-REQ-008 | Changing any semantic-layer input (Core digest, supplied `targetIrDigest` reference, target profile, lawpack, generated artifact, conformance corpus, verifier report, or semantic compile options) changes both `semanticBundleDigest` and `releaseBundleDigest`. | - | - | Semantic-layer mutation propagates to both digests. |
+| BUNDLE-TP-012 | planned | Boundary guard | BUNDLE-REQ-008 | Changing any release-only input (raw source descriptor or logical path, compiler/lowerer/verifier identity, nonsemantic compile options, build provenance, or compile explanation) changes `releaseBundleDigest` only, leaving `semanticBundleDigest` unchanged. | - | - | Honors the semantic/release split; diagnostic-only changes do not move semantic identity. |
+| BUNDLE-TP-013 | planned | Boundary guard | BUNDLE-REQ-008 | The assembly input API distinguishes the computed Core digest from supplied references by type, so a supplied `targetIrDigest` cannot be mistaken for one computed from target IR bytes. | - | - | Target-IR byte identity is out of scope; tracked in issue #105. |
 
 ## Determinism Obligations
 

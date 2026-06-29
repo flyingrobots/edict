@@ -440,9 +440,9 @@ Non-goals:
 
 Target date: TBD
 
-Planned milestone: `v0.11.0-alpha.1`
+Milestone: `v0.11.0-alpha.1`
 
-Primary issues: TBD
+Primary issues: #106, #105
 
 Release labels: `release:bundles`, `release:admission`, `release:target-ir`
 
