@@ -237,12 +237,32 @@ fn help_flag_emits_info_record() {
         let record = &stdout[0];
         assert_eq!(record.get("topic").and_then(Value::as_str), Some("help"));
         assert!(record.get("usage").and_then(Value::as_str).is_some());
-        assert!(record
-            .get("requestSchemas")
+        // Pin the concrete public payload, not just field presence.
+        assert_eq!(
+            record.get("requestSchemas"),
+            Some(&json!([
+                "edict.compiler.settings/v1",
+                "edict.compiler.input/v1"
+            ])),
+            "{flag} help must list the exact accepted request schemas"
+        );
+        let codes: Vec<i64> = record
+            .get("exitCodes")
             .and_then(Value::as_array)
-            .is_some());
-        assert!(record.get("exitCodes").and_then(Value::as_array).is_some());
-        assert!(record.get("docs").and_then(Value::as_str).is_some());
+            .expect("help record carries exitCodes")
+            .iter()
+            .filter_map(|entry| entry.get("code").and_then(Value::as_i64))
+            .collect();
+        assert_eq!(
+            codes,
+            [0, 1, 2],
+            "{flag} help must document exit codes 0, 1, 2 in order"
+        );
+        assert_eq!(
+            record.get("docs").and_then(Value::as_str),
+            Some("docs/topics/cli/README.md"),
+            "{flag} help must point at the CLI docs"
+        );
     }
 }
 

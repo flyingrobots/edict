@@ -25,24 +25,34 @@
       "description": "Human-readable usage summary; present for the `help` topic."
     },
     "requestSchemas": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Schema identifiers accepted on stdin; present for the `help` topic."
+      "const": ["edict.compiler.settings/v1", "edict.compiler.input/v1"],
+      "description": "The exact request schema identifiers accepted on stdin; present for the `help` topic."
     },
     "exitCodes": {
       "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["code", "meaning"],
-        "properties": {
-          "code": { "enum": [0, 1, 2] },
-          "meaning": { "type": "string" }
+      "minItems": 3,
+      "items": false,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "meaning"],
+          "properties": { "code": { "const": 0 }, "meaning": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "meaning"],
+          "properties": { "code": { "const": 1 }, "meaning": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "meaning"],
+          "properties": { "code": { "const": 2 }, "meaning": { "type": "string" } }
         }
-      },
-      "description": "Exit-code contract; present for the `help` topic."
+      ],
+      "description": "The exit-code contract as an ordered 0/1/2 triple; present for the `help` topic."
     },
     "docs": {
       "type": "string",
@@ -56,6 +66,14 @@
       },
       "then": {
         "required": ["usage", "requestSchemas", "exitCodes", "docs"]
+      },
+      "else": {
+        "properties": {
+          "usage": false,
+          "requestSchemas": false,
+          "exitCodes": false,
+          "docs": false
+        }
       }
     }
   ]
