@@ -10,6 +10,14 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- README "Build & Run" and "Using the library" onboarding: how to build the
+  `edict` CLI, a copy-pasteable `edict check` example with expected output and
+  the exit-code contract, and a runnable `edict_syntax` parse/validate snippet
+  (with a matching `cargo test --doc` example in `edict-syntax`). The hero
+  diagram now marks shipping-today versus envisioned stages.
+- Standard repository files: `SECURITY.md` (private vulnerability reporting +
+  supported alpha versions), `NOTICE` (Apache-2.0 attribution), and
+  `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
 - The `edict` CLI now supports `--help`/`-h` and `--version`/`-V`, which emit a
   single `edict.cli.info/v1` JSONL record on stdout (the `help` topic carries the
   usage summary, accepted request schemas, and exit-code contract) and exit 0.

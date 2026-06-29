@@ -38,6 +38,18 @@
 //! Assurance tooling (HOLMES / Watson / Moriarty) remains shared platform
 //! machinery. This crate validates typed references to its evidence; it does not
 //! execute those tools or make admission decisions.
+//!
+//! # Example
+//!
+//! Parse a source module, then run source/surface semantic validation:
+//!
+//! ```
+//! use edict_syntax::{parse_module, validate_surface};
+//!
+//! let source = "package examples.hello@1;\n";
+//! let module = parse_module(source).expect("source parses");
+//! validate_surface(&module).expect("source passes surface validation");
+//! ```
 
 pub mod admission;
 pub mod ast;
