@@ -1,5 +1,7 @@
 # Developer Tooling
 
+Status: current HEAD contract.
+
 The developer-tooling alpha now has these editor-facing surfaces:
 
 - `edict_syntax::highlight_source`, which classifies source spans into stable
