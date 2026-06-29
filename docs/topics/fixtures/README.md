@@ -19,7 +19,10 @@ Current checked-in fixture families are:
   semantic-validation, compiler-spine, and developer-tooling behavior;
 - reviewed Core artifacts under
   [`fixtures/core/canonical/`](../../../fixtures/core/canonical/) for exact
-  canonical bytes and the `edict.core.module/v1` digest.
+  canonical bytes and the `edict.core.module/v1` digest;
+- golden CLI cases under [`fixtures/cli/`](../../../fixtures/cli/) replayed
+  end-to-end through the `edict` binary for byte-exact stdout, stderr, and exit
+  code.
 
 `cargo xtask core-goldens --check` verifies the reviewed Core artifacts against
 the executable compiler and encoder. `cargo xtask core-goldens --write`

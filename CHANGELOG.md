@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+## [v0.10.0-alpha.1] - 2026-10-21
+
 ### Added
 
 - Added the first JSONL-only public `edict` CLI surface in `edict-cli`: the
