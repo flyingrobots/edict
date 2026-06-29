@@ -13,6 +13,15 @@ flowchart LR
     C -->|Execute Safely| D["4. WASM Sandbox\n(Enforced limits & auto-rollback)"]
 ```
 
+> **Shipping today vs. envisioned.** This diagram is the full architecture. The
+> current alpha (`v0.10.0-alpha.1`) implements stage 1 and the front half of
+> stage 2 — writing intents and **compiling + validating** them through the
+> `edict check` CLI and `edict_syntax` library, plus the canonical Core IR and
+> hash framing. The cryptographic-seal admission flow, participant admission,
+> and the WASM sandbox are **not implemented yet** (see
+> [Current Status](#current-status) and [`ROADMAP.md`](./ROADMAP.md)). To run
+> what exists today, see [Build & Run](#build--run).
+
 ## Why it Matters
 
 Traditional security runs at the boundary (firewalls, sandboxes). But if you hand an AI agent a tool, it inherits the permissions of the parent process. Edict makes the code *declare* and *prove* its capabilities beforehand, preventing malicious prompt injections or library updates from causing harm.
@@ -457,6 +466,64 @@ The key insight behind the layering: GraphQL can say what an operation is *named
 and what types it involves. Wesley can say what *evidence* was generated about
 those types. But neither can say what the operation is *actually allowed to do*.
 That's the gap Edict fills.
+
+---
+
+## Build & Run
+
+Edict is not on crates.io yet (the alpha train keeps `publish = false`), so build
+from source. Requires Rust 1.85+.
+
+Build the CLI:
+
+```sh
+cargo build -p edict-cli       # produces target/debug/edict
+```
+
+The CLI is machine-first: it reads JSONL request records on stdin and emits only
+JSONL on stdout and stderr. `--help` and `--version` print a structured
+`edict.cli.info/v1` record:
+
+```sh
+target/debug/edict --version
+target/debug/edict --help
+```
+
+Check an Edict source — a request is one compiler-settings record followed by one
+or more input records, one JSON object per line:
+
+```sh
+printf '%s\n%s\n' \
+  '{"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"check"}' \
+  '{"schema":"edict.compiler.input/v1","type":"compilerInput","kind":"path","path":"fixtures/lang/bounds/bounded-hello.edict"}' \
+  | target/debug/edict
+```
+
+A clean check writes result and status records to stdout and exits `0`:
+
+```json
+{"command":"check","input":{"kind":"path","path":"fixtures/lang/bounds/bounded-hello.edict"},"schema":"edict.cli.check-result/v1","status":"ok","type":"checkResult"}
+{"checked":1,"command":"check","errors":0,"exitCode":0,"schema":"edict.cli.event/v1","status":"ok","type":"status"}
+```
+
+Inputs can be inline `source`, a file `path`, a `directory`, an ordered
+`pathList`, or a `glob`; diagnostics and the terminal status go to stderr.
+
+**Exit codes:** `0` ok · `1` compiler or validation diagnostics · `2` invalid CLI
+input. The full stream contract and JSON Schemas are in the
+[CLI topic](./docs/topics/cli/README.md).
+
+### Using the library
+
+`edict-syntax` is the front end. The minimal flow is parse, then surface-validate:
+
+```rust
+use edict_syntax::{parse_module, validate_surface};
+
+let source = "package examples.hello@1;\n";
+let module = parse_module(source).expect("source parses");
+validate_surface(&module).expect("source passes surface validation");
+```
 
 ---
 

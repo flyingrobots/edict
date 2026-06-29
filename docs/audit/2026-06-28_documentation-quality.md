@@ -102,6 +102,13 @@ is never surfaced as a copy-pasteable example.
    parse + validate a source string (ideally the new `check` façade proposed in
    the code-quality audit), so the README has at least one runnable code path.
 
+> **✅ Addressed (2026-06-29, #102):** all three README fixes landed — the hero
+> diagram now carries a "Shipping today vs. envisioned" note, a "Build & Run"
+> section gives a copy-pasteable `edict check` example + exit-code contract, and
+> a "Using the library" snippet (backed by a runnable `cargo test --doc` example
+> in `crates/edict-syntax/src/lib.rs`) was added. Closes the §1.1/§1.2/§1.3
+> onboarding gaps.
+
 ### 2.2 Missing Standard Documentation
 
 Confirmed **absent** at repo root: **`SECURITY.md`**, **`NOTICE`**,
@@ -119,6 +126,10 @@ Secondary: `CODE_OF_CONDUCT.md`; and an **`ARCHITECTURE.md`** (or a README link
 to one) since the layering — `edict-syntax` (front-end+compiler), `edict-cli`,
 `xtask` — and the crate-scope sprawl noted in the code-quality audit are not
 explained in one map for new contributors.
+
+> **✅ Addressed (2026-06-29, #102):** `SECURITY.md`, `NOTICE`, and
+> `CODE_OF_CONDUCT.md` were added at repo root. `ARCHITECTURE.md` remains open
+> and is tracked separately in **#99**.
 
 ### 2.3 Supplementary Documentation (undocumented complex area)
 
