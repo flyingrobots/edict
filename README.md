@@ -465,10 +465,10 @@ That's the gap Edict fills.
 Edict now has executable Rust implementation slices alongside the design specs.
 The current implementation includes the front end, Core semantic schema, the
 first source-to-in-memory-Core compiler spine, target-profile and bundle
-validation, Gate C admission-boundary checks, and editor-facing lexical
+validation, Gate C admission-boundary checks, editor-facing lexical
 highlighting roles plus initial Tree-sitter, TextMate, and VS Code/Cursor
-integration artifacts. It is not a complete compiler or full admission
-execution stack.
+integration artifacts, and a public JSONL `edict` CLI for the `check` workflow.
+It is not a complete compiler or full admission execution stack.
 
 What exists today:
 
@@ -523,7 +523,9 @@ What exists today:
 - First JSONL-only `edict` CLI surface: the `check` operation reads compiler
   settings and compiler input records from stdin as JSONL, accepts inline
   source, file paths, directories, path lists, and glob patterns, and emits only
-  JSONL records on stdout and stderr
+  JSONL records on stdout and stderr, with checked-in JSON Schemas for all five
+  stream record families, stable diagnostic `kind` codes, and a golden fixture
+  corpus replayed byte-for-byte through the binary
 - Published `v0.8.0-alpha.1` release notes for the minimal effectful
   compiler-spine alpha
 - Published `v0.7.0-alpha.1` release notes for the file-backed

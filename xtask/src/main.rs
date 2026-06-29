@@ -2724,6 +2724,43 @@ fn run() {}
     }
 
     #[test]
+    fn release_policy_tracks_v0_10_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        let v0_10_policy = toml_section(&policy, "[release_notes.v0_10_0_alpha_1]");
+        for required in [
+            "[release_notes.v0_10_0_alpha_1]",
+            "tag = \"v0.10.0-alpha.1\"",
+            "target_date = \"2026-10-21\"",
+            "status = \"publish_ready\"",
+            "release_issue = 76",
+            "milestone_number = 11",
+            "first_public_cli_surface",
+            "jsonl_check_workflow",
+            "deterministic_input_expansion",
+            "compiler_settings_json_schema",
+            "cli_stream_record_schemas",
+            "structured_cli_diagnostics",
+            "stable_diagnostic_kind_codes",
+            "golden_cli_fixture_corpus",
+            "cli_topic_shelf",
+            "no_compile_lower_explain_bundle_or_admission_commands",
+            "no_human_pretty_output",
+            "no_embedded_json_schema_validation_engine",
+            "no_language_server",
+            "no_marketplace_packaging",
+            "no_participant_policy_execution",
+            "no_crates_io_publish",
+        ] {
+            assert!(
+                v0_10_policy.contains(required),
+                "v0.10 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
@@ -2738,6 +2775,7 @@ fn run() {}
             ("v0.7.0-alpha.1", "2026-09-09"),
             ("v0.8.0-alpha.1", "2026-09-23"),
             ("v0.9.0-alpha.1", "2026-10-07"),
+            ("v0.10.0-alpha.1", "2026-10-21"),
         ] {
             assert!(
                 policy.contains(&format!("tag = \"{tag}\"")),

@@ -394,7 +394,7 @@ Non-goals:
 
 ## v0.10.0-alpha.1 - Public CLI And Structured Diagnostics Alpha
 
-Target date: TBD
+Target date: 2026-10-21
 
 Milestone: `v0.10.0-alpha.1`
 

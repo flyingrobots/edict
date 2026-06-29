@@ -393,3 +393,30 @@ non_goals = [
   "no_public_cli",
   "no_crates_io_publish",
 ]
+
+[release_notes.v0_10_0_alpha_1]
+tag = "v0.10.0-alpha.1"
+target_date = "2026-10-21"
+status = "publish_ready"
+release_issue = 76
+milestone_number = 11
+scope = [
+  "first_public_cli_surface",
+  "jsonl_check_workflow",
+  "deterministic_input_expansion",
+  "compiler_settings_json_schema",
+  "cli_stream_record_schemas",
+  "structured_cli_diagnostics",
+  "stable_diagnostic_kind_codes",
+  "golden_cli_fixture_corpus",
+  "cli_topic_shelf",
+]
+non_goals = [
+  "no_compile_lower_explain_bundle_or_admission_commands",
+  "no_human_pretty_output",
+  "no_embedded_json_schema_validation_engine",
+  "no_language_server",
+  "no_marketplace_packaging",
+  "no_participant_policy_execution",
+  "no_crates_io_publish",
+]

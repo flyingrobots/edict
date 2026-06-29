@@ -72,6 +72,8 @@ thesis. [RELEASE-REQ-018]
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
+- [`v0.10.0-alpha.1`](../../releases/v0.10.0-alpha.1.md): publish-ready first
+  public CLI and structured-diagnostics alpha notes.
 - [`v0.9.0-alpha.1`](../../releases/v0.9.0-alpha.1.md): published first
   Target IR alpha notes.
 - [`v0.8.0-alpha.1`](../../releases/v0.8.0-alpha.1.md): published minimal

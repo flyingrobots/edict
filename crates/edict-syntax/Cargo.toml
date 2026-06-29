@@ -1,6 +1,6 @@
 [package]
 name = "edict-syntax"
-version = "0.9.0-alpha.1"
+version = "0.10.0-alpha.1"
 description = "Edict language syntax, authority facts, compiler spine, Core canonical encoding, admission, target-profile, lowerability, bundle, and developer tooling checks"
 edition.workspace = true
 license.workspace = true
