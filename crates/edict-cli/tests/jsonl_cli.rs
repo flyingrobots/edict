@@ -189,6 +189,7 @@ fn cli_schema_constants_match_checked_in_artifacts() {
             "edict.cli-diagnostic.v1.schema.json",
         ),
         (edict_cli::EVENT_SCHEMA, "edict.cli-event.v1.schema.json"),
+        (edict_cli::INFO_SCHEMA, "edict.cli-info.v1.schema.json"),
     ];
     for (constant, file) in cases {
         let text = fs::read_to_string(schemas.join(file))
@@ -203,6 +204,100 @@ fn cli_schema_constants_match_checked_in_artifacts() {
             "`{file}` const must match the runtime schema constant"
         );
     }
+}
+
+#[test]
+fn version_flag_emits_info_record() {
+    for flag in ["--version", "-V"] {
+        let output = run_edict_args(&[flag]);
+        assert_eq!(output.status.code(), Some(0), "{flag} should exit 0");
+        assert!(output.stderr.is_empty(), "{flag} must not write stderr");
+        let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+        assert_eq!(stdout.len(), 1, "{flag} emits exactly one record");
+        assert_eq!(
+            stdout[0].get("schema").and_then(Value::as_str),
+            Some("edict.cli.info/v1")
+        );
+        assert_eq!(
+            stdout[0].get("topic").and_then(Value::as_str),
+            Some("version")
+        );
+        assert!(stdout[0].get("version").and_then(Value::as_str).is_some());
+    }
+}
+
+#[test]
+fn help_flag_emits_info_record() {
+    for flag in ["--help", "-h"] {
+        let output = run_edict_args(&[flag]);
+        assert_eq!(output.status.code(), Some(0), "{flag} should exit 0");
+        assert!(output.stderr.is_empty(), "{flag} must not write stderr");
+        let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+        assert_eq!(stdout.len(), 1, "{flag} emits exactly one record");
+        let record = &stdout[0];
+        assert_eq!(record.get("topic").and_then(Value::as_str), Some("help"));
+        assert!(record.get("usage").and_then(Value::as_str).is_some());
+        // Pin the concrete public payload, not just field presence.
+        assert_eq!(
+            record.get("requestSchemas"),
+            Some(&json!([
+                "edict.compiler.settings/v1",
+                "edict.compiler.input/v1"
+            ])),
+            "{flag} help must list the exact accepted request schemas"
+        );
+        let codes: Vec<i64> = record
+            .get("exitCodes")
+            .and_then(Value::as_array)
+            .expect("help record carries exitCodes")
+            .iter()
+            .filter_map(|entry| entry.get("code").and_then(Value::as_i64))
+            .collect();
+        assert_eq!(
+            codes,
+            [0, 1, 2],
+            "{flag} help must document exit codes 0, 1, 2 in order"
+        );
+        assert_eq!(
+            record.get("docs").and_then(Value::as_str),
+            Some("docs/topics/cli/README.md"),
+            "{flag} help must point at the CLI docs"
+        );
+    }
+}
+
+#[test]
+fn unknown_argument_rejected_with_actionable_diagnostic() {
+    let output = run_edict_args(&["--nope"]);
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "rejected args must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("kind").and_then(Value::as_str) == Some("InvalidArguments"))
+        .expect("stderr must contain an InvalidArguments diagnostic");
+    let message = diagnostic
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        message.contains("--help") && message.contains("docs/topics/cli/README.md"),
+        "InvalidArguments must point at --help and the docs"
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+fn run_edict_args(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_edict"))
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .expect("run edict with args")
 }
 
 fn compiler_settings() -> Value {

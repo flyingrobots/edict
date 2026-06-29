@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/cli-info/v1",
+  "title": "Edict CLI Info v1",
+  "description": "JSONL informational record emitted to stdout for `edict --help` and `edict --version`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "topic", "version"],
+  "properties": {
+    "schema": {
+      "const": "edict.cli.info/v1"
+    },
+    "type": {
+      "const": "info"
+    },
+    "topic": {
+      "enum": ["help", "version"]
+    },
+    "version": {
+      "type": "string",
+      "description": "The `edict` binary version."
+    },
+    "usage": {
+      "type": "string",
+      "description": "Human-readable usage summary; present for the `help` topic."
+    },
+    "requestSchemas": {
+      "const": ["edict.compiler.settings/v1", "edict.compiler.input/v1"],
+      "description": "The exact request schema identifiers accepted on stdin; present for the `help` topic."
+    },
+    "exitCodes": {
+      "type": "array",
+      "minItems": 3,
+      "items": false,
+      "prefixItems": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "meaning"],
+          "properties": { "code": { "const": 0 }, "meaning": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "meaning"],
+          "properties": { "code": { "const": 1 }, "meaning": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["code", "meaning"],
+          "properties": { "code": { "const": 2 }, "meaning": { "type": "string" } }
+        }
+      ],
+      "description": "The exit-code contract as an ordered 0/1/2 triple; present for the `help` topic."
+    },
+    "docs": {
+      "type": "string",
+      "description": "Pointer to the CLI documentation; present for the `help` topic."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "topic": { "const": "help" } }
+      },
+      "then": {
+        "required": ["usage", "requestSchemas", "exitCodes", "docs"]
+      },
+      "else": {
+        "properties": {
+          "usage": false,
+          "requestSchemas": false,
+          "exitCodes": false,
+          "docs": false
+        }
+      }
+    }
+  ]
+}

@@ -2298,6 +2298,99 @@ fn run() {}
     }
 
     #[test]
+    fn info_schema_declares_jsonl_contract() {
+        let root = repo_root().expect("repo root");
+        let schema = cli_record_schema(
+            &root,
+            "edict.cli-info.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/cli-info/v1",
+            "edict.cli.info/v1",
+        );
+        for required in ["schema", "type", "topic", "version"] {
+            assert!(
+                json_string_array_contains(&schema, "required", required),
+                "info schema must require `{required}`"
+            );
+        }
+        let properties = json_object(&schema, "properties");
+        assert_eq!(property_const(properties, "type"), Some("info"));
+        let topic = properties
+            .get("topic")
+            .unwrap_or_else(|| panic!("info schema missing `topic` property"));
+        for value in ["help", "version"] {
+            assert!(
+                json_string_array_contains(topic, "enum", value),
+                "info schema must declare the `{value}` topic"
+            );
+        }
+        for field in ["usage", "requestSchemas", "exitCodes", "docs"] {
+            assert!(
+                properties.contains_key(field),
+                "info schema missing help field `{field}`"
+            );
+        }
+
+        // `requestSchemas` is pinned to the exact accepted request identifiers.
+        assert_eq!(
+            schema
+                .pointer("/properties/requestSchemas/const")
+                .and_then(Value::as_array),
+            Some(&vec![
+                Value::from("edict.compiler.settings/v1"),
+                Value::from("edict.compiler.input/v1"),
+            ]),
+            "info schema must pin the exact accepted request schemas"
+        );
+        // `exitCodes` is an ordered 0/1/2 triple, not any subset/order.
+        let exit_prefix = schema
+            .pointer("/properties/exitCodes/prefixItems")
+            .and_then(Value::as_array)
+            .unwrap_or_else(|| panic!("info schema must pin exitCodes as an ordered triple"));
+        let codes: Vec<i64> = exit_prefix
+            .iter()
+            .filter_map(|item| {
+                item.pointer("/properties/code/const")
+                    .and_then(Value::as_i64)
+            })
+            .collect();
+        assert_eq!(
+            codes,
+            [0, 1, 2],
+            "info schema exitCodes must be the 0/1/2 triple in order"
+        );
+        assert_eq!(
+            schema.pointer("/properties/exitCodes/items"),
+            Some(&Value::Bool(false)),
+            "info schema must forbid extra exit codes beyond the triple"
+        );
+
+        // The conditional must key on `topic == "help"`, require the help-only
+        // fields, and forbid them on the `version` topic.
+        let rule = json_array(&schema, "allOf")
+            .first()
+            .unwrap_or_else(|| panic!("info schema must conditionally constrain by topic"));
+        assert_eq!(
+            rule.pointer("/if/properties/topic/const")
+                .and_then(Value::as_str),
+            Some("help"),
+            "info schema conditional must key on the `help` topic"
+        );
+        for field in ["usage", "requestSchemas", "exitCodes", "docs"] {
+            assert!(
+                rule.pointer("/then/required")
+                    .and_then(Value::as_array)
+                    .is_some_and(|req| req.iter().any(|value| value == field)),
+                "info schema `help` topic must require `{field}`"
+            );
+            assert_eq!(
+                rule.pointer(&format!("/else/properties/{field}")),
+                Some(&Value::Bool(false)),
+                "info schema `version` topic must forbid help field `{field}`"
+            );
+        }
+    }
+
+    #[test]
     fn review_bot_fallback_policy_is_structured() {
         let root = repo_root().expect("repo root");
         let policy = fs::read_to_string(root.join("docs/topics/review-process/policy.toml"))

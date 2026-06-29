@@ -17,3 +17,6 @@ pub const DIAGNOSTIC_SCHEMA: &str = "edict.cli.diagnostic/v1";
 
 /// Stable schema identifier for CLI terminal status (event) records.
 pub const EVENT_SCHEMA: &str = "edict.cli.event/v1";
+
+/// Stable schema identifier for CLI informational (`--help`/`--version`) records.
+pub const INFO_SCHEMA: &str = "edict.cli.info/v1";

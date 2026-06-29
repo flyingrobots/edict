@@ -35,6 +35,7 @@ Out of scope:
 | CLI-REQ-006 | implemented | Diagnostics are declared as `edict.cli.diagnostic/v1` and have a checked-in JSON Schema contract spanning parse, semantic, and CLI stages. | docs/schemas/edict.cli-diagnostic.v1.schema.json |
 | CLI-REQ-007 | implemented | Terminal status events are declared as `edict.cli.event/v1` and have a checked-in JSON Schema contract. | docs/schemas/edict.cli-event.v1.schema.json |
 | CLI-REQ-008 | implemented | A checked-in golden fixture corpus replays end-to-end through the binary and matches stdout, stderr, and exit code byte-for-byte for success, compiler rejection, CLI-input rejection, and deterministic input expansion. | crates/edict-cli/tests/golden_cli.rs |
+| CLI-REQ-009 | implemented | The binary supports `--help`/`-h` and `--version`/`-V`, which emit a single `edict.cli.info/v1` record (declared by a checked-in JSON Schema) on stdout and exit 0; any other argument is rejected with an actionable `InvalidArguments` diagnostic and exit 2. | crates/edict-cli/tests/jsonl_cli.rs, docs/schemas/edict.cli-info.v1.schema.json |
 
 ## Fixtures
 
@@ -46,6 +47,7 @@ Out of scope:
 | docs/schemas/edict.cli-check-result.v1.schema.json | Stable JSON Schema for success result records. | The schema contract test validates the identifier, required fields, and pinned `command`, `type`, and `status` values. |
 | docs/schemas/edict.cli-diagnostic.v1.schema.json | Stable JSON Schema for diagnostic records. | The schema contract test validates the identifier, required fields, supported stages, and optional span, line, and message fields. |
 | docs/schemas/edict.cli-event.v1.schema.json | Stable JSON Schema for terminal status records. | The schema contract test validates the identifier, required fields, terminal status values, and supported exit codes. |
+| docs/schemas/edict.cli-info.v1.schema.json | Stable JSON Schema for `--help`/`--version` informational records. | The schema contract test validates the identifier, required fields, supported topics, and the help-topic conditional fields. |
 | crates/edict-cli/tests/golden_cli.rs | Golden replay harness for the `fixtures/cli/` corpus. | Replays each case through the binary and matches stdout, stderr, and exit code byte-for-byte against checked-in goldens. |
 | fixtures/cli/01-source-ok/request.jsonl | Representative golden CLI request record. | Replayed by the golden harness; its goldens pin the success-path stdout and status records. |
 
@@ -64,6 +66,9 @@ Out of scope:
 | CLI-TP-009 | implemented | Schema guard | CLI-REQ-007 | The event JSON Schema declares `edict.cli.event/v1`, `status`, the `ok` and `error` terminal statuses, and exit codes 0, 1, and 2. | event_schema_declares_jsonl_contract | docs/schemas/edict.cli-event.v1.schema.json | Contract-artifact test, not prose matching. |
 | CLI-TP-010 | implemented | Golden path | CLI-REQ-008 | Success and deterministic input-expansion cases (inline source, GraphQL-shape-importing source, file path, recursive directory, ordered path list, glob) replay through the binary and match their stdout, stderr, and exit-code goldens exactly. | golden_cli_fixtures_replay_exactly | crates/edict-cli/tests/golden_cli.rs | Byte-for-byte golden replay, not prose matching. |
 | CLI-TP-011 | implemented | Error handling | CLI-REQ-008 | Compiler parse rejection, compiler semantic rejection, and CLI-input rejection cases replay through the binary and match their stderr diagnostics, terminal status, and exit-code goldens exactly. | golden_cli_fixtures_replay_exactly | crates/edict-cli/tests/golden_cli.rs | Covers exit codes 1 and 2 with stable stage and kind fields. |
+| CLI-TP-012 | implemented | Golden path | CLI-REQ-009 | `--version`/`-V` and `--help`/`-h` each emit exactly one `edict.cli.info/v1` record on stdout, write nothing to stderr, and exit 0; the help record carries usage, request schemas, and exit codes. | version_flag_emits_info_record, help_flag_emits_info_record | crates/edict-cli/tests/jsonl_cli.rs | Flags emit JSONL, not plain text. |
+| CLI-TP-013 | implemented | Error handling | CLI-REQ-009 | An unrecognized argument exits 2 with an `InvalidArguments` diagnostic whose message points at `--help` and the CLI docs. | unknown_argument_rejected_with_actionable_diagnostic | crates/edict-cli/tests/jsonl_cli.rs | Actionable error, not just a rejection. |
+| CLI-TP-014 | implemented | Schema guard | CLI-REQ-009 | The info JSON Schema declares `edict.cli.info/v1`, `info`, the `help` and `version` topics, and the help-topic conditional fields. | info_schema_declares_jsonl_contract | docs/schemas/edict.cli-info.v1.schema.json | Contract-artifact test, not prose matching. |
 
 ## Determinism Obligations
 

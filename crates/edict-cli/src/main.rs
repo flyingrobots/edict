@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use edict_cli::{
     CHECK_RESULT_SCHEMA, COMPILER_INPUT_SCHEMA as INPUT_SCHEMA, DIAGNOSTIC_SCHEMA, EVENT_SCHEMA,
+    INFO_SCHEMA,
 };
 use edict_syntax::{parse_module, validate_surface, ParseError, SemanticError, Span};
 use serde::Deserialize;
@@ -66,14 +67,31 @@ fn main() {
 }
 
 fn run() -> i32 {
-    if std::env::args_os().nth(1).is_some() {
-        let failure = CliFailure {
-            kind: "InvalidArguments",
-            line: None,
-            message: "the first CLI slice reads JSONL request records from stdin only".to_owned(),
-        };
-        write_cli_failure(&failure);
-        return EXIT_CLI_FAILED;
+    let mut args = std::env::args_os().skip(1);
+    if let Some(first) = args.next() {
+        let only_arg = args.next().is_none();
+        match first.to_str() {
+            Some("--help" | "-h") if only_arg => {
+                write_info(&help_record());
+                return EXIT_OK;
+            }
+            Some("--version" | "-V") if only_arg => {
+                write_info(&version_record());
+                return EXIT_OK;
+            }
+            _ => {
+                let failure = CliFailure {
+                    kind: "InvalidArguments",
+                    line: None,
+                    message: "edict reads JSONL request records on stdin and takes no positional \
+                              arguments; run `edict --help` for the request schema, or see \
+                              docs/topics/cli/README.md"
+                        .to_owned(),
+                };
+                write_cli_failure(&failure);
+                return EXIT_CLI_FAILED;
+            }
+        }
     }
 
     let mut input = String::new();
@@ -567,6 +585,42 @@ fn status_record(status: &str, checked: usize, errors: usize, exit_code: i32) ->
         "errors": errors,
         "exitCode": exit_code,
     })
+}
+
+fn version_record() -> Value {
+    json!({
+        "schema": INFO_SCHEMA,
+        "type": "info",
+        "topic": "version",
+        "version": env!("CARGO_PKG_VERSION"),
+    })
+}
+
+fn help_record() -> Value {
+    json!({
+        "schema": INFO_SCHEMA,
+        "type": "info",
+        "topic": "help",
+        "version": env!("CARGO_PKG_VERSION"),
+        "usage": "edict reads JSONL request records on stdin and emits only JSONL records on \
+                  stdout and stderr; it takes no positional arguments. A request is one compiler \
+                  settings record followed by one or more compiler input records.",
+        "requestSchemas": [
+            edict_cli::COMPILER_SETTINGS_SCHEMA,
+            INPUT_SCHEMA,
+        ],
+        "exitCodes": [
+            { "code": EXIT_OK, "meaning": "request completed successfully" },
+            { "code": EXIT_CHECK_FAILED, "meaning": "compiler or validation diagnostics were produced" },
+            { "code": EXIT_CLI_FAILED, "meaning": "CLI input or usage was invalid" },
+        ],
+        "docs": "docs/topics/cli/README.md",
+    })
+}
+
+fn write_info(record: &Value) {
+    let mut stdout = io::stdout().lock();
+    write_record(&mut stdout, record);
 }
 
 fn write_cli_failure(failure: &CliFailure) {

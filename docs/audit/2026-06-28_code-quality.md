@@ -68,12 +68,14 @@ The CLI's TTV is good once you know the contract (`printf '<settings>\n<input>\n
 The sharpest violation is the **public CLI rejecting `--help` and `--version`**. `crates/edict-cli/src/main.rs:69` treats *any* argument as fatal (`InvalidArguments`, exit 2) with the message "the first CLI slice reads JSONL request records from stdin only". A developer's first instinct — `edict --help` — yields a cryptic JSONL error. Every CLI convention leads them to expect usage text. (Secondary astonishment: a crate named `edict-syntax` that also performs admission and bundle validation — see §3.2.)
 
 - **Action Prompt (Interface Refactoring):** `In crates/edict-cli/src/main.rs, before reading stdin, handle --help/-h and --version/-V explicitly: print a short usage summary (the check workflow, the JSONL request schema URIs edict.compiler.settings/v1 and edict.compiler.input/v1, and the exit-code contract) and exit 0. Keep all other arguments rejected as InvalidArguments. Add a golden CLI fixture under fixtures/cli/ for --help and --version, and a CLI-REQ/CLI-TP row in docs/topics/cli/test-plan.md.`
+- **✅ Addressed (2026-06-29, #101):** `--help`/`-h` and `--version`/`-V` emit a single `edict.cli.info/v1` JSONL record and exit 0 (machine-first rather than plain text, to keep the JSONL-only stdout contract and the "no human-pretty output" non-goal). Covered by `CLI-REQ-009` / `CLI-TP-012`..`CLI-TP-014`.
 
 ### 1.3 Error Usability
 
 CLI diagnostics are strong: structured, staged (`parse`/`semantic`/`cli`), stable `kind` codes (hardened this session in PR #77), with spans for source errors and human messages for CLI errors. The remaining cryptic case is the **`InvalidArguments`** message above — it explains what the tool *does* but not what the caller should *do*, and carries no pointer to the request schema. (Parse/semantic diagnostics deliberately omit prose `message`; that is fine because the `kind`+`span` are the contract.)
 
 - **Action Prompt (Error Handling Fix):** `In crates/edict-cli/src/main.rs, enrich the InvalidArguments CliFailure message to name the supported invocation ("edict reads JSONL request records on stdin; run 'edict --help' for the request schema") and add a "docs" field pointing at the docs/topics/cli/README.md path. Update the matching golden fixture (fixtures/cli/04-cli-missing-settings or a new args case) and the CLI test plan.`
+- **✅ Addressed (2026-06-29, #101):** the `InvalidArguments` message now names the supported invocation and points at `edict --help` and `docs/topics/cli/README.md`. Covered by `CLI-TP-013`. (The pointer is in the diagnostic `message` rather than a new `docs` field, to avoid widening the frozen `edict.cli.diagnostic/v1` schema.)
 
 ---
 
