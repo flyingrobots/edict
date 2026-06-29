@@ -11,7 +11,8 @@ In scope:
 - compiler settings as a stable JSON Schema artifact;
 - `check` over inline source, file paths, directories, path lists, and glob
   patterns;
-- structured parser and CLI diagnostics.
+- structured parser and CLI diagnostics;
+- a checked-in golden fixture corpus replayed end-to-end through the binary.
 
 Out of scope:
 
@@ -33,6 +34,7 @@ Out of scope:
 | CLI-REQ-005 | implemented | Success results are declared as `edict.cli.check-result/v1` and have a checked-in JSON Schema contract. | docs/schemas/edict.cli-check-result.v1.schema.json |
 | CLI-REQ-006 | implemented | Diagnostics are declared as `edict.cli.diagnostic/v1` and have a checked-in JSON Schema contract spanning parse, semantic, and CLI stages. | docs/schemas/edict.cli-diagnostic.v1.schema.json |
 | CLI-REQ-007 | implemented | Terminal status events are declared as `edict.cli.event/v1` and have a checked-in JSON Schema contract. | docs/schemas/edict.cli-event.v1.schema.json |
+| CLI-REQ-008 | implemented | A checked-in golden fixture corpus replays end-to-end through the binary and matches stdout, stderr, and exit code byte-for-byte for success, compiler rejection, CLI-input rejection, and deterministic input expansion. | crates/edict-cli/tests/golden_cli.rs |
 
 ## Fixtures
 
@@ -44,6 +46,8 @@ Out of scope:
 | docs/schemas/edict.cli-check-result.v1.schema.json | Stable JSON Schema for success result records. | The schema contract test validates the identifier, required fields, and pinned `command`, `type`, and `status` values. |
 | docs/schemas/edict.cli-diagnostic.v1.schema.json | Stable JSON Schema for diagnostic records. | The schema contract test validates the identifier, required fields, supported stages, and optional span, line, and message fields. |
 | docs/schemas/edict.cli-event.v1.schema.json | Stable JSON Schema for terminal status records. | The schema contract test validates the identifier, required fields, terminal status values, and supported exit codes. |
+| crates/edict-cli/tests/golden_cli.rs | Golden replay harness for the `fixtures/cli/` corpus. | Replays each case through the binary and matches stdout, stderr, and exit code byte-for-byte against checked-in goldens. |
+| fixtures/cli/01-source-ok/request.jsonl | Representative golden CLI request record. | Replayed by the golden harness; its goldens pin the success-path stdout and status records. |
 
 ## Test Cases
 
@@ -58,6 +62,8 @@ Out of scope:
 | CLI-TP-007 | implemented | Schema guard | CLI-REQ-005 | The check result JSON Schema declares `edict.cli.check-result/v1`, `checkResult`, the `check` command, the `ok` status, and the input descriptor. | check_result_schema_declares_jsonl_contract | docs/schemas/edict.cli-check-result.v1.schema.json | Contract-artifact test, not prose matching. |
 | CLI-TP-008 | implemented | Schema guard | CLI-REQ-006 | The diagnostic JSON Schema declares `edict.cli.diagnostic/v1`, `diagnostic`, the parse, semantic, and cli stages, and optional span, line, and message fields. | diagnostic_schema_declares_jsonl_contract | docs/schemas/edict.cli-diagnostic.v1.schema.json | Contract-artifact test, not prose matching. |
 | CLI-TP-009 | implemented | Schema guard | CLI-REQ-007 | The event JSON Schema declares `edict.cli.event/v1`, `status`, the `ok` and `error` terminal statuses, and exit codes 0, 1, and 2. | event_schema_declares_jsonl_contract | docs/schemas/edict.cli-event.v1.schema.json | Contract-artifact test, not prose matching. |
+| CLI-TP-010 | implemented | Golden path | CLI-REQ-008 | Success and deterministic input-expansion cases (inline source, GraphQL-shape-importing source, file path, recursive directory, ordered path list, glob) replay through the binary and match their stdout, stderr, and exit-code goldens exactly. | golden_cli_fixtures_replay_exactly | crates/edict-cli/tests/golden_cli.rs | Byte-for-byte golden replay, not prose matching. |
+| CLI-TP-011 | implemented | Error handling | CLI-REQ-008 | Compiler parse rejection, compiler semantic rejection, and CLI-input rejection cases replay through the binary and match their stderr diagnostics, terminal status, and exit-code goldens exactly. | golden_cli_fixtures_replay_exactly | crates/edict-cli/tests/golden_cli.rs | Covers exit codes 1 and 2 with stable stage and kind fields. |
 
 ## Determinism Obligations
 
