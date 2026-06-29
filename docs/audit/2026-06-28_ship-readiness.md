@@ -154,6 +154,7 @@ dependents," not "the alpha is unsafe."
   For a release whose headline is "first public CLI," this fails the most basic
   user expectation.
   - **Mitigation Prompt 7:** `Add explicit --help/-h and --version/-V handling in crates/edict-cli/src/main.rs before the stdin read, emitting usage + request-schema URIs + exit-code contract and exiting 0; add golden fixtures and CLI-REQ/CLI-TP rows.`
+  - **✅ Addressed (2026-06-29, #101):** `--help`/`--version` emit an `edict.cli.info/v1` record and exit 0; unknown args get an actionable diagnostic. Covered by `CLI-REQ-009` / `CLI-TP-012`..`CLI-TP-014`.
 - **Risk 2 (High) — No stable, curated API surface.** ~150 flat re-exports and
   the `edict-syntax` name/scope mismatch mean early adopters bind to symbols
   likely to move pre-1.0, with no `check`-style façade to depend on.
