@@ -8,8 +8,18 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- The `edict` CLI now supports `--help`/`-h` and `--version`/`-V`, which emit a
+  single `edict.cli.info/v1` JSONL record on stdout (the `help` topic carries the
+  usage summary, accepted request schemas, and exit-code contract) and exit 0.
+  The new record family has a checked-in JSON Schema and contract-guard test
+  (`CLI-REQ-009`, `CLI-TP-012`..`CLI-TP-014`).
+
 ### Changed
 
+- The CLI `InvalidArguments` diagnostic now gives actionable guidance, pointing
+  at `edict --help` and `docs/topics/cli/README.md` instead of a bare statement.
 - Marked `v0.10.0-alpha.1` as published in the release-process contract and
   recorded durable release evidence for its tag, workflow runs, milestone
   closure, and no-crates publication boundary.

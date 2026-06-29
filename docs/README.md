@@ -77,6 +77,8 @@ The current specification set is:
   stable JSON Schema artifact for `edict.cli.diagnostic/v1` stderr records.
 - [CLI Event JSON Schema](./schemas/edict.cli-event.v1.schema.json):
   stable JSON Schema artifact for `edict.cli.event/v1` terminal status records.
+- [CLI Info JSON Schema](./schemas/edict.cli-info.v1.schema.json):
+  stable JSON Schema artifact for `edict.cli.info/v1` `--help`/`--version` records.
 - [Syntax Topic](./topics/syntax/): current contract and verification matrix for
   the Phase 1 `edict-syntax` lexer/parser.
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type

@@ -11,6 +11,13 @@ every output record is JSON Lines.
 The `edict` binary reads compiler requests from stdin as JSONL records. It emits
 only JSONL records on stdout and stderr. [CLI-REQ-001]
 
+The binary takes no positional arguments. The only accepted flags are
+`--help`/`-h` and `--version`/`-V`, which emit a single `edict.cli.info/v1`
+record on stdout and exit `0`; the `help` record carries the usage summary, the
+accepted request schema identifiers, and the exit-code contract. Any other
+argument is rejected with an `InvalidArguments` diagnostic and exit `2`.
+[CLI-REQ-009]
+
 The first implemented operation is `check`. A `check` request accepts:
 
 - inline source code;
@@ -47,6 +54,7 @@ parser tolerating extra fields.
 | `edict.cli.check-result/v1` | stdout | [`cli-check-result`](../../schemas/edict.cli-check-result.v1.schema.json) [CLI-REQ-005] |
 | `edict.cli.diagnostic/v1` | stderr | [`cli-diagnostic`](../../schemas/edict.cli-diagnostic.v1.schema.json) [CLI-REQ-006] |
 | `edict.cli.event/v1` | stdout/stderr | [`cli-event`](../../schemas/edict.cli-event.v1.schema.json) [CLI-REQ-007] |
+| `edict.cli.info/v1` | stdout | [`cli-info`](../../schemas/edict.cli-info.v1.schema.json) [CLI-REQ-009] |
 
 ## Exit Codes
 
