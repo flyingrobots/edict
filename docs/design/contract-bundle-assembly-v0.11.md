@@ -53,6 +53,30 @@ releaseBundleDigest = digest("edict.bundle.release/v1", [
 `releaseBundleDigest` references `semanticBundleDigest`, never the reverse
 (`CONTINUUM-BUNDLE-DAG-001`).
 
+### 1a. Canonical preimage byte shape
+
+The assembler does not hash `sha256:<hex>` review strings directly. For bundle
+digest preimages, every review digest is parsed into the authoritative canonical
+digest value `["sha256", h'..32 bytes..']` (the same typed `[algorithm, bytes]`
+shape the canonical encoder already uses). Each bundle digest is then SHA-256
+over:
+
+```text
+canonical-cbor([
+  "edict.digest/v1",
+  "<bundle-domain>",
+  <typed bundle preimage value without self digest>
+])
+```
+
+where `<bundle-domain>` is `edict.bundle.semantic/v1` or
+`edict.bundle.release/v1`, and the typed bundle preimage value is the ordered
+list of component digests (each a typed `["sha256", <bytes>]` value), never the
+human review strings. This mirrors the Core digest path exactly, which frames the
+canonical Core module value inside
+`["edict.digest/v1", "edict.core.module/v1", <canonical Core module value>]`.
+This is the byte-level contract, not just an ingredient list.
+
 ### Provenance is typed, not commented
 
 The assembly input API makes computed-versus-supplied **unrepresentable as a
@@ -91,25 +115,45 @@ Mutation sensitivity honors the spec's semantic/release split — not every
 mutation changes everything (`CONTINUUM-SEMANTIC-OPTIONS-001`,
 `EDICT-CORE-NODIAG-001`):
 
+Top-level digest mutation tests apply to **semantic/release preimage
+components**. Excluded external artifacts, optional assurance evidence, and
+admission artifacts are handled by validation, subject binding, or explicit
+rejection — not by pretending every nearby artifact changes the bundle digest.
+
 | Mutation | semanticBundleDigest | releaseBundleDigest |
 | --- | --- | --- |
 | Core semantic change (Core digest changes) | changes | changes |
 | `targetIrDigest` **reference** changed | changes | changes |
 | target profile / lawpack / generated / fixture-corpus / verifier-report digest | changes | changes |
+| `sourceProfileSemanticFactsDigest` changed | changes | changes |
+| `canonicalizationProfileDigest` changed | changes | changes |
 | semantic compile options digest | changes | changes |
-| raw source descriptor / logical path / source digest | unchanged | changes |
-| compiler / lowerer / verifier identity | unchanged | changes |
+| provenance-only source digest / logical path | unchanged | changes |
+| compiler / lowerer / verifier identity (artifacts unchanged) | unchanged | changes |
 | nonsemantic compile options digest | unchanged | changes |
 | build provenance | unchanged | changes |
 | compile explanation digest | unchanged | changes |
+| optional assurance evidence artifact changed | unchanged | unchanged (no top-level digest claim) |
+| assurance evidence subject / target mismatch | rejected | rejected |
 | admission artifact inserted | rejected | rejected |
+
+Notes: semantic source *edits* are covered by the Core-digest row (Core digest
+changes ⇒ both change); the provenance-only row is exactly that — provenance,
+not meaning. A lowerer/verifier identity change is release-only *only when the
+produced artifacts are unchanged*; if the target IR digest also changes, the
+semantic digest changes through `targetIrDigest`. Optional assurance evidence
+and admission artifacts are not top-level preimage components, so they are
+governed by validation/subject-binding/rejection, not by digest propagation.
 
 Plus a round-trip: `assemble_contract_bundle(...)` →
 `validate_contract_bundle_manifest` returns `Valid`.
 
-The frozen bundle digest goldens are checked in with an `xtask` check/regenerate
-path, mirroring the Core golden discipline. That checked-in freeze is the
-deliberate v0.11 byte freeze; target-IR byte identity is a separate freeze (#105).
+The bundle digest goldens are checked in with an `xtask` check/regenerate path,
+mirroring the Core golden discipline. **This slice freezes the v0.11 bundle
+digest preimage shape and the resulting semantic/release golden digest values.
+It does not freeze canonical `ContractBundleManifest` bytes** unless that
+manifest encoder is explicitly added as a separate reviewed scope item.
+Target-IR byte identity is a separate freeze (#105).
 
 ## Documentation discipline
 
