@@ -62,6 +62,7 @@ runtime dependencies.
 The CLI's TTV is good once you know the contract (`printf '<settings>\n<input>\n' | edict`). The **library's** TTV is the weak point: there is no single entry call. To check a string a consumer must chain `parse_module` → `validate_surface` → (optionally) `compile_to_core`, and `lib.rs` re-exports ~150 symbols flat across 14 modules with no curated "start here" surface. The biggest removable boilerplate is this manual chain — the CLI already encapsulates it privately in `check_sources` (`crates/edict-cli/src/main.rs`), so the capability exists but is not exposed.
 
 - **Action Prompt (TTV Improvement):** `In crates/edict-syntax, add a public convenience function check(source: &str) -> CheckOutcome that runs parse_module then validate_surface and returns a structured result enum (Parsed-and-valid, ParseError, or Vec<SemanticError>), mirroring the private check logic in crates/edict-cli/src/main.rs::check_sources. Re-export it from lib.rs, add a #[doc] example, and refactor the CLI to call it so the parse→validate sequence has one owner. Do not change existing public signatures.`
+- **✅ Addressed (2026-06-29, #104):** `edict_syntax::check(&str) -> CheckOutcome` added (with a runnable rustdoc example and an API-stability note); the CLI's `check_sources` now routes through it, and the golden corpus proves byte-identical external behavior.
 
 ### 1.2 Principle of Least Astonishment (POLA)
 
@@ -115,6 +116,7 @@ The clearest Separation-of-Concerns issue is **crate-level, not function-level**
 **There is essentially no testability barrier** — this is a strength, recorded for completeness. The core is pure functions over owned data; I/O is confined to explicit `load_*_file` loaders and the CLI boundary; there are no statics, no globals, no ambient singletons, and `unsafe` is `forbid`. 278 tests run without fixtures-on-disk gymnastics. The one mild friction is CLI testing-by-subprocess (`run_edict` spawns the binary), which is appropriate for an end-to-end contract but slower than in-process calls; exposing the library façade (§1.1) would let most CLI behavior be tested in-process.
 
 - **Action Prompt (Testability Improvement):** `After adding the edict_syntax::check façade (§1.1), add in-process unit tests for the check pipeline in crates/edict-cli or crates/edict-syntax so subprocess golden replay (golden_cli.rs) is reserved for true end-to-end stream/exit-code contract coverage rather than for exercising parse/validate logic.`
+- **✅ Addressed (2026-06-29, #104):** in-process unit tests for `check` (valid / parse-failed / semantic-failed) added in `edict-syntax`; the subprocess golden replay now backs the end-to-end stream contract while parse/validate logic is exercised in-process.
 
 ---
 
@@ -153,3 +155,4 @@ A genuinely high-quality early-alpha: disciplined, defensive, exhaustively teste
 ### 5.3 Mitigation Prompt (Strategic Priority)
 
 - **Action Prompt:** `Add a public check(source: &str) -> CheckOutcome to crates/edict-syntax (parse_module + validate_surface, returning a structured outcome covering parse failure, semantic failures, and success), re-export it from lib.rs with a runnable rustdoc example, and refactor crates/edict-cli/src/main.rs::check_sources to call it so the parse→validate sequence has a single owner. Add in-process unit tests for the façade, keep the fixtures/cli/ golden replay green to prove the CLI's external contract is unchanged, and add a README "Using the library" snippet that uses the new function. Run cargo xtask verify.`
+- **✅ Addressed (2026-06-29, #104):** done exactly as prompted — `check`/`CheckOutcome` added, CLI routed through it, in-process façade tests, README "Using the library" snippet, golden corpus green, `cargo xtask verify` green.
