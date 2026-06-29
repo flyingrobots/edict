@@ -515,15 +515,21 @@ input. The full stream contract and JSON Schemas are in the
 
 ### Using the library
 
-`edict-syntax` is the front end. The minimal flow is parse, then surface-validate:
+`edict-syntax` is the front end. The one-call entry point parses and
+surface-validates a source string:
 
 ```rust
-use edict_syntax::{parse_module, validate_surface};
+use edict_syntax::{check, CheckOutcome};
 
-let source = "package examples.hello@1;\n";
-let module = parse_module(source).expect("source parses");
-validate_surface(&module).expect("source passes surface validation");
+match check("package examples.hello@1;\n") {
+    CheckOutcome::Valid => println!("ok"),
+    CheckOutcome::ParseFailed(err) => eprintln!("parse error: {err:?}"),
+    CheckOutcome::SemanticFailed(errs) => eprintln!("{} semantic error(s)", errs.len()),
+}
 ```
+
+The underlying stages (`parse_module` then `validate_surface`) remain available
+when you need the parsed module.
 
 ---
 

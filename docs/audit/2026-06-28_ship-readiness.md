@@ -159,6 +159,7 @@ dependents," not "the alpha is unsafe."
   the `edict-syntax` name/scope mismatch mean early adopters bind to symbols
   likely to move pre-1.0, with no `check`-style façade to depend on.
   - **Mitigation Prompt 8:** `Add an edict_syntax::check(&str) facade and an "API stability" note in the crate docs declaring which items are the supported surface for the alpha train; route the CLI through the facade.`
+  - **✅ Partly addressed (2026-06-29, #104):** the `check`/`CheckOutcome` façade and an API-stability note now exist, and the CLI routes through it — early adopters have a small supported surface to bind to. The `edict-syntax` name/scope mismatch and the ~150 flat re-exports remain open in **#84**.
 - **Risk 3 (High) — Schema/parser leniency divergence.** The CLI accepts input
   records the published schemas reject (extra fields; hybrid input kinds),
   because `parse_compiler_input` is lenient while

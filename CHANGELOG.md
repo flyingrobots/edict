@@ -10,6 +10,11 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- `edict_syntax::check(&str) -> CheckOutcome`: a one-call front-end entry point
+  that parses and surface-validates a source string, returning `Valid`,
+  `ParseFailed`, or `SemanticFailed`. The `edict` CLI now routes its check
+  pipeline through it (single owner for the parse→validate sequence), and the
+  crate docs declare the supported alpha API surface.
 - README "Build & Run" and "Using the library" onboarding: how to build the
   `edict` CLI, a copy-pasteable `edict check` example with expected output and
   the exit-code contract, and a runnable `edict_syntax` parse/validate snippet

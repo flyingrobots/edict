@@ -41,15 +41,25 @@
 //!
 //! # Example
 //!
-//! Parse a source module, then run source/surface semantic validation:
+//! The one-call front-end entry point is [`check`], which parses and
+//! surface-validates a source string:
 //!
 //! ```
-//! use edict_syntax::{parse_module, validate_surface};
+//! use edict_syntax::{check, CheckOutcome};
 //!
-//! let source = "package examples.hello@1;\n";
-//! let module = parse_module(source).expect("source parses");
-//! validate_surface(&module).expect("source passes surface validation");
+//! assert_eq!(check("package examples.hello@1;\n"), CheckOutcome::Valid);
 //! ```
+//!
+//! The underlying stages remain available for callers that need the parsed
+//! module ([`parse_module`] then [`validate_surface`]).
+//!
+//! # API stability
+//!
+//! During the alpha train, [`check`] / [`CheckOutcome`] and the
+//! `parse_module` → `validate_surface` pair are the supported front-end entry
+//! points. The deeper module surfaces (compiler spine, canonical encoder,
+//! target IR, admission, bundles) are exposed for evidence and integration but
+//! may move before 1.0.
 
 pub mod admission;
 pub mod ast;
@@ -124,6 +134,76 @@ pub use target_profile::{
     TARGET_PROFILE_API_VERSION,
 };
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
+
+/// Outcome of [`check`]: the result of parsing and surface-validating a source
+/// string in one call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckOutcome {
+    /// The source parsed and passed source/surface semantic validation.
+    Valid,
+    /// The source failed to parse; lexing or grammar error.
+    ParseFailed(ParseError),
+    /// The source parsed but failed source/surface semantic validation.
+    SemanticFailed(Vec<SemanticError>),
+}
+
+/// Parse and surface-validate `source` in one call.
+///
+/// This is the front-end entry point: it runs [`parse_module`] and, on success,
+/// [`validate_surface`], returning a [`CheckOutcome`]. It does not resolve
+/// imports, infer contextual types, lower to Core IR, or canonicalize.
+///
+/// # Examples
+///
+/// ```
+/// use edict_syntax::{check, CheckOutcome};
+///
+/// assert_eq!(check("package examples.hello@1;\n"), CheckOutcome::Valid);
+/// assert!(matches!(check("not edict"), CheckOutcome::ParseFailed(_)));
+/// ```
+#[must_use]
+pub fn check(source: &str) -> CheckOutcome {
+    match parse_module(source) {
+        Err(error) => CheckOutcome::ParseFailed(error),
+        Ok(module) => match validate_surface(&module) {
+            Ok(()) => CheckOutcome::Valid,
+            Err(errors) => CheckOutcome::SemanticFailed(errors),
+        },
+    }
+}
+
+#[cfg(test)]
+mod check_facade_tests {
+    use super::{check, CheckOutcome, ParseErrorKind, SemanticErrorKind};
+
+    #[test]
+    fn valid_source_is_valid() {
+        assert_eq!(check("package examples.hello@1;\n"), CheckOutcome::Valid);
+    }
+
+    #[test]
+    fn unparsable_source_is_parse_failed_with_stable_kind() {
+        let outcome = check("@@@ not edict");
+        let CheckOutcome::ParseFailed(error) = outcome else {
+            panic!("expected parse failure, got {outcome:?}");
+        };
+        assert_eq!(error.kind, ParseErrorKind::ExpectedKeyword);
+    }
+
+    #[test]
+    fn unbounded_scalar_is_semantic_failed_with_stable_kind() {
+        let outcome = check("package examples.unbounded@1;\ntype Bad = { name: String };\n");
+        let CheckOutcome::SemanticFailed(errors) = outcome else {
+            panic!("expected semantic failure, got {outcome:?}");
+        };
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.kind == SemanticErrorKind::UnboundedScalar),
+            "expected an UnboundedScalar semantic error, got {errors:?}"
+        );
+    }
+}
 
 #[cfg(doctest)]
 mod topic_shelf_doctests {

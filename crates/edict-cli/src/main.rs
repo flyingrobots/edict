@@ -6,7 +6,7 @@ use edict_cli::{
     CHECK_RESULT_SCHEMA, COMPILER_INPUT_SCHEMA as INPUT_SCHEMA, DIAGNOSTIC_SCHEMA, EVENT_SCHEMA,
     INFO_SCHEMA,
 };
-use edict_syntax::{parse_module, validate_surface, ParseError, SemanticError, Span};
+use edict_syntax::{CheckOutcome, ParseError, SemanticError, Span};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
@@ -398,16 +398,16 @@ fn check_sources(sources: &[SourceDocument]) -> CheckReport {
     let mut results = Vec::new();
     let mut diagnostics = Vec::new();
     for document in sources {
-        match parse_module(&document.source) {
-            Ok(module) => match validate_surface(&module) {
-                Ok(()) => results.push(check_result_record(&document.input)),
-                Err(errors) => diagnostics.extend(
-                    errors
-                        .iter()
-                        .map(|error| semantic_diagnostic(&document.input, error)),
-                ),
-            },
-            Err(error) => diagnostics.push(parse_diagnostic(&document.input, &error)),
+        match edict_syntax::check(&document.source) {
+            CheckOutcome::Valid => results.push(check_result_record(&document.input)),
+            CheckOutcome::ParseFailed(error) => {
+                diagnostics.push(parse_diagnostic(&document.input, &error));
+            }
+            CheckOutcome::SemanticFailed(errors) => diagnostics.extend(
+                errors
+                    .iter()
+                    .map(|error| semantic_diagnostic(&document.input, error)),
+            ),
         }
     }
     CheckReport {
