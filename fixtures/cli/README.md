@@ -29,6 +29,7 @@ request names resolves to a stable relative path in the emitted records.
 - `06-directory-expansion-ok` — recursive directory expansion, sorted, non-`.edict` files ignored.
 - `07-path-list-ok` — ordered path list, request order preserved.
 - `08-glob-expansion-ok` — glob expansion, sorted.
+- `09-shape-source-ok` — source importing a GraphQL `shape` schema; accepted because import resolution is deferred at the `check` stage.
 
 ## Regenerating a case
 

@@ -13,10 +13,12 @@
 //! - `exit`                 — expected process exit code (absent ⇒ `0`).
 //! - `inputs/…`             — source files referenced by path/dir/glob requests.
 //!
-//! To regenerate a case's goldens after an intentional contract change, run the
-//! binary from inside the case directory:
-//! `cd fixtures/cli/<name> && edict < request.jsonl > expected.stdout.jsonl 2> expected.stderr.jsonl`
-//! and review the diff before committing.
+//! To regenerate a case's goldens after an intentional contract change, build
+//! the binary and replay it from inside the case directory, then review the diff
+//! before committing:
+//! `cargo build -p edict-cli`
+//! `cd fixtures/cli/<name>`
+//! `../../../target/debug/edict < request.jsonl > expected.stdout.jsonl 2> expected.stderr.jsonl`
 
 use std::fs;
 use std::io::Write;
@@ -25,6 +27,8 @@ use std::process::{Command, Stdio};
 
 #[test]
 fn golden_cli_fixtures_replay_exactly() {
+    // `fixtures/cli/` lives at the workspace root, two directories above this
+    // crate (`crates/edict-cli`); keep that invariant if the crate ever moves.
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/cli");
     let mut cases: Vec<PathBuf> = fs::read_dir(&root)
         .unwrap_or_else(|err| panic!("read {}: {err}", root.display()))
@@ -34,8 +38,8 @@ fn golden_cli_fixtures_replay_exactly() {
     cases.sort();
 
     assert!(
-        cases.len() >= 8,
-        "expected at least 8 golden CLI cases, found {}",
+        cases.len() >= 9,
+        "expected at least 9 golden CLI cases, found {}",
         cases.len()
     );
 
