@@ -72,7 +72,7 @@ thesis. [RELEASE-REQ-018]
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
-- [`v0.10.0-alpha.1`](../../releases/v0.10.0-alpha.1.md): publish-ready first
+- [`v0.10.0-alpha.1`](../../releases/v0.10.0-alpha.1.md): published first
   public CLI and structured-diagnostics alpha notes.
 - [`v0.9.0-alpha.1`](../../releases/v0.9.0-alpha.1.md): published first
   Target IR alpha notes.
@@ -93,6 +93,21 @@ release workflow by full tag name. Current release-note files:
   model and normative schema alpha notes.
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
+
+The `v0.10.0-alpha.1` release is published as a GitHub prerelease:
+
+- Release issue: <https://github.com/flyingrobots/edict/issues/76>
+- Release URL: <https://github.com/flyingrobots/edict/releases/tag/v0.10.0-alpha.1>
+- Tag object: `11e516c8ea8be5fa6739efd545c5b8fb40cbc46d`; peeled commit:
+  `622834138af249e70d717d6b7a940e4b01e23f4d`.
+- Main CI run: `28348355987`; Auto Release Tag run: `28348383070`; Release
+  workflow run: `28348397035`.
+- Milestone `v0.10.0-alpha.1` (#11) closed at `2026-06-29T04:21:11Z` with zero
+  open issues.
+- Topic-shelf audit evidence: 21 of 21 shelves audited; 21 of 21 accurate after
+  release-prep edits; coverage 100%; accuracy 100%.
+- No crates.io publication occurred: `edict-syntax` and `edict-cli` remain
+  `publish = false`, and the GitHub prerelease has zero package assets.
 
 The `v0.9.0-alpha.1` release is published as a GitHub prerelease:
 

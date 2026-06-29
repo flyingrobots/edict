@@ -520,12 +520,13 @@ What exists today:
 - Published `v0.9.0-alpha.1` release notes for the first Target IR alpha:
   `echo.dpo@1` lowers to `echo.span-ir/v1`, and `gitwarp.ref_crdt@1` lowers to
   `gitwarp.commit-reducer-ir/v1` review artifacts without runtime execution
-- First JSONL-only `edict` CLI surface: the `check` operation reads compiler
-  settings and compiler input records from stdin as JSONL, accepts inline
-  source, file paths, directories, path lists, and glob patterns, and emits only
-  JSONL records on stdout and stderr, with checked-in JSON Schemas for all five
-  stream record families, stable diagnostic `kind` codes, and a golden fixture
-  corpus replayed byte-for-byte through the binary
+- Published `v0.10.0-alpha.1` release notes for the first public CLI alpha: the
+  JSONL-only `edict` `check` workflow reads compiler settings and compiler input
+  records from stdin, accepts inline source, file paths, directories, path
+  lists, and glob patterns, and emits only JSONL records on stdout and stderr,
+  with checked-in JSON Schemas for all five stream record families, stable
+  diagnostic `kind` codes, and a golden fixture corpus replayed byte-for-byte
+  through the binary
 - Published `v0.8.0-alpha.1` release notes for the minimal effectful
   compiler-spine alpha
 - Published `v0.7.0-alpha.1` release notes for the file-backed
@@ -571,11 +572,12 @@ publication. The published `v0.7.0-alpha.1` release covers file-backed
 authority facts and opens the Authority Fact Governance design track. The
 published `v0.8.0-alpha.1` release covers one minimal effectful source-to-Core
 path. The published `v0.9.0-alpha.1` release covers the first Echo and git-warp
-target-owned IR review artifacts before the train moves through the JSONL CLI,
-bundle assembly, admission workflow harnessing, trusted fact authorship,
-publication policy, and language-server diagnostics. None of the published
-releases claims target-runtime execution, full admission execution tooling, or
-trusted fact governance.
+target-owned IR review artifacts. The published `v0.10.0-alpha.1` release covers
+the first public JSONL `edict` CLI and its structured-diagnostics contract,
+before the train moves through bundle assembly, admission workflow harnessing,
+trusted fact authorship, publication policy, and language-server diagnostics.
+None of the published releases claims target-runtime execution, full admission
+execution tooling, or trusted fact governance.
 
 ---
 

@@ -396,9 +396,16 @@ Non-goals:
 
 Target date: 2026-10-21
 
-Milestone: `v0.10.0-alpha.1`
+Status: published
 
-Primary issues: #75, #76
+Milestone: `v0.10.0-alpha.1` (#11)
+
+Primary issues: #75, #76 (closed)
+
+Release: <https://github.com/flyingrobots/edict/releases/tag/v0.10.0-alpha.1>
+
+Tag: `v0.10.0-alpha.1` peels to
+`622834138af249e70d717d6b7a940e4b01e23f4d`.
 
 Release labels: `release:cli`, `release:developer-tools`,
 `release:compiler-spine`

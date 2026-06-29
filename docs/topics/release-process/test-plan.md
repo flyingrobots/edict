@@ -66,6 +66,7 @@ Out of scope:
 | docs/releases/v0.6.0-alpha.1.md | Published release notes for the developer-tooling alpha. | The release workflow looks up this file by full tag name. |
 | docs/releases/v0.7.0-alpha.1.md | Published release notes for the file-backed authority-facts alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
 | docs/releases/v0.8.0-alpha.1.md | Published release notes for the minimal effectful compiler-spine alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
+| docs/releases/v0.10.0-alpha.1.md | Published release notes for the first public CLI alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
 | docs/releases/v0.9.0-alpha.1.md | Published release notes for the first Target IR alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
 | .github/workflows/auto-release-tag.yml | Successful main-CI release-prep merges create immutable release tags and dispatch publication. | The workflow derives tags only from merged `release/*-prep` branches and refuses tag mutation. |
 | CHANGELOG.md | Release history for published and release-prep alpha releases. | Scheduled alpha release sections use the matching release target date. |
