@@ -26,6 +26,11 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- The CLI now rejects compiler input records that the published
+  `edict.compiler.input/v1` schema rejects — unrecognized fields and records
+  that mix fields from two input kinds both fail with `InvalidInputRecord` —
+  so the binary accepts exactly what the schema accepts. Added golden cases
+  `10-input-extra-field` and `11-input-hybrid-kind` (`CLI-TP-015`).
 - The CLI `InvalidArguments` diagnostic now gives actionable guidance, pointing
   at `edict --help` and `docs/topics/cli/README.md` instead of a bare statement.
 - Marked `v0.10.0-alpha.1` as published in the release-process contract and

@@ -30,6 +30,8 @@ request names resolves to a stable relative path in the emitted records.
 - `07-path-list-ok` — ordered path list, request order preserved.
 - `08-glob-expansion-ok` — glob expansion, sorted.
 - `09-shape-source-ok` — source importing a GraphQL `shape` schema; accepted because import resolution is deferred at the `check` stage.
+- `10-input-extra-field` — input record with an unrecognized field is rejected (schema parity: `additionalProperties: false`), exit `2`.
+- `11-input-hybrid-kind` — input record mixing fields from two kinds is rejected (schema parity: mutually exclusive kinds), exit `2`.
 
 ## Regenerating a case
 

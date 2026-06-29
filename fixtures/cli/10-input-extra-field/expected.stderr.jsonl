@@ -1,0 +1,2 @@
+{"command":"check","input":{"kind":"stdin"},"kind":"InvalidInputRecord","line":2,"message":"`source` compiler input record has unexpected field `bogus`","schema":"edict.cli.diagnostic/v1","severity":"error","stage":"cli","type":"diagnostic"}
+{"checked":0,"command":"check","errors":1,"exitCode":2,"schema":"edict.cli.event/v1","status":"error","type":"status"}

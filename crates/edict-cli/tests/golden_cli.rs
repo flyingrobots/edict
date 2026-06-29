@@ -38,8 +38,8 @@ fn golden_cli_fixtures_replay_exactly() {
     cases.sort();
 
     assert!(
-        cases.len() >= 9,
-        "expected at least 9 golden CLI cases, found {}",
+        cases.len() >= 11,
+        "expected at least 11 golden CLI cases, found {}",
         cases.len()
     );
 

@@ -69,6 +69,7 @@ Out of scope:
 | CLI-TP-012 | implemented | Golden path | CLI-REQ-009 | `--version`/`-V` and `--help`/`-h` each emit exactly one `edict.cli.info/v1` record on stdout, write nothing to stderr, and exit 0; the help record carries usage, request schemas, and exit codes. | version_flag_emits_info_record, help_flag_emits_info_record | crates/edict-cli/tests/jsonl_cli.rs | Flags emit JSONL, not plain text. |
 | CLI-TP-013 | implemented | Error handling | CLI-REQ-009 | An unrecognized argument exits 2 with an `InvalidArguments` diagnostic whose message points at `--help` and the CLI docs. | unknown_argument_rejected_with_actionable_diagnostic | crates/edict-cli/tests/jsonl_cli.rs | Actionable error, not just a rejection. |
 | CLI-TP-014 | implemented | Schema guard | CLI-REQ-009 | The info JSON Schema declares `edict.cli.info/v1`, `info`, the `help` and `version` topics, and the help-topic conditional fields. | info_schema_declares_jsonl_contract | docs/schemas/edict.cli-info.v1.schema.json | Contract-artifact test, not prose matching. |
+| CLI-TP-015 | implemented | Error handling | CLI-REQ-004 | The binary rejects input records the `edict.compiler.input/v1` schema rejects: an unrecognized field and a record mixing fields from two input kinds both fail with `InvalidInputRecord` and exit 2. | golden_cli_fixtures_replay_exactly | crates/edict-cli/tests/golden_cli.rs | Parser accepts exactly what the published schema accepts. |
 
 ## Determinism Obligations
 
