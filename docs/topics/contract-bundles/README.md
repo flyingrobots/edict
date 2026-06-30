@@ -6,9 +6,9 @@ This chapter describes the v1 participant-neutral contract bundle manifest
 validation and assembly contract that exists today. It validates typed bundle
 values after Core and target lowering have produced hash-addressed artifacts,
 and it can assemble a `ContractBundleManifest` from a real `CoreModule` plus
-supplied digest-locked references. It does not load bundle files, canonicalize
-Target IR bytes, run lowerers or verifiers, validate CDDL instances, or make an
-admission claim.
+either supplied digest-locked references or a real `TargetIrArtifact` whose
+digest is computed by the assembler. It does not load bundle files, run
+lowerers or verifiers, validate CDDL instances, or make an admission claim.
 
 ## Public Surface
 
@@ -19,6 +19,10 @@ contract-bundle data structures for:
 - `assemble_contract_bundle`, `ContractBundleAssemblyInput`, and typed supplied
   digest/resource wrappers for constructing a manifest and recomputing the
   semantic and release bundle digests;
+- `assemble_contract_bundle_from_target_ir` and
+  `ContractBundleAssemblyFromTargetIrInput` for constructing a manifest from a
+  real Target IR artifact whose digest is computed from canonical Target IR
+  bytes;
 - `ContractBundleValidationReport`, including `Valid` and `Invalid`
   classifications;
 - stable `ContractBundleValidationFailureKind` categories;
@@ -61,10 +65,15 @@ The canonical artifact identity rules are named in
   Core digest. The assembler validates its generated manifest before returning
   it and rejects inputs that would produce an invalid required bundle structure.
   [BUNDLE-REQ-008]
-- `targetIrDigest` remains a supplied digest-locked Target IR reference for this
-  slice. The same typed Target IR resource supplies both
-  `manifest.target_ir.digest` and the semantic bundle digest preimage. Canonical
-  Target IR bytes are tracked separately by issue #105. [BUNDLE-REQ-008]
+- `assemble_contract_bundle_from_target_ir` computes `targetIrDigest` from a
+  real `TargetIrArtifact` with `digest_target_ir_artifact`, writes that digest
+  into `manifest.target_ir.digest`, and uses the same digest in the semantic
+  bundle preimage. The target profile reference is derived from the artifact's
+  digest-locked `target_profile`. [BUNDLE-REQ-008]
+- `assemble_contract_bundle` remains available for already-digested external
+  Target IR references. On that supplied-reference path, the same typed Target
+  IR resource supplies both `manifest.target_ir.digest` and the semantic bundle
+  digest preimage. [BUNDLE-REQ-008]
 - `semanticBundleDigest` is recomputed from the exact ordered semantic preimage:
   computed Core digest, target profile digest, supplied Target IR digest,
   lawpack digests, source-profile semantic facts digest, generated artifact
@@ -92,8 +101,6 @@ The canonical artifact identity rules are named in
 The following are not implemented by this contract-bundle slice:
 
 - canonical-CBOR encode/decode helpers for `ContractBundleManifest`;
-- canonical Target IR bytes or computing `targetIrDigest` from Target IR bytes
-  (#105);
 - file-backed bundle loading;
 - full CDDL instance validation;
 - target lowerer or verifier execution;

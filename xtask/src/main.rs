@@ -9,9 +9,12 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use edict_syntax::{
-    assemble_contract_bundle, compile_to_core, digest_core_module, encode_core_module,
-    parse_module, CompilerContext, ContractBundleAssemblyInput, ContractBundleSourceArtifact,
-    CoreBudget, DigestLockedResource, SuppliedTargetIrResource,
+    assemble_contract_bundle, compile_to_core, digest_core_module, digest_target_ir_artifact,
+    encode_core_module, encode_target_ir_artifact, lower_to_target_ir, parse_module,
+    CompilerContext, ContractBundleAssemblyInput, ContractBundleSourceArtifact, CoreBudget,
+    DigestLockedResource, ResourceRef, SuppliedTargetIrResource, TargetEffectLowering,
+    TargetIrArtifact, TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
+    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 
 fn main() -> ExitCode {
@@ -50,11 +53,23 @@ fn run() -> Result<(), String> {
             }
             bundle_goldens(&repo_root()?, mode)
         }
+        Some("target-ir-goldens") => {
+            let mode = match args.next().as_deref() {
+                Some("--write") => TargetIrGoldenMode::Write,
+                Some("--check") | None => TargetIrGoldenMode::Check,
+                Some(flag) => return Err(format!("unknown target-ir-goldens flag `{flag}`")),
+            };
+            if let Some(extra) = args.next() {
+                return Err(format!("unexpected target-ir-goldens argument `{extra}`"));
+            }
+            target_ir_goldens(&repo_root()?, mode)
+        }
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
-        None => {
-            Err("usage: cargo xtask <verify|contract-check|core-goldens|bundle-goldens>".into())
-        }
+        None => Err(
+            "usage: cargo xtask <verify|contract-check|core-goldens|bundle-goldens|target-ir-goldens>"
+                .into(),
+        ),
     }
 }
 
@@ -80,6 +95,7 @@ fn verify(root: &Path) -> Result<(), String> {
         ["test", "--workspace", "--doc", "--all-features"],
     )?;
     core_goldens(root, CoreGoldenMode::Check)?;
+    target_ir_goldens(root, TargetIrGoldenMode::Check)?;
     bundle_goldens(root, BundleGoldenMode::Check)?;
     contract_check(root)?;
     let base = diff_check_base(root)?;
@@ -227,6 +243,193 @@ fn core_golden_context() -> CompilerContext {
                 max_output_bytes: 1024,
             },
         )
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TargetIrGoldenMode {
+    Check,
+    Write,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum TargetIrGoldenKind {
+    Echo,
+    Gitwarp,
+}
+
+#[derive(Debug)]
+struct TargetIrGoldenCase {
+    kind: TargetIrGoldenKind,
+    bytes: &'static str,
+    digest: &'static str,
+}
+
+const TARGET_IR_GOLDEN_CASES: &[TargetIrGoldenCase] = &[
+    TargetIrGoldenCase {
+        kind: TargetIrGoldenKind::Echo,
+        bytes: "fixtures/target-ir/canonical/echo-effectful.target-ir.cbor",
+        digest: "fixtures/target-ir/canonical/echo-effectful.target-ir.sha256",
+    },
+    TargetIrGoldenCase {
+        kind: TargetIrGoldenKind::Gitwarp,
+        bytes: "fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor",
+        digest: "fixtures/target-ir/canonical/gitwarp-append.target-ir.sha256",
+    },
+];
+
+const TARGET_IR_ECHO_SOURCE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else { rejected(reason) => domain.WriteRejected };\n\
+      return { id: input.id };\n\
+    }";
+
+const TARGET_IR_GITWARP_SOURCE: &str = "package a.git@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.gitwarp\n\
+      basis none\n\
+      budget <= p.tiny\n\
+      where input.id != \"\" {\n\
+      let receipt: Receipt = gitwarp.appendEvent(input.id)\n\
+        else { conflict(reason) => domain.MergeConflict };\n\
+      return { id: receipt.id };\n\
+    }";
+
+fn target_ir_goldens(root: &Path, mode: TargetIrGoldenMode) -> Result<(), String> {
+    for case in TARGET_IR_GOLDEN_CASES {
+        check_or_write_target_ir_golden(root, case, mode)?;
+    }
+    println!(
+        "target-ir-goldens: {} case(s) {}",
+        TARGET_IR_GOLDEN_CASES.len(),
+        match mode {
+            TargetIrGoldenMode::Check => "checked",
+            TargetIrGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
+
+fn check_or_write_target_ir_golden(
+    root: &Path,
+    case: &TargetIrGoldenCase,
+    mode: TargetIrGoldenMode,
+) -> Result<(), String> {
+    let artifact = target_ir_golden_artifact(case)?;
+    let bytes = encode_target_ir_artifact(&artifact)
+        .map_err(|err| format!("encode {:?} as canonical Target IR: {err}", case.kind))?;
+    let digest = digest_target_ir_artifact(&artifact)
+        .map_err(|err| format!("digest {:?} as canonical Target IR: {err}", case.kind))?;
+    let digest_text = format!("{digest}\n");
+
+    match mode {
+        TargetIrGoldenMode::Check => {
+            check_golden_file(root, case.bytes, &bytes)?;
+            check_golden_file(root, case.digest, digest_text.as_bytes())?;
+        }
+        TargetIrGoldenMode::Write => {
+            write_golden_file(&root.join(case.bytes), &bytes)?;
+            write_golden_file(&root.join(case.digest), digest_text.as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
+fn target_ir_golden_artifact(case: &TargetIrGoldenCase) -> Result<TargetIrArtifact, String> {
+    let (source, context, facts) = match case.kind {
+        TargetIrGoldenKind::Echo => (
+            TARGET_IR_ECHO_SOURCE,
+            target_ir_echo_context(),
+            target_ir_echo_facts(),
+        ),
+        TargetIrGoldenKind::Gitwarp => (
+            TARGET_IR_GITWARP_SOURCE,
+            target_ir_gitwarp_context(),
+            target_ir_gitwarp_facts(),
+        ),
+    };
+    let module = parse_module(source)
+        .map_err(|err| format!("parse {:?} Target IR golden source: {err}", case.kind))?;
+    let core = compile_to_core(&module, &context)
+        .map_err(|err| format!("compile {:?} Target IR golden source: {err:?}", case.kind))?;
+    let report = lower_to_target_ir(&core, &facts);
+    report.artifact.ok_or_else(|| {
+        format!(
+            "lower {:?} Target IR golden source failed: {:?}",
+            case.kind, report.failures
+        )
+    })
+}
+
+fn target_ir_echo_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("p.effectful", "continuum.profile.write/v1")
+        .with_operation_profile_write_classes("p.effectful", [WriteClass::Replace])
+        .with_effect_write_class("target.replace", WriteClass::Replace)
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 8,
+                max_allocated_bytes: 1024,
+                max_output_bytes: 256,
+            },
+        )
+}
+
+fn target_ir_gitwarp_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("p.gitwarp", "continuum.profile.append/v1")
+        .with_operation_profile_write_classes("p.gitwarp", [WriteClass::Append])
+        .with_effect_write_class("gitwarp.appendEvent", WriteClass::Append)
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 13,
+                max_allocated_bytes: 2048,
+                max_output_bytes: 512,
+            },
+        )
+}
+
+fn target_ir_echo_facts() -> TargetIrLoweringFacts {
+    TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
+            digest: Some(digest_text('1')),
+        },
+        target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
+        operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
+        obstruction_coordinates: vec!["rejected".to_owned()],
+        effect_lowerings: vec![TargetEffectLowering {
+            effect: "target.replace".to_owned(),
+            target_intrinsic: "echo.dpo@1.replace".to_owned(),
+        }],
+    }
+}
+
+fn target_ir_gitwarp_facts() -> TargetIrLoweringFacts {
+    TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: GITWARP_REF_CRDT_TARGET_PROFILE.to_owned(),
+            digest: Some(digest_text('2')),
+        },
+        target_ir_domain: GITWARP_COMMIT_REDUCER_IR_DOMAIN.to_owned(),
+        operation_profiles: vec!["continuum.profile.append/v1".to_owned()],
+        obstruction_coordinates: vec!["conflict".to_owned()],
+        effect_lowerings: vec![TargetEffectLowering {
+            effect: "gitwarp.appendEvent".to_owned(),
+            target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
+        }],
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -901,7 +1104,10 @@ mod tests {
     use regex::Regex;
     use serde_json::Value;
 
-    use super::{bundle_goldens, check_topic, contract_check, repo_root, BundleGoldenMode};
+    use super::{
+        bundle_goldens, check_topic, contract_check, repo_root, target_ir_goldens,
+        BundleGoldenMode, TargetIrGoldenMode,
+    };
 
     fn toml_section(document: &str, header: &str) -> String {
         let start = document.find(header).expect("section header");
@@ -924,6 +1130,12 @@ mod tests {
     fn bundle_digest_goldens_match_assembly() {
         bundle_goldens(&repo_root().expect("repo root"), BundleGoldenMode::Check)
             .expect("bundle digest goldens match assembly output");
+    }
+
+    #[test]
+    fn target_ir_goldens_match_executable_encoder() {
+        target_ir_goldens(&repo_root().expect("repo root"), TargetIrGoldenMode::Check)
+            .expect("Target IR goldens match executable encoder output");
     }
 
     #[test]

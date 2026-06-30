@@ -11,6 +11,8 @@ In scope:
 - deterministic `echo.span-ir/v1` review artifact for `echo.dpo@1`;
 - deterministic `gitwarp.commit-reducer-ir/v1` review artifact for
   `gitwarp.ref_crdt@1`;
+- canonical Target IR artifact bytes and digests for the current Echo and
+  git-warp review artifacts;
 - stable target-lowering failure kinds for unsupported target obligations;
 - explicit non-claim that Target IR generation executes Echo, admits a bundle,
   executes git-warp, or implements general target dispatch.
@@ -24,6 +26,7 @@ Out of scope:
 - bundle/admission validation;
 - general plugin dispatch through `edict-target-lowerer.wit`;
 - additional target profiles beyond Echo and git-warp;
+- canonical `ContractBundleManifest` bytes;
 - v2 adapter composition.
 
 ## Requirements
@@ -37,12 +40,19 @@ Out of scope:
 | TIR-REQ-005 | implemented | Target IR lowering facts can be derived from selected native lowerability results, so lowerability evidence and Target IR generation select the same target profile and effect support. | issue #66, ROADMAP.md |
 | TIR-REQ-006 | policy | The Target IR slices do not execute runtimes, run admission, or claim general target-lowering plugin dispatch. | ROADMAP.md |
 | TIR-REQ-007 | implemented | The next target lowerer supports `gitwarp.ref_crdt@1` and emits a deterministic `gitwarp.commit-reducer-ir/v1` review artifact for the supported effectful Core shape without adding general plugin dispatch. | issue #68 |
+| TIR-REQ-008 | implemented | Target IR artifacts have an intentional canonical value model, canonical CBOR bytes, and an `edict.target-ir.artifact/v1` digest frame over the current Echo and git-warp artifact envelope. | issue #105, docs/design/canonical-target-ir-v0.11.md |
+| TIR-REQ-009 | implemented | Reviewed Echo and git-warp Target IR byte/digest golden fixtures are regenerated and checked by `xtask target-ir-goldens`. | issue #105, docs/design/canonical-target-ir-v0.11.md |
+| TIR-REQ-010 | implemented | Bundle assembly can use a computed Target IR artifact digest as the single source of truth for `targetIrDigest` after canonical Target IR bytes exist. | issue #105, docs/design/canonical-target-ir-v0.11.md |
 
 ## Fixtures
 
 | Fixture | Purpose | Oracle |
 | --- | --- | --- |
 | crates/edict-syntax/tests/target_ir.rs | In-test Core fixtures and explicit Echo/git-warp target-lowering facts for the first Target IR slices. | The supported Core effect shape emits target-owned IR, while unsupported target profiles and Core nodes reject with stable failure kinds. |
+| fixtures/target-ir/canonical/echo-effectful.target-ir.cbor | Reviewed Echo Target IR canonical byte golden. | `cargo xtask target-ir-goldens --check` compares the checked-in bytes to executable regeneration. |
+| fixtures/target-ir/canonical/echo-effectful.target-ir.sha256 | Reviewed Echo Target IR digest golden. | `cargo xtask target-ir-goldens --check` compares the checked-in review digest to executable regeneration. |
+| fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor | Reviewed git-warp Target IR canonical byte golden. | `cargo xtask target-ir-goldens --check` compares the checked-in bytes to executable regeneration. |
+| fixtures/target-ir/canonical/gitwarp-append.target-ir.sha256 | Reviewed git-warp Target IR digest golden. | `cargo xtask target-ir-goldens --check` compares the checked-in review digest to executable regeneration. |
 
 ## Test Cases
 
@@ -64,21 +74,28 @@ Out of scope:
 | TIR-TP-014 | implemented | Boundary guard | TIR-REQ-001, TIR-REQ-004 | A Core module with a floating import returns `TargetLoweringFailureKind::UndigestedCoreImport` with no artifact. | undigested_core_import_rejects_without_artifact | crates/edict-syntax/tests/target_ir.rs | Keeps Target IR generation aligned with canonical Core reproducibility. |
 | TIR-TP-015 | implemented | Golden path | TIR-REQ-001, TIR-REQ-007 | The supported git-warp effectful Core shape lowers to a `gitwarp.commit-reducer-ir/v1` artifact for `gitwarp.ref_crdt@1`, preserving selected intrinsic, input, obstruction arms, input constraints, evaluation budget, result expression, and deterministic order. | supported_gitwarp_core_lowers_to_commit_reducer_ir | crates/edict-syntax/tests/target_ir.rs | Proves Target IR is not Echo-shaped. |
 | TIR-TP-016 | implemented | Golden path | TIR-REQ-001, TIR-REQ-005, TIR-REQ-007 | Native lowerability support for `gitwarp.ref_crdt@1` feeds Target IR lowering facts and produces the same git-warp intrinsic selection in the emitted artifact. | lowerability_native_support_feeds_gitwarp_target_lowering | crates/edict-syntax/tests/target_ir.rs | Bridge remains native-only and explicit. |
+| TIR-TP-017 | implemented | Golden path | TIR-REQ-008 | Echo and git-warp Target IR artifacts encode to deterministic canonical CBOR, decode as canonical CBOR, and produce stable `edict.target-ir.artifact/v1` digest review strings without colliding with each other. | target_ir_artifact_bytes_and_digests_are_deterministic | crates/edict-syntax/tests/target_ir.rs | The digest domain is the Edict envelope; the artifact domain remains inside the value. |
+| TIR-TP-018 | implemented | Determinism guard | TIR-REQ-008 | Equivalent Target IR construction order for maps, obstruction failures, and input constraints does not change canonical bytes or digest, while semantic list order for steps remains preserved. | target_ir_artifact_canonicalization_ignores_equivalent_construction_order | crates/edict-syntax/tests/target_ir.rs | Prevents Rust construction order from becoming a cryptographic contract. |
+| TIR-TP-019 | implemented | Mutation sensitivity | TIR-REQ-008 | Target profile digest, source Core coordinate, intent name, effect coordinate, selected intrinsic, input expression, obstruction failure/arm, input constraint, budget, and result mutations each move the Target IR digest. | target_ir_digest_moves_for_artifact_semantic_mutations | crates/edict-syntax/tests/target_ir.rs | Freezes the reviewed value shape without re-litigating lowering semantics. |
+| TIR-TP-020 | implemented | Boundary guard | TIR-REQ-008 | Canonical Target IR encoding rejects missing target-profile digests and non-lowercase digest review strings before hashing. | target_ir_encoder_rejects_unlocked_or_uppercase_target_profile_digest | crates/edict-syntax/tests/target_ir.rs | Target IR artifact references use the strict bundle-artifact digest policy. |
+| TIR-TP-021 | implemented | Golden path | TIR-REQ-009 | `xtask target-ir-goldens --check` fails on drift and `--write` regenerates Echo and git-warp byte/digest golden fixtures from executable assembly. | target_ir_goldens_match_executable_encoder | xtask/src/main.rs, fixtures/target-ir/canonical/echo-effectful.target-ir.cbor, fixtures/target-ir/canonical/echo-effectful.target-ir.sha256, fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor, fixtures/target-ir/canonical/gitwarp-append.target-ir.sha256 | Golden scope is Target IR artifact bytes and digest review strings only. |
+| TIR-TP-022 | implemented | Integration | TIR-REQ-010 | Bundle assembly from a real `TargetIrArtifact` computes `targetIrDigest`, writes that same digest into the manifest, and changes bundle digests when the Target IR artifact changes. | assembled_bundle_from_real_target_ir_computes_target_ir_digest | crates/edict-syntax/tests/contract_bundle.rs | Keeps generated Target IR and manifest `target_ir.digest` as one source of truth. |
 
 ## Determinism Obligations
 
-- Tests inspect structured Rust values only.
+- Tests inspect structured Rust values and canonical Target IR bytes only.
 - Target facts are in-memory constants.
 - Output ordering is derived from Core order and sorted maps, not hash maps.
+- Target IR golden bytes and digest review strings are regenerated by
+  `cargo xtask target-ir-goldens --write` and checked by
+  `cargo xtask target-ir-goldens --check`.
 - No test reads stdout, stderr, logs, wall-clock time, random values, network
   state, or filesystem ordering.
 
 ## Open Gaps
 
-- Target IR canonical-CBOR encoding and reviewed byte fixtures.
 - Echo verifier reports.
 - git-warp verifier reports.
-- Bundle integration from generated Target IR.
 - CLI exposure.
 - Source-to-target fixture through `fixtures/lang/effects/read-greeting.edict`
   once the compiler spine supports its non-`basis none` Echo source shape.

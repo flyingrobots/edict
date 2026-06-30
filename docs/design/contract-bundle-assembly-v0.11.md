@@ -12,7 +12,8 @@ but could not *assemble* one. v0.11 moves bundle digest recomputation from
 "out of scope" to implemented behavior. The one thing this slice must not do is
 silently absorb a second, unrelated freeze — **canonical Target IR byte
 identity** — under bundle pressure. That freeze belongs to the target-IR track
-and is tracked separately (#105).
+and was completed separately in
+[Canonical Target IR v0.11](./canonical-target-ir-v0.11.md).
 
 ## 1. Scope
 
@@ -25,12 +26,15 @@ This slice implements **bundle digest derivation and assembly**:
 - The assembler **computes** `coreIrDigest` from the actual compiled Core
   artifact (`digest_core_module`), so the bundle is anchored on a real Core
   freeze.
-- The assembler **accepts** `targetIrDigest` and every other layer hash (target
-  profile, lawpacks, source-profile semantic facts, generated artifacts,
+- The supplied-reference assembler accepts `targetIrDigest` and every other
+  layer hash (lawpacks, source-profile semantic facts, generated artifacts,
   canonicalization profile, semantic/nonsemantic compile options, conformance
   fixture corpora, verifier report, compiler/lowerer/verifier identities, source
   provenance, build provenance, compile explanation) as **supplied,
   digest-locked references**.
+- After the Target IR canonical-byte freeze, the computed-artifact assembler can
+  instead compute `targetIrDigest` from a real `TargetIrArtifact` and derive the
+  target-profile reference from that artifact.
 - The assembled manifest is consumed by the existing
   `validate_contract_bundle_manifest` (exit gate: validation consumes the
   assembled artifact, not a hand-written fixture).
@@ -79,35 +83,28 @@ This is the byte-level contract, not just an ingredient list.
 
 ### Provenance is typed, not commented
 
-The assembly input API makes computed-versus-supplied **unrepresentable as a
+The assembly input APIs make computed-versus-supplied **unrepresentable as a
 mistake**: the Core digest enters as a *computed* value derived from a real
-`CoreModule`, and every supplied hash enters through a distinct *supplied
-reference* type. A reader of the assembled bundle (or of the input struct) can
-never mistake a supplied `targetIrDigest` for one this slice computed from
-bytes.
+`CoreModule`; supplied hashes enter through distinct *supplied reference* types;
+and the computed Target IR path has no supplied target-IR digest field.
 
 ## 2. Non-claim
 
-This slice deliberately does **not**:
+The bundle assembly slice deliberately does **not**:
 
-- define a canonical Target IR encoding or byte layout;
-- claim target-IR **byte** tamper detection — it cannot rehash target IR bytes,
-  because those bytes are not yet canonical (#105);
 - load files, run target verifiers, or perform admission.
 
-It **does** detect target-IR **digest-reference** changes in the bundle graph:
-if the supplied `targetIrDigest` reference changes, the bundle digests change.
-That is digest-graph tamper evidence at the bundle layer, not target-IR byte
-identity.
+The original supplied-reference path detects target-IR **digest-reference**
+changes in the bundle graph: if the supplied `targetIrDigest` reference changes,
+the bundle digests change. The computed Target IR path additionally rehashes
+canonical Target IR artifact bytes before the digest enters the bundle preimage.
 
-## 3. Follow-up
+## 3. Target IR freeze
 
-[#105](https://github.com/flyingrobots/edict/issues/105) tracks canonical Target
-IR bytes/digests on the target-IR track: a canonical CBOR/value model, byte
-fixtures, a digest function, reviewed goldens, then integration into assembly so
-`targetIrDigest` can be **computed** from a real artifact (upgrading the matrix
-row below from "reference changed" to "bytes rehashed"). It is not punted into
-this slice.
+[#105](https://github.com/flyingrobots/edict/issues/105) freezes canonical
+Target IR bytes/digests on the target-IR track: a canonical CBOR/value model,
+byte fixtures, a digest function, reviewed goldens, and integration into
+assembly so `targetIrDigest` can be **computed** from a real artifact.
 
 ## 4. Test matrix
 
@@ -123,7 +120,7 @@ rejection — not by pretending every nearby artifact changes the bundle digest.
 | Mutation | semanticBundleDigest | releaseBundleDigest |
 | --- | --- | --- |
 | Core semantic change (Core digest changes) | changes | changes |
-| `targetIrDigest` **reference** changed | changes | changes |
+| Target IR artifact digest/reference changed | changes | changes |
 | target profile / lawpack / generated / fixture-corpus / verifier-report digest | changes | changes |
 | `sourceProfileSemanticFactsDigest` changed | changes | changes |
 | `canonicalizationProfileDigest` changed | changes | changes |
@@ -140,10 +137,11 @@ rejection — not by pretending every nearby artifact changes the bundle digest.
 Notes: semantic source *edits* are covered by the Core-digest row (Core digest
 changes ⇒ both change); the provenance-only row is exactly that — provenance,
 not meaning. A lowerer/verifier identity change is release-only *only when the
-produced artifacts are unchanged*; if the target IR digest also changes, the
-semantic digest changes through `targetIrDigest`. Optional assurance evidence
-and admission artifacts are not top-level preimage components, so they are
-governed by validation/subject-binding/rejection, not by digest propagation.
+produced artifacts are unchanged*; if the target IR artifact digest also
+changes, the semantic digest changes through `targetIrDigest`. Optional
+assurance evidence and admission artifacts are not top-level preimage
+components, so they are governed by validation/subject-binding/rejection, not by
+digest propagation.
 
 Plus a round-trip: `assemble_contract_bundle(...)` →
 `validate_contract_bundle_manifest` returns `Valid`.
@@ -153,7 +151,8 @@ mirroring the Core golden discipline. **This slice freezes the v0.11 bundle
 digest preimage shape and the resulting semantic/release golden digest values.
 It does not freeze canonical `ContractBundleManifest` bytes** unless that
 manifest encoder is explicitly added as a separate reviewed scope item.
-Target-IR byte identity is a separate freeze (#105).
+Target-IR byte identity is frozen separately by the Target IR canonical-byte
+slice.
 
 ## Documentation discipline
 

@@ -1,9 +1,9 @@
-//! Canonical CBOR encoding for Edict Core IR.
+//! Canonical CBOR encoding for Edict Core and Target IR artifacts.
 //!
 //! This module implements the `edict.canonical-cbor/v1` subset needed by the
-//! current in-memory Core model. It emits deterministic bytes and can validate
-//! those bytes by decoding to a canonical value and re-encoding. It also
-//! computes the reviewed `edict.core.module/v1` SHA-256 digest frame.
+//! current in-memory Core and Target IR models. It emits deterministic bytes
+//! and can validate those bytes by decoding to a canonical value and
+//! re-encoding. It also computes reviewed SHA-256 digest frames.
 
 use std::collections::BTreeSet;
 use std::fmt;
@@ -16,6 +16,7 @@ use crate::core_ir::{
     CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource,
     LocalRef, ResourceRef,
 };
+use crate::target_ir::{TargetIrArtifact, TargetIrIntent, TargetIrStep};
 
 /// Canonical encoding profile for Core artifacts.
 pub const CORE_CANONICAL_ENCODING: &str = "edict.canonical-cbor/v1";
@@ -25,6 +26,9 @@ pub const CORE_DIGEST_FRAME: &str = "edict.digest/v1";
 
 /// Artifact domain label for Core module digests.
 pub const CORE_MODULE_DIGEST_DOMAIN: &str = "edict.core.module/v1";
+
+/// Artifact domain label for Target IR artifact digests.
+pub const TARGET_IR_ARTIFACT_DIGEST_DOMAIN: &str = "edict.target-ir.artifact/v1";
 
 /// Stable canonical encoding error categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +172,43 @@ pub fn digest_core_module(module: &CoreModule) -> Result<CoreDigest, CanonicalEr
         text(CORE_DIGEST_FRAME),
         text(CORE_MODULE_DIGEST_DOMAIN),
         core_module_value(module)?,
+    ]);
+    let preimage = encode_canonical_cbor(&framed)?;
+    let hash = Sha256::digest(preimage);
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&hash);
+    Ok(CoreDigest::sha256(bytes))
+}
+
+/// Encode a Target IR artifact as `edict.canonical-cbor/v1`.
+///
+/// # Errors
+///
+/// Returns an error if a Target IR resource digest, Core expression, Core
+/// predicate, or integer cannot be represented in the supported canonical form.
+pub fn encode_target_ir_artifact(artifact: &TargetIrArtifact) -> Result<Vec<u8>, CanonicalError> {
+    encode_canonical_cbor(&target_ir_artifact_value(artifact)?)
+}
+
+/// Compute the reviewed digest for a Target IR artifact.
+///
+/// The digest is SHA-256 over the canonical CBOR encoding of:
+///
+/// ```text
+/// ["edict.digest/v1", "edict.target-ir.artifact/v1", <canonical Target IR value>]
+/// ```
+///
+/// # Errors
+///
+/// Returns an error if the Target IR artifact cannot be represented in the
+/// supported canonical form.
+pub fn digest_target_ir_artifact(
+    artifact: &TargetIrArtifact,
+) -> Result<CoreDigest, CanonicalError> {
+    let framed = CanonicalValue::Array(vec![
+        text(CORE_DIGEST_FRAME),
+        text(TARGET_IR_ARTIFACT_DIGEST_DOMAIN),
+        target_ir_artifact_value(artifact)?,
     ]);
     let preimage = encode_canonical_cbor(&framed)?;
     let hash = Sha256::digest(preimage);
@@ -405,6 +446,96 @@ pub fn decode_canonical_cbor(bytes: &[u8]) -> Result<CanonicalValue, CanonicalEr
         ));
     }
     Ok(value)
+}
+
+fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("kind", text("targetIrArtifact")),
+        ("domain", text(&artifact.domain)),
+        (
+            "targetProfile",
+            target_ir_resource_ref_value(&artifact.target_profile)?,
+        ),
+        (
+            "sourceCoreCoordinate",
+            text(&artifact.source_core_coordinate),
+        ),
+        (
+            "intents",
+            string_map_results(
+                artifact
+                    .intents
+                    .iter()
+                    .map(|(name, intent)| Ok((name.as_str(), target_ir_intent_value(intent)?))),
+            )?,
+        ),
+    ]))
+}
+
+fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
+    if resource.coordinate.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "Target IR resource coordinate is empty",
+        ));
+    }
+    let Some(digest) = &resource.digest else {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnresolvedDigest,
+            "Target IR resource digest is unresolved",
+        ));
+    };
+    if !is_lowercase_sha256_review_digest(digest) {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::InvalidDigest,
+            "Target IR resource digest must use sha256:<64 lowercase hex> review rendering",
+        ));
+    }
+    Ok(map([
+        ("id", text(&resource.coordinate)),
+        ("digest", digest_value(digest)?),
+    ]))
+}
+
+fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("operationProfile", text(&intent.operation_profile)),
+        (
+            "inputConstraints",
+            sorted_array_results(intent.input_constraints.iter().map(input_constraint_value))?,
+        ),
+        (
+            "coreEvaluationBudget",
+            core_budget_value(&intent.core_evaluation_budget),
+        ),
+        (
+            "steps",
+            array_results(intent.steps.iter().map(target_ir_step_value))?,
+        ),
+        ("result", core_expr_value(&intent.result)?),
+    ]))
+}
+
+fn target_ir_step_value(step: &TargetIrStep) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("id", text(&step.id)),
+        ("binding", local_ref_value(&step.binding)),
+        ("effect", text(&step.effect)),
+        ("targetIntrinsic", text(&step.target_intrinsic)),
+        ("input", core_expr_value(&step.input)?),
+        (
+            "obstructionFailures",
+            sorted_text_set(step.obstruction_failures.iter().map(String::as_str)),
+        ),
+        (
+            "obstructionArms",
+            string_map_results(
+                step.obstruction_arms
+                    .iter()
+                    .map(|(failure, arm)| Ok((failure.as_str(), core_obstruction_arm_value(arm)?))),
+            )?,
+        ),
+    ]))
 }
 
 fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalError> {

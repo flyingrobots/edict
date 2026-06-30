@@ -31,9 +31,10 @@
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, general
 //! target lowering, and full admission execution tooling are deferred. The
-//! crate exposes the reference canonical Core encoder for
-//! `edict.canonical-cbor/v1` and the domain-separated `edict.core.module/v1`
-//! Core digest used by reviewed golden fixtures.
+//! crate exposes the reference canonical Core and Target IR encoders for
+//! `edict.canonical-cbor/v1`, plus the domain-separated `edict.core.module/v1`
+//! Core digest and `edict.target-ir.artifact/v1` Target IR digest used by
+//! reviewed golden fixtures.
 //!
 //! Assurance tooling (HOLMES / Watson / Moriarty) remains shared platform
 //! machinery. This crate validates typed references to its evidence; it does not
@@ -92,11 +93,12 @@ pub use authority_facts::{
     EffectWriteClassFact, OperationProfileFact, AUTHORITY_FACTS_API_VERSION,
 };
 pub use canonical::{
-    decode_canonical_cbor, digest_bundle_layer, digest_core_module, encode_canonical_cbor,
-    encode_core_module, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
-    CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN,
-    BUNDLE_SEMANTIC_DIGEST_DOMAIN, CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME,
-    CORE_MODULE_DIGEST_DOMAIN,
+    decode_canonical_cbor, digest_bundle_layer, digest_core_module, digest_target_ir_artifact,
+    encode_canonical_cbor, encode_core_module, encode_target_ir_artifact, BundleDigestDomain,
+    BundlePreimageComponent, BundleSourceDescriptor, CanonicalError, CanonicalErrorKind,
+    CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN, BUNDLE_SEMANTIC_DIGEST_DOMAIN,
+    CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN,
+    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
@@ -104,9 +106,10 @@ pub use compiler::{
     TypedIntent, TypedModule,
 };
 pub use contract_bundle::{
-    assemble_contract_bundle, validate_contract_bundle_manifest, AssuranceEvidenceRef,
-    AssuranceRole, BundleSubject, BundleSubjectKind, ContractBundleAssemblyError,
-    ContractBundleAssemblyErrorKind, ContractBundleAssemblyInput,
+    assemble_contract_bundle, assemble_contract_bundle_from_target_ir,
+    validate_contract_bundle_manifest, AssuranceEvidenceRef, AssuranceRole, BundleSubject,
+    BundleSubjectKind, ContractBundleAssemblyError, ContractBundleAssemblyErrorKind,
+    ContractBundleAssemblyFromTargetIrInput, ContractBundleAssemblyInput,
     ContractBundleAssuranceEvidenceInput, ContractBundleManifest, ContractBundleSourceArtifact,
     ContractBundleValidationFailure, ContractBundleValidationFailureKind,
     ContractBundleValidationReport, ContractBundleValidationStatus, DigestLockedResource,

@@ -2,18 +2,19 @@
 //!
 //! This module models the participant-neutral bundle boundary after Core and
 //! target lowering have produced hash-addressed artifacts. It can assemble a
-//! manifest from digest-locked references and a real Core module. It does not
-//! canonicalize target IR bytes, load files, run target verifiers, or perform
-//! admission.
+//! manifest from digest-locked references, a real Core module, and optionally a
+//! real Target IR artifact. It does not load files, run target verifiers, or
+//! perform admission.
 
 use std::fmt;
 
 use crate::{
     canonical::{
-        digest_bundle_layer, digest_core_module, BundleDigestDomain, BundlePreimageComponent,
-        BundleSourceDescriptor, CanonicalError,
+        digest_bundle_layer, digest_core_module, digest_target_ir_artifact, BundleDigestDomain,
+        BundlePreimageComponent, BundleSourceDescriptor, CanonicalError,
     },
     core_ir::{CoreModule, ResourceRef},
+    target_ir::TargetIrArtifact,
     target_profile::CANONICAL_CBOR_ABI,
 };
 
@@ -212,11 +213,11 @@ impl DigestLockedResource {
     }
 }
 
-/// The v0.11 supplied Target IR reference.
+/// A supplied Target IR reference.
 ///
-/// Target IR bytes are not canonicalized in this slice. The supplied target-IR
-/// digest enters exactly once through this type and is reused for both the
-/// manifest field and semantic digest preimage.
+/// This path remains available for already-digested external artifact graphs.
+/// The supplied target-IR digest enters exactly once through this type and is
+/// reused for both the manifest field and semantic digest preimage.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SuppliedTargetIrResource {
     resource: DigestLockedResource,
@@ -355,6 +356,34 @@ pub struct ContractBundleAssemblyInput {
     pub assurance_evidence: Vec<ContractBundleAssuranceEvidenceInput>,
 }
 
+/// Inputs for assembling a bundle from an actual Target IR artifact.
+///
+/// This path has no supplied target-IR digest field. The assembler computes the
+/// digest from `target_ir_artifact`, uses `target_ir_artifact.domain` as the
+/// manifest Target IR coordinate, and derives the manifest target-profile
+/// reference from `target_ir_artifact.target_profile`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractBundleAssemblyFromTargetIrInput {
+    pub core_module: CoreModule,
+    pub core_ir_coordinate: String,
+    pub source_artifacts: Vec<ContractBundleSourceArtifact>,
+    pub source_profile_semantic_facts: DigestLockedResource,
+    pub target_ir_artifact: TargetIrArtifact,
+    pub lawpacks: Vec<DigestLockedResource>,
+    pub generated_artifacts: Vec<DigestLockedResource>,
+    pub compiler: DigestLockedResource,
+    pub lowerer: DigestLockedResource,
+    pub verifier: DigestLockedResource,
+    pub semantic_compile_options: DigestLockedResource,
+    pub non_semantic_compile_options: DigestLockedResource,
+    pub build_provenance: DigestLockedResource,
+    pub canonicalization_profile: DigestLockedResource,
+    pub conformance_fixture_corpora: Vec<DigestLockedResource>,
+    pub verifier_report: DigestLockedResource,
+    pub compile_explanation: DigestLockedResource,
+    pub assurance_evidence: Vec<ContractBundleAssuranceEvidenceInput>,
+}
+
 /// Which pre-admission bundle digest an artifact references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BundleSubjectKind {
@@ -445,6 +474,89 @@ pub fn assemble_contract_bundle(
     } else {
         Err(ContractBundleAssemblyError::invalid_manifest(&report))
     }
+}
+
+/// Assemble a v1 bundle manifest from an actual Target IR artifact.
+///
+/// The Core digest is computed from `input.core_module`, and the Target IR
+/// digest is computed from `input.target_ir_artifact`. The caller cannot supply
+/// an alternate Target IR digest on this path.
+///
+/// # Errors
+///
+/// Returns an assembly error if the Core or Target IR artifact cannot be
+/// canonically digested, if the Target IR artifact is not digest-locked to a
+/// strict target-profile reference, or if the assembled manifest fails
+/// validation.
+pub fn assemble_contract_bundle_from_target_ir(
+    input: ContractBundleAssemblyFromTargetIrInput,
+) -> Result<ContractBundleManifest, ContractBundleAssemblyError> {
+    let ContractBundleAssemblyFromTargetIrInput {
+        core_module,
+        core_ir_coordinate,
+        source_artifacts,
+        source_profile_semantic_facts,
+        target_ir_artifact,
+        lawpacks,
+        generated_artifacts,
+        compiler,
+        lowerer,
+        verifier,
+        semantic_compile_options,
+        non_semantic_compile_options,
+        build_provenance,
+        canonicalization_profile,
+        conformance_fixture_corpora,
+        verifier_report,
+        compile_explanation,
+        assurance_evidence,
+    } = input;
+
+    let target_ir_digest = digest_target_ir_artifact(&target_ir_artifact)
+        .map_err(|err| ContractBundleAssemblyError::canonical("target_ir_artifact", &err))?
+        .to_review_string();
+    let target_profile =
+        target_profile_from_target_ir_artifact(&target_ir_artifact.target_profile)?;
+    let target_ir = SuppliedTargetIrResource::new(target_ir_artifact.domain, target_ir_digest)?;
+
+    assemble_contract_bundle(ContractBundleAssemblyInput {
+        core_module,
+        core_ir_coordinate,
+        source_artifacts,
+        source_profile_semantic_facts,
+        target_profile,
+        target_ir,
+        lawpacks,
+        generated_artifacts,
+        compiler,
+        lowerer,
+        verifier,
+        semantic_compile_options,
+        non_semantic_compile_options,
+        build_provenance,
+        canonicalization_profile,
+        conformance_fixture_corpora,
+        verifier_report,
+        compile_explanation,
+        assurance_evidence,
+    })
+}
+
+fn target_profile_from_target_ir_artifact(
+    target_profile: &ResourceRef,
+) -> Result<DigestLockedResource, ContractBundleAssemblyError> {
+    let Some(digest) = target_profile.digest.as_deref() else {
+        return Err(ContractBundleAssemblyError::new(
+            ContractBundleAssemblyErrorKind::InvalidDigest,
+            "target_ir_artifact.target_profile",
+            "digest-locked target profile",
+        ));
+    };
+    DigestLockedResource::new_for_field(
+        "target_ir_artifact.target_profile",
+        target_profile.coordinate.clone(),
+        digest,
+    )
 }
 
 struct ContractBundleAssemblyParts {
