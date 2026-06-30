@@ -475,12 +475,18 @@ Exit gates:
 
 Non-goals:
 
-- No target runtime execution.
-- No participant-specific admission execution or policy.
-- No Echo verifier completeness.
-- No git-warp commit creation or CRDT reducer verification.
-- No general target plugin dispatch.
-- No canonical `ContractBundleManifest` bytes.
+- Target runtime execution.
+- Participant-specific admission execution, participant policy evaluation,
+  identity, delegation, or revocation logic.
+- Echo verifier completeness.
+- git-warp commit object creation.
+- git-warp CRDT reducer verification.
+- General target plugin dispatch.
+- Additional target profiles beyond the current Echo and git-warp review
+  artifacts.
+- Extra source-to-target fixtures beyond the currently supported compiler
+  spine.
+- Canonical `ContractBundleManifest` bytes.
 
 ## v0.12.0-alpha.1 - Edict Admission Workflow Harness Alpha
 

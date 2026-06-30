@@ -454,8 +454,14 @@ scope = [
 non_goals = [
   "no_runtime_execution",
   "no_admission_execution",
+  "no_participant_policy_logic",
   "no_verifier_completeness",
+  "no_echo_verifier_completeness",
+  "no_git_warp_commit_creation",
+  "no_git_warp_crdt_reducer_verification",
   "no_general_target_plugin_dispatch",
+  "no_additional_target_profiles",
+  "no_extra_source_to_target_fixtures",
   "no_canonical_contract_bundle_manifest_bytes",
   "no_crates_io_publish",
 ]
