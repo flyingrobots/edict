@@ -20,6 +20,10 @@ The current specification set is:
   types, documentation coverage, examples, and docs-impact rules.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,
   and the GitHub issue/milestone map.
+- [v0.11 Release Notes](./releases/v0.11.0-alpha.1.md): release-prep notes for
+  the contract-bundle assembly and canonical Target IR artifact freeze alpha.
+- [v0.10 Release Notes](./releases/v0.10.0-alpha.1.md): published notes for the
+  first public CLI and structured-diagnostics alpha.
 - [v0.9 Release Notes](./releases/v0.9.0-alpha.1.md): published notes for the
   Echo and git-warp Target IR alpha.
 - [v0.8 Release Notes](./releases/v0.8.0-alpha.1.md): published notes for

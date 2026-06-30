@@ -14,11 +14,13 @@ flowchart LR
 ```
 
 > **Shipping today vs. envisioned.** This diagram is the full architecture. The
-> current alpha (`v0.10.0-alpha.1`) implements stage 1 and the front half of
+> current alpha (`v0.11.0-alpha.1`) implements stage 1 and the front half of
 > stage 2 — writing intents and **compiling + validating** them through the
-> `edict check` CLI and `edict_syntax` library, plus the canonical Core IR and
-> hash framing. The cryptographic-seal admission flow, participant admission,
-> and the WASM sandbox are **not implemented yet** (see
+> `edict check` CLI and `edict_syntax` library, plus canonical Core IR,
+> canonical Target IR artifact bytes, and participant-neutral contract-bundle
+> assembly with reviewed digest goldens. Participant admission, runtime
+> execution, canonical full-manifest bytes, and the WASM sandbox are **not
+> implemented yet** (see
 > [Current Status](#current-status) and [`ROADMAP.md`](./ROADMAP.md)). To run
 > what exists today, see [Build & Run](#build--run).
 
@@ -600,6 +602,10 @@ What exists today:
   with checked-in JSON Schemas for all five stream record families, stable
   diagnostic `kind` codes, and a golden fixture corpus replayed byte-for-byte
   through the binary
+- Release-prep `v0.11.0-alpha.1` notes for contract-bundle assembly and
+  canonical Target IR artifact bytes/digests: semantic/release bundle digest
+  goldens, Echo/git-warp Target IR byte/digest goldens, and computed
+  `targetIrDigest` bundle assembly from real `TargetIrArtifact` values
 - Published `v0.8.0-alpha.1` release notes for the minimal effectful
   compiler-spine alpha
 - Published `v0.7.0-alpha.1` release notes for the file-backed
@@ -631,6 +637,7 @@ What doesn't exist yet:
   participant acceptance policy
 - Target-runtime execution, Echo verifier reports, git-warp commit object
   creation, or git-warp CRDT reducer verification
+- Canonical bytes for full `ContractBundleManifest` values
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic
 
@@ -646,9 +653,11 @@ authority facts and opens the Authority Fact Governance design track. The
 published `v0.8.0-alpha.1` release covers one minimal effectful source-to-Core
 path. The published `v0.9.0-alpha.1` release covers the first Echo and git-warp
 target-owned IR review artifacts. The published `v0.10.0-alpha.1` release covers
-the first public JSONL `edict` CLI and its structured-diagnostics contract,
-before the train moves through bundle assembly, admission workflow harnessing,
-trusted fact authorship, publication policy, and language-server diagnostics.
+the first public JSONL `edict` CLI and its structured-diagnostics contract. The
+`v0.11.0-alpha.1` release prep covers contract-bundle assembly and canonical
+Target IR artifact byte/digest goldens before the train moves through admission
+workflow harnessing, trusted fact authorship, publication policy, and
+language-server diagnostics.
 None of the published releases claims target-runtime execution, full admission
 execution tooling, or trusted fact governance.
 

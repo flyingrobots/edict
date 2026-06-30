@@ -3340,6 +3340,49 @@ fn run() {}
     }
 
     #[test]
+    fn release_policy_tracks_v0_11_boundary() {
+        let root = repo_root().expect("repo root");
+        let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+            .expect("release policy");
+        let v0_11_policy = toml_section(&policy, "[release_notes.v0_11_0_alpha_1]");
+        for required in [
+            "[release_notes.v0_11_0_alpha_1]",
+            "tag = \"v0.11.0-alpha.1\"",
+            "target_date = \"2026-11-04\"",
+            "status = \"publish_ready\"",
+            "release_issue = 109",
+            "milestone_number = 12",
+            "contract_bundle_assembly",
+            "semantic_bundle_digest_preimage",
+            "release_bundle_digest_preimage",
+            "bundle_digest_goldens",
+            "canonical_target_ir_value_model",
+            "canonical_target_ir_cbor_bytes",
+            "target_ir_artifact_digest_frame",
+            "target_ir_byte_digest_goldens",
+            "computed_target_ir_bundle_assembly",
+            "xtask_core_target_ir_bundle_golden_checks",
+            "no_runtime_execution",
+            "no_admission_execution",
+            "no_participant_policy_logic",
+            "no_verifier_completeness",
+            "no_echo_verifier_completeness",
+            "no_git_warp_commit_creation",
+            "no_git_warp_crdt_reducer_verification",
+            "no_general_target_plugin_dispatch",
+            "no_additional_target_profiles",
+            "no_extra_source_to_target_fixtures",
+            "no_canonical_contract_bundle_manifest_bytes",
+            "no_crates_io_publish",
+        ] {
+            assert!(
+                v0_11_policy.contains(required),
+                "v0.11 release policy missing structured field: {required}"
+            );
+        }
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
@@ -3355,6 +3398,7 @@ fn run() {}
             ("v0.8.0-alpha.1", "2026-09-23"),
             ("v0.9.0-alpha.1", "2026-10-07"),
             ("v0.10.0-alpha.1", "2026-10-21"),
+            ("v0.11.0-alpha.1", "2026-11-04"),
         ] {
             assert!(
                 policy.contains(&format!("tag = \"{tag}\"")),
