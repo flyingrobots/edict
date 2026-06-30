@@ -3399,9 +3399,8 @@ fn run() {}
         let root = repo_root().expect("repo root");
         let readme = fs::read_to_string(root.join("README.md")).expect("README");
         assert!(
-            readme.contains(
-                "Published `v0.11.0-alpha.1` release notes for contract-bundle assembly"
-            ),
+            readme
+                .contains("Published `v0.11.0-alpha.1` release notes for contract-bundle assembly"),
             "README status list must describe v0.11 release notes as published"
         );
         assert!(
