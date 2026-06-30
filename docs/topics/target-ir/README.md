@@ -15,12 +15,15 @@ The current target IR implementation is deliberately narrow:
 - selected Target IR artifact domain: `echo.span-ir/v1` or
   `gitwarp.commit-reducer-ir/v1`;
 - selected source/Core shape: the first supported effectful Core effect node;
-- selected outcome: a deterministic in-memory target-owned review artifact;
+- selected outcome: a deterministic target-owned review artifact with canonical
+  `edict.canonical-cbor/v1` bytes and a reviewed
+  `edict.target-ir.artifact/v1` digest;
 - selected failure mode: stable structured target-lowering errors before any
   target artifact is emitted.
 
 The `edict_syntax` crate exposes `lower_to_target_ir`,
-`TargetIrLoweringFacts`, `TargetLoweringReport`, `TargetIrArtifact`, and stable
+`TargetIrLoweringFacts`, `TargetLoweringReport`, `TargetIrArtifact`,
+`encode_target_ir_artifact`, `digest_target_ir_artifact`, and stable
 `TargetLoweringFailureKind` values. The lowerer consumes an already-built
 `CoreModule` and explicit target-lowering facts supplied by the caller. It does
 not read target facts from ambient environment, discover runtimes, or fetch
@@ -57,6 +60,33 @@ budget, and structured Core result expression for the supported slice. This
 records preconditions, evaluation limits, and success-output semantics without
 executing Echo or admitting a bundle.
 
+Canonical Target IR uses an intentional artifact-envelope value model rather
+than Rust struct serialization. The reviewed digest is SHA-256 over canonical
+CBOR for:
+
+```text
+["edict.digest/v1", "edict.target-ir.artifact/v1", <canonical Target IR value>]
+```
+
+The canonical value includes the artifact's own domain, digest-locked target
+profile resource, source Core coordinate, sorted intent map, input constraints,
+Core evaluation budget, source-ordered target steps, sorted obstruction failure
+keys and arms, and structured Core result expression. Target profile digests are
+strict artifact references: missing digests and non-lowercase
+`sha256:<64 hex>` review strings reject before hashing.
+
+Reviewed Echo and git-warp Target IR byte/digest goldens live under
+`fixtures/target-ir/canonical/`. `cargo xtask target-ir-goldens --check`
+regenerates them from executable lowering and canonical encoding, and
+`cargo xtask verify` includes that check.
+
+Bundle assembly can now consume a real `TargetIrArtifact` through
+`assemble_contract_bundle_from_target_ir`. That path computes
+`targetIrDigest` from canonical Target IR bytes and writes the same digest into
+the manifest. The supplied-reference assembly path remains available for
+already-digested external artifact graphs, but the computed Target IR path has
+no caller-supplied target IR digest field.
+
 Selecting a target profile outside the explicit supported set rejects with
 `TargetLoweringFailureKind::UnsupportedTargetProfile`. Selecting an unsupported
 Target IR domain rejects with
@@ -85,12 +115,11 @@ The following are not implemented by this slice:
 
 - Echo runtime execution;
 - Echo verifier completeness;
-- bundle or admission generation;
+- admission generation;
 - general target-lowering plugin dispatch;
 - git-warp runtime execution, commit object creation, and CRDT reducer
   verification;
 - additional target profiles beyond Echo and git-warp;
-- canonical Target IR bytes, digests, or reviewed golden artifacts;
 - v2 chained or composite adapter resolution.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).

@@ -10,6 +10,8 @@ In scope:
 - typed `ContractBundleManifest` values;
 - typed contract-bundle assembly from a real `CoreModule` plus supplied
   digest-locked artifact references;
+- typed contract-bundle assembly from a real `CoreModule` plus a real
+  `TargetIrArtifact` whose digest is computed from canonical Target IR bytes;
 - `validate_contract_bundle_manifest` validation behavior;
 - runtime-neutral acceptance of Echo and non-Echo target-profile bundle shapes;
 - digest-locked source, Core, target-profile, target-IR, lawpack, generated
@@ -23,7 +25,6 @@ In scope:
 Out of scope:
 
 - canonical-CBOR encode/decode helpers for `ContractBundleManifest`;
-- canonical Target IR bytes or computing `targetIrDigest` from Target IR bytes;
 - file-backed bundle loading;
 - full CDDL instance validation;
 - target lowering;
@@ -42,7 +43,7 @@ Out of scope:
 | BUNDLE-REQ-005 | implemented | HOLMES, Watson, and Moriarty evidence entries are optional in the typed bundle; when present, each entry must bind to the manifest's selected bundle subject digest, target profile digest, and target IR digest. | issue #1, docs/GUIDE_edict-assurance-transparency.md |
 | BUNDLE-REQ-006 | implemented | Admission artifacts remain out of the participant-neutral contract bundle manifest; non-empty admission references are rejected. | docs/SPEC_continuum-contract-bundle-v1.md |
 | BUNDLE-REQ-007 | implemented | The typed bundle pins `canonicalization_profile.coordinate` to `edict.canonical-cbor/v1`. | docs/SPEC_continuum-contract-bundle-v1.md |
-| BUNDLE-REQ-008 | implemented | The crate can assemble a `ContractBundleManifest`, computing `semanticBundleDigest` and `releaseBundleDigest` per the exact spec preimages from digest-locked references, with `coreIrDigest` computed from a real compiled Core module and `targetIrDigest` plus other layer hashes supplied as typed references; the assembled manifest validates. | docs/SPEC_continuum-contract-bundle-v1.md, docs/design/contract-bundle-assembly-v0.11.md |
+| BUNDLE-REQ-008 | implemented | The crate can assemble a `ContractBundleManifest`, computing `semanticBundleDigest` and `releaseBundleDigest` per the exact spec preimages from digest-locked references, with `coreIrDigest` computed from a real compiled Core module and `targetIrDigest` either supplied as a typed reference or computed from a real `TargetIrArtifact`; the assembled manifest validates. | docs/SPEC_continuum-contract-bundle-v1.md, docs/design/contract-bundle-assembly-v0.11.md, docs/design/canonical-target-ir-v0.11.md |
 
 ## Fixtures
 
@@ -64,10 +65,10 @@ Out of scope:
 | BUNDLE-TP-007 | implemented | Boundary guard | BUNDLE-REQ-001 | Removing the release-only build-provenance digest returns `InvalidArtifactReference` on `build_provenance`. | release_bundle_inputs_must_be_digest_locked | crates/edict-syntax/tests/contract_bundle.rs | Proves release digest preimage inputs are represented by the typed manifest. |
 | BUNDLE-TP-008 | implemented | Boundary guard | BUNDLE-REQ-007 | Changing `canonicalization_profile.coordinate` returns `UnsupportedCanonicalizationProfile`. | canonicalization_profile_must_be_the_v1_cbor_profile | crates/edict-syntax/tests/contract_bundle.rs | Pins the v1 bundle to the canonical CBOR profile. |
 | BUNDLE-TP-009 | implemented | Golden path | BUNDLE-REQ-001 | Empty lawpack, generated-artifact, and conformance-corpus lists remain valid because optional lists bind what is present without creating non-empty obligations. | optional_artifact_lists_may_be_empty | crates/edict-syntax/tests/contract_bundle.rs | Source artifacts remain the required artifact set. |
-| BUNDLE-TP-010 | implemented | Golden path | BUNDLE-REQ-008 | Assembling a bundle from a real compiled Core module plus supplied digest-locked references produces a manifest that `validate_contract_bundle_manifest` returns `Valid` for, rejects inputs that would produce invalid required bundle structure, and the checked-in bundle digest golden matches regenerated assembler output. | assembled_bundle_from_real_core_validates, assembly_rejects_inputs_that_would_not_validate, bundle_digest_goldens_match_assembly | crates/edict-syntax/tests/contract_bundle.rs, fixtures/bundle/assembly/bounded-hello.bundle-digests.txt | Validation consumes the assembled artifact, not a hand-written fixture; `cargo xtask bundle-goldens --check` guards golden drift. |
+| BUNDLE-TP-010 | implemented | Golden path | BUNDLE-REQ-008 | Assembling a bundle from a real compiled Core module plus supplied digest-locked references produces a manifest that `validate_contract_bundle_manifest` returns `Valid` for, rejects inputs that would produce invalid required bundle structure, can also compute `targetIrDigest` from a real `TargetIrArtifact`, rejects Core/Target IR source-coordinate mismatches, reports invalid embedded target-profile digests with the stable `target_ir_artifact.target_profile` field, and the checked-in bundle digest golden matches regenerated assembler output. | assembled_bundle_from_real_core_validates, assembled_bundle_from_real_target_ir_computes_target_ir_digest, assembly_from_target_ir_rejects_mismatched_core_source, assembly_from_target_ir_rejects_invalid_target_profile_digest_with_stable_field, assembly_rejects_inputs_that_would_not_validate, bundle_digest_goldens_match_assembly | crates/edict-syntax/tests/contract_bundle.rs, fixtures/bundle/assembly/bounded-hello.bundle-digests.txt | Validation consumes the assembled artifact, not a hand-written fixture; `cargo xtask bundle-goldens --check` guards golden drift. |
 | BUNDLE-TP-011 | implemented | Boundary guard | BUNDLE-REQ-008 | Changing any semantic-layer preimage component (Core digest, supplied `targetIrDigest` reference, target profile, lawpack, generated artifact, conformance corpus, verifier report, `sourceProfileSemanticFactsDigest`, `canonicalizationProfileDigest`, or semantic compile options) changes both `semanticBundleDigest` and `releaseBundleDigest`. | semantic_preimage_mutations_change_semantic_and_release_digests | crates/edict-syntax/tests/contract_bundle.rs | Semantic-layer mutation propagates to both digests. |
 | BUNDLE-TP-012 | implemented | Boundary guard | BUNDLE-REQ-008 | Changing any release-only preimage component (provenance-only source digest or logical path, compiler/lowerer/verifier identity with produced artifacts unchanged, nonsemantic compile options, build provenance, or compile explanation) changes `releaseBundleDigest` only, leaving `semanticBundleDigest` unchanged. | release_only_preimage_mutations_leave_semantic_digest_unchanged | crates/edict-syntax/tests/contract_bundle.rs | Honors the semantic/release split; diagnostic and provenance-only changes do not move semantic identity. |
-| BUNDLE-TP-013 | implemented | Boundary guard | BUNDLE-REQ-008 | The assembly input API distinguishes the computed Core digest from supplied references by type, rejects non-lowercase supplied digest references, and uses the supplied `targetIrDigest` as the single source of truth for both the manifest and semantic preimage. | assembly_rejects_uppercase_supplied_target_ir_digest, assembly_rejects_uppercase_supplied_artifact_digest, target_ir_digest_is_single_source_of_truth | crates/edict-syntax/tests/contract_bundle.rs | Target-IR byte identity is out of scope; tracked in issue #105. |
+| BUNDLE-TP-013 | implemented | Boundary guard | BUNDLE-REQ-008 | The assembly input API distinguishes the computed Core digest from supplied references by type, rejects non-lowercase supplied digest references, and uses the supplied `targetIrDigest` as the single source of truth for both the manifest and semantic preimage. | assembly_rejects_uppercase_supplied_target_ir_digest, assembly_rejects_uppercase_supplied_artifact_digest, target_ir_digest_is_single_source_of_truth | crates/edict-syntax/tests/contract_bundle.rs | The separate computed Target IR path is covered by BUNDLE-TP-010 and TIR-TP-022. |
 | BUNDLE-TP-014 | implemented | Boundary guard | BUNDLE-REQ-008 | Changing an optional assurance-evidence artifact that is not a top-level preimage component does not change either bundle digest; assurance evidence is governed by subject/target binding, not by top-level digest propagation. | optional_assurance_evidence_is_not_a_top_level_digest_preimage | crates/edict-syntax/tests/contract_bundle.rs | No top-level bundle tamper claim for optional external evidence. |
 
 ## Determinism Obligations
@@ -85,7 +86,6 @@ Out of scope:
 - Canonical-CBOR encode/decode helpers for `edict.contract-bundle/v1`.
 - File-backed bundle loading.
 - Full CDDL instance validation.
-- Canonical Target IR bytes and computing `targetIrDigest` from those bytes.
 - Target lowerer and verifier execution.
 - Admission request, receipt, policy, catalog, participant descriptor, and
   signature validation.

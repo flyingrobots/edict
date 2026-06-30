@@ -4,13 +4,18 @@
 //! stable failure kinds. They do not inspect diagnostic prose, repository
 //! layout, or implementation-private lowering helpers.
 
+use std::collections::BTreeMap;
+
 use edict_syntax::{
-    check_lowerability, compile_to_core, lower_to_target_ir, AtomicityRequirement, CompilerContext,
-    CoreBudget, CoreExpr, CoreImport, CoreImportKind, CorePredicate, GuardKind, LowerabilityStatus,
-    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
-    TargetEffectLowering, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
+    check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
+    encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
+    CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CorePredicate, CoreValue,
+    GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus, LoweringRequirements,
+    NativeEffectSupport, ResourceRef, SemanticEffectRequirement, TargetEffectLowering,
+    TargetIrArtifact, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
     TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
     GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -71,6 +76,12 @@ fn effectful_artifact(source: &str) -> edict_syntax::TargetIrArtifact {
     lower_to_target_ir(&core, &echo_facts())
         .artifact
         .expect("supported source lowers to Target IR")
+}
+
+fn gitwarp_artifact() -> edict_syntax::TargetIrArtifact {
+    lower_to_target_ir(&gitwarp_core(), &gitwarp_facts())
+        .artifact
+        .expect("supported git-warp source lowers to Target IR")
 }
 
 fn pure_core() -> edict_syntax::CoreModule {
@@ -887,4 +898,225 @@ fn undigested_core_import_rejects_without_artifact() {
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::UndigestedCoreImport]
     );
+}
+
+#[test]
+fn target_ir_artifact_bytes_and_digests_are_deterministic() {
+    assert_eq!(
+        TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+        "edict.target-ir.artifact/v1"
+    );
+
+    let echo = effectful_artifact(EFFECTFUL_REPLACE);
+    let gitwarp = gitwarp_artifact();
+
+    let echo_bytes = encode_target_ir_artifact(&echo).expect("Echo Target IR encodes");
+    let echo_bytes_again = encode_target_ir_artifact(&echo).expect("Echo Target IR re-encodes");
+    assert_eq!(echo_bytes, echo_bytes_again);
+    decode_canonical_cbor(&echo_bytes).expect("Echo Target IR bytes are canonical CBOR");
+
+    let gitwarp_bytes = encode_target_ir_artifact(&gitwarp).expect("git-warp Target IR encodes");
+    let gitwarp_bytes_again =
+        encode_target_ir_artifact(&gitwarp).expect("git-warp Target IR re-encodes");
+    assert_eq!(gitwarp_bytes, gitwarp_bytes_again);
+    decode_canonical_cbor(&gitwarp_bytes).expect("git-warp Target IR bytes are canonical CBOR");
+
+    assert_ne!(echo_bytes, gitwarp_bytes);
+
+    let echo_digest = digest_target_ir_artifact(&echo).expect("Echo Target IR digests");
+    let echo_digest_again = digest_target_ir_artifact(&echo).expect("Echo Target IR re-digests");
+    assert_eq!(echo_digest, echo_digest_again);
+    assert!(echo_digest.to_review_string().starts_with("sha256:"));
+    assert_eq!(echo_digest.to_review_string().len(), "sha256:".len() + 64);
+
+    let gitwarp_digest = digest_target_ir_artifact(&gitwarp).expect("git-warp Target IR digests");
+    assert_ne!(echo_digest, gitwarp_digest);
+}
+
+#[test]
+fn target_ir_artifact_canonicalization_ignores_equivalent_construction_order() {
+    let mut left = gitwarp_artifact();
+    let mut right = left.clone();
+
+    let extra_constraint = InputConstraint {
+        coordinate: "compiler.0".to_owned(),
+        source: InputConstraintSource::Compiler,
+        predicate: CorePredicate::True,
+    };
+
+    let left_intent = left.intents.get_mut("t").expect("intent t");
+    left_intent.input_constraints.push(extra_constraint.clone());
+    let left_step = left_intent.steps.get_mut(0).expect("step 0");
+    let conflict_arm = left_step
+        .obstruction_arms
+        .get("conflict")
+        .expect("conflict arm")
+        .clone();
+    left_step
+        .obstruction_arms
+        .insert("retry".to_owned(), conflict_arm.clone());
+    left_step.obstruction_failures = vec!["retry".to_owned(), "conflict".to_owned()];
+
+    let right_intent = right.intents.get_mut("t").expect("intent t");
+    right_intent.input_constraints.insert(0, extra_constraint);
+    let right_step = right_intent.steps.get_mut(0).expect("step 0");
+    let mut rebuilt_arms = BTreeMap::new();
+    rebuilt_arms.insert("retry".to_owned(), conflict_arm);
+    rebuilt_arms.insert(
+        "conflict".to_owned(),
+        right_step
+            .obstruction_arms
+            .get("conflict")
+            .expect("conflict arm")
+            .clone(),
+    );
+    right_step.obstruction_arms = rebuilt_arms;
+    right_step.obstruction_failures = vec!["conflict".to_owned(), "retry".to_owned()];
+
+    assert_eq!(
+        encode_target_ir_artifact(&left).expect("left Target IR encodes"),
+        encode_target_ir_artifact(&right).expect("right Target IR encodes")
+    );
+    assert_eq!(
+        digest_target_ir_artifact(&left).expect("left Target IR digests"),
+        digest_target_ir_artifact(&right).expect("right Target IR digests")
+    );
+}
+
+#[test]
+fn target_ir_step_order_changes_digest() {
+    let baseline = effectful_artifact(CHAINED_EFFECT_RESULTS);
+    let mut reordered = baseline.clone();
+    reordered
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .steps
+        .reverse();
+
+    assert_ne!(
+        digest_target_ir_artifact(&baseline).expect("baseline Target IR digests"),
+        digest_target_ir_artifact(&reordered).expect("reordered Target IR digests")
+    );
+}
+
+#[test]
+fn target_ir_digest_moves_for_artifact_semantic_mutations() {
+    let baseline = effectful_artifact(EFFECTFUL_REPLACE);
+    assert_target_ir_digest_changes(&baseline, "target profile digest", |artifact| {
+        artifact.target_profile.digest = Some(digest_text('3'));
+    });
+    assert_target_ir_digest_changes(&baseline, "source Core coordinate", |artifact| {
+        artifact.source_core_coordinate = "a.changed@1".to_owned();
+    });
+    assert_target_ir_digest_changes(&baseline, "intent name", |artifact| {
+        let intent = artifact.intents.remove("t").expect("intent t");
+        artifact.intents.insert("renamed".to_owned(), intent);
+    });
+    assert_target_ir_digest_changes(&baseline, "effect coordinate", |artifact| {
+        target_step_mut(artifact).effect = "target.replace.changed".to_owned();
+    });
+    assert_target_ir_digest_changes(&baseline, "selected target intrinsic", |artifact| {
+        target_step_mut(artifact).target_intrinsic = "echo.dpo@1.replace.changed".to_owned();
+    });
+    assert_target_ir_digest_changes(&baseline, "input expression", |artifact| {
+        target_step_mut(artifact).input = CoreExpr::Const(CoreValue::String("changed".to_owned()));
+    });
+    assert_target_ir_digest_changes(&baseline, "obstruction failure", |artifact| {
+        target_step_mut(artifact)
+            .obstruction_failures
+            .push("timeout".to_owned());
+    });
+    assert_target_ir_digest_changes(&baseline, "input constraint", |artifact| {
+        artifact
+            .intents
+            .get_mut("t")
+            .expect("intent t")
+            .input_constraints
+            .push(InputConstraint {
+                coordinate: "compiler.0".to_owned(),
+                source: InputConstraintSource::Compiler,
+                predicate: CorePredicate::True,
+            });
+    });
+    assert_target_ir_digest_changes(&baseline, "Core evaluation budget", |artifact| {
+        artifact
+            .intents
+            .get_mut("t")
+            .expect("intent t")
+            .core_evaluation_budget
+            .max_steps += 1;
+    });
+    assert_target_ir_digest_changes(&baseline, "result expression", |artifact| {
+        artifact.intents.get_mut("t").expect("intent t").result =
+            CoreExpr::Const(CoreValue::String("changed".to_owned()));
+    });
+}
+
+#[test]
+fn target_ir_obstruction_arm_value_mutation_moves_digest() {
+    let baseline = effectful_artifact(EFFECTFUL_REPLACE);
+    assert_target_ir_digest_changes(&baseline, "obstruction arm value", |artifact| {
+        target_step_mut(artifact)
+            .obstruction_arms
+            .get_mut("rejected")
+            .expect("rejected arm")
+            .value = CoreExpr::Const(CoreValue::String("changed".to_owned()));
+    });
+}
+
+#[test]
+fn target_ir_encoder_rejects_unlocked_or_uppercase_target_profile_digest() {
+    let mut missing = effectful_artifact(EFFECTFUL_REPLACE);
+    missing.target_profile.digest = None;
+    assert_eq!(
+        encode_target_ir_artifact(&missing)
+            .expect_err("missing target profile digest rejects before hashing")
+            .kind(),
+        CanonicalErrorKind::UnresolvedDigest
+    );
+    assert_eq!(
+        digest_target_ir_artifact(&missing)
+            .expect_err("missing target profile digest rejects during digest")
+            .kind(),
+        CanonicalErrorKind::UnresolvedDigest
+    );
+
+    let mut uppercase = effectful_artifact(EFFECTFUL_REPLACE);
+    uppercase.target_profile.digest =
+        Some("sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA".to_owned());
+    assert_eq!(
+        encode_target_ir_artifact(&uppercase)
+            .expect_err("uppercase target profile digest rejects before hashing")
+            .kind(),
+        CanonicalErrorKind::InvalidDigest
+    );
+}
+
+fn assert_target_ir_digest_changes(
+    baseline: &TargetIrArtifact,
+    case: &str,
+    mutate: impl FnOnce(&mut TargetIrArtifact),
+) {
+    let baseline_digest =
+        digest_target_ir_artifact(baseline).expect("baseline Target IR artifact digests");
+    let mut mutated = baseline.clone();
+    mutate(&mut mutated);
+    let mutated_digest =
+        digest_target_ir_artifact(&mutated).expect("mutated Target IR artifact digests");
+    assert_ne!(baseline_digest, mutated_digest, "{case} must move digest");
+}
+
+fn target_step_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::TargetIrStep {
+    artifact
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .steps
+        .get_mut(0)
+        .expect("step 0")
+}
+
+fn digest_text(hex: char) -> String {
+    format!("sha256:{}", hex.to_string().repeat(64))
 }

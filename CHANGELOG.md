@@ -35,8 +35,17 @@ versions still track specification maturity rather than a released product.
   produce invalid required bundle structure, and checks a reviewed
   semantic/release digest golden through `cargo xtask bundle-goldens --check`.
   The low-level bundle preimage helper also rejects invalid machine-local source
-  paths before hashing. This freezes bundle preimage/digest values only;
-  canonical Target IR bytes remain tracked by #105.
+  paths before hashing. This freezes bundle preimage/digest values without
+  freezing canonical `ContractBundleManifest` bytes.
+- Canonical Target IR artifact bytes and digests now cover the current Echo and
+  git-warp Target IR envelope with the `edict.target-ir.artifact/v1` digest
+  frame, reviewed byte/digest goldens under `fixtures/target-ir/canonical/`,
+  and `cargo xtask target-ir-goldens --check` wired into `cargo xtask verify`.
+  Bundle assembly also has a computed Target IR path that derives
+  `targetIrDigest` from a real `TargetIrArtifact` instead of a caller-supplied
+  digest reference, rejecting Target IR artifacts whose source Core coordinate
+  does not match the supplied Core module and reporting invalid embedded target
+  profile digest references with a stable field.
 
 ### Changed
 

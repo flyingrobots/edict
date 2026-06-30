@@ -365,12 +365,29 @@ mod contract_bundle_assembly {
         common::bounded_hello_core, digest, digest_locked, failure_kinds, uppercase_digest,
     };
     use edict_syntax::{
-        assemble_contract_bundle, digest_core_module, AssuranceRole, BundleSubjectKind,
-        ContractBundleAssemblyErrorKind, ContractBundleAssemblyInput,
+        assemble_contract_bundle, assemble_contract_bundle_from_target_ir, compile_to_core,
+        digest_core_module, digest_target_ir_artifact, lower_to_target_ir, AssuranceRole,
+        BundleSubjectKind, CompilerContext, ContractBundleAssemblyErrorKind,
+        ContractBundleAssemblyFromTargetIrInput, ContractBundleAssemblyInput,
         ContractBundleAssuranceEvidenceInput, ContractBundleSourceArtifact,
-        ContractBundleValidationFailureKind, ContractBundleValidationStatus, DigestLockedResource,
-        SuppliedTargetIrResource,
+        ContractBundleValidationFailureKind, ContractBundleValidationStatus, CoreBudget,
+        DigestLockedResource, ResourceRef, SuppliedTargetIrResource, TargetEffectLowering,
+        TargetIrArtifact, TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
+        ECHO_SPAN_IR_DOMAIN,
     };
+
+    const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
+        type Input = { id: String<max=16>, };\n\
+        type Receipt = { id: String<max=16>, };\n\
+        type Output = { id: String<max=16>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.effectful\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let receipt: Receipt = target.replace(input.id)\n\
+            else { rejected(reason) => domain.WriteRejected };\n\
+          return { id: input.id };\n\
+        }";
 
     fn resource(coordinate: &str, hex: char) -> DigestLockedResource {
         DigestLockedResource::new(coordinate, digest(hex)).expect("digest-locked resource")
@@ -428,8 +445,84 @@ mod contract_bundle_assembly {
         }
     }
 
+    fn assembly_from_target_ir_input() -> ContractBundleAssemblyFromTargetIrInput {
+        let (core_module, target_ir_artifact) = effectful_core_and_target_ir();
+        ContractBundleAssemblyFromTargetIrInput {
+            core_module,
+            core_ir_coordinate: "edict.core.effectful-replace/v1".to_owned(),
+            source_artifacts: vec![source_artifact(
+                "contracts/effectful-replace.edict",
+                "source.contracts.effectful-replace",
+                'e',
+            )],
+            source_profile_semantic_facts: resource("source-profile.effectful/v1", 'f'),
+            target_ir_artifact,
+            lawpacks: vec![resource("hello.optics@1", '2')],
+            generated_artifacts: vec![resource("echo.dpo.registration/v1", '3')],
+            compiler: resource("edict.compiler/v1", '4'),
+            lowerer: resource("echo.dpo.lowerer/v1", '5'),
+            verifier: resource("echo.dpo.verifier/v1", '6'),
+            semantic_compile_options: resource("edict.compile-options.semantic/v1", '7'),
+            non_semantic_compile_options: resource("edict.compile-options.nonsemantic/v1", '8'),
+            build_provenance: resource("edict.build-provenance/v1", '9'),
+            canonicalization_profile: resource("edict.canonical-cbor/v1", '8'),
+            conformance_fixture_corpora: vec![resource("echo.dpo.fixtures/v1", '9')],
+            verifier_report: resource("echo.dpo.verifier-report/v1", 'a'),
+            compile_explanation: resource("watson.compile-explanation/v1", 'b'),
+            assurance_evidence: Vec::new(),
+        }
+    }
+
+    fn effectful_core_and_target_ir() -> (edict_syntax::CoreModule, TargetIrArtifact) {
+        let module =
+            edict_syntax::parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
+        let core = compile_to_core(&module, &effectful_context())
+            .expect("effectful source compiles to Core");
+        let artifact = lower_to_target_ir(&core, &echo_facts())
+            .artifact
+            .expect("effectful Core lowers to Echo Target IR");
+        (core, artifact)
+    }
+
+    fn effectful_context() -> CompilerContext {
+        CompilerContext::new()
+            .with_operation_profile("p.effectful", "continuum.profile.write/v1")
+            .with_operation_profile_write_classes("p.effectful", [WriteClass::Replace])
+            .with_effect_write_class("target.replace", WriteClass::Replace)
+            .with_budget(
+                "p.tiny",
+                CoreBudget {
+                    max_steps: 8,
+                    max_allocated_bytes: 1024,
+                    max_output_bytes: 256,
+                },
+            )
+    }
+
+    fn echo_facts() -> TargetIrLoweringFacts {
+        TargetIrLoweringFacts {
+            target_profile: ResourceRef {
+                coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
+                digest: Some(digest('c')),
+            },
+            target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
+            operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
+            obstruction_coordinates: vec!["rejected".to_owned()],
+            effect_lowerings: vec![TargetEffectLowering {
+                effect: "target.replace".to_owned(),
+                target_intrinsic: "echo.dpo@1.replace".to_owned(),
+            }],
+        }
+    }
+
     fn assembled(input: ContractBundleAssemblyInput) -> edict_syntax::ContractBundleManifest {
         assemble_contract_bundle(input).expect("bundle assembles")
+    }
+
+    fn assembled_from_target_ir(
+        input: ContractBundleAssemblyFromTargetIrInput,
+    ) -> edict_syntax::ContractBundleManifest {
+        assemble_contract_bundle_from_target_ir(input).expect("bundle assembles from Target IR")
     }
 
     fn assert_valid(manifest: &edict_syntax::ContractBundleManifest) {
@@ -491,6 +584,72 @@ mod contract_bundle_assembly {
         );
         assert_eq!(manifest.admission_artifacts, Vec::new());
         assert_valid(&manifest);
+    }
+
+    #[test]
+    fn assembled_bundle_from_real_target_ir_computes_target_ir_digest() {
+        let input = assembly_from_target_ir_input();
+        let expected_target_profile = input.target_ir_artifact.target_profile.clone();
+        let expected_target_ir_digest = digest_target_ir_artifact(&input.target_ir_artifact)
+            .expect("Target IR artifact digests")
+            .to_review_string();
+
+        let manifest = assembled_from_target_ir(input);
+
+        assert_eq!(manifest.target_profile, expected_target_profile);
+        assert_eq!(manifest.target_ir.coordinate, ECHO_SPAN_IR_DOMAIN);
+        assert_eq!(
+            manifest.target_ir.digest.as_deref(),
+            Some(expected_target_ir_digest.as_str())
+        );
+        assert_valid(&manifest);
+
+        let baseline = manifest;
+        let mut changed_input = assembly_from_target_ir_input();
+        changed_input
+            .target_ir_artifact
+            .intents
+            .get_mut("t")
+            .expect("intent t")
+            .core_evaluation_budget
+            .max_steps += 1;
+        let changed = assembled_from_target_ir(changed_input);
+
+        assert_ne!(
+            baseline.semantic_bundle_digest, changed.semantic_bundle_digest,
+            "computed Target IR digest moves semantic bundle digest"
+        );
+        assert_ne!(
+            baseline.release_bundle_digest, changed.release_bundle_digest,
+            "computed Target IR digest moves release bundle digest"
+        );
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_mismatched_core_source() {
+        let mut input = assembly_from_target_ir_input();
+        input.target_ir_artifact.source_core_coordinate = "a.different@1".to_owned();
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("computed Target IR path rejects mismatched Core source");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "target_ir_artifact.source_core_coordinate");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_invalid_target_profile_digest_with_stable_field() {
+        let mut input = assembly_from_target_ir_input();
+        input.target_ir_artifact.target_profile.digest = Some(uppercase_digest());
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("computed Target IR path rejects invalid target profile digest");
+
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidDigest);
+        assert_eq!(err.field(), "target_ir_artifact.target_profile");
     }
 
     #[test]
