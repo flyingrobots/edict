@@ -8,6 +8,10 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [v0.11.0-alpha.1] - 2026-11-04
+
 ### Added
 
 - `edict_syntax::check(&str) -> CheckOutcome`: a one-call front-end entry point

@@ -72,6 +72,8 @@ thesis. [RELEASE-REQ-018]
 Release notes are checked in under `docs/releases/` and are loaded by the
 release workflow by full tag name. Current release-note files:
 
+- [`v0.11.0-alpha.1`](../../releases/v0.11.0-alpha.1.md): release-prep notes for
+  the contract-bundle assembly and canonical Target IR artifact freeze alpha.
 - [`v0.10.0-alpha.1`](../../releases/v0.10.0-alpha.1.md): published first
   public CLI and structured-diagnostics alpha notes.
 - [`v0.9.0-alpha.1`](../../releases/v0.9.0-alpha.1.md): published first
@@ -93,6 +95,16 @@ release workflow by full tag name. Current release-note files:
   model and normative schema alpha notes.
 - [`v0.1.0-alpha.1`](../../releases/v0.1.0-alpha.1.md): published front-end
   alpha notes.
+
+The `v0.11.0-alpha.1` release is in release preparation:
+
+- Release-prep issue: <https://github.com/flyingrobots/edict/issues/109>
+- Milestone `v0.11.0-alpha.1` (#12) has zero open implementation issues before
+  the release-prep pull request opens.
+- Topic-shelf audit evidence: 21 of 21 shelves audited; 21 of 21 accurate after
+  release-prep edits; coverage 100%; accuracy 100%.
+- No crates.io publication is planned: `edict-syntax` and `edict-cli` remain
+  `publish = false`.
 
 The `v0.10.0-alpha.1` release is published as a GitHub prerelease:
 
