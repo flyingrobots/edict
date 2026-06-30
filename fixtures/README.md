@@ -35,9 +35,10 @@ fixtures/
 ## Status
 
 The first Core canonical fixture lives in
-[`core/canonical/`](./core/canonical/). Additional source coverage, relapse-zoo
-cases, target fixtures, and admission fixtures remain planned as their owning
-implementation slices land.
+[`core/canonical/`](./core/canonical/). The first contract-bundle assembly
+digest golden lives in [`bundle/assembly/`](./bundle/assembly/). Additional
+source coverage, relapse-zoo cases, target fixtures, and admission fixtures
+remain planned as their owning implementation slices land.
 
 **Placeholder digests:** prose in the README/specs writes `sha256:...` as a
 human ellipsis, which is **not lexable** — the grammar's `digest-lit` requires
