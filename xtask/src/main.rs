@@ -927,6 +927,30 @@ mod tests {
     }
 
     #[test]
+    fn bundle_digest_rustdoc_matches_resource_encoding() {
+        let root = repo_root().expect("repo root");
+        let canonical =
+            fs::read_to_string(root.join("crates/edict-syntax/src/canonical.rs")).expect("source");
+        let start = canonical
+            .find("/// Compute a contract-bundle layer digest")
+            .expect("digest_bundle_layer docs start");
+        let rest = &canonical[start..];
+        let end = rest
+            .find("pub fn digest_bundle_layer")
+            .expect("digest_bundle_layer item");
+        let docs = &rest[..end];
+
+        assert!(
+            docs.contains("`{id, digest}`"),
+            "public bundle digest docs must name the resource map shape"
+        );
+        assert!(
+            !docs.contains("digest|null") && !docs.contains("[coordinate"),
+            "public bundle digest docs must not describe stale array/null resource encoding"
+        );
+    }
+
+    #[test]
     fn contract_graph_rejects_unknown_registry_source_ids() {
         let root = temp_root("unknown-registry-source");
         let topic = root.join("docs/topics/example");

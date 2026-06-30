@@ -338,9 +338,10 @@ fn is_lowercase_sha256_review_digest(digest: &str) -> bool {
 ///
 /// `<domain>` is [`BundleDigestDomain::label`]. Each `sha256:<hex>` review
 /// digest is parsed into the authoritative typed value `["sha256", <32 raw
-/// bytes>]`; resource references encode as `[coordinate, digest|null]`; source
-/// descriptors encode as `[logical_path, [coordinate, digest|null]]`. Review
-/// strings are never hashed directly.
+/// bytes>]`; resource references encode as `{id, digest}` maps and require a
+/// present digest; source descriptors encode as `[logical_path, {id, digest}]`
+/// after logical package-relative path validation. Review strings are never
+/// hashed directly.
 ///
 /// # Errors
 ///
