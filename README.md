@@ -602,7 +602,7 @@ What exists today:
   with checked-in JSON Schemas for all five stream record families, stable
   diagnostic `kind` codes, and a golden fixture corpus replayed byte-for-byte
   through the binary
-- Release-prep `v0.11.0-alpha.1` notes for contract-bundle assembly and
+- Published `v0.11.0-alpha.1` release notes for contract-bundle assembly and
   canonical Target IR artifact bytes/digests: semantic/release bundle digest
   goldens, Echo/git-warp Target IR byte/digest goldens, and computed
   `targetIrDigest` bundle assembly from real `TargetIrArtifact` values
