@@ -27,6 +27,7 @@ pub enum ContractBundleAssemblyErrorKind {
     EmptyCoordinate,
     InvalidSourcePath,
     CanonicalDigest,
+    InvalidManifest,
 }
 
 /// Assembly failure with stable kind plus field context.
@@ -63,6 +64,18 @@ impl ContractBundleAssemblyError {
             ContractBundleAssemblyErrorKind::CanonicalDigest,
             field,
             err.to_string(),
+        )
+    }
+
+    fn invalid_manifest(report: &ContractBundleValidationReport) -> Self {
+        let first = report
+            .failures
+            .first()
+            .expect("invalid validation report has at least one failure");
+        Self::new(
+            ContractBundleAssemblyErrorKind::InvalidManifest,
+            first.field.clone(),
+            format!("{:?}: {}", first.kind, first.obligation),
         )
     }
 
@@ -425,11 +438,13 @@ pub fn assemble_contract_bundle(
     let parts = assembly_parts(input)?;
     let semantic_bundle_digest = semantic_bundle_digest(&parts)?;
     let release_bundle_digest = release_bundle_digest(&parts, &semantic_bundle_digest)?;
-    Ok(manifest_from_parts(
-        parts,
-        semantic_bundle_digest,
-        release_bundle_digest,
-    ))
+    let manifest = manifest_from_parts(parts, semantic_bundle_digest, release_bundle_digest);
+    let report = validate_contract_bundle_manifest(&manifest);
+    if report.status == ContractBundleValidationStatus::Valid {
+        Ok(manifest)
+    } else {
+        Err(ContractBundleAssemblyError::invalid_manifest(&report))
+    }
 }
 
 struct ContractBundleAssemblyParts {

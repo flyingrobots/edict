@@ -57,7 +57,9 @@ The canonical artifact identity rules are named in
   [BUNDLE-REQ-007]
 - `assemble_contract_bundle` computes `coreIrDigest` from the supplied
   `CoreModule` with `digest_core_module`; callers cannot supply an alternate
-  Core digest. [BUNDLE-REQ-008]
+  Core digest. The assembler validates its generated manifest before returning
+  it and rejects inputs that would produce an invalid required bundle structure.
+  [BUNDLE-REQ-008]
 - `targetIrDigest` remains a supplied digest-locked Target IR reference for this
   slice. The same typed Target IR resource supplies both
   `manifest.target_ir.digest` and the semantic bundle digest preimage. Canonical

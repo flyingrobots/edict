@@ -510,6 +510,24 @@ mod contract_bundle_assembly {
     }
 
     #[test]
+    fn assembly_rejects_inputs_that_would_not_validate() {
+        let mut empty_sources = assembly_input();
+        empty_sources.source_artifacts.clear();
+        let err = assemble_contract_bundle(empty_sources)
+            .expect_err("empty assembled source artifact set is rejected");
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidManifest);
+        assert_eq!(err.field(), "source_artifacts");
+
+        let mut unsupported_canonicalization = assembly_input();
+        unsupported_canonicalization.canonicalization_profile =
+            resource("edict.custom-cbor/v1", '8');
+        let err = assemble_contract_bundle(unsupported_canonicalization)
+            .expect_err("unsupported assembled canonicalization profile is rejected");
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidManifest);
+        assert_eq!(err.field(), "canonicalization_profile");
+    }
+
+    #[test]
     fn target_ir_digest_is_single_source_of_truth() {
         let supplied_target_ir_digest = digest('d');
         let manifest = assembled(assembly_input());

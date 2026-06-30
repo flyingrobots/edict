@@ -31,10 +31,11 @@ versions still track specification maturity rather than a released product.
 - Contract bundle assembly now builds `ContractBundleManifest` values from a
   real `CoreModule` plus supplied digest-locked references, computes the
   semantic and release bundle digests with the v0.11 preimage order, validates
-  the assembled manifest, and checks a reviewed semantic/release digest golden
-  through `cargo xtask bundle-goldens --check`. This freezes bundle
-  preimage/digest values only; canonical Target IR bytes remain tracked by
-  #105.
+  the assembled manifest before returning it, rejects assembly inputs that would
+  produce invalid required bundle structure, and checks a reviewed
+  semantic/release digest golden through `cargo xtask bundle-goldens --check`.
+  This freezes bundle preimage/digest values only; canonical Target IR bytes
+  remain tracked by #105.
 
 ### Changed
 
