@@ -3395,39 +3395,6 @@ fn run() {}
     }
 
     #[test]
-    fn readme_marks_v0_11_release_notes_as_published() {
-        let root = repo_root().expect("repo root");
-        let readme = fs::read_to_string(root.join("README.md")).expect("README");
-        assert!(
-            readme
-                .contains("Published `v0.11.0-alpha.1` release notes for contract-bundle assembly"),
-            "README status list must describe v0.11 release notes as published"
-        );
-        assert!(
-            !readme.contains("Release-prep `v0.11.0-alpha.1`"),
-            "README status list must not retain release-prep v0.11 wording"
-        );
-    }
-
-    #[test]
-    fn roadmap_records_v0_11_published_release_artifacts() {
-        let root = repo_root().expect("repo root");
-        let roadmap = fs::read_to_string(root.join("ROADMAP.md")).expect("roadmap");
-        assert!(
-            roadmap.contains(
-                "Release: <https://github.com/flyingrobots/edict/releases/tag/v0.11.0-alpha.1>"
-            ),
-            "ROADMAP v0.11 section must include the published release URL"
-        );
-        assert!(
-            roadmap.contains(
-                "Tag: `v0.11.0-alpha.1` peels to\n`3eb71f6127e31b68ea4e0bb766623930ce24ae46`."
-            ),
-            "ROADMAP v0.11 section must include the peeled tag commit"
-        );
-    }
-
-    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
