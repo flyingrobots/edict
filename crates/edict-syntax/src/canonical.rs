@@ -176,6 +176,197 @@ pub fn digest_core_module(module: &CoreModule) -> Result<CoreDigest, CanonicalEr
     Ok(CoreDigest::sha256(bytes))
 }
 
+/// Digest domain for a contract bundle's `semanticBundleDigest`.
+pub const BUNDLE_SEMANTIC_DIGEST_DOMAIN: &str = "edict.bundle.semantic/v1";
+
+/// Digest domain for a contract bundle's `releaseBundleDigest`.
+pub const BUNDLE_RELEASE_DIGEST_DOMAIN: &str = "edict.bundle.release/v1";
+
+/// The two contract-bundle digest layers. Using a typed domain instead of an
+/// arbitrary string keeps the preimage frame honest: only the two defined
+/// bundle layers can be requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BundleDigestDomain {
+    /// `edict.bundle.semantic/v1` — executable semantics.
+    Semantic,
+    /// `edict.bundle.release/v1` — semantics plus source provenance and toolchain.
+    Release,
+}
+
+impl BundleDigestDomain {
+    /// Return the spec domain label this layer frames its preimage under.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            BundleDigestDomain::Semantic => BUNDLE_SEMANTIC_DIGEST_DOMAIN,
+            BundleDigestDomain::Release => BUNDLE_RELEASE_DIGEST_DOMAIN,
+        }
+    }
+}
+
+/// A source artifact descriptor inside a release bundle preimage: a logical,
+/// package-relative path bound together with its digest-locked artifact.
+#[derive(Debug, Clone, Copy)]
+pub struct BundleSourceDescriptor<'a> {
+    /// The logical, package-relative source path (bundle provenance).
+    pub logical_path: &'a str,
+    /// The digest-locked source artifact reference.
+    pub artifact: &'a ResourceRef,
+}
+
+/// One ordered component of a contract-bundle digest preimage.
+///
+/// Structure is part of the byte-level contract. A bare digest binds only its
+/// hash; a [`Resource`](BundlePreimageComponent::Resource) binds its
+/// `coordinate` (identity) *and* digest; a
+/// [`SourceArtifacts`](BundlePreimageComponent::SourceArtifacts) component binds
+/// each logical source path. This is what lets the release layer detect a
+/// logical-path or toolchain-coordinate change even when the digest bytes are
+/// unchanged.
+#[derive(Debug, Clone, Copy)]
+pub enum BundlePreimageComponent<'a> {
+    /// A single `sha256:<hex>` review digest.
+    Digest(&'a str),
+    /// An ordered list of `sha256:<hex>` review digests.
+    DigestList(&'a [String]),
+    /// A digest-locked resource reference binding coordinate and digest.
+    Resource(&'a ResourceRef),
+    /// An ordered list of digest-locked resource references.
+    ResourceList(&'a [ResourceRef]),
+    /// An ordered list of source artifact descriptors (logical path + artifact).
+    SourceArtifacts(&'a [BundleSourceDescriptor<'a>]),
+}
+
+/// Encode one preimage component into its canonical value. Resource references
+/// reuse the established `{id, digest}` encoding (which requires a digest-locked
+/// resource), so a coordinate change moves the digest even when the digest bytes
+/// are unchanged, and a missing digest is rejected.
+fn bundle_component_value(
+    component: &BundlePreimageComponent,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(match component {
+        BundlePreimageComponent::Digest(digest) => bundle_digest_value(digest)?,
+        BundlePreimageComponent::DigestList(digests) => CanonicalValue::Array(
+            digests
+                .iter()
+                .map(|digest| bundle_digest_value(digest))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        BundlePreimageComponent::Resource(resource) => bundle_resource_ref_value(resource)?,
+        BundlePreimageComponent::ResourceList(resources) => CanonicalValue::Array(
+            resources
+                .iter()
+                .map(bundle_resource_ref_value)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        BundlePreimageComponent::SourceArtifacts(descriptors) => CanonicalValue::Array(
+            descriptors
+                .iter()
+                .map(|descriptor| {
+                    if !is_logical_bundle_source_path(descriptor.logical_path) {
+                        return Err(CanonicalError::new(
+                            CanonicalErrorKind::UnsupportedValue,
+                            "bundle source artifact path must be logical and package-relative",
+                        ));
+                    }
+                    Ok(CanonicalValue::Array(vec![
+                        text(descriptor.logical_path),
+                        bundle_resource_ref_value(descriptor.artifact)?,
+                    ]))
+                })
+                .collect::<Result<Vec<_>, CanonicalError>>()?,
+        ),
+    })
+}
+
+fn bundle_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
+    if resource.coordinate.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "bundle resource coordinate is empty",
+        ));
+    }
+    let Some(digest) = &resource.digest else {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnresolvedDigest,
+            "bundle resource digest is unresolved",
+        ));
+    };
+    Ok(map([
+        ("id", text(&resource.coordinate)),
+        ("digest", bundle_digest_value(digest)?),
+    ]))
+}
+
+fn bundle_digest_value(digest: &str) -> Result<CanonicalValue, CanonicalError> {
+    if !is_lowercase_sha256_review_digest(digest) {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::InvalidDigest,
+            "bundle digest must use sha256:<64 lowercase hex> review rendering",
+        ));
+    }
+    digest_value(digest)
+}
+
+fn is_logical_bundle_source_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && !path.contains(':')
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
+}
+
+fn is_lowercase_sha256_review_digest(digest: &str) -> bool {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// Compute a contract-bundle layer digest over its ordered preimage components.
+///
+/// The digest is SHA-256 over the canonical CBOR encoding of:
+///
+/// ```text
+/// ["edict.digest/v1", "<domain>", [<typed component values>]]
+/// ```
+///
+/// `<domain>` is [`BundleDigestDomain::label`]. Each `sha256:<hex>` review
+/// digest is parsed into the authoritative typed value `["sha256", <32 raw
+/// bytes>]`; resource references encode as `{id, digest}` maps and require a
+/// present digest; source descriptors encode as `[logical_path, {id, digest}]`
+/// after logical package-relative path validation. Review strings are never
+/// hashed directly.
+///
+/// # Errors
+///
+/// Returns an error if any component digest is not a strict
+/// `sha256:<64 lowercase hex>` review rendering.
+pub fn digest_bundle_layer(
+    domain: BundleDigestDomain,
+    components: &[BundlePreimageComponent],
+) -> Result<CoreDigest, CanonicalError> {
+    let mut payload = Vec::with_capacity(components.len());
+    for component in components {
+        payload.push(bundle_component_value(component)?);
+    }
+    let framed = CanonicalValue::Array(vec![
+        text(CORE_DIGEST_FRAME),
+        text(domain.label()),
+        CanonicalValue::Array(payload),
+    ]);
+    let preimage = encode_canonical_cbor(&framed)?;
+    let hash = Sha256::digest(preimage);
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&hash);
+    Ok(CoreDigest::sha256(bytes))
+}
+
 /// Encode a decoded canonical value to canonical CBOR bytes.
 ///
 /// # Errors
@@ -901,5 +1092,203 @@ impl<'a> Decoder<'a> {
         let mut out = [0u8; N];
         out.copy_from_slice(self.take(N)?);
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod bundle_layer_digest_tests {
+    use super::{
+        digest_bundle_layer, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
+        CanonicalErrorKind,
+    };
+    use crate::core_ir::ResourceRef;
+
+    const A: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+    const B: &str = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+    const SEM: BundleDigestDomain = BundleDigestDomain::Semantic;
+
+    fn resource(coordinate: &str, digest: &str) -> ResourceRef {
+        ResourceRef {
+            coordinate: coordinate.to_owned(),
+            digest: Some(digest.to_owned()),
+        }
+    }
+
+    fn bundle_error_kind(components: &[BundlePreimageComponent]) -> CanonicalErrorKind {
+        digest_bundle_layer(SEM, components)
+            .expect_err("bundle digest layer rejects malformed preimage")
+            .kind()
+    }
+
+    #[test]
+    fn invalid_digest_review_string_is_rejected() {
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Digest("not-a-digest")]),
+            CanonicalErrorKind::InvalidDigest
+        );
+    }
+
+    #[test]
+    fn uppercase_bundle_digest_review_string_is_rejected() {
+        let uppercase = "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let uppercase_resource = resource("compiler.a@1", uppercase);
+
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Digest(uppercase)]),
+            CanonicalErrorKind::InvalidDigest
+        );
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Resource(&uppercase_resource)]),
+            CanonicalErrorKind::InvalidDigest
+        );
+    }
+
+    #[test]
+    fn digest_is_deterministic() {
+        let components = [
+            BundlePreimageComponent::Digest(A),
+            BundlePreimageComponent::Digest(B),
+        ];
+        assert_eq!(
+            digest_bundle_layer(SEM, &components).expect("digest"),
+            digest_bundle_layer(SEM, &components).expect("digest"),
+        );
+    }
+
+    #[test]
+    fn component_order_changes_the_digest() {
+        let forward = digest_bundle_layer(
+            SEM,
+            &[
+                BundlePreimageComponent::Digest(A),
+                BundlePreimageComponent::Digest(B),
+            ],
+        )
+        .expect("digest");
+        let swapped = digest_bundle_layer(
+            SEM,
+            &[
+                BundlePreimageComponent::Digest(B),
+                BundlePreimageComponent::Digest(A),
+            ],
+        )
+        .expect("digest");
+        assert_ne!(forward, swapped);
+    }
+
+    #[test]
+    fn domain_separates_semantic_from_release() {
+        let component = [BundlePreimageComponent::Digest(A)];
+        assert_ne!(
+            digest_bundle_layer(BundleDigestDomain::Semantic, &component).expect("digest"),
+            digest_bundle_layer(BundleDigestDomain::Release, &component).expect("digest"),
+        );
+    }
+
+    #[test]
+    fn list_structure_is_distinct_from_flattened_singles() {
+        // [DigestList([A, B])] must not collide with [Digest(A), Digest(B)]: the
+        // nesting is part of the byte-level contract.
+        let nested = digest_bundle_layer(
+            SEM,
+            &[BundlePreimageComponent::DigestList(&[
+                A.to_owned(),
+                B.to_owned(),
+            ])],
+        )
+        .expect("digest");
+        let flat = digest_bundle_layer(
+            SEM,
+            &[
+                BundlePreimageComponent::Digest(A),
+                BundlePreimageComponent::Digest(B),
+            ],
+        )
+        .expect("digest");
+        assert_ne!(nested, flat);
+    }
+
+    #[test]
+    fn resource_coordinate_change_moves_digest_with_same_digest() {
+        // The whole point of binding the coordinate: a toolchain identity change
+        // (compiler/lowerer/verifier coordinate) with the same artifact digest
+        // must still move the bundle digest.
+        let one = resource("compiler.a@1", A);
+        let two = resource("compiler.b@1", A);
+        assert_ne!(
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&one)]).expect("digest"),
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&two)]).expect("digest"),
+        );
+    }
+
+    #[test]
+    fn resource_preimage_shape_matches_checked_digest() {
+        let compiler = resource("compiler.a@1", A);
+        let digest = digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&compiler)])
+            .expect("digest");
+
+        assert_eq!(
+            digest.to_review_string(),
+            "sha256:affd17f8c86b66b0109d6ae373cb35888be8138f56df109ae21445284267bd1b"
+        );
+    }
+
+    #[test]
+    fn resource_without_digest_is_rejected() {
+        // Hash-significant bundle references must be digest-locked; a missing
+        // digest is an error, not a silently-distinct preimage.
+        let without = ResourceRef {
+            coordinate: "compiler.a@1".to_owned(),
+            digest: None,
+        };
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Resource(&without)]),
+            CanonicalErrorKind::UnresolvedDigest
+        );
+    }
+
+    #[test]
+    fn source_logical_path_change_moves_digest_with_same_artifact() {
+        // Provenance: a logical source path change must move the (release) bundle
+        // digest even when the source artifact digest is unchanged.
+        let artifact = resource("src", A);
+        let first = [BundleSourceDescriptor {
+            logical_path: "a/main.edict",
+            artifact: &artifact,
+        }];
+        let second = [BundleSourceDescriptor {
+            logical_path: "b/main.edict",
+            artifact: &artifact,
+        }];
+        assert_ne!(
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::SourceArtifacts(&first)])
+                .expect("digest"),
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::SourceArtifacts(&second)])
+                .expect("digest"),
+        );
+    }
+
+    #[test]
+    fn source_artifact_logical_paths_are_rejected() {
+        let artifact = resource("src", A);
+        for logical_path in [
+            "",
+            "/contracts/main.edict",
+            "contracts/../main.edict",
+            "contracts/./main.edict",
+            "C:/contracts/main.edict",
+            r"contracts\main.edict",
+        ] {
+            let descriptors = [BundleSourceDescriptor {
+                logical_path,
+                artifact: &artifact,
+            }];
+
+            assert_eq!(
+                bundle_error_kind(&[BundlePreimageComponent::SourceArtifacts(&descriptors)]),
+                CanonicalErrorKind::UnsupportedValue,
+                "accepted invalid source artifact path {logical_path:?}"
+            );
+        }
     }
 }

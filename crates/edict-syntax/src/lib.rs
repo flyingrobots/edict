@@ -92,9 +92,11 @@ pub use authority_facts::{
     EffectWriteClassFact, OperationProfileFact, AUTHORITY_FACTS_API_VERSION,
 };
 pub use canonical::{
-    decode_canonical_cbor, digest_core_module, encode_canonical_cbor, encode_core_module,
-    CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, CORE_CANONICAL_ENCODING,
-    CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN,
+    decode_canonical_cbor, digest_bundle_layer, digest_core_module, encode_canonical_cbor,
+    encode_core_module, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
+    CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN,
+    BUNDLE_SEMANTIC_DIGEST_DOMAIN, CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME,
+    CORE_MODULE_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
@@ -102,10 +104,13 @@ pub use compiler::{
     TypedIntent, TypedModule,
 };
 pub use contract_bundle::{
-    validate_contract_bundle_manifest, AssuranceEvidenceRef, AssuranceRole, BundleSubject,
-    BundleSubjectKind, ContractBundleManifest, ContractBundleValidationFailure,
-    ContractBundleValidationFailureKind, ContractBundleValidationReport,
-    ContractBundleValidationStatus, SourceArtifactRef, CONTRACT_BUNDLE_API_VERSION,
+    assemble_contract_bundle, validate_contract_bundle_manifest, AssuranceEvidenceRef,
+    AssuranceRole, BundleSubject, BundleSubjectKind, ContractBundleAssemblyError,
+    ContractBundleAssemblyErrorKind, ContractBundleAssemblyInput,
+    ContractBundleAssuranceEvidenceInput, ContractBundleManifest, ContractBundleSourceArtifact,
+    ContractBundleValidationFailure, ContractBundleValidationFailureKind,
+    ContractBundleValidationReport, ContractBundleValidationStatus, DigestLockedResource,
+    SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,

@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use edict_syntax::{
-    compile_to_core, digest_core_module, encode_core_module, parse_module, CompilerContext,
-    CoreBudget,
+    assemble_contract_bundle, compile_to_core, digest_core_module, encode_core_module,
+    parse_module, CompilerContext, ContractBundleAssemblyInput, ContractBundleSourceArtifact,
+    CoreBudget, DigestLockedResource, SuppliedTargetIrResource,
 };
 
 fn main() -> ExitCode {
@@ -38,9 +39,22 @@ fn run() -> Result<(), String> {
             }
             core_goldens(&repo_root()?, mode)
         }
+        Some("bundle-goldens") => {
+            let mode = match args.next().as_deref() {
+                Some("--write") => BundleGoldenMode::Write,
+                Some("--check") | None => BundleGoldenMode::Check,
+                Some(flag) => return Err(format!("unknown bundle-goldens flag `{flag}`")),
+            };
+            if let Some(extra) = args.next() {
+                return Err(format!("unexpected bundle-goldens argument `{extra}`"));
+            }
+            bundle_goldens(&repo_root()?, mode)
+        }
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
-        None => Err("usage: cargo xtask <verify|contract-check|core-goldens>".into()),
+        None => {
+            Err("usage: cargo xtask <verify|contract-check|core-goldens|bundle-goldens>".into())
+        }
     }
 }
 
@@ -66,6 +80,7 @@ fn verify(root: &Path) -> Result<(), String> {
         ["test", "--workspace", "--doc", "--all-features"],
     )?;
     core_goldens(root, CoreGoldenMode::Check)?;
+    bundle_goldens(root, BundleGoldenMode::Check)?;
     contract_check(root)?;
     let base = diff_check_base(root)?;
     run_cmd(root, "git", ["diff", "--check", &format!("{base}...HEAD")])?;
@@ -190,12 +205,12 @@ fn check_or_write_core_golden(
 
     match mode {
         CoreGoldenMode::Check => {
-            check_core_golden_file(root, case.bytes, &bytes)?;
-            check_core_golden_file(root, case.digest, digest_text.as_bytes())?;
+            check_golden_file(root, case.bytes, &bytes)?;
+            check_golden_file(root, case.digest, digest_text.as_bytes())?;
         }
         CoreGoldenMode::Write => {
-            write_core_golden_file(&root.join(case.bytes), &bytes)?;
-            write_core_golden_file(&root.join(case.digest), digest_text.as_bytes())?;
+            write_golden_file(&root.join(case.bytes), &bytes)?;
+            write_golden_file(&root.join(case.digest), digest_text.as_bytes())?;
         }
     }
     Ok(())
@@ -214,20 +229,261 @@ fn core_golden_context() -> CompilerContext {
         )
 }
 
-fn check_core_golden_file(root: &Path, relative: &str, expected: &[u8]) -> Result<(), String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BundleGoldenMode {
+    Check,
+    Write,
+}
+
+#[derive(Debug)]
+struct BundleGoldenCase {
+    source: &'static str,
+    output: &'static str,
+}
+
+const BUNDLE_GOLDEN_CASES: &[BundleGoldenCase] = &[BundleGoldenCase {
+    source: "fixtures/lang/bounds/bounded-hello.edict",
+    output: "fixtures/bundle/assembly/bounded-hello.bundle-digests.txt",
+}];
+
+const BUNDLE_CORE_IR_COORDINATE: &str = "edict.core.bounded-hello/v1";
+const BUNDLE_SOURCE_LOGICAL_PATH: &str = "contracts/hello.edict";
+const BUNDLE_SOURCE_COORDINATE: &str = "source.contracts.hello";
+const BUNDLE_SOURCE_DIGEST: char = 'e';
+const BUNDLE_SOURCE_PROFILE_COORDINATE: &str = "source-profile.hello/v1";
+const BUNDLE_SOURCE_PROFILE_DIGEST: char = 'f';
+const BUNDLE_TARGET_PROFILE_COORDINATE: &str = "echo.dpo@1";
+const BUNDLE_TARGET_PROFILE_DIGEST: char = 'c';
+const BUNDLE_TARGET_IR_COORDINATE: &str = "echo.span-ir/v1";
+const BUNDLE_TARGET_IR_DIGEST: char = 'd';
+const BUNDLE_LAWPACK_COORDINATE: &str = "hello.optics@1";
+const BUNDLE_LAWPACK_DIGEST: char = '2';
+const BUNDLE_GENERATED_COORDINATE: &str = "echo.dpo.registration/v1";
+const BUNDLE_GENERATED_DIGEST: char = '3';
+const BUNDLE_COMPILER_COORDINATE: &str = "edict.compiler/v1";
+const BUNDLE_COMPILER_DIGEST: char = '4';
+const BUNDLE_LOWERER_COORDINATE: &str = "echo.dpo.lowerer/v1";
+const BUNDLE_LOWERER_DIGEST: char = '5';
+const BUNDLE_VERIFIER_COORDINATE: &str = "echo.dpo.verifier/v1";
+const BUNDLE_VERIFIER_DIGEST: char = '6';
+const BUNDLE_SEMANTIC_OPTIONS_COORDINATE: &str = "edict.compile-options.semantic/v1";
+const BUNDLE_SEMANTIC_OPTIONS_DIGEST: char = '7';
+const BUNDLE_NONSEMANTIC_OPTIONS_COORDINATE: &str = "edict.compile-options.nonsemantic/v1";
+const BUNDLE_NONSEMANTIC_OPTIONS_DIGEST: char = '8';
+const BUNDLE_BUILD_PROVENANCE_COORDINATE: &str = "edict.build-provenance/v1";
+const BUNDLE_BUILD_PROVENANCE_DIGEST: char = '9';
+const BUNDLE_CANONICALIZATION_COORDINATE: &str = "edict.canonical-cbor/v1";
+const BUNDLE_CANONICALIZATION_DIGEST: char = '8';
+const BUNDLE_CONFORMANCE_COORDINATE: &str = "echo.dpo.fixtures/v1";
+const BUNDLE_CONFORMANCE_DIGEST: char = '9';
+const BUNDLE_VERIFIER_REPORT_COORDINATE: &str = "echo.dpo.verifier-report/v1";
+const BUNDLE_VERIFIER_REPORT_DIGEST: char = 'a';
+const BUNDLE_COMPILE_EXPLANATION_COORDINATE: &str = "watson.compile-explanation/v1";
+const BUNDLE_COMPILE_EXPLANATION_DIGEST: char = 'b';
+
+fn bundle_goldens(root: &Path, mode: BundleGoldenMode) -> Result<(), String> {
+    for case in BUNDLE_GOLDEN_CASES {
+        check_or_write_bundle_golden(root, case, mode)?;
+    }
+    println!(
+        "bundle-goldens: {} case(s) {}",
+        BUNDLE_GOLDEN_CASES.len(),
+        match mode {
+            BundleGoldenMode::Check => "checked",
+            BundleGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
+
+fn check_or_write_bundle_golden(
+    root: &Path,
+    case: &BundleGoldenCase,
+    mode: BundleGoldenMode,
+) -> Result<(), String> {
+    let golden = render_bundle_golden(root, case)?;
+    match mode {
+        BundleGoldenMode::Check => check_golden_file(root, case.output, golden.as_bytes()),
+        BundleGoldenMode::Write => write_golden_file(&root.join(case.output), golden.as_bytes()),
+    }
+}
+
+fn render_bundle_golden(root: &Path, case: &BundleGoldenCase) -> Result<String, String> {
+    let input = bundle_golden_input(root, case)?;
+    let manifest = assemble_contract_bundle(input)
+        .map_err(|err| format!("assemble {} contract bundle: {err}", case.source))?;
+    Ok(format!(
+        "\
+# Edict contract bundle v0.11 digest golden
+# Generated by `cargo xtask bundle-goldens --write`.
+# Scope: semantic/release bundle digest preimage shape and digest values only.
+# Non-scope: canonical Target IR bytes and ContractBundleManifest bytes.
+
+source_fixture = {source}
+core_ir_coordinate = {core_ir_coordinate}
+source_artifact = {source_logical_path} {source_coordinate} {source_digest}
+source_profile_semantic_facts = {source_profile_coordinate} {source_profile_digest}
+target_profile = {target_profile_coordinate} {target_profile_digest}
+target_ir = {target_ir_coordinate} {target_ir_digest}
+lawpack = {lawpack_coordinate} {lawpack_digest}
+generated_artifact = {generated_coordinate} {generated_digest}
+compiler = {compiler_coordinate} {compiler_digest}
+lowerer = {lowerer_coordinate} {lowerer_digest}
+verifier = {verifier_coordinate} {verifier_digest}
+semantic_compile_options = {semantic_options_coordinate} {semantic_options_digest}
+non_semantic_compile_options = {nonsemantic_options_coordinate} {nonsemantic_options_digest}
+build_provenance = {build_provenance_coordinate} {build_provenance_digest}
+canonicalization_profile = {canonicalization_coordinate} {canonicalization_digest}
+conformance_fixture_corpus = {conformance_coordinate} {conformance_digest}
+verifier_report = {verifier_report_coordinate} {verifier_report_digest}
+compile_explanation = {compile_explanation_coordinate} {compile_explanation_digest}
+
+semantic_bundle_digest = {semantic_bundle_digest}
+release_bundle_digest = {release_bundle_digest}
+",
+        source = case.source,
+        core_ir_coordinate = BUNDLE_CORE_IR_COORDINATE,
+        source_logical_path = BUNDLE_SOURCE_LOGICAL_PATH,
+        source_coordinate = BUNDLE_SOURCE_COORDINATE,
+        source_digest = digest_text(BUNDLE_SOURCE_DIGEST),
+        source_profile_coordinate = BUNDLE_SOURCE_PROFILE_COORDINATE,
+        source_profile_digest = digest_text(BUNDLE_SOURCE_PROFILE_DIGEST),
+        target_profile_coordinate = BUNDLE_TARGET_PROFILE_COORDINATE,
+        target_profile_digest = digest_text(BUNDLE_TARGET_PROFILE_DIGEST),
+        target_ir_coordinate = BUNDLE_TARGET_IR_COORDINATE,
+        target_ir_digest = digest_text(BUNDLE_TARGET_IR_DIGEST),
+        lawpack_coordinate = BUNDLE_LAWPACK_COORDINATE,
+        lawpack_digest = digest_text(BUNDLE_LAWPACK_DIGEST),
+        generated_coordinate = BUNDLE_GENERATED_COORDINATE,
+        generated_digest = digest_text(BUNDLE_GENERATED_DIGEST),
+        compiler_coordinate = BUNDLE_COMPILER_COORDINATE,
+        compiler_digest = digest_text(BUNDLE_COMPILER_DIGEST),
+        lowerer_coordinate = BUNDLE_LOWERER_COORDINATE,
+        lowerer_digest = digest_text(BUNDLE_LOWERER_DIGEST),
+        verifier_coordinate = BUNDLE_VERIFIER_COORDINATE,
+        verifier_digest = digest_text(BUNDLE_VERIFIER_DIGEST),
+        semantic_options_coordinate = BUNDLE_SEMANTIC_OPTIONS_COORDINATE,
+        semantic_options_digest = digest_text(BUNDLE_SEMANTIC_OPTIONS_DIGEST),
+        nonsemantic_options_coordinate = BUNDLE_NONSEMANTIC_OPTIONS_COORDINATE,
+        nonsemantic_options_digest = digest_text(BUNDLE_NONSEMANTIC_OPTIONS_DIGEST),
+        build_provenance_coordinate = BUNDLE_BUILD_PROVENANCE_COORDINATE,
+        build_provenance_digest = digest_text(BUNDLE_BUILD_PROVENANCE_DIGEST),
+        canonicalization_coordinate = BUNDLE_CANONICALIZATION_COORDINATE,
+        canonicalization_digest = digest_text(BUNDLE_CANONICALIZATION_DIGEST),
+        conformance_coordinate = BUNDLE_CONFORMANCE_COORDINATE,
+        conformance_digest = digest_text(BUNDLE_CONFORMANCE_DIGEST),
+        verifier_report_coordinate = BUNDLE_VERIFIER_REPORT_COORDINATE,
+        verifier_report_digest = digest_text(BUNDLE_VERIFIER_REPORT_DIGEST),
+        compile_explanation_coordinate = BUNDLE_COMPILE_EXPLANATION_COORDINATE,
+        compile_explanation_digest = digest_text(BUNDLE_COMPILE_EXPLANATION_DIGEST),
+        semantic_bundle_digest = manifest.semantic_bundle_digest,
+        release_bundle_digest = manifest.release_bundle_digest,
+    ))
+}
+
+fn bundle_golden_input(
+    root: &Path,
+    case: &BundleGoldenCase,
+) -> Result<ContractBundleAssemblyInput, String> {
+    let source = read_to_string(&root.join(case.source))?;
+    let module = parse_module(&source).map_err(|err| format!("parse {}: {err}", case.source))?;
+    let core = compile_to_core(&module, &core_golden_context())
+        .map_err(|err| format!("compile {} to Core: {err:?}", case.source))?;
+    Ok(ContractBundleAssemblyInput {
+        core_module: core,
+        core_ir_coordinate: BUNDLE_CORE_IR_COORDINATE.to_owned(),
+        source_artifacts: vec![bundle_source_artifact(
+            BUNDLE_SOURCE_LOGICAL_PATH,
+            BUNDLE_SOURCE_COORDINATE,
+            BUNDLE_SOURCE_DIGEST,
+        )?],
+        source_profile_semantic_facts: bundle_resource(
+            BUNDLE_SOURCE_PROFILE_COORDINATE,
+            BUNDLE_SOURCE_PROFILE_DIGEST,
+        )?,
+        target_profile: bundle_resource(
+            BUNDLE_TARGET_PROFILE_COORDINATE,
+            BUNDLE_TARGET_PROFILE_DIGEST,
+        )?,
+        target_ir: bundle_target_ir(BUNDLE_TARGET_IR_COORDINATE, BUNDLE_TARGET_IR_DIGEST)?,
+        lawpacks: vec![bundle_resource(
+            BUNDLE_LAWPACK_COORDINATE,
+            BUNDLE_LAWPACK_DIGEST,
+        )?],
+        generated_artifacts: vec![bundle_resource(
+            BUNDLE_GENERATED_COORDINATE,
+            BUNDLE_GENERATED_DIGEST,
+        )?],
+        compiler: bundle_resource(BUNDLE_COMPILER_COORDINATE, BUNDLE_COMPILER_DIGEST)?,
+        lowerer: bundle_resource(BUNDLE_LOWERER_COORDINATE, BUNDLE_LOWERER_DIGEST)?,
+        verifier: bundle_resource(BUNDLE_VERIFIER_COORDINATE, BUNDLE_VERIFIER_DIGEST)?,
+        semantic_compile_options: bundle_resource(
+            BUNDLE_SEMANTIC_OPTIONS_COORDINATE,
+            BUNDLE_SEMANTIC_OPTIONS_DIGEST,
+        )?,
+        non_semantic_compile_options: bundle_resource(
+            BUNDLE_NONSEMANTIC_OPTIONS_COORDINATE,
+            BUNDLE_NONSEMANTIC_OPTIONS_DIGEST,
+        )?,
+        build_provenance: bundle_resource(
+            BUNDLE_BUILD_PROVENANCE_COORDINATE,
+            BUNDLE_BUILD_PROVENANCE_DIGEST,
+        )?,
+        canonicalization_profile: bundle_resource(
+            BUNDLE_CANONICALIZATION_COORDINATE,
+            BUNDLE_CANONICALIZATION_DIGEST,
+        )?,
+        conformance_fixture_corpora: vec![bundle_resource(
+            BUNDLE_CONFORMANCE_COORDINATE,
+            BUNDLE_CONFORMANCE_DIGEST,
+        )?],
+        verifier_report: bundle_resource(
+            BUNDLE_VERIFIER_REPORT_COORDINATE,
+            BUNDLE_VERIFIER_REPORT_DIGEST,
+        )?,
+        compile_explanation: bundle_resource(
+            BUNDLE_COMPILE_EXPLANATION_COORDINATE,
+            BUNDLE_COMPILE_EXPLANATION_DIGEST,
+        )?,
+        assurance_evidence: Vec::new(),
+    })
+}
+
+fn bundle_resource(coordinate: &str, hex: char) -> Result<DigestLockedResource, String> {
+    DigestLockedResource::new(coordinate, digest_text(hex)).map_err(|err| err.to_string())
+}
+
+fn bundle_target_ir(coordinate: &str, hex: char) -> Result<SuppliedTargetIrResource, String> {
+    SuppliedTargetIrResource::new(coordinate, digest_text(hex)).map_err(|err| err.to_string())
+}
+
+fn bundle_source_artifact(
+    logical_path: &str,
+    coordinate: &str,
+    hex: char,
+) -> Result<ContractBundleSourceArtifact, String> {
+    ContractBundleSourceArtifact::new(logical_path, coordinate, digest_text(hex))
+        .map_err(|err| err.to_string())
+}
+
+fn digest_text(hex: char) -> String {
+    format!("sha256:{}", hex.to_string().repeat(64))
+}
+
+fn check_golden_file(root: &Path, relative: &str, expected: &[u8]) -> Result<(), String> {
     let path = root.join(relative);
     let actual = fs::read(&path).map_err(|err| format!("read {}: {err}", path.display()))?;
     if actual == expected {
         Ok(())
     } else {
         Err(format!(
-            "{} does not match generated Core golden; run `cargo xtask core-goldens --write`",
+            "{} does not match generated golden; run the matching `cargo xtask *-goldens --write` command",
             path.display()
         ))
     }
 }
 
-fn write_core_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+fn write_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;
     }
@@ -645,7 +901,7 @@ mod tests {
     use regex::Regex;
     use serde_json::Value;
 
-    use super::{check_topic, contract_check, repo_root};
+    use super::{bundle_goldens, check_topic, contract_check, repo_root, BundleGoldenMode};
 
     fn toml_section(document: &str, header: &str) -> String {
         let start = document.find(header).expect("section header");
@@ -662,6 +918,12 @@ mod tests {
     #[test]
     fn contract_graph_is_valid() {
         contract_check(&repo_root().expect("repo root")).expect("contract graph is valid");
+    }
+
+    #[test]
+    fn bundle_digest_goldens_match_assembly() {
+        bundle_goldens(&repo_root().expect("repo root"), BundleGoldenMode::Check)
+            .expect("bundle digest goldens match assembly output");
     }
 
     #[test]

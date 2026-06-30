@@ -4,6 +4,8 @@
 //! kinds. They do not inspect diagnostic prose, serialized bytes, or repository
 //! layout.
 
+mod common;
+
 use edict_syntax::{
     validate_contract_bundle_manifest, AssuranceEvidenceRef, AssuranceRole, BundleSubject,
     BundleSubjectKind, ContractBundleManifest, ContractBundleValidationFailureKind,
@@ -356,4 +358,335 @@ fn admission_artifacts_are_rejected_from_contract_bundles() {
         failure_kinds(&report),
         vec![ContractBundleValidationFailureKind::AdmissionArtifactUnsupported]
     );
+}
+
+mod contract_bundle_assembly {
+    use super::{
+        common::bounded_hello_core, digest, digest_locked, failure_kinds, uppercase_digest,
+    };
+    use edict_syntax::{
+        assemble_contract_bundle, digest_core_module, AssuranceRole, BundleSubjectKind,
+        ContractBundleAssemblyErrorKind, ContractBundleAssemblyInput,
+        ContractBundleAssuranceEvidenceInput, ContractBundleSourceArtifact,
+        ContractBundleValidationFailureKind, ContractBundleValidationStatus, DigestLockedResource,
+        SuppliedTargetIrResource,
+    };
+
+    fn resource(coordinate: &str, hex: char) -> DigestLockedResource {
+        DigestLockedResource::new(coordinate, digest(hex)).expect("digest-locked resource")
+    }
+
+    fn target_ir(coordinate: &str, hex: char) -> SuppliedTargetIrResource {
+        SuppliedTargetIrResource::new(coordinate, digest(hex))
+            .expect("digest-locked target IR resource")
+    }
+
+    fn source_artifact(
+        logical_path: &str,
+        coordinate: &str,
+        hex: char,
+    ) -> ContractBundleSourceArtifact {
+        ContractBundleSourceArtifact::new(logical_path, coordinate, digest(hex))
+            .expect("source artifact descriptor")
+    }
+
+    fn assurance(role: AssuranceRole, hex: char) -> ContractBundleAssuranceEvidenceInput {
+        ContractBundleAssuranceEvidenceInput::new(
+            role,
+            BundleSubjectKind::Semantic,
+            "holmes.bundle-report/v1",
+            digest(hex),
+        )
+        .expect("assurance evidence input")
+    }
+
+    fn assembly_input() -> ContractBundleAssemblyInput {
+        ContractBundleAssemblyInput {
+            core_module: bounded_hello_core(),
+            core_ir_coordinate: "edict.core.bounded-hello/v1".to_owned(),
+            source_artifacts: vec![source_artifact(
+                "contracts/hello.edict",
+                "source.contracts.hello",
+                'e',
+            )],
+            source_profile_semantic_facts: resource("source-profile.hello/v1", 'f'),
+            target_profile: resource("echo.dpo@1", 'c'),
+            target_ir: target_ir("echo.span-ir/v1", 'd'),
+            lawpacks: vec![resource("hello.optics@1", '2')],
+            generated_artifacts: vec![resource("echo.dpo.registration/v1", '3')],
+            compiler: resource("edict.compiler/v1", '4'),
+            lowerer: resource("echo.dpo.lowerer/v1", '5'),
+            verifier: resource("echo.dpo.verifier/v1", '6'),
+            semantic_compile_options: resource("edict.compile-options.semantic/v1", '7'),
+            non_semantic_compile_options: resource("edict.compile-options.nonsemantic/v1", '8'),
+            build_provenance: resource("edict.build-provenance/v1", '9'),
+            canonicalization_profile: resource("edict.canonical-cbor/v1", '8'),
+            conformance_fixture_corpora: vec![resource("echo.dpo.fixtures/v1", '9')],
+            verifier_report: resource("echo.dpo.verifier-report/v1", 'a'),
+            compile_explanation: resource("watson.compile-explanation/v1", 'b'),
+            assurance_evidence: Vec::new(),
+        }
+    }
+
+    fn assembled(input: ContractBundleAssemblyInput) -> edict_syntax::ContractBundleManifest {
+        assemble_contract_bundle(input).expect("bundle assembles")
+    }
+
+    fn assert_valid(manifest: &edict_syntax::ContractBundleManifest) {
+        let report = edict_syntax::validate_contract_bundle_manifest(manifest);
+        assert_eq!(report.status, ContractBundleValidationStatus::Valid);
+        assert!(report.failures.is_empty());
+    }
+
+    fn assert_semantic_mutation_changes(
+        label: &str,
+        mutate: impl FnOnce(&mut ContractBundleAssemblyInput),
+    ) {
+        let baseline = assembled(assembly_input());
+        let mut input = assembly_input();
+        mutate(&mut input);
+        let changed = assembled(input);
+
+        assert_ne!(
+            baseline.semantic_bundle_digest, changed.semantic_bundle_digest,
+            "{label}: semantic digest"
+        );
+        assert_ne!(
+            baseline.release_bundle_digest, changed.release_bundle_digest,
+            "{label}: release digest"
+        );
+    }
+
+    fn assert_release_only_mutation_changes(
+        label: &str,
+        mutate: impl FnOnce(&mut ContractBundleAssemblyInput),
+    ) {
+        let baseline = assembled(assembly_input());
+        let mut input = assembly_input();
+        mutate(&mut input);
+        let changed = assembled(input);
+
+        assert_eq!(
+            baseline.semantic_bundle_digest, changed.semantic_bundle_digest,
+            "{label}: semantic digest"
+        );
+        assert_ne!(
+            baseline.release_bundle_digest, changed.release_bundle_digest,
+            "{label}: release digest"
+        );
+    }
+
+    #[test]
+    fn assembled_bundle_from_real_core_validates() {
+        let input = assembly_input();
+        let expected_core_digest = digest_core_module(&input.core_module)
+            .expect("Core module digests")
+            .to_review_string();
+
+        let manifest = assembled(input);
+
+        assert_eq!(
+            manifest.core_ir.digest.as_deref(),
+            Some(expected_core_digest.as_str())
+        );
+        assert_eq!(manifest.admission_artifacts, Vec::new());
+        assert_valid(&manifest);
+    }
+
+    #[test]
+    fn assembly_rejects_uppercase_supplied_target_ir_digest() {
+        let err = SuppliedTargetIrResource::new("echo.span-ir/v1", uppercase_digest())
+            .expect_err("uppercase target IR digest is rejected");
+
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidDigest);
+    }
+
+    #[test]
+    fn assembly_rejects_uppercase_supplied_artifact_digest() {
+        let err = DigestLockedResource::new("echo.dpo@1", uppercase_digest())
+            .expect_err("uppercase artifact digest is rejected");
+
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidDigest);
+    }
+
+    #[test]
+    fn assembly_rejects_inputs_that_would_not_validate() {
+        let mut empty_sources = assembly_input();
+        empty_sources.source_artifacts.clear();
+        let err = assemble_contract_bundle(empty_sources)
+            .expect_err("empty assembled source artifact set is rejected");
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidManifest);
+        assert_eq!(err.field(), "source_artifacts");
+
+        let mut unsupported_canonicalization = assembly_input();
+        unsupported_canonicalization.canonicalization_profile =
+            resource("edict.custom-cbor/v1", '8');
+        let err = assemble_contract_bundle(unsupported_canonicalization)
+            .expect_err("unsupported assembled canonicalization profile is rejected");
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidManifest);
+        assert_eq!(err.field(), "canonicalization_profile");
+    }
+
+    #[test]
+    fn target_ir_digest_is_single_source_of_truth() {
+        let supplied_target_ir_digest = digest('d');
+        let manifest = assembled(assembly_input());
+
+        assert_eq!(
+            manifest.target_ir.digest.as_deref(),
+            Some(supplied_target_ir_digest.as_str())
+        );
+
+        let baseline = manifest;
+        let mut changed_input = assembly_input();
+        changed_input.target_ir = target_ir("echo.span-ir/v1", 'e');
+        let changed = assembled(changed_input);
+
+        assert_ne!(
+            baseline.semantic_bundle_digest, changed.semantic_bundle_digest,
+            "target IR supplied digest moves semantic digest"
+        );
+        assert_ne!(
+            baseline.release_bundle_digest, changed.release_bundle_digest,
+            "target IR supplied digest moves release digest"
+        );
+    }
+
+    #[test]
+    fn semantic_preimage_mutations_change_semantic_and_release_digests() {
+        assert_semantic_mutation_changes("Core semantic change", |input| {
+            input
+                .core_module
+                .intents
+                .get_mut("sayHello")
+                .expect("intent exists")
+                .core_evaluation_budget
+                .max_steps += 1;
+        });
+        assert_semantic_mutation_changes("target IR digest", |input| {
+            input.target_ir = target_ir("echo.span-ir/v1", 'e');
+        });
+        assert_semantic_mutation_changes("target profile digest", |input| {
+            input.target_profile = resource("echo.dpo@1", 'e');
+        });
+        assert_semantic_mutation_changes("lawpack digest", |input| {
+            input.lawpacks[0] = resource("hello.optics@1", 'e');
+        });
+        assert_semantic_mutation_changes("source profile semantic facts digest", |input| {
+            input.source_profile_semantic_facts = resource("source-profile.hello/v1", 'e');
+        });
+        assert_semantic_mutation_changes("generated artifact digest", |input| {
+            input.generated_artifacts[0] = resource("echo.dpo.registration/v1", 'e');
+        });
+        assert_semantic_mutation_changes("canonicalization profile digest", |input| {
+            input.canonicalization_profile = resource("edict.canonical-cbor/v1", 'e');
+        });
+        assert_semantic_mutation_changes("semantic compile options digest", |input| {
+            input.semantic_compile_options = resource("edict.compile-options.semantic/v1", 'e');
+        });
+        assert_semantic_mutation_changes("conformance fixture corpus digest", |input| {
+            input.conformance_fixture_corpora[0] = resource("echo.dpo.fixtures/v1", 'e');
+        });
+        assert_semantic_mutation_changes("verifier report digest", |input| {
+            input.verifier_report = resource("echo.dpo.verifier-report/v1", 'e');
+        });
+    }
+
+    #[test]
+    fn release_only_preimage_mutations_leave_semantic_digest_unchanged() {
+        assert_release_only_mutation_changes("source artifact digest", |input| {
+            input.source_artifacts[0] =
+                source_artifact("contracts/hello.edict", "source.contracts.hello", 'f');
+        });
+        assert_release_only_mutation_changes("source logical path", |input| {
+            input.source_artifacts[0] =
+                source_artifact("contracts/renamed.edict", "source.contracts.hello", 'e');
+        });
+        assert_release_only_mutation_changes("compiler coordinate", |input| {
+            input.compiler = resource("edict.compiler-alt/v1", '4');
+        });
+        assert_release_only_mutation_changes("compiler digest", |input| {
+            input.compiler = resource("edict.compiler/v1", 'f');
+        });
+        assert_release_only_mutation_changes("lowerer coordinate", |input| {
+            input.lowerer = resource("echo.dpo.lowerer-alt/v1", '5');
+        });
+        assert_release_only_mutation_changes("verifier coordinate", |input| {
+            input.verifier = resource("echo.dpo.verifier-alt/v1", '6');
+        });
+        assert_release_only_mutation_changes("nonsemantic compile options digest", |input| {
+            input.non_semantic_compile_options =
+                resource("edict.compile-options.nonsemantic/v1", 'f');
+        });
+        assert_release_only_mutation_changes("build provenance digest", |input| {
+            input.build_provenance = resource("edict.build-provenance/v1", 'f');
+        });
+        assert_release_only_mutation_changes("compile explanation digest", |input| {
+            input.compile_explanation = resource("watson.compile-explanation/v1", 'f');
+        });
+    }
+
+    #[test]
+    fn optional_assurance_evidence_is_not_a_top_level_digest_preimage() {
+        let baseline = assembled(assembly_input());
+
+        let mut with_holmes = assembly_input();
+        with_holmes.assurance_evidence = vec![assurance(AssuranceRole::Holmes, '1')];
+        let holmes = assembled(with_holmes);
+        assert_valid(&holmes);
+
+        let mut changed_holmes = assembly_input();
+        changed_holmes.assurance_evidence = vec![assurance(AssuranceRole::Holmes, '2')];
+        let changed_holmes = assembled(changed_holmes);
+        assert_valid(&changed_holmes);
+
+        assert_eq!(
+            baseline.semantic_bundle_digest,
+            holmes.semantic_bundle_digest
+        );
+        assert_eq!(baseline.release_bundle_digest, holmes.release_bundle_digest);
+        assert_eq!(
+            holmes.semantic_bundle_digest,
+            changed_holmes.semantic_bundle_digest
+        );
+        assert_eq!(
+            holmes.release_bundle_digest,
+            changed_holmes.release_bundle_digest
+        );
+
+        let mut subject_mismatch = holmes.clone();
+        subject_mismatch.assurance_evidence[0].subject.digest = digest('f');
+        let report = edict_syntax::validate_contract_bundle_manifest(&subject_mismatch);
+        assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
+        assert_eq!(
+            failure_kinds(&report),
+            vec![ContractBundleValidationFailureKind::AssuranceSubjectMismatch]
+        );
+
+        let mut target_mismatch = holmes;
+        target_mismatch.assurance_evidence[0].target_ir_digest = digest('f');
+        let report = edict_syntax::validate_contract_bundle_manifest(&target_mismatch);
+        assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
+        assert_eq!(
+            failure_kinds(&report),
+            vec![ContractBundleValidationFailureKind::AssuranceTargetIrMismatch]
+        );
+    }
+
+    #[test]
+    fn assembled_bundle_rejects_inserted_admission_artifacts() {
+        let mut manifest = assembled(assembly_input());
+        assert!(manifest.admission_artifacts.is_empty());
+
+        manifest
+            .admission_artifacts
+            .push(digest_locked("continuum.admission-receipt/v1", 'f'));
+        let report = edict_syntax::validate_contract_bundle_manifest(&manifest);
+
+        assert_eq!(report.status, ContractBundleValidationStatus::Invalid);
+        assert_eq!(
+            failure_kinds(&report),
+            vec![ContractBundleValidationFailureKind::AdmissionArtifactUnsupported]
+        );
+    }
 }

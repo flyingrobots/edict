@@ -28,6 +28,15 @@ versions still track specification maturity rather than a released product.
   usage summary, accepted request schemas, and exit-code contract) and exit 0.
   The new record family has a checked-in JSON Schema and contract-guard test
   (`CLI-REQ-009`, `CLI-TP-012`..`CLI-TP-014`).
+- Contract bundle assembly now builds `ContractBundleManifest` values from a
+  real `CoreModule` plus supplied digest-locked references, computes the
+  semantic and release bundle digests with the v0.11 preimage order, validates
+  the assembled manifest before returning it, rejects assembly inputs that would
+  produce invalid required bundle structure, and checks a reviewed
+  semantic/release digest golden through `cargo xtask bundle-goldens --check`.
+  The low-level bundle preimage helper also rejects invalid machine-local source
+  paths before hashing. This freezes bundle preimage/digest values only;
+  canonical Target IR bytes remain tracked by #105.
 
 ### Changed
 
