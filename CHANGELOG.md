@@ -8,7 +8,11 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- Marked `v0.11.0-alpha.1` as published in the release-process contract and
+  release notes, recording the immutable tag, workflow evidence, milestone
+  closure, release URL, and no-crates publication evidence.
 
 ## [v0.11.0-alpha.1] - 2026-11-04
 

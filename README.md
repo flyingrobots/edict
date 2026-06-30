@@ -654,9 +654,9 @@ published `v0.8.0-alpha.1` release covers one minimal effectful source-to-Core
 path. The published `v0.9.0-alpha.1` release covers the first Echo and git-warp
 target-owned IR review artifacts. The published `v0.10.0-alpha.1` release covers
 the first public JSONL `edict` CLI and its structured-diagnostics contract. The
-`v0.11.0-alpha.1` release prep covers contract-bundle assembly and canonical
-Target IR artifact byte/digest goldens before the train moves through admission
-workflow harnessing, trusted fact authorship, publication policy, and
+published `v0.11.0-alpha.1` release covers contract-bundle assembly and
+canonical Target IR artifact byte/digest goldens before the train moves through
+admission workflow harnessing, trusted fact authorship, publication policy, and
 language-server diagnostics.
 None of the published releases claims target-runtime execution, full admission
 execution tooling, or trusted fact governance.

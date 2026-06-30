@@ -440,7 +440,7 @@ Non-goals:
 
 Target date: 2026-11-04
 
-Status: release prep
+Status: published
 
 Milestone: `v0.11.0-alpha.1` (#12)
 
