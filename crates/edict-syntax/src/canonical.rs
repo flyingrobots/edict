@@ -1212,6 +1212,18 @@ mod bundle_layer_digest_tests {
     }
 
     #[test]
+    fn resource_preimage_shape_matches_checked_digest() {
+        let compiler = resource("compiler.a@1", A);
+        let digest = digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&compiler)])
+            .expect("digest");
+
+        assert_eq!(
+            digest.to_review_string(),
+            "sha256:affd17f8c86b66b0109d6ae373cb35888be8138f56df109ae21445284267bd1b"
+        );
+    }
+
+    #[test]
     fn resource_without_digest_is_rejected() {
         // Hash-significant bundle references must be digest-locked; a missing
         // digest is an error, not a silently-distinct preimage.
