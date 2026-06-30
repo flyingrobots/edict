@@ -182,17 +182,95 @@ pub const BUNDLE_SEMANTIC_DIGEST_DOMAIN: &str = "edict.bundle.semantic/v1";
 /// Digest domain for a contract bundle's `releaseBundleDigest`.
 pub const BUNDLE_RELEASE_DIGEST_DOMAIN: &str = "edict.bundle.release/v1";
 
+/// The two contract-bundle digest layers. Using a typed domain instead of an
+/// arbitrary string keeps the preimage frame honest: only the two defined
+/// bundle layers can be requested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BundleDigestDomain {
+    /// `edict.bundle.semantic/v1` — executable semantics.
+    Semantic,
+    /// `edict.bundle.release/v1` — semantics plus source provenance and toolchain.
+    Release,
+}
+
+impl BundleDigestDomain {
+    /// Return the spec domain label this layer frames its preimage under.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            BundleDigestDomain::Semantic => BUNDLE_SEMANTIC_DIGEST_DOMAIN,
+            BundleDigestDomain::Release => BUNDLE_RELEASE_DIGEST_DOMAIN,
+        }
+    }
+}
+
+/// A source artifact descriptor inside a release bundle preimage: a logical,
+/// package-relative path bound together with its digest-locked artifact.
+#[derive(Debug, Clone, Copy)]
+pub struct BundleSourceDescriptor<'a> {
+    /// The logical, package-relative source path (bundle provenance).
+    pub logical_path: &'a str,
+    /// The digest-locked source artifact reference.
+    pub artifact: &'a ResourceRef,
+}
+
 /// One ordered component of a contract-bundle digest preimage.
 ///
-/// A component is either a single digest reference or an ordered list of digest
-/// references (for layers like lawpacks, generated artifacts, or conformance
-/// fixture corpora that bind several digests).
+/// Structure is part of the byte-level contract. A bare digest binds only its
+/// hash; a [`Resource`](BundlePreimageComponent::Resource) binds its
+/// `coordinate` (identity) *and* digest; a
+/// [`SourceArtifacts`](BundlePreimageComponent::SourceArtifacts) component binds
+/// each logical source path. This is what lets the release layer detect a
+/// logical-path or toolchain-coordinate change even when the digest bytes are
+/// unchanged.
 #[derive(Debug, Clone, Copy)]
-pub enum BundleDigestComponent<'a> {
+pub enum BundlePreimageComponent<'a> {
     /// A single `sha256:<hex>` review digest.
-    Single(&'a str),
+    Digest(&'a str),
     /// An ordered list of `sha256:<hex>` review digests.
-    List(&'a [String]),
+    DigestList(&'a [String]),
+    /// A digest-locked resource reference binding coordinate and digest.
+    Resource(&'a ResourceRef),
+    /// An ordered list of digest-locked resource references.
+    ResourceList(&'a [ResourceRef]),
+    /// An ordered list of source artifact descriptors (logical path + artifact).
+    SourceArtifacts(&'a [BundleSourceDescriptor<'a>]),
+}
+
+/// Encode one preimage component into its canonical value. Resource references
+/// reuse the established `{id, digest}` encoding (which requires a digest-locked
+/// resource), so a coordinate change moves the digest even when the digest bytes
+/// are unchanged, and a missing digest is rejected.
+fn bundle_component_value(
+    component: &BundlePreimageComponent,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(match component {
+        BundlePreimageComponent::Digest(digest) => digest_value(digest)?,
+        BundlePreimageComponent::DigestList(digests) => CanonicalValue::Array(
+            digests
+                .iter()
+                .map(|digest| digest_value(digest))
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        BundlePreimageComponent::Resource(resource) => resource_ref_value(resource)?,
+        BundlePreimageComponent::ResourceList(resources) => CanonicalValue::Array(
+            resources
+                .iter()
+                .map(resource_ref_value)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        BundlePreimageComponent::SourceArtifacts(descriptors) => CanonicalValue::Array(
+            descriptors
+                .iter()
+                .map(|descriptor| {
+                    Ok(CanonicalValue::Array(vec![
+                        text(descriptor.logical_path),
+                        resource_ref_value(descriptor.artifact)?,
+                    ]))
+                })
+                .collect::<Result<Vec<_>, CanonicalError>>()?,
+        ),
+    })
 }
 
 /// Compute a contract-bundle layer digest over its ordered preimage components.
@@ -203,35 +281,27 @@ pub enum BundleDigestComponent<'a> {
 /// ["edict.digest/v1", "<domain>", [<typed component values>]]
 /// ```
 ///
-/// Each `sha256:<hex>` review digest is parsed into the authoritative typed
-/// value `["sha256", <32 raw bytes>]`; list components encode as a nested array
-/// of those typed values. Review strings are never hashed directly. `domain` is
-/// [`BUNDLE_SEMANTIC_DIGEST_DOMAIN`] or [`BUNDLE_RELEASE_DIGEST_DOMAIN`].
+/// `<domain>` is [`BundleDigestDomain::label`]. Each `sha256:<hex>` review
+/// digest is parsed into the authoritative typed value `["sha256", <32 raw
+/// bytes>]`; resource references encode as `[coordinate, digest|null]`; source
+/// descriptors encode as `[logical_path, [coordinate, digest|null]]`. Review
+/// strings are never hashed directly.
 ///
 /// # Errors
 ///
 /// Returns an error if any component digest is not a valid `sha256:<64 hex>`
 /// review rendering.
 pub fn digest_bundle_layer(
-    domain: &str,
-    components: &[BundleDigestComponent],
+    domain: BundleDigestDomain,
+    components: &[BundlePreimageComponent],
 ) -> Result<CoreDigest, CanonicalError> {
     let mut payload = Vec::with_capacity(components.len());
     for component in components {
-        match component {
-            BundleDigestComponent::Single(digest) => payload.push(digest_value(digest)?),
-            BundleDigestComponent::List(digests) => {
-                let items = digests
-                    .iter()
-                    .map(|digest| digest_value(digest))
-                    .collect::<Result<Vec<_>, _>>()?;
-                payload.push(CanonicalValue::Array(items));
-            }
-        }
+        payload.push(bundle_component_value(component)?);
     }
     let framed = CanonicalValue::Array(vec![
         text(CORE_DIGEST_FRAME),
-        text(domain),
+        text(domain.label()),
         CanonicalValue::Array(payload),
     ]);
     let preimage = encode_canonical_cbor(&framed)?;
@@ -971,56 +1041,56 @@ impl<'a> Decoder<'a> {
 
 #[cfg(test)]
 mod bundle_layer_digest_tests {
-    use super::{digest_bundle_layer, BundleDigestComponent, BUNDLE_SEMANTIC_DIGEST_DOMAIN};
+    use super::{
+        digest_bundle_layer, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
+    };
+    use crate::core_ir::ResourceRef;
 
     const A: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
     const B: &str = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+    const SEM: BundleDigestDomain = BundleDigestDomain::Semantic;
+
+    fn resource(coordinate: &str, digest: &str) -> ResourceRef {
+        ResourceRef {
+            coordinate: coordinate.to_owned(),
+            digest: Some(digest.to_owned()),
+        }
+    }
 
     #[test]
     fn invalid_digest_review_string_is_rejected() {
-        assert!(digest_bundle_layer(
-            BUNDLE_SEMANTIC_DIGEST_DOMAIN,
-            &[BundleDigestComponent::Single("not-a-digest")],
-        )
-        .is_err());
+        assert!(
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::Digest("not-a-digest")]).is_err()
+        );
     }
 
     #[test]
     fn digest_is_deterministic() {
-        let one = digest_bundle_layer(
-            BUNDLE_SEMANTIC_DIGEST_DOMAIN,
-            &[
-                BundleDigestComponent::Single(A),
-                BundleDigestComponent::Single(B),
-            ],
-        )
-        .expect("digest");
-        let two = digest_bundle_layer(
-            BUNDLE_SEMANTIC_DIGEST_DOMAIN,
-            &[
-                BundleDigestComponent::Single(A),
-                BundleDigestComponent::Single(B),
-            ],
-        )
-        .expect("digest");
-        assert_eq!(one, two);
+        let components = [
+            BundlePreimageComponent::Digest(A),
+            BundlePreimageComponent::Digest(B),
+        ];
+        assert_eq!(
+            digest_bundle_layer(SEM, &components).expect("digest"),
+            digest_bundle_layer(SEM, &components).expect("digest"),
+        );
     }
 
     #[test]
     fn component_order_changes_the_digest() {
         let forward = digest_bundle_layer(
-            BUNDLE_SEMANTIC_DIGEST_DOMAIN,
+            SEM,
             &[
-                BundleDigestComponent::Single(A),
-                BundleDigestComponent::Single(B),
+                BundlePreimageComponent::Digest(A),
+                BundlePreimageComponent::Digest(B),
             ],
         )
         .expect("digest");
         let swapped = digest_bundle_layer(
-            BUNDLE_SEMANTIC_DIGEST_DOMAIN,
+            SEM,
             &[
-                BundleDigestComponent::Single(B),
-                BundleDigestComponent::Single(A),
+                BundlePreimageComponent::Digest(B),
+                BundlePreimageComponent::Digest(A),
             ],
         )
         .expect("digest");
@@ -1028,22 +1098,79 @@ mod bundle_layer_digest_tests {
     }
 
     #[test]
+    fn domain_separates_semantic_from_release() {
+        let component = [BundlePreimageComponent::Digest(A)];
+        assert_ne!(
+            digest_bundle_layer(BundleDigestDomain::Semantic, &component).expect("digest"),
+            digest_bundle_layer(BundleDigestDomain::Release, &component).expect("digest"),
+        );
+    }
+
+    #[test]
     fn list_structure_is_distinct_from_flattened_singles() {
-        // [List([A, B])] must not collide with [Single(A), Single(B)]: the
+        // [DigestList([A, B])] must not collide with [Digest(A), Digest(B)]: the
         // nesting is part of the byte-level contract.
         let nested = digest_bundle_layer(
-            BUNDLE_SEMANTIC_DIGEST_DOMAIN,
-            &[BundleDigestComponent::List(&[A.to_owned(), B.to_owned()])],
+            SEM,
+            &[BundlePreimageComponent::DigestList(&[
+                A.to_owned(),
+                B.to_owned(),
+            ])],
         )
         .expect("digest");
         let flat = digest_bundle_layer(
-            BUNDLE_SEMANTIC_DIGEST_DOMAIN,
+            SEM,
             &[
-                BundleDigestComponent::Single(A),
-                BundleDigestComponent::Single(B),
+                BundlePreimageComponent::Digest(A),
+                BundlePreimageComponent::Digest(B),
             ],
         )
         .expect("digest");
         assert_ne!(nested, flat);
+    }
+
+    #[test]
+    fn resource_coordinate_change_moves_digest_with_same_digest() {
+        // The whole point of binding the coordinate: a toolchain identity change
+        // (compiler/lowerer/verifier coordinate) with the same artifact digest
+        // must still move the bundle digest.
+        let one = resource("compiler.a@1", A);
+        let two = resource("compiler.b@1", A);
+        assert_ne!(
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&one)]).expect("digest"),
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&two)]).expect("digest"),
+        );
+    }
+
+    #[test]
+    fn resource_without_digest_is_rejected() {
+        // Hash-significant bundle references must be digest-locked; a missing
+        // digest is an error, not a silently-distinct preimage.
+        let without = ResourceRef {
+            coordinate: "compiler.a@1".to_owned(),
+            digest: None,
+        };
+        assert!(digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&without)]).is_err());
+    }
+
+    #[test]
+    fn source_logical_path_change_moves_digest_with_same_artifact() {
+        // Provenance: a logical source path change must move the (release) bundle
+        // digest even when the source artifact digest is unchanged.
+        let artifact = resource("src", A);
+        let first = [BundleSourceDescriptor {
+            logical_path: "a/main.edict",
+            artifact: &artifact,
+        }];
+        let second = [BundleSourceDescriptor {
+            logical_path: "b/main.edict",
+            artifact: &artifact,
+        }];
+        assert_ne!(
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::SourceArtifacts(&first)])
+                .expect("digest"),
+            digest_bundle_layer(SEM, &[BundlePreimageComponent::SourceArtifacts(&second)])
+                .expect("digest"),
+        );
     }
 }

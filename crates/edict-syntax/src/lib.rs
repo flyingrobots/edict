@@ -93,9 +93,10 @@ pub use authority_facts::{
 };
 pub use canonical::{
     decode_canonical_cbor, digest_bundle_layer, digest_core_module, encode_canonical_cbor,
-    encode_core_module, BundleDigestComponent, CanonicalError, CanonicalErrorKind, CanonicalValue,
-    CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN, BUNDLE_SEMANTIC_DIGEST_DOMAIN,
-    CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN,
+    encode_core_module, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
+    CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN,
+    BUNDLE_SEMANTIC_DIGEST_DOMAIN, CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME,
+    CORE_MODULE_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
