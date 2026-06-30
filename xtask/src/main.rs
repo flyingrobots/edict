@@ -3411,6 +3411,24 @@ fn run() {}
     }
 
     #[test]
+    fn roadmap_records_v0_11_published_release_artifacts() {
+        let root = repo_root().expect("repo root");
+        let roadmap = fs::read_to_string(root.join("ROADMAP.md")).expect("roadmap");
+        assert!(
+            roadmap.contains(
+                "Release: <https://github.com/flyingrobots/edict/releases/tag/v0.11.0-alpha.1>"
+            ),
+            "ROADMAP v0.11 section must include the published release URL"
+        );
+        assert!(
+            roadmap.contains(
+                "Tag: `v0.11.0-alpha.1` peels to\n`3eb71f6127e31b68ea4e0bb766623930ce24ae46`."
+            ),
+            "ROADMAP v0.11 section must include the peeled tag commit"
+        );
+    }
+
+    #[test]
     fn alpha_changelog_dates_match_release_policy() {
         let root = repo_root().expect("repo root");
         let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
