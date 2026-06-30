@@ -245,18 +245,18 @@ fn bundle_component_value(
     component: &BundlePreimageComponent,
 ) -> Result<CanonicalValue, CanonicalError> {
     Ok(match component {
-        BundlePreimageComponent::Digest(digest) => digest_value(digest)?,
+        BundlePreimageComponent::Digest(digest) => bundle_digest_value(digest)?,
         BundlePreimageComponent::DigestList(digests) => CanonicalValue::Array(
             digests
                 .iter()
-                .map(|digest| digest_value(digest))
+                .map(|digest| bundle_digest_value(digest))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
-        BundlePreimageComponent::Resource(resource) => resource_ref_value(resource)?,
+        BundlePreimageComponent::Resource(resource) => bundle_resource_ref_value(resource)?,
         BundlePreimageComponent::ResourceList(resources) => CanonicalValue::Array(
             resources
                 .iter()
-                .map(resource_ref_value)
+                .map(bundle_resource_ref_value)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         BundlePreimageComponent::SourceArtifacts(descriptors) => CanonicalValue::Array(
@@ -265,12 +265,51 @@ fn bundle_component_value(
                 .map(|descriptor| {
                     Ok(CanonicalValue::Array(vec![
                         text(descriptor.logical_path),
-                        resource_ref_value(descriptor.artifact)?,
+                        bundle_resource_ref_value(descriptor.artifact)?,
                     ]))
                 })
                 .collect::<Result<Vec<_>, CanonicalError>>()?,
         ),
     })
+}
+
+fn bundle_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
+    if resource.coordinate.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "bundle resource coordinate is empty",
+        ));
+    }
+    let Some(digest) = &resource.digest else {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnresolvedDigest,
+            "bundle resource digest is unresolved",
+        ));
+    };
+    Ok(map([
+        ("id", text(&resource.coordinate)),
+        ("digest", bundle_digest_value(digest)?),
+    ]))
+}
+
+fn bundle_digest_value(digest: &str) -> Result<CanonicalValue, CanonicalError> {
+    if !is_lowercase_sha256_review_digest(digest) {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::InvalidDigest,
+            "bundle digest must use sha256:<64 lowercase hex> review rendering",
+        ));
+    }
+    digest_value(digest)
+}
+
+fn is_lowercase_sha256_review_digest(digest: &str) -> bool {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 /// Compute a contract-bundle layer digest over its ordered preimage components.
@@ -289,8 +328,8 @@ fn bundle_component_value(
 ///
 /// # Errors
 ///
-/// Returns an error if any component digest is not a valid `sha256:<64 hex>`
-/// review rendering.
+/// Returns an error if any component digest is not a strict
+/// `sha256:<64 lowercase hex>` review rendering.
 pub fn digest_bundle_layer(
     domain: BundleDigestDomain,
     components: &[BundlePreimageComponent],
@@ -1062,6 +1101,19 @@ mod bundle_layer_digest_tests {
         assert!(
             digest_bundle_layer(SEM, &[BundlePreimageComponent::Digest("not-a-digest")]).is_err()
         );
+    }
+
+    #[test]
+    fn uppercase_bundle_digest_review_string_is_rejected() {
+        let uppercase = "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+        let uppercase_resource = resource("compiler.a@1", uppercase);
+
+        assert!(digest_bundle_layer(SEM, &[BundlePreimageComponent::Digest(uppercase)]).is_err());
+        assert!(digest_bundle_layer(
+            SEM,
+            &[BundlePreimageComponent::Resource(&uppercase_resource)]
+        )
+        .is_err());
     }
 
     #[test]

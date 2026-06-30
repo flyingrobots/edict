@@ -104,10 +104,13 @@ pub use compiler::{
     TypedIntent, TypedModule,
 };
 pub use contract_bundle::{
-    validate_contract_bundle_manifest, AssuranceEvidenceRef, AssuranceRole, BundleSubject,
-    BundleSubjectKind, ContractBundleManifest, ContractBundleValidationFailure,
-    ContractBundleValidationFailureKind, ContractBundleValidationReport,
-    ContractBundleValidationStatus, SourceArtifactRef, CONTRACT_BUNDLE_API_VERSION,
+    assemble_contract_bundle, validate_contract_bundle_manifest, AssuranceEvidenceRef,
+    AssuranceRole, BundleSubject, BundleSubjectKind, ContractBundleAssemblyError,
+    ContractBundleAssemblyErrorKind, ContractBundleAssemblyInput,
+    ContractBundleAssuranceEvidenceInput, ContractBundleManifest, ContractBundleSourceArtifact,
+    ContractBundleValidationFailure, ContractBundleValidationFailureKind,
+    ContractBundleValidationReport, ContractBundleValidationStatus, DigestLockedResource,
+    SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,

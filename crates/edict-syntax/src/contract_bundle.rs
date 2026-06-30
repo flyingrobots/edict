@@ -1,13 +1,346 @@
-//! Typed v1 contract bundle and assurance manifest checks.
+//! Typed v1 contract bundle assembly, validation, and assurance manifest checks.
 //!
 //! This module models the participant-neutral bundle boundary after Core and
-//! target lowering have produced hash-addressed artifacts. It does not recompute
-//! bundle digests, load files, run target verifiers, or perform admission.
+//! target lowering have produced hash-addressed artifacts. It can assemble a
+//! manifest from digest-locked references and a real Core module. It does not
+//! canonicalize target IR bytes, load files, run target verifiers, or perform
+//! admission.
 
-use crate::{core_ir::ResourceRef, target_profile::CANONICAL_CBOR_ABI};
+use std::fmt;
+
+use crate::{
+    canonical::{
+        digest_bundle_layer, digest_core_module, BundleDigestDomain, BundlePreimageComponent,
+        BundleSourceDescriptor, CanonicalError,
+    },
+    core_ir::{CoreModule, ResourceRef},
+    target_profile::CANONICAL_CBOR_ABI,
+};
 
 /// Contract bundle manifest ABI supported by this crate.
 pub const CONTRACT_BUNDLE_API_VERSION: &str = "edict.contract-bundle/v1";
+
+/// Stable error categories returned while assembling a contract bundle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractBundleAssemblyErrorKind {
+    InvalidDigest,
+    EmptyCoordinate,
+    InvalidSourcePath,
+    CanonicalDigest,
+}
+
+/// Assembly failure with stable kind plus field context.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractBundleAssemblyError {
+    kind: ContractBundleAssemblyErrorKind,
+    field: String,
+    message: String,
+}
+
+impl ContractBundleAssemblyError {
+    fn new(
+        kind: ContractBundleAssemblyErrorKind,
+        field: impl Into<String>,
+        message: impl Into<String>,
+    ) -> Self {
+        Self {
+            kind,
+            field: field.into(),
+            message: message.into(),
+        }
+    }
+
+    fn invalid_digest(field: impl Into<String>) -> Self {
+        Self::new(
+            ContractBundleAssemblyErrorKind::InvalidDigest,
+            field,
+            "sha256:<64 lowercase hex> digest",
+        )
+    }
+
+    fn canonical(field: impl Into<String>, err: &CanonicalError) -> Self {
+        Self::new(
+            ContractBundleAssemblyErrorKind::CanonicalDigest,
+            field,
+            err.to_string(),
+        )
+    }
+
+    /// Return the stable assembly error category.
+    #[must_use]
+    pub const fn kind(&self) -> ContractBundleAssemblyErrorKind {
+        self.kind
+    }
+
+    /// Return the input or output field associated with the failure.
+    #[must_use]
+    pub fn field(&self) -> &str {
+        &self.field
+    }
+}
+
+impl fmt::Display for ContractBundleAssemblyError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?} on {}: {}", self.kind, self.field, self.message)
+    }
+}
+
+impl std::error::Error for ContractBundleAssemblyError {}
+
+/// A supplied bundle-layer digest reference.
+///
+/// Unlike Core canonical imports, bundle artifact references are strict review
+/// strings: only `sha256:<64 lowercase hex>` is accepted.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SuppliedDigest {
+    review: String,
+}
+
+impl SuppliedDigest {
+    /// Build a supplied digest from a review string.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContractBundleAssemblyErrorKind::InvalidDigest`] unless the
+    /// review string is exactly `sha256:<64 lowercase hex>`.
+    pub fn new(review: impl Into<String>) -> Result<Self, ContractBundleAssemblyError> {
+        Self::new_for_field("digest", review)
+    }
+
+    fn new_for_field(
+        field: &'static str,
+        review: impl Into<String>,
+    ) -> Result<Self, ContractBundleAssemblyError> {
+        let review = review.into();
+        if is_bundle_digest(&review) {
+            Ok(Self { review })
+        } else {
+            Err(ContractBundleAssemblyError::invalid_digest(field))
+        }
+    }
+
+    /// Borrow the strict review rendering.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.review
+    }
+}
+
+impl fmt::Display for SuppliedDigest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.review)
+    }
+}
+
+/// A supplied artifact reference where coordinate and digest are both bound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DigestLockedResource {
+    coordinate: String,
+    digest: SuppliedDigest,
+}
+
+impl DigestLockedResource {
+    /// Build a digest-locked resource reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ContractBundleAssemblyErrorKind::EmptyCoordinate`] for an empty
+    /// coordinate and [`ContractBundleAssemblyErrorKind::InvalidDigest`] for any
+    /// non-lowercase or malformed digest.
+    pub fn new(
+        coordinate: impl Into<String>,
+        digest: impl Into<String>,
+    ) -> Result<Self, ContractBundleAssemblyError> {
+        Self::new_for_field("resource", coordinate, digest)
+    }
+
+    fn new_for_field(
+        field: &'static str,
+        coordinate: impl Into<String>,
+        digest: impl Into<String>,
+    ) -> Result<Self, ContractBundleAssemblyError> {
+        let coordinate = coordinate.into();
+        if coordinate.is_empty() {
+            return Err(ContractBundleAssemblyError::new(
+                ContractBundleAssemblyErrorKind::EmptyCoordinate,
+                field,
+                "non-empty resource coordinate",
+            ));
+        }
+        let digest = SuppliedDigest::new_for_field(field, digest)?;
+        Ok(Self { coordinate, digest })
+    }
+
+    /// Borrow the resource coordinate.
+    #[must_use]
+    pub fn coordinate(&self) -> &str {
+        &self.coordinate
+    }
+
+    /// Borrow the resource digest.
+    #[must_use]
+    pub const fn digest(&self) -> &SuppliedDigest {
+        &self.digest
+    }
+
+    /// Borrow the strict digest review string.
+    #[must_use]
+    pub fn digest_str(&self) -> &str {
+        self.digest.as_str()
+    }
+
+    /// Convert to the public manifest resource shape.
+    #[must_use]
+    pub fn to_resource_ref(&self) -> ResourceRef {
+        ResourceRef {
+            coordinate: self.coordinate.clone(),
+            digest: Some(self.digest.to_string()),
+        }
+    }
+}
+
+/// The v0.11 supplied Target IR reference.
+///
+/// Target IR bytes are not canonicalized in this slice. The supplied target-IR
+/// digest enters exactly once through this type and is reused for both the
+/// manifest field and semantic digest preimage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SuppliedTargetIrResource {
+    resource: DigestLockedResource,
+}
+
+impl SuppliedTargetIrResource {
+    /// Build a supplied digest-locked Target IR reference.
+    ///
+    /// # Errors
+    ///
+    /// Returns an assembly error if the coordinate is empty or the digest is not
+    /// strict lowercase `sha256:<64 hex>`.
+    pub fn new(
+        coordinate: impl Into<String>,
+        digest: impl Into<String>,
+    ) -> Result<Self, ContractBundleAssemblyError> {
+        Ok(Self {
+            resource: DigestLockedResource::new_for_field("target_ir", coordinate, digest)?,
+        })
+    }
+
+    /// Borrow the Target IR digest.
+    #[must_use]
+    pub fn digest_str(&self) -> &str {
+        self.resource.digest_str()
+    }
+
+    fn to_resource_ref(&self) -> ResourceRef {
+        self.resource.to_resource_ref()
+    }
+}
+
+/// Source artifact provenance supplied to bundle assembly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractBundleSourceArtifact {
+    logical_path: String,
+    artifact: DigestLockedResource,
+}
+
+impl ContractBundleSourceArtifact {
+    /// Build a source artifact descriptor.
+    ///
+    /// # Errors
+    ///
+    /// Returns an assembly error for non-logical paths, empty coordinates, or
+    /// malformed/non-lowercase digest renderings.
+    pub fn new(
+        logical_path: impl Into<String>,
+        coordinate: impl Into<String>,
+        digest: impl Into<String>,
+    ) -> Result<Self, ContractBundleAssemblyError> {
+        let logical_path = logical_path.into();
+        if !is_logical_source_path(&logical_path) {
+            return Err(ContractBundleAssemblyError::new(
+                ContractBundleAssemblyErrorKind::InvalidSourcePath,
+                "source_artifacts.logical_path",
+                "logical package-relative path",
+            ));
+        }
+        Ok(Self {
+            logical_path,
+            artifact: DigestLockedResource::new_for_field(
+                "source_artifacts.artifact",
+                coordinate,
+                digest,
+            )?,
+        })
+    }
+
+    fn to_source_artifact_ref(&self) -> SourceArtifactRef {
+        SourceArtifactRef {
+            logical_path: self.logical_path.clone(),
+            artifact: self.artifact.to_resource_ref(),
+        }
+    }
+}
+
+/// Optional assurance evidence supplied to bundle assembly.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractBundleAssuranceEvidenceInput {
+    role: AssuranceRole,
+    subject_kind: BundleSubjectKind,
+    artifact: DigestLockedResource,
+}
+
+impl ContractBundleAssuranceEvidenceInput {
+    /// Build optional assurance evidence input.
+    ///
+    /// The assembler fills the evidence subject digest plus target-profile and
+    /// target-IR bindings from the computed manifest, so optional evidence does
+    /// not introduce a second top-level digest preimage.
+    ///
+    /// # Errors
+    ///
+    /// Returns an assembly error for empty coordinates or malformed/non-
+    /// lowercase digest renderings.
+    pub fn new(
+        role: AssuranceRole,
+        subject_kind: BundleSubjectKind,
+        coordinate: impl Into<String>,
+        digest: impl Into<String>,
+    ) -> Result<Self, ContractBundleAssemblyError> {
+        Ok(Self {
+            role,
+            subject_kind,
+            artifact: DigestLockedResource::new_for_field(
+                "assurance_evidence.artifact",
+                coordinate,
+                digest,
+            )?,
+        })
+    }
+}
+
+/// Inputs needed to assemble a participant-neutral contract bundle manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractBundleAssemblyInput {
+    pub core_module: CoreModule,
+    pub core_ir_coordinate: String,
+    pub source_artifacts: Vec<ContractBundleSourceArtifact>,
+    pub source_profile_semantic_facts: DigestLockedResource,
+    pub target_profile: DigestLockedResource,
+    pub target_ir: SuppliedTargetIrResource,
+    pub lawpacks: Vec<DigestLockedResource>,
+    pub generated_artifacts: Vec<DigestLockedResource>,
+    pub compiler: DigestLockedResource,
+    pub lowerer: DigestLockedResource,
+    pub verifier: DigestLockedResource,
+    pub semantic_compile_options: DigestLockedResource,
+    pub non_semantic_compile_options: DigestLockedResource,
+    pub build_provenance: DigestLockedResource,
+    pub canonicalization_profile: DigestLockedResource,
+    pub conformance_fixture_corpora: Vec<DigestLockedResource>,
+    pub verifier_report: DigestLockedResource,
+    pub compile_explanation: DigestLockedResource,
+    pub assurance_evidence: Vec<ContractBundleAssuranceEvidenceInput>,
+}
 
 /// Which pre-admission bundle digest an artifact references.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -73,6 +406,253 @@ pub struct ContractBundleManifest {
     pub compile_explanation: ResourceRef,
     pub assurance_evidence: Vec<AssuranceEvidenceRef>,
     pub admission_artifacts: Vec<ResourceRef>,
+}
+
+/// Assemble a v1 participant-neutral contract bundle manifest.
+///
+/// The Core digest is always computed from `input.core_module`. The Target IR
+/// digest remains a supplied digest-locked reference for v0.11 and is reused by
+/// construction in both `manifest.target_ir.digest` and the semantic bundle
+/// preimage.
+///
+/// # Errors
+///
+/// Returns an assembly error if the Core module cannot be canonically digested
+/// or if any digest-layer preimage component cannot be represented.
+pub fn assemble_contract_bundle(
+    input: ContractBundleAssemblyInput,
+) -> Result<ContractBundleManifest, ContractBundleAssemblyError> {
+    let parts = assembly_parts(input)?;
+    let semantic_bundle_digest = semantic_bundle_digest(&parts)?;
+    let release_bundle_digest = release_bundle_digest(&parts, &semantic_bundle_digest)?;
+    Ok(manifest_from_parts(
+        parts,
+        semantic_bundle_digest,
+        release_bundle_digest,
+    ))
+}
+
+struct ContractBundleAssemblyParts {
+    source_artifacts: Vec<SourceArtifactRef>,
+    source_profile_semantic_facts: ResourceRef,
+    core_ir: ResourceRef,
+    core_digest: String,
+    target_profile: ResourceRef,
+    target_profile_digest: String,
+    target_ir: ResourceRef,
+    target_ir_digest: String,
+    lawpacks: Vec<ResourceRef>,
+    generated_artifacts: Vec<ResourceRef>,
+    compiler: ResourceRef,
+    lowerer: ResourceRef,
+    verifier: ResourceRef,
+    semantic_compile_options: ResourceRef,
+    non_semantic_compile_options: ResourceRef,
+    build_provenance: ResourceRef,
+    canonicalization_profile: ResourceRef,
+    conformance_fixture_corpora: Vec<ResourceRef>,
+    verifier_report: ResourceRef,
+    compile_explanation: ResourceRef,
+    assurance_evidence: Vec<ContractBundleAssuranceEvidenceInput>,
+}
+
+fn assembly_parts(
+    input: ContractBundleAssemblyInput,
+) -> Result<ContractBundleAssemblyParts, ContractBundleAssemblyError> {
+    let ContractBundleAssemblyInput {
+        core_module,
+        core_ir_coordinate,
+        source_artifacts,
+        source_profile_semantic_facts,
+        target_profile,
+        target_ir,
+        lawpacks,
+        generated_artifacts,
+        compiler,
+        lowerer,
+        verifier,
+        semantic_compile_options,
+        non_semantic_compile_options,
+        build_provenance,
+        canonicalization_profile,
+        conformance_fixture_corpora,
+        verifier_report,
+        compile_explanation,
+        assurance_evidence,
+    } = input;
+
+    if core_ir_coordinate.is_empty() {
+        return Err(ContractBundleAssemblyError::new(
+            ContractBundleAssemblyErrorKind::EmptyCoordinate,
+            "core_ir",
+            "non-empty Core IR coordinate",
+        ));
+    }
+
+    let core_digest = digest_core_module(&core_module)
+        .map_err(|err| ContractBundleAssemblyError::canonical("core_module", &err))?;
+    let core_digest = core_digest.to_review_string();
+    let core_ir = ResourceRef {
+        coordinate: core_ir_coordinate,
+        digest: Some(core_digest.clone()),
+    };
+    let source_artifacts = source_artifacts
+        .iter()
+        .map(ContractBundleSourceArtifact::to_source_artifact_ref)
+        .collect::<Vec<_>>();
+
+    let source_profile_semantic_facts = source_profile_semantic_facts.to_resource_ref();
+    let target_profile = target_profile.to_resource_ref();
+    let target_profile_digest = required_digest(&target_profile).to_owned();
+    let target_ir_digest = target_ir.digest_str().to_owned();
+    let target_ir = target_ir.to_resource_ref();
+
+    Ok(ContractBundleAssemblyParts {
+        source_artifacts,
+        source_profile_semantic_facts,
+        core_ir,
+        core_digest,
+        target_profile,
+        target_profile_digest,
+        target_ir,
+        target_ir_digest,
+        lawpacks: resource_refs(&lawpacks),
+        generated_artifacts: resource_refs(&generated_artifacts),
+        compiler: compiler.to_resource_ref(),
+        lowerer: lowerer.to_resource_ref(),
+        verifier: verifier.to_resource_ref(),
+        semantic_compile_options: semantic_compile_options.to_resource_ref(),
+        non_semantic_compile_options: non_semantic_compile_options.to_resource_ref(),
+        build_provenance: build_provenance.to_resource_ref(),
+        canonicalization_profile: canonicalization_profile.to_resource_ref(),
+        conformance_fixture_corpora: resource_refs(&conformance_fixture_corpora),
+        verifier_report: verifier_report.to_resource_ref(),
+        compile_explanation: compile_explanation.to_resource_ref(),
+        assurance_evidence,
+    })
+}
+
+fn semantic_bundle_digest(
+    parts: &ContractBundleAssemblyParts,
+) -> Result<String, ContractBundleAssemblyError> {
+    let lawpack_digests = digest_strings(&parts.lawpacks);
+    let generated_artifact_digests = digest_strings(&parts.generated_artifacts);
+    let conformance_fixture_corpus_digests = digest_strings(&parts.conformance_fixture_corpora);
+    let semantic_components = [
+        BundlePreimageComponent::Digest(&parts.core_digest),
+        BundlePreimageComponent::Digest(&parts.target_profile_digest),
+        BundlePreimageComponent::Digest(&parts.target_ir_digest),
+        BundlePreimageComponent::DigestList(&lawpack_digests),
+        BundlePreimageComponent::Digest(required_digest(&parts.source_profile_semantic_facts)),
+        BundlePreimageComponent::DigestList(&generated_artifact_digests),
+        BundlePreimageComponent::Digest(required_digest(&parts.canonicalization_profile)),
+        BundlePreimageComponent::Digest(required_digest(&parts.semantic_compile_options)),
+        BundlePreimageComponent::DigestList(&conformance_fixture_corpus_digests),
+        BundlePreimageComponent::Digest(required_digest(&parts.verifier_report)),
+    ];
+    digest_bundle_layer(BundleDigestDomain::Semantic, &semantic_components)
+        .map_err(|err| ContractBundleAssemblyError::canonical("semantic_bundle_digest", &err))
+        .map(|digest| digest.to_review_string())
+}
+
+fn release_bundle_digest(
+    parts: &ContractBundleAssemblyParts,
+    semantic_bundle_digest: &str,
+) -> Result<String, ContractBundleAssemblyError> {
+    let source_descriptors = parts
+        .source_artifacts
+        .iter()
+        .map(|source| BundleSourceDescriptor {
+            logical_path: source.logical_path.as_str(),
+            artifact: &source.artifact,
+        })
+        .collect::<Vec<_>>();
+    let release_components = [
+        BundlePreimageComponent::Digest(semantic_bundle_digest),
+        BundlePreimageComponent::SourceArtifacts(&source_descriptors),
+        BundlePreimageComponent::Resource(&parts.compiler),
+        BundlePreimageComponent::Resource(&parts.lowerer),
+        BundlePreimageComponent::Resource(&parts.verifier),
+        BundlePreimageComponent::Digest(required_digest(&parts.non_semantic_compile_options)),
+        BundlePreimageComponent::Digest(required_digest(&parts.build_provenance)),
+        BundlePreimageComponent::Digest(required_digest(&parts.compile_explanation)),
+    ];
+    digest_bundle_layer(BundleDigestDomain::Release, &release_components)
+        .map_err(|err| ContractBundleAssemblyError::canonical("release_bundle_digest", &err))
+        .map(|digest| digest.to_review_string())
+}
+
+fn manifest_from_parts(
+    parts: ContractBundleAssemblyParts,
+    semantic_bundle_digest: String,
+    release_bundle_digest: String,
+) -> ContractBundleManifest {
+    let assurance_evidence = parts
+        .assurance_evidence
+        .iter()
+        .map(|evidence| {
+            let subject_digest = match evidence.subject_kind {
+                BundleSubjectKind::Semantic => &semantic_bundle_digest,
+                BundleSubjectKind::Release => &release_bundle_digest,
+            };
+            AssuranceEvidenceRef {
+                role: evidence.role,
+                artifact: evidence.artifact.to_resource_ref(),
+                subject: BundleSubject {
+                    kind: evidence.subject_kind,
+                    digest: subject_digest.clone(),
+                },
+                target_profile_digest: parts.target_profile_digest.clone(),
+                target_ir_digest: parts.target_ir_digest.clone(),
+            }
+        })
+        .collect();
+
+    ContractBundleManifest {
+        api_version: CONTRACT_BUNDLE_API_VERSION.to_owned(),
+        semantic_bundle_digest,
+        release_bundle_digest,
+        source_artifacts: parts.source_artifacts,
+        source_profile_semantic_facts: parts.source_profile_semantic_facts,
+        core_ir: parts.core_ir,
+        target_profile: parts.target_profile,
+        target_ir: parts.target_ir,
+        lawpacks: parts.lawpacks,
+        generated_artifacts: parts.generated_artifacts,
+        compiler: parts.compiler,
+        lowerer: parts.lowerer,
+        verifier: parts.verifier,
+        semantic_compile_options: parts.semantic_compile_options,
+        non_semantic_compile_options: parts.non_semantic_compile_options,
+        build_provenance: parts.build_provenance,
+        canonicalization_profile: parts.canonicalization_profile,
+        conformance_fixture_corpora: parts.conformance_fixture_corpora,
+        verifier_report: parts.verifier_report,
+        compile_explanation: parts.compile_explanation,
+        assurance_evidence,
+        admission_artifacts: Vec::new(),
+    }
+}
+
+fn resource_refs(resources: &[DigestLockedResource]) -> Vec<ResourceRef> {
+    resources
+        .iter()
+        .map(DigestLockedResource::to_resource_ref)
+        .collect()
+}
+
+fn digest_strings(resources: &[ResourceRef]) -> Vec<String> {
+    resources
+        .iter()
+        .map(|resource| required_digest(resource).to_owned())
+        .collect()
+}
+
+fn required_digest(resource: &ResourceRef) -> &str {
+    resource
+        .digest
+        .as_deref()
+        .expect("digest-locked assembly resource has a digest")
 }
 
 /// Overall contract bundle validation classification for v1.
