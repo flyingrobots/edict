@@ -43,7 +43,8 @@ versions still track specification maturity rather than a released product.
   and `cargo xtask target-ir-goldens --check` wired into `cargo xtask verify`.
   Bundle assembly also has a computed Target IR path that derives
   `targetIrDigest` from a real `TargetIrArtifact` instead of a caller-supplied
-  digest reference.
+  digest reference, rejecting Target IR artifacts whose source Core coordinate
+  does not match the supplied Core module.
 
 ### Changed
 

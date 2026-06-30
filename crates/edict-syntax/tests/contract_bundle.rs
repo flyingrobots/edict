@@ -626,6 +626,21 @@ mod contract_bundle_assembly {
     }
 
     #[test]
+    fn assembly_from_target_ir_rejects_mismatched_core_source() {
+        let mut input = assembly_from_target_ir_input();
+        input.target_ir_artifact.source_core_coordinate = "a.different@1".to_owned();
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("computed Target IR path rejects mismatched Core source");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "target_ir_artifact.source_core_coordinate");
+    }
+
+    #[test]
     fn assembly_rejects_uppercase_supplied_target_ir_digest() {
         let err = SuppliedTargetIrResource::new("echo.span-ir/v1", uppercase_digest())
             .expect_err("uppercase target IR digest is rejected");

@@ -69,7 +69,8 @@ The canonical artifact identity rules are named in
   real `TargetIrArtifact` with `digest_target_ir_artifact`, writes that digest
   into `manifest.target_ir.digest`, and uses the same digest in the semantic
   bundle preimage. The target profile reference is derived from the artifact's
-  digest-locked `target_profile`. [BUNDLE-REQ-008]
+  digest-locked `target_profile`, and the artifact's source Core coordinate
+  must match the supplied Core module coordinate. [BUNDLE-REQ-008]
 - `assemble_contract_bundle` remains available for already-digested external
   Target IR references. On that supplied-reference path, the same typed Target
   IR resource supplies both `manifest.target_ir.digest` and the semantic bundle

@@ -34,7 +34,9 @@ This slice implements **bundle digest derivation and assembly**:
   digest-locked references**.
 - After the Target IR canonical-byte freeze, the computed-artifact assembler can
   instead compute `targetIrDigest` from a real `TargetIrArtifact` and derive the
-  target-profile reference from that artifact.
+  target-profile reference from that artifact. The artifact's
+  `source_core_coordinate` must match the supplied `CoreModule.coordinate`
+  before the computed digest enters the bundle preimage.
 - The assembled manifest is consumed by the existing
   `validate_contract_bundle_manifest` (exit gate: validation consumes the
   assembled artifact, not a hand-written fixture).

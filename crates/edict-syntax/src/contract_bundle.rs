@@ -27,6 +27,7 @@ pub enum ContractBundleAssemblyErrorKind {
     InvalidDigest,
     EmptyCoordinate,
     InvalidSourcePath,
+    TargetIrSourceMismatch,
     CanonicalDigest,
     InvalidManifest,
 }
@@ -511,6 +512,17 @@ pub fn assemble_contract_bundle_from_target_ir(
         compile_explanation,
         assurance_evidence,
     } = input;
+
+    if target_ir_artifact.source_core_coordinate.as_str() != core_module.coordinate.as_str() {
+        return Err(ContractBundleAssemblyError::new(
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+            "target_ir_artifact.source_core_coordinate",
+            format!(
+                "expected Target IR source Core coordinate `{}`, got `{}`",
+                core_module.coordinate, target_ir_artifact.source_core_coordinate
+            ),
+        ));
+    }
 
     let target_ir_digest = digest_target_ir_artifact(&target_ir_artifact)
         .map_err(|err| ContractBundleAssemblyError::canonical("target_ir_artifact", &err))?
