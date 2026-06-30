@@ -44,7 +44,8 @@ versions still track specification maturity rather than a released product.
   Bundle assembly also has a computed Target IR path that derives
   `targetIrDigest` from a real `TargetIrArtifact` instead of a caller-supplied
   digest reference, rejecting Target IR artifacts whose source Core coordinate
-  does not match the supplied Core module.
+  does not match the supplied Core module and reporting invalid embedded target
+  profile digest references with a stable field.
 
 ### Changed
 

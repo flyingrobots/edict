@@ -641,6 +641,18 @@ mod contract_bundle_assembly {
     }
 
     #[test]
+    fn assembly_from_target_ir_rejects_invalid_target_profile_digest_with_stable_field() {
+        let mut input = assembly_from_target_ir_input();
+        input.target_ir_artifact.target_profile.digest = Some(uppercase_digest());
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("computed Target IR path rejects invalid target profile digest");
+
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::InvalidDigest);
+        assert_eq!(err.field(), "target_ir_artifact.target_profile");
+    }
+
+    #[test]
     fn assembly_rejects_uppercase_supplied_target_ir_digest() {
         let err = SuppliedTargetIrResource::new("echo.span-ir/v1", uppercase_digest())
             .expect_err("uppercase target IR digest is rejected");

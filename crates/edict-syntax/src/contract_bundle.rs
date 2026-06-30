@@ -524,11 +524,11 @@ pub fn assemble_contract_bundle_from_target_ir(
         ));
     }
 
+    let target_profile =
+        target_profile_from_target_ir_artifact(&target_ir_artifact.target_profile)?;
     let target_ir_digest = digest_target_ir_artifact(&target_ir_artifact)
         .map_err(|err| ContractBundleAssemblyError::canonical("target_ir_artifact", &err))?
         .to_review_string();
-    let target_profile =
-        target_profile_from_target_ir_artifact(&target_ir_artifact.target_profile)?;
     let target_ir = SuppliedTargetIrResource::new(target_ir_artifact.domain, target_ir_digest)?;
 
     assemble_contract_bundle(ContractBundleAssemblyInput {
