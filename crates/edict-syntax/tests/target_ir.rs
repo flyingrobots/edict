@@ -984,6 +984,23 @@ fn target_ir_artifact_canonicalization_ignores_equivalent_construction_order() {
 }
 
 #[test]
+fn target_ir_step_order_changes_digest() {
+    let baseline = effectful_artifact(CHAINED_EFFECT_RESULTS);
+    let mut reordered = baseline.clone();
+    reordered
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .steps
+        .reverse();
+
+    assert_ne!(
+        digest_target_ir_artifact(&baseline).expect("baseline Target IR digests"),
+        digest_target_ir_artifact(&reordered).expect("reordered Target IR digests")
+    );
+}
+
+#[test]
 fn target_ir_digest_moves_for_artifact_semantic_mutations() {
     let baseline = effectful_artifact(EFFECTFUL_REPLACE);
     assert_target_ir_digest_changes(&baseline, "target profile digest", |artifact| {
@@ -1033,6 +1050,18 @@ fn target_ir_digest_moves_for_artifact_semantic_mutations() {
     assert_target_ir_digest_changes(&baseline, "result expression", |artifact| {
         artifact.intents.get_mut("t").expect("intent t").result =
             CoreExpr::Const(CoreValue::String("changed".to_owned()));
+    });
+}
+
+#[test]
+fn target_ir_obstruction_arm_value_mutation_moves_digest() {
+    let baseline = effectful_artifact(EFFECTFUL_REPLACE);
+    assert_target_ir_digest_changes(&baseline, "obstruction arm value", |artifact| {
+        target_step_mut(artifact)
+            .obstruction_arms
+            .get_mut("rejected")
+            .expect("rejected arm")
+            .value = CoreExpr::Const(CoreValue::String("changed".to_owned()));
     });
 }
 
