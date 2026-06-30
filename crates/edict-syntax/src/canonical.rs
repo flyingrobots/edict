@@ -1099,6 +1099,7 @@ impl<'a> Decoder<'a> {
 mod bundle_layer_digest_tests {
     use super::{
         digest_bundle_layer, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
+        CanonicalErrorKind,
     };
     use crate::core_ir::ResourceRef;
 
@@ -1113,10 +1114,17 @@ mod bundle_layer_digest_tests {
         }
     }
 
+    fn bundle_error_kind(components: &[BundlePreimageComponent]) -> CanonicalErrorKind {
+        digest_bundle_layer(SEM, components)
+            .expect_err("bundle digest layer rejects malformed preimage")
+            .kind()
+    }
+
     #[test]
     fn invalid_digest_review_string_is_rejected() {
-        assert!(
-            digest_bundle_layer(SEM, &[BundlePreimageComponent::Digest("not-a-digest")]).is_err()
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Digest("not-a-digest")]),
+            CanonicalErrorKind::InvalidDigest
         );
     }
 
@@ -1125,12 +1133,14 @@ mod bundle_layer_digest_tests {
         let uppercase = "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
         let uppercase_resource = resource("compiler.a@1", uppercase);
 
-        assert!(digest_bundle_layer(SEM, &[BundlePreimageComponent::Digest(uppercase)]).is_err());
-        assert!(digest_bundle_layer(
-            SEM,
-            &[BundlePreimageComponent::Resource(&uppercase_resource)]
-        )
-        .is_err());
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Digest(uppercase)]),
+            CanonicalErrorKind::InvalidDigest
+        );
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Resource(&uppercase_resource)]),
+            CanonicalErrorKind::InvalidDigest
+        );
     }
 
     #[test]
@@ -1231,7 +1241,10 @@ mod bundle_layer_digest_tests {
             coordinate: "compiler.a@1".to_owned(),
             digest: None,
         };
-        assert!(digest_bundle_layer(SEM, &[BundlePreimageComponent::Resource(&without)]).is_err());
+        assert_eq!(
+            bundle_error_kind(&[BundlePreimageComponent::Resource(&without)]),
+            CanonicalErrorKind::UnresolvedDigest
+        );
     }
 
     #[test]
@@ -1271,12 +1284,9 @@ mod bundle_layer_digest_tests {
                 artifact: &artifact,
             }];
 
-            assert!(
-                digest_bundle_layer(
-                    SEM,
-                    &[BundlePreimageComponent::SourceArtifacts(&descriptors)]
-                )
-                .is_err(),
+            assert_eq!(
+                bundle_error_kind(&[BundlePreimageComponent::SourceArtifacts(&descriptors)]),
+                CanonicalErrorKind::UnsupportedValue,
                 "accepted invalid source artifact path {logical_path:?}"
             );
         }
