@@ -440,11 +440,16 @@ Non-goals:
 
 Target date: 2026-11-04
 
-Status: release prep
+Status: published
 
 Milestone: `v0.11.0-alpha.1` (#12)
 
 Primary issues: #105, #106, #109
+
+Release: <https://github.com/flyingrobots/edict/releases/tag/v0.11.0-alpha.1>
+
+Tag: `v0.11.0-alpha.1` peels to
+`3eb71f6127e31b68ea4e0bb766623930ce24ae46`.
 
 Release labels: `release:bundles`, `release:target-ir`
 
