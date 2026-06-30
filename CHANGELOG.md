@@ -34,8 +34,9 @@ versions still track specification maturity rather than a released product.
   the assembled manifest before returning it, rejects assembly inputs that would
   produce invalid required bundle structure, and checks a reviewed
   semantic/release digest golden through `cargo xtask bundle-goldens --check`.
-  This freezes bundle preimage/digest values only; canonical Target IR bytes
-  remain tracked by #105.
+  The low-level bundle preimage helper also rejects invalid machine-local source
+  paths before hashing. This freezes bundle preimage/digest values only;
+  canonical Target IR bytes remain tracked by #105.
 
 ### Changed
 

@@ -263,6 +263,12 @@ fn bundle_component_value(
             descriptors
                 .iter()
                 .map(|descriptor| {
+                    if !is_logical_bundle_source_path(descriptor.logical_path) {
+                        return Err(CanonicalError::new(
+                            CanonicalErrorKind::UnsupportedValue,
+                            "bundle source artifact path must be logical and package-relative",
+                        ));
+                    }
                     Ok(CanonicalValue::Array(vec![
                         text(descriptor.logical_path),
                         bundle_resource_ref_value(descriptor.artifact)?,
@@ -300,6 +306,16 @@ fn bundle_digest_value(digest: &str) -> Result<CanonicalValue, CanonicalError> {
         ));
     }
     digest_value(digest)
+}
+
+fn is_logical_bundle_source_path(path: &str) -> bool {
+    !path.is_empty()
+        && !path.starts_with('/')
+        && !path.contains('\\')
+        && !path.contains(':')
+        && path
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
 
 fn is_lowercase_sha256_review_digest(digest: &str) -> bool {
@@ -1224,5 +1240,32 @@ mod bundle_layer_digest_tests {
             digest_bundle_layer(SEM, &[BundlePreimageComponent::SourceArtifacts(&second)])
                 .expect("digest"),
         );
+    }
+
+    #[test]
+    fn source_artifact_logical_paths_are_rejected() {
+        let artifact = resource("src", A);
+        for logical_path in [
+            "",
+            "/contracts/main.edict",
+            "contracts/../main.edict",
+            "contracts/./main.edict",
+            "C:/contracts/main.edict",
+            r"contracts\main.edict",
+        ] {
+            let descriptors = [BundleSourceDescriptor {
+                logical_path,
+                artifact: &artifact,
+            }];
+
+            assert!(
+                digest_bundle_layer(
+                    SEM,
+                    &[BundlePreimageComponent::SourceArtifacts(&descriptors)]
+                )
+                .is_err(),
+                "accepted invalid source artifact path {logical_path:?}"
+            );
+        }
     }
 }

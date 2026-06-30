@@ -47,7 +47,8 @@ The canonical artifact identity rules are named in
   [BUNDLE-REQ-003]
 - Source artifact paths must be logical package-relative paths. Absolute paths,
   drive-letter paths, backslashes, empty paths, current-directory segments, and
-  parent-directory segments are rejected. [BUNDLE-REQ-004]
+  parent-directory segments are rejected by both manifest validation and the
+  bundle digest preimage helper. [BUNDLE-REQ-004]
 - HOLMES, Watson, and Moriarty evidence is optional in the typed bundle. When an
   evidence entry is present, it must bind to the manifest's selected bundle
   subject digest, target profile digest, and target IR digest. [BUNDLE-REQ-005]
