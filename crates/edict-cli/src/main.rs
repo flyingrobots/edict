@@ -694,10 +694,13 @@ fn confined_input_path(
 }
 
 fn directory_extension_matches(settings: &CompilerSettings, path: &Path) -> bool {
-    path.extension()
-        .and_then(|extension| extension.to_str())
-        .map(|extension| format!(".{extension}"))
-        .is_some_and(|extension| settings.directory_extensions.contains(&extension))
+    let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
+        return false;
+    };
+    settings
+        .directory_extensions
+        .iter()
+        .any(|allowed| allowed.strip_prefix('.') == Some(extension))
 }
 
 fn path_failure(kind: &'static str, path: &Path, err: &io::Error) -> CliFailure {

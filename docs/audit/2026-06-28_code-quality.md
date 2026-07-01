@@ -137,6 +137,10 @@ The clearest Separation-of-Concerns issue is **crate-level, not function-level**
 No meaningful sink for the current scale (single-file/dir/glob check runs). The only micro-allocation worth noting: `directory_extension_matches` in `crates/edict-cli/src/main.rs` builds a `format!(".{extension}")` `String` per file during directory walks to compare against `directory_extensions`. Negligible today; would matter only on very large trees.
 
 - **Action Prompt (Optimization):** `In crates/edict-cli/src/main.rs::directory_extension_matches, compare the path extension to the configured directory_extensions without allocating per file — e.g. strip the leading '.' from each configured extension once into a reusable set and compare against path.extension() directly. Add no new behavior; keep the .edict default. Benchmark only if a large-tree fixture is added.`
+  - **✅ Addressed (2026-07-01, #91):** `directory_extension_matches` now
+    compares `Path::extension()` directly against configured dotted extensions,
+    removing the per-file `format!(".{extension}")` allocation while preserving
+    the existing directory-expansion behavior.
 
 ### 4.3 Dependency Health — Excellent
 

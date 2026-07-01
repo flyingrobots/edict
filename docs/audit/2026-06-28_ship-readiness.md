@@ -118,6 +118,10 @@ fn directory_extension_matches(settings: &CompilerSettings, path: &Path) -> bool
 ```
 
 - **Mitigation Prompt 5:** `Replace directory_extension_matches with the allocation-free version above; keep the .edict default and behavior identical; confirm fixtures/cli/06-directory-expansion-ok still passes.`
+  - **✅ Addressed (2026-07-01, #91):** `directory_extension_matches` now
+    compares `Path::extension()` directly against configured dotted extensions
+    without allocating a `String` for every visited file; the directory
+    expansion golden remains byte-identical.
 
 **Violation 3 — Post-construction mutation of a JSON value (record builder smell).**
 `diagnostic_record` builds a `json!` object then conditionally mutates it

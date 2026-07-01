@@ -29,6 +29,8 @@ versions still track specification maturity rather than a released product.
 - CI now includes a dedicated `cargo deny check` supply-chain job backed by
   `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
   duplicate-version warnings, and source restrictions.
+- Directory expansion in the `edict` CLI no longer allocates a temporary dotted
+  extension string per visited file; behavior and golden output are unchanged.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.
