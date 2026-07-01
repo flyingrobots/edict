@@ -26,6 +26,9 @@ versions still track specification maturity rather than a released product.
 - The `edict-cli` production targets now deny `clippy::unwrap_used` and
   `clippy::expect_used`, and the parser's `self.expect` helper is documented as
   a fallible token-matching combinator rather than a panic primitive.
+- CI now includes a dedicated `cargo deny check` supply-chain job backed by
+  `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
+  duplicate-version warnings, and source restrictions.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.

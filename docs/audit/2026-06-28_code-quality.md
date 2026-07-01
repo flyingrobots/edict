@@ -143,6 +143,9 @@ No meaningful sink for the current scale (single-file/dir/glob check runs). The 
 Three runtime dependencies total: `serde`, `serde_json`, `glob` — all current, widely-maintained, permissively licensed (MIT/Apache-2.0), Apache-2.0-compatible. `unsafe_code = "forbid"`, `clippy::all`+`pedantic` denied, warnings-as-errors. No deprecated APIs, no known-CVE dependencies, no transitive bloat. This is a model minimal-surface dependency posture.
 
 - **Action Prompt (Dependency Update):** `No problematic dependency to update. Optionally add cargo-deny (advisories + licenses + bans) to CI to make the current clean posture an enforced gate rather than an incidental property.`
+  - **✅ Addressed (2026-07-01, #94):** `deny.toml` now enforces advisories,
+    yanked crates, license allowlisting, bans, and source restrictions, and CI
+    runs `cargo deny check` as a dedicated supply-chain job.
 
 ---
 

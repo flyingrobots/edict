@@ -209,6 +209,9 @@ library + CLI:
 - **Gap 2 — No supply-chain gate in CI.** The dependency posture is excellent
   (3 deps, clean licenses) but unenforced — no `cargo-deny`/advisory check, so a
   future bad dependency would not be caught automatically.
+  - **✅ Addressed (2026-07-01, #94):** `deny.toml` plus the CI
+    `supply-chain (cargo-deny)` job now gate advisories, yanked crates, license
+    allowlisting, duplicate-version warnings, and unknown sources.
 - **Gap 3 — No distributable artifact / install path.** The prerelease has zero
   attached assets and `publish = false`, so obtaining `edict` requires building
   from source; there is no documented install. (`SECURITY.md` reporting channel
