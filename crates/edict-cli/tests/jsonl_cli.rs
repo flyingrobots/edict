@@ -171,6 +171,43 @@ fn input_root_rejects_path_outside_configured_root() {
 }
 
 #[test]
+fn input_root_null_rejects_as_invalid_settings() {
+    let outside = temp_tree("null-input-root-outside");
+    let outside_source = outside.join("outside.edict");
+    fs::write(&outside_source, VALID_SOURCE).expect("write outside source");
+
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "check",
+            "inputRoot": null,
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "path",
+            "path": outside_source,
+        }),
+    ]));
+
+    let _ = fs::remove_dir_all(&outside);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "settings failures must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("kind").and_then(Value::as_str) == Some("InvalidSettings"))
+        .expect("stderr must contain an InvalidSettings diagnostic");
+    assert_eq!(diagnostic.get("stage").and_then(Value::as_str), Some("cli"));
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
 fn input_root_rejects_glob_outside_configured_root() {
     let allowed = temp_tree("allowed-glob-root");
     let outside = temp_tree("outside-glob-root");
