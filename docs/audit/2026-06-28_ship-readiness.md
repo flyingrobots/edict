@@ -57,6 +57,11 @@ that is otherwise clean:
    spine, canonical encoder, Core IR, lowerability, target IR, contract-bundle
    validation, and Gate C admission — with no compile-time boundary between
    layers.
+   - **✅ Decided (2026-07-01, #84):**
+     `docs/design/crate-scope-v0.11.md` records the decision to prefer an
+     eventual layered split behind an umbrella crate over a simple rename. The
+     package split is deferred to its own migration slice; `ARCHITECTURE.md`
+     documents the current crate-scope caveat and layer rule.
 3. **Stringly-typed CLI envelope parsing.** `crates/edict-cli/src/main.rs`
    hand-rolls JSON field extraction (`parse_compiler_input`,
    `require_string_field`) that is *more lenient* than the checked-in schemas

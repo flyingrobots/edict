@@ -111,6 +111,12 @@ The clearest Separation-of-Concerns issue is **crate-level, not function-level**
 
 - **Action Prompt (SoC Refactoring):** `Propose (do not execute without sign-off, per house rules) a crate split: edict-syntax (lex/parse/AST), edict-core (semantic + compiler spine + canonical + Core IR), edict-targets (lowerability + target profiles + target IR), edict-admission (contract bundle + Gate C), and an edict umbrella re-exporting a curated surface. Produce a dependency-direction diagram proving an acyclic layering and an inventory of which current pub items move where.`
 
+- **✅ Decided (2026-07-01, #84):** `docs/design/crate-scope-v0.11.md`
+  records the decision to prefer an eventual layered split behind an umbrella
+  crate over a simple rename. The split is intentionally not executed in the
+  audit omnibus branch; `ARCHITECTURE.md` now documents the current
+  `edict-syntax` scope caveat and dependency-direction rule.
+
 ### 3.3 Testability Barrier
 
 **There is essentially no testability barrier** — this is a strength, recorded for completeness. The core is pure functions over owned data; I/O is confined to explicit `load_*_file` loaders and the CLI boundary; there are no statics, no globals, no ambient singletons, and `unsafe` is `forbid`. 278 tests run without fixtures-on-disk gymnastics. The one mild friction is CLI testing-by-subprocess (`run_edict` spawns the binary), which is appropriate for an end-to-end contract but slower than in-process calls; exposing the library façade (§1.1) would let most CLI behavior be tested in-process.

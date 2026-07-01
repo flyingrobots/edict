@@ -40,10 +40,11 @@ exports:
 - editor/highlighting support.
 
 That breadth is deliberate as current branch truth, not an endorsement of the
-name. The crate-scope decision is tracked separately by the audit issue for
-rename-vs-split work. Until that decision lands, new code should preserve the
-existing dependency direction and keep layer boundaries explicit inside the
-crate.
+name. The crate-scope decision is recorded in
+[`docs/design/crate-scope-v0.11.md`](./docs/design/crate-scope-v0.11.md):
+eventual layered split behind an umbrella crate, not a simple rename. Until that
+split lands, new code should preserve the existing dependency direction and keep
+layer boundaries explicit inside the crate.
 
 Module map:
 
