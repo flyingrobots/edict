@@ -139,6 +139,10 @@ struct Diagnostic<'a> {
 ```
 
 - **Mitigation Prompt 6:** `Introduce typed Serialize structs for the diagnostic, check-result, and event records with #[serde(skip_serializing_if = "Option::is_none")] for optional fields, replacing the json! + index-mutation construction in crates/edict-cli/src/main.rs. Keep emitted bytes identical (BTreeMap key order is preserved by serde_json) and verify against the golden corpus.`
+  - **✅ Addressed (2026-07-01, #92):** CLI check-result, diagnostic, status,
+    and info records are now built from typed `Serialize` structs and converted
+    through `serde_json::Value` to preserve the existing byte-for-byte golden
+    output; the `record[...]` mutation guard and CLI golden corpus are green.
 
 ---
 

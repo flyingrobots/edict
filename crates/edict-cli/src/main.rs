@@ -7,7 +7,7 @@ use edict_cli::{
     DIAGNOSTIC_SCHEMA, EVENT_SCHEMA, INFO_SCHEMA, MAX_STDIN_BYTES_ENV,
 };
 use edict_syntax::{CheckOutcome, ParseError, SemanticError, Span};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const COMMAND_CHECK: &str = "check";
@@ -707,33 +707,46 @@ fn path_failure(kind: &'static str, path: &Path, err: &io::Error) -> CliFailure 
 }
 
 fn check_result_record(input: &Value) -> Value {
-    json!({
-        "schema": CHECK_RESULT_SCHEMA,
-        "type": "checkResult",
-        "command": COMMAND_CHECK,
-        "input": input,
-        "status": "ok",
+    record_value(CheckResultRecord {
+        command: COMMAND_CHECK,
+        input,
+        schema: CHECK_RESULT_SCHEMA,
+        status: "ok",
+        record_type: "checkResult",
     })
 }
 
 fn parse_diagnostic(input: &Value, error: &ParseError) -> Value {
-    diagnostic_record("parse", error.kind.code(), input, Some(error.span), None)
+    diagnostic_record(
+        "parse",
+        error.kind.code(),
+        input,
+        Some(error.span),
+        None,
+        None,
+    )
 }
 
 fn semantic_diagnostic(input: &Value, error: &SemanticError) -> Value {
-    diagnostic_record("semantic", error.kind.code(), input, Some(error.span), None)
+    diagnostic_record(
+        "semantic",
+        error.kind.code(),
+        input,
+        Some(error.span),
+        None,
+        None,
+    )
 }
 
 fn cli_diagnostic(failure: &CliFailure) -> Value {
-    let mut record = diagnostic_record(
+    diagnostic_record(
         "cli",
         failure.kind,
         &json!({ "kind": "stdin" }),
         None,
         failure.line,
-    );
-    record["message"] = json!(failure.message);
-    record
+        Some(failure.message.as_str()),
+    )
 }
 
 fn diagnostic_record(
@@ -742,69 +755,158 @@ fn diagnostic_record(
     input: &Value,
     span: Option<Span>,
     line: Option<usize>,
+    message: Option<&str>,
 ) -> Value {
-    let mut record = json!({
-        "schema": DIAGNOSTIC_SCHEMA,
-        "type": "diagnostic",
-        "command": COMMAND_CHECK,
-        "severity": "error",
-        "stage": stage,
-        "kind": kind,
-        "input": input,
-    });
-    if let Some(span) = span {
-        record["span"] = json!({
-            "start": span.start,
-            "end": span.end,
-        });
-    }
-    if let Some(line) = line {
-        record["line"] = json!(line);
-    }
-    record
+    record_value(DiagnosticRecord {
+        command: COMMAND_CHECK,
+        input,
+        kind,
+        line,
+        message,
+        schema: DIAGNOSTIC_SCHEMA,
+        severity: "error",
+        span: span.map(|span| SpanRecord {
+            start: span.start,
+            end: span.end,
+        }),
+        stage,
+        record_type: "diagnostic",
+    })
 }
 
 fn status_record(status: &str, checked: usize, errors: usize, exit_code: i32) -> Value {
-    json!({
-        "schema": EVENT_SCHEMA,
-        "type": "status",
-        "command": COMMAND_CHECK,
-        "status": status,
-        "checked": checked,
-        "errors": errors,
-        "exitCode": exit_code,
+    record_value(StatusRecord {
+        checked,
+        command: COMMAND_CHECK,
+        errors,
+        exit_code,
+        schema: EVENT_SCHEMA,
+        status,
+        record_type: "status",
     })
 }
 
 fn version_record() -> Value {
-    json!({
-        "schema": INFO_SCHEMA,
-        "type": "info",
-        "topic": "version",
-        "version": env!("CARGO_PKG_VERSION"),
+    record_value(VersionInfoRecord {
+        schema: INFO_SCHEMA,
+        topic: "version",
+        record_type: "info",
+        version: env!("CARGO_PKG_VERSION"),
     })
 }
 
 fn help_record() -> Value {
-    json!({
-        "schema": INFO_SCHEMA,
-        "type": "info",
-        "topic": "help",
-        "version": env!("CARGO_PKG_VERSION"),
-        "usage": "edict reads JSONL request records on stdin and emits only JSONL records on \
-                  stdout and stderr; it takes no positional arguments. A request is one compiler \
-                  settings record followed by one or more compiler input records.",
-        "requestSchemas": [
-            edict_cli::COMPILER_SETTINGS_SCHEMA,
-            INPUT_SCHEMA,
+    record_value(HelpInfoRecord {
+        docs: "docs/topics/cli/README.md",
+        exit_codes: &[
+            ExitCodeRecord {
+                code: EXIT_OK,
+                meaning: "request completed successfully",
+            },
+            ExitCodeRecord {
+                code: EXIT_CHECK_FAILED,
+                meaning: "compiler or validation diagnostics were produced",
+            },
+            ExitCodeRecord {
+                code: EXIT_CLI_FAILED,
+                meaning: "CLI input or usage was invalid",
+            },
         ],
-        "exitCodes": [
-            { "code": EXIT_OK, "meaning": "request completed successfully" },
-            { "code": EXIT_CHECK_FAILED, "meaning": "compiler or validation diagnostics were produced" },
-            { "code": EXIT_CLI_FAILED, "meaning": "CLI input or usage was invalid" },
-        ],
-        "docs": "docs/topics/cli/README.md",
+        request_schemas: &[edict_cli::COMPILER_SETTINGS_SCHEMA, INPUT_SCHEMA],
+        schema: INFO_SCHEMA,
+        topic: "help",
+        record_type: "info",
+        usage: "edict reads JSONL request records on stdin and emits only JSONL records on \
+                stdout and stderr; it takes no positional arguments. A request is one compiler \
+                settings record followed by one or more compiler input records.",
+        version: env!("CARGO_PKG_VERSION"),
     })
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckResultRecord<'a> {
+    command: &'static str,
+    input: &'a Value,
+    schema: &'static str,
+    status: &'static str,
+    #[serde(rename = "type")]
+    record_type: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DiagnosticRecord<'a> {
+    command: &'static str,
+    input: &'a Value,
+    kind: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<&'a str>,
+    schema: &'static str,
+    severity: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    span: Option<SpanRecord>,
+    stage: &'a str,
+    #[serde(rename = "type")]
+    record_type: &'static str,
+}
+
+#[derive(Serialize)]
+struct SpanRecord {
+    start: usize,
+    end: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct StatusRecord<'a> {
+    checked: usize,
+    command: &'static str,
+    errors: usize,
+    exit_code: i32,
+    schema: &'static str,
+    status: &'a str,
+    #[serde(rename = "type")]
+    record_type: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VersionInfoRecord {
+    schema: &'static str,
+    topic: &'static str,
+    #[serde(rename = "type")]
+    record_type: &'static str,
+    version: &'static str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HelpInfoRecord<'a> {
+    docs: &'static str,
+    exit_codes: &'a [ExitCodeRecord],
+    request_schemas: &'a [&'static str],
+    schema: &'static str,
+    topic: &'static str,
+    #[serde(rename = "type")]
+    record_type: &'static str,
+    usage: &'static str,
+    version: &'static str,
+}
+
+#[derive(Serialize)]
+struct ExitCodeRecord {
+    code: i32,
+    meaning: &'static str,
+}
+
+fn record_value(record: impl Serialize) -> Value {
+    match serde_json::to_value(record) {
+        Ok(value) => value,
+        Err(error) => unreachable!("CLI record structs serialize to JSON values: {error}"),
+    }
 }
 
 fn write_info(record: &Value) {
