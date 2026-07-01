@@ -247,6 +247,47 @@ fn input_root_rejects_glob_outside_configured_root() {
 }
 
 #[test]
+#[cfg(unix)]
+fn input_root_glob_skips_dangling_symlink_matches() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_tree("glob-dangling-symlink");
+    let source = root.join("valid.edict");
+    let broken = root.join("broken.edict");
+    fs::write(&source, VALID_SOURCE).expect("write valid source");
+    symlink(root.join("missing.edict"), &broken).expect("create dangling symlink");
+
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "check",
+            "inputRoot": root,
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "glob",
+            "pattern": format!("{}/*.edict", root.display()),
+        }),
+    ]));
+
+    let _ = fs::remove_dir_all(&root);
+
+    assert!(
+        output.status.success(),
+        "dangling symlink glob matches should be skipped as non-files"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "successful check must not write stderr"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_eq!(check_result_count(&stdout), 1);
+    assert_status(&stdout, "ok", 0);
+}
+
+#[test]
 fn check_accepts_path_directory_path_list_glob_and_source_records() {
     let root = temp_tree("inputs");
     let nested = root.join("nested");

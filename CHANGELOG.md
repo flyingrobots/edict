@@ -19,7 +19,8 @@ versions still track specification maturity rather than a released product.
   and glob inputs. Inputs resolving outside that root fail with
   `InputPathOutsideRoot`, exit 2, and are pinned by `CLI-REQ-011` /
   `CLI-TP-017` plus `fixtures/cli/13-input-root-outside`; explicit JSON `null`
-  for `inputRoot` is rejected as `InvalidSettings`.
+  for `inputRoot` is rejected as `InvalidSettings`, and non-file glob matches
+  are skipped before root-confined canonicalization.
 - The `edict` CLI now builds its JSONL check-result, diagnostic, status, and
   info records from typed `Serialize` structs instead of post-construction
   `serde_json::Value` mutation, while preserving the existing byte-for-byte

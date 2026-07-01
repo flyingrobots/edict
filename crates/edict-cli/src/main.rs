@@ -621,13 +621,14 @@ fn expand_glob(
             kind: "GlobRead",
             line: None,
             message: err.to_string(),
-        })?;
+    })?;
     paths.sort();
     for path in paths {
-        let path = confined_input_path(input_root, &path, "PathRead")?;
-        if path.is_file() {
-            sources.push(read_source_file(&path, "glob", input_root)?);
+        if !path.is_file() {
+            continue;
         }
+        let path = confined_input_path(input_root, &path, "PathRead")?;
+        sources.push(read_source_file(&path, "glob", input_root)?);
     }
     Ok(())
 }
