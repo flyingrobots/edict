@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::ffi::OsStr;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
@@ -16,6 +17,8 @@ use edict_syntax::{
     TargetIrArtifact, TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
     ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
+
+const CLI_MAX_STDIN_BYTES_ENV: &str = "EDICT_CLI_MAX_STDIN_BYTES";
 
 fn main() -> ExitCode {
     match run() {
@@ -53,6 +56,17 @@ fn run() -> Result<(), String> {
             }
             bundle_goldens(&repo_root()?, mode)
         }
+        Some("cli-goldens") => {
+            let mode = match args.next().as_deref() {
+                Some("--write") => CliGoldenMode::Write,
+                Some("--check") | None => CliGoldenMode::Check,
+                Some(flag) => return Err(format!("unknown cli-goldens flag `{flag}`")),
+            };
+            if let Some(extra) = args.next() {
+                return Err(format!("unexpected cli-goldens argument `{extra}`"));
+            }
+            cli_goldens(&repo_root()?, mode)
+        }
         Some("target-ir-goldens") => {
             let mode = match args.next().as_deref() {
                 Some("--write") => TargetIrGoldenMode::Write,
@@ -67,7 +81,7 @@ fn run() -> Result<(), String> {
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
         None => Err(
-            "usage: cargo xtask <verify|contract-check|core-goldens|bundle-goldens|target-ir-goldens>"
+            "usage: cargo xtask <verify|contract-check|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens>"
                 .into(),
         ),
     }
@@ -97,6 +111,7 @@ fn verify(root: &Path) -> Result<(), String> {
     core_goldens(root, CoreGoldenMode::Check)?;
     target_ir_goldens(root, TargetIrGoldenMode::Check)?;
     bundle_goldens(root, BundleGoldenMode::Check)?;
+    cli_goldens(root, CliGoldenMode::Check)?;
     contract_check(root)?;
     let base = diff_check_base(root)?;
     run_cmd(root, "git", ["diff", "--check", &format!("{base}...HEAD")])?;
@@ -691,6 +706,180 @@ fn write_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
         fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;
     }
     fs::write(path, bytes).map_err(|err| format!("write {}: {err}", path.display()))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CliGoldenMode {
+    Check,
+    Write,
+}
+
+fn cli_goldens(root: &Path, mode: CliGoldenMode) -> Result<(), String> {
+    run_cmd(root, "cargo", ["build", "-p", "edict-cli"])?;
+    let cases = dirs(&root.join("fixtures/cli"))?;
+    if cases.is_empty() {
+        return Err("fixtures/cli contains no golden cases".into());
+    }
+    let binary = root
+        .join("target")
+        .join("debug")
+        .join(format!("edict{}", std::env::consts::EXE_SUFFIX));
+    for case in &cases {
+        check_or_write_cli_golden(&binary, case, mode)?;
+    }
+    println!(
+        "cli-goldens: {} case(s) {}",
+        cases.len(),
+        match mode {
+            CliGoldenMode::Check => "checked",
+            CliGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
+
+fn check_or_write_cli_golden(
+    binary: &Path,
+    case: &Path,
+    mode: CliGoldenMode,
+) -> Result<(), String> {
+    let name = case
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or_else(|| format!("CLI golden case has no name: {}", case.display()))?;
+    let request_path = case.join("request.jsonl");
+    let request = fs::read(&request_path)
+        .map_err(|err| format!("[{name}] read {}: {err}", request_path.display()))?;
+    let output = run_cli_golden_case(binary, case, &request)?;
+    let exit_code = output
+        .status
+        .code()
+        .ok_or_else(|| format!("[{name}] edict terminated without an exit code"))?;
+
+    match mode {
+        CliGoldenMode::Check => {
+            check_cli_golden_bytes(case, "expected.stdout.jsonl", &output.stdout)?;
+            check_cli_golden_bytes(case, "expected.stderr.jsonl", &output.stderr)?;
+            let expected_exit = read_optional_cli_exit(case)?;
+            if expected_exit != exit_code {
+                return Err(format!(
+                    "[{name}] exit code mismatch: expected {expected_exit}, got {exit_code}; run `cargo xtask cli-goldens --write`"
+                ));
+            }
+        }
+        CliGoldenMode::Write => {
+            write_optional_cli_golden(&case.join("expected.stdout.jsonl"), &output.stdout)?;
+            write_optional_cli_golden(&case.join("expected.stderr.jsonl"), &output.stderr)?;
+            write_optional_cli_exit(&case.join("exit"), exit_code)?;
+        }
+    }
+    Ok(())
+}
+
+fn run_cli_golden_case(
+    binary: &Path,
+    case: &Path,
+    request: &[u8],
+) -> Result<std::process::Output, String> {
+    let mut command = Command::new(binary);
+    command
+        .current_dir(case)
+        .env_remove(CLI_MAX_STDIN_BYTES_ENV)
+        .envs(read_cli_env_overrides(case)?)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("[{}] spawn {}: {err}", case.display(), binary.display()))?;
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| format!("[{}] missing stdin pipe", case.display()))?
+        .write_all(request)
+        .map_err(|err| format!("[{}] write stdin: {err}", case.display()))?;
+    child
+        .wait_with_output()
+        .map_err(|err| format!("[{}] collect output: {err}", case.display()))
+}
+
+fn check_cli_golden_bytes(case: &Path, file: &str, actual: &[u8]) -> Result<(), String> {
+    let expected = read_optional_bytes(&case.join(file))?;
+    if expected == actual {
+        return Ok(());
+    }
+    Err(format!(
+        "[{}] {file} does not match generated output; run `cargo xtask cli-goldens --write`",
+        case.file_name()
+            .and_then(OsStr::to_str)
+            .unwrap_or("<unnamed>")
+    ))
+}
+
+fn read_optional_cli_exit(case: &Path) -> Result<i32, String> {
+    let path = case.join("exit");
+    match fs::read_to_string(&path) {
+        Ok(text) => text
+            .trim()
+            .parse::<i32>()
+            .map_err(|err| format!("parse {}: {err}", path.display())),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(err) => Err(format!("read {}: {err}", path.display())),
+    }
+}
+
+fn write_optional_cli_golden(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    if bytes.is_empty() {
+        remove_if_exists(path)
+    } else {
+        write_golden_file(path, bytes)
+    }
+}
+
+fn write_optional_cli_exit(path: &Path, exit_code: i32) -> Result<(), String> {
+    if exit_code == 0 {
+        return remove_if_exists(path);
+    }
+    write_golden_file(path, format!("{exit_code}\n").as_bytes())
+}
+
+fn read_cli_env_overrides(case: &Path) -> Result<Vec<(String, String)>, String> {
+    let path = case.join("env.json");
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(format!("read {}: {err}", path.display())),
+    };
+    let value = serde_json::from_str::<serde_json::Value>(&text)
+        .map_err(|err| format!("parse {}: {err}", path.display()))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{} must be a JSON object", path.display()))?;
+    let mut env = Vec::new();
+    for (key, value) in object {
+        let value = value
+            .as_str()
+            .ok_or_else(|| format!("{} entry `{key}` must be a string", path.display()))?;
+        env.push((key.clone(), value.to_owned()));
+    }
+    env.sort();
+    Ok(env)
+}
+
+fn read_optional_bytes(path: &Path) -> Result<Vec<u8>, String> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(bytes),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(err) => Err(format!("read {}: {err}", path.display())),
+    }
+}
+
+fn remove_if_exists(path: &Path) -> Result<(), String> {
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(err) => Err(format!("remove {}: {err}", path.display())),
+    }
 }
 
 fn check_topic(
@@ -2532,6 +2721,21 @@ fn run() {}
         assert!(
             properties.contains_key("inputRoot"),
             "compiler settings schema missing optional root-confinement field"
+        );
+    }
+
+    #[test]
+    fn cli_goldens_command_is_wired_into_verify() {
+        let root = repo_root().expect("repo root");
+        let source = fs::read_to_string(root.join("xtask/src/main.rs")).expect("read xtask source");
+
+        assert!(
+            source.contains("Some(\"cli-goldens\")"),
+            "xtask dispatch must expose the cli-goldens command"
+        );
+        assert!(
+            source.contains("cli_goldens(root, CliGoldenMode::Check)?;"),
+            "cargo xtask verify must run cli-goldens in check mode"
         );
     }
 
