@@ -35,7 +35,9 @@ versions still track specification maturity rather than a released product.
   extension string per visited file; behavior and golden output are unchanged.
 - Added `cargo xtask cli-goldens --check/--write` and wired check mode into
   `cargo xtask verify`, giving the CLI golden corpus the same check/write
-  regeneration path as the Core, Target IR, and bundle goldens.
+  regeneration path as the Core, Target IR, and bundle goldens. The CLI golden
+  runner resolves the `edict` binary through Cargo metadata so custom target
+  directories are honored.
 - Added `cargo xtask release-prep <version>` to scaffold the mechanical release
   prep surfaces that must move together: workspace package versions, lockfile
   package versions, dated changelog section, release policy boundary block,

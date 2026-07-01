@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use edict_syntax::{
@@ -552,10 +552,7 @@ pub(crate) fn cli_goldens(root: &Path, mode: CliGoldenMode) -> Result<(), String
     if cases.is_empty() {
         return Err("fixtures/cli contains no golden cases".into());
     }
-    let binary = root
-        .join("target")
-        .join("debug")
-        .join(format!("edict{}", std::env::consts::EXE_SUFFIX));
+    let binary = cli_binary_path(root)?;
     for case in &cases {
         check_or_write_cli_golden(&binary, case, mode)?;
     }
@@ -568,6 +565,33 @@ pub(crate) fn cli_goldens(root: &Path, mode: CliGoldenMode) -> Result<(), String
         }
     );
     Ok(())
+}
+
+fn cli_binary_path(root: &Path) -> Result<PathBuf, String> {
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(root)
+        .output()
+        .map_err(|err| format!("run cargo metadata: {err}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "cargo metadata failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    cli_binary_path_from_cargo_metadata(&output.stdout)
+}
+
+pub(crate) fn cli_binary_path_from_cargo_metadata(metadata: &[u8]) -> Result<PathBuf, String> {
+    let metadata: serde_json::Value =
+        serde_json::from_slice(metadata).map_err(|err| format!("parse cargo metadata: {err}"))?;
+    let target_directory = metadata
+        .get("target_directory")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "cargo metadata missing string field `target_directory`".to_owned())?;
+    Ok(PathBuf::from(target_directory)
+        .join("debug")
+        .join(format!("edict{}", std::env::consts::EXE_SUFFIX)))
 }
 
 fn check_or_write_cli_golden(

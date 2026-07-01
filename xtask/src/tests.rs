@@ -7,7 +7,10 @@ use regex::Regex;
 use serde_json::Value;
 
 use super::contract_check::{check_links, check_topic, contract_check};
-use super::goldens::{bundle_goldens, target_ir_goldens, BundleGoldenMode, TargetIrGoldenMode};
+use super::goldens::{
+    bundle_goldens, cli_binary_path_from_cargo_metadata, target_ir_goldens, BundleGoldenMode,
+    TargetIrGoldenMode,
+};
 use super::release_prep::release_prep;
 use super::util::{choose_diff_check_base, repo_root};
 
@@ -1620,6 +1623,24 @@ fn cli_goldens_command_is_wired_into_verify() {
     assert!(
         source.contains("cli_goldens(root, CliGoldenMode::Check)?;"),
         "cargo xtask verify must run cli-goldens in check mode"
+    );
+}
+
+#[test]
+fn cli_golden_binary_path_uses_cargo_metadata_target_directory() {
+    let target_directory = std::env::temp_dir().join("edict-custom-target");
+    let target_directory_json =
+        serde_json::to_string(target_directory.to_str().expect("utf-8 temp path"))
+            .expect("quote target directory");
+    let metadata = format!(r#"{{"target_directory":{target_directory_json}}}"#);
+    let binary = cli_binary_path_from_cargo_metadata(metadata.as_bytes())
+        .expect("metadata target directory");
+
+    assert_eq!(
+        binary,
+        target_directory
+            .join("debug")
+            .join(format!("edict{}", std::env::consts::EXE_SUFFIX))
     );
 }
 
