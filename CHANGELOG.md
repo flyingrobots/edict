@@ -42,7 +42,8 @@ versions still track specification maturity rather than a released product.
   prep surfaces that must move together: workspace package versions, lockfile
   package versions, dated changelog section, release policy boundary block,
   release notes stub, boundary test stub, changelog date guard entry, and paired
-  release-process test-plan rows.
+  release-process test-plan rows. Generated boundary tests now require operators
+  to replace scaffolded scope/non-goal placeholders before the branch can pass.
 - Added a root `ARCHITECTURE.md` workspace map covering current crate
   responsibilities, dependency direction, the `edict-syntax` crate-scope caveat,
   and current non-claims.

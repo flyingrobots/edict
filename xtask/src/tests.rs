@@ -1434,6 +1434,11 @@ fn release_prep_scaffolds_version_policy_changelog_and_test_stub() {
             && xtask_source.contains("(\"v0.12.0-alpha.1\", \"2026-11-18\")"),
         "release prep must add the boundary test stub and changelog date case"
     );
+    assert!(
+        xtask_source.contains("!release_policy.contains(forbidden)")
+            && xtask_source.contains("release policy must replace scaffold placeholder"),
+        "release boundary test must fail while scaffold placeholders remain"
+    );
 }
 
 #[test]

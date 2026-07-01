@@ -373,12 +373,21 @@ fn insert_release_boundary_test_stub(
             \"tag = \\\"{tag}\\\"\",
             \"target_date = \\\"{target_date}\\\"\",
             \"status = \\\"prep\\\"\",
-            \"TODO_release_scope\",
-            \"TODO_release_non_goal\",
+            \"scope = [\",
+            \"non_goals = [\",
         ] {{
             assert!(
                 release_policy.contains(required),
                 \"{tag} release policy missing structured field: {{required}}\"
+            );
+        }}
+        for forbidden in [
+            \"TODO_release_scope\",
+            \"TODO_release_non_goal\",
+        ] {{
+            assert!(
+                !release_policy.contains(forbidden),
+                \"{tag} release policy must replace scaffold placeholder: {{forbidden}}\"
             );
         }}
     }}
