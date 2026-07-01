@@ -14,6 +14,11 @@ versions still track specification maturity rather than a released product.
   cap and an `EDICT_CLI_MAX_STDIN_BYTES` override. Over-limit input fails with
   the stable `InputTooLarge` CLI diagnostic and exit 2, pinned by
   `CLI-REQ-010` / `CLI-TP-016` and `fixtures/cli/12-input-too-large`.
+- The `edict` CLI now documents its trusted local request boundary and accepts
+  optional compiler setting `inputRoot` to confine path, path-list, directory,
+  and glob inputs. Inputs resolving outside that root fail with
+  `InputPathOutsideRoot`, exit 2, and are pinned by `CLI-REQ-011` /
+  `CLI-TP-017` plus `fixtures/cli/13-input-root-outside`.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.

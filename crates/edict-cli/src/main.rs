@@ -22,6 +22,7 @@ struct CompilerSettings {
     #[serde(rename = "type")]
     record_type: String,
     operation: Operation,
+    input_root: Option<PathBuf>,
     #[serde(default = "default_directory_extensions")]
     directory_extensions: Vec<String>,
     #[serde(default)]
@@ -478,6 +479,8 @@ fn expand_inputs(
     settings: &CompilerSettings,
     inputs: &[CompilerInput],
 ) -> Result<Vec<SourceDocument>, CliFailure> {
+    let input_root = canonical_input_root(settings)?;
+    let input_root = input_root.as_deref();
     let mut sources = Vec::new();
     for input in inputs {
         match input {
@@ -488,52 +491,77 @@ fn expand_inputs(
                 }),
                 source: source.clone(),
             }),
-            CompilerInput::Path { path } => expand_path(settings, path, "path", &mut sources)?,
+            CompilerInput::Path { path } => {
+                expand_path(settings, input_root, path, "path", &mut sources)?;
+            }
             CompilerInput::PathList { paths } => {
                 for path in paths {
-                    expand_path(settings, path, "pathList", &mut sources)?;
+                    expand_path(settings, input_root, path, "pathList", &mut sources)?;
                 }
             }
             CompilerInput::Directory { path } => {
-                expand_directory(settings, path, "directory", &mut sources)?;
+                expand_directory(settings, input_root, path, "directory", &mut sources)?;
             }
-            CompilerInput::Glob { pattern } => expand_glob(pattern, &mut sources)?,
+            CompilerInput::Glob { pattern } => expand_glob(pattern, input_root, &mut sources)?,
         }
     }
     Ok(sources)
 }
 
+fn canonical_input_root(settings: &CompilerSettings) -> Result<Option<PathBuf>, CliFailure> {
+    let Some(root) = &settings.input_root else {
+        return Ok(None);
+    };
+    let canonical =
+        fs::canonicalize(root).map_err(|err| path_failure("InputRootRead", root, &err))?;
+    let metadata =
+        fs::metadata(&canonical).map_err(|err| path_failure("InputRootRead", &canonical, &err))?;
+    if !metadata.is_dir() {
+        return Err(CliFailure {
+            kind: "InvalidInputRoot",
+            line: None,
+            message: format!("inputRoot is not a directory: {}", root.display()),
+        });
+    }
+    Ok(Some(canonical))
+}
+
 fn expand_path(
     settings: &CompilerSettings,
+    input_root: Option<&Path>,
     path: &Path,
     origin: &str,
     sources: &mut Vec<SourceDocument>,
 ) -> Result<(), CliFailure> {
-    let metadata = fs::metadata(path).map_err(|err| path_failure("PathRead", path, &err))?;
+    let path = confined_input_path(input_root, path, "PathRead")?;
+    let metadata = fs::metadata(&path).map_err(|err| path_failure("PathRead", &path, &err))?;
     if metadata.is_dir() {
-        expand_directory(settings, path, origin, sources)
+        expand_directory(settings, input_root, &path, origin, sources)
     } else {
-        read_source_file(path, origin).map(|source| sources.push(source))
+        read_source_file(&path, origin, input_root).map(|source| sources.push(source))
     }
 }
 
 fn expand_directory(
     settings: &CompilerSettings,
+    input_root: Option<&Path>,
     path: &Path,
     origin: &str,
     sources: &mut Vec<SourceDocument>,
 ) -> Result<(), CliFailure> {
+    let path = confined_input_path(input_root, path, "DirectoryRead")?;
     let mut files = Vec::new();
-    collect_directory_files(settings, path, &mut files)?;
+    collect_directory_files(settings, input_root, &path, &mut files)?;
     files.sort();
     for file in files {
-        sources.push(read_source_file(&file, origin)?);
+        sources.push(read_source_file(&file, origin, input_root)?);
     }
     Ok(())
 }
 
 fn collect_directory_files(
     settings: &CompilerSettings,
+    input_root: Option<&Path>,
     path: &Path,
     files: &mut Vec<PathBuf>,
 ) -> Result<(), CliFailure> {
@@ -557,8 +585,9 @@ fn collect_directory_files(
         if metadata.file_type().is_symlink() && !settings.follow_symlinks {
             continue;
         }
+        let path = confined_input_path(input_root, &path, "DirectoryRead")?;
         if metadata.is_dir() {
-            collect_directory_files(settings, &path, files)?;
+            collect_directory_files(settings, input_root, &path, files)?;
         } else if metadata.is_file() && directory_extension_matches(settings, &path) {
             files.push(path);
         }
@@ -566,7 +595,12 @@ fn collect_directory_files(
     Ok(())
 }
 
-fn expand_glob(pattern: &str, sources: &mut Vec<SourceDocument>) -> Result<(), CliFailure> {
+fn expand_glob(
+    pattern: &str,
+    input_root: Option<&Path>,
+    sources: &mut Vec<SourceDocument>,
+) -> Result<(), CliFailure> {
+    reject_glob_prefix_outside_root(pattern, input_root)?;
     let mut paths = glob::glob(pattern)
         .map_err(|err| CliFailure {
             kind: "InvalidGlob",
@@ -579,22 +613,81 @@ fn expand_glob(pattern: &str, sources: &mut Vec<SourceDocument>) -> Result<(), C
             line: None,
             message: err.to_string(),
         })?;
-    paths.retain(|path| path.is_file());
     paths.sort();
     for path in paths {
-        sources.push(read_source_file(&path, "glob")?);
+        let path = confined_input_path(input_root, &path, "PathRead")?;
+        if path.is_file() {
+            sources.push(read_source_file(&path, "glob", input_root)?);
+        }
     }
     Ok(())
 }
 
-fn read_source_file(path: &Path, origin: &str) -> Result<SourceDocument, CliFailure> {
-    let source = fs::read_to_string(path).map_err(|err| path_failure("PathRead", path, &err))?;
+fn reject_glob_prefix_outside_root(
+    pattern: &str,
+    input_root: Option<&Path>,
+) -> Result<(), CliFailure> {
+    let Some(root) = input_root else {
+        return Ok(());
+    };
+    let literal = pattern
+        .find(|ch| matches!(ch, '*' | '?' | '[' | '{'))
+        .map_or(pattern, |index| &pattern[..index]);
+    let probe = if literal.is_empty() {
+        Path::new(".")
+    } else {
+        let literal_path = Path::new(literal);
+        if literal.ends_with(std::path::MAIN_SEPARATOR) || literal.ends_with('/') {
+            literal_path
+        } else {
+            literal_path.parent().unwrap_or_else(|| Path::new("."))
+        }
+    };
+    let Ok(canonical) = fs::canonicalize(probe) else {
+        return Ok(());
+    };
+    if canonical.starts_with(root) {
+        return Ok(());
+    }
+    Err(CliFailure {
+        kind: "InputPathOutsideRoot",
+        line: None,
+        message: format!("{pattern} resolves outside configured inputRoot"),
+    })
+}
+
+fn read_source_file(
+    path: &Path,
+    origin: &str,
+    input_root: Option<&Path>,
+) -> Result<SourceDocument, CliFailure> {
+    let path = confined_input_path(input_root, path, "PathRead")?;
+    let source = fs::read_to_string(&path).map_err(|err| path_failure("PathRead", &path, &err))?;
     Ok(SourceDocument {
         input: json!({
             "kind": origin,
             "path": path.display().to_string(),
         }),
         source,
+    })
+}
+
+fn confined_input_path(
+    input_root: Option<&Path>,
+    path: &Path,
+    failure_kind: &'static str,
+) -> Result<PathBuf, CliFailure> {
+    let Some(root) = input_root else {
+        return Ok(path.to_path_buf());
+    };
+    let canonical = fs::canonicalize(path).map_err(|err| path_failure(failure_kind, path, &err))?;
+    if canonical.starts_with(root) {
+        return Ok(canonical);
+    }
+    Err(CliFailure {
+        kind: "InputPathOutsideRoot",
+        line: None,
+        message: format!("{} resolves outside configured inputRoot", path.display()),
     })
 }
 

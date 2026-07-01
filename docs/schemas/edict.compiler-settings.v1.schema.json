@@ -16,6 +16,10 @@
     "operation": {
       "enum": ["check"]
     },
+    "inputRoot": {
+      "type": "string",
+      "description": "Optional filesystem root for path, pathList, directory, and glob inputs. When present, every resolved input path must stay within this root."
+    },
     "directoryExtensions": {
       "type": "array",
       "items": {

@@ -2529,6 +2529,10 @@ fn run() {}
             properties.contains_key("followSymlinks"),
             "compiler settings schema missing symlink traversal field"
         );
+        assert!(
+            properties.contains_key("inputRoot"),
+            "compiler settings schema missing optional root-confinement field"
+        );
     }
 
     fn cli_record_schema(root: &Path, file: &str, id: &str, record_schema: &str) -> Value {

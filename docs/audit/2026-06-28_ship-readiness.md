@@ -180,6 +180,11 @@ automated pipeline). Worth pre-empting now.
   directory recursion follows symlinks when `followSymlinks` is true. Under
   untrusted input this is an information-disclosure / traversal vector.
   - **Mitigation Prompt 10:** `Document the CLI trust boundary (requests are trusted; paths are read with the caller's privileges) in docs/topics/cli/README.md, and add an optional root-confinement setting that rejects input paths resolving outside a configured root, with a stable CLI failure kind and a golden fixture.`
+  - **✅ Addressed (2026-07-01, #95):** compiler settings now accept optional
+    `inputRoot`; path, path-list, directory, and glob inputs resolving outside
+    that root fail with `InputPathOutsideRoot`, exit 2, and are pinned by
+    `CLI-REQ-011` / `CLI-TP-017` plus
+    `fixtures/cli/13-input-root-outside`.
 - **Vulnerability 2 — Unbounded stdin buffering (DoS).** `run()` does
   `io::stdin().read_to_string(&mut input)` — the entire stream is read into
   memory with no cap. A hostile or runaway producer can exhaust memory.
