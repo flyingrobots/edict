@@ -2,11 +2,11 @@
 
 Status: current operator runbook for alpha releases.
 
-Use this runbook for every Edict alpha release until the process is replaced by
-an executable release-preflight command. The structured policy fields in
-[`policy.toml`](./policy.toml) are the machine-checkable guardrail; this page is
-the human execution path. Normal release publication is automated after a
-release-prep pull request merges and `main` CI succeeds.
+Use this runbook for every Edict alpha release. `cargo xtask release-prep
+<version>` scaffolds the mechanical release files, but the structured policy
+fields in [`policy.toml`](./policy.toml) remain the machine-checkable guardrail
+and this page remains the human execution path. Normal release publication is
+automated after a release-prep pull request merges and `main` CI succeeds.
 
 ## 1. Prepare The Branch
 
@@ -42,6 +42,20 @@ zero open issues; the auto-release workflow checks this before creating the
 immutable tag.
 
 ## 2. Refresh Release Artifacts
+
+Run the mechanical scaffold once from the release-prep branch:
+
+```bash
+cargo xtask release-prep vX.Y.Z-alpha.N
+```
+
+The scaffold updates workspace package versions, lockfile package versions,
+`CHANGELOG.md`, `docs/releases/vX.Y.Z-alpha.N.md`,
+`docs/topics/release-process/policy.toml`,
+`docs/topics/release-process/test-plan.md`, and the matching `xtask` release
+policy guard. Replace every scaffold placeholder before release; the command
+does not write the release thesis, choose scope, choose non-goals, audit topic
+shelves, or create GitHub state.
 
 Update these artifacts together:
 

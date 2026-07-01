@@ -52,6 +52,14 @@ merge a normal pull request to `main`, let automation tag from verified `main`,
 watch publication, and capture evidence. The structured runbook contract is
 captured in [`policy.toml`](./policy.toml). [RELEASE-REQ-009]
 
+`cargo xtask release-prep <version>` scaffolds the mechanical release-prep
+surfaces that must move together: workspace package versions, lockfile package
+versions, a dated changelog section, release policy boundary block, release
+notes stub, release boundary test stub, changelog date guard entry, and paired
+release-process test-plan rows. The command does not write the release thesis,
+replace topic-shelf audits, or decide scope/non-goals; reviewers must replace
+the scaffold placeholders before release. [RELEASE-REQ-024]
+
 Every release-prep branch must audit `docs/topics/` coverage and accuracy before
 the release-prep pull request opens. Coverage is audited topic shelves divided
 by total topic shelves; accuracy is accurate audited topic shelves divided by

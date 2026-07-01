@@ -34,6 +34,11 @@ versions still track specification maturity rather than a released product.
 - Added `cargo xtask cli-goldens --check/--write` and wired check mode into
   `cargo xtask verify`, giving the CLI golden corpus the same check/write
   regeneration path as the Core, Target IR, and bundle goldens.
+- Added `cargo xtask release-prep <version>` to scaffold the mechanical release
+  prep surfaces that must move together: workspace package versions, lockfile
+  package versions, dated changelog section, release policy boundary block,
+  release notes stub, boundary test stub, changelog date guard entry, and paired
+  release-process test-plan rows.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.
