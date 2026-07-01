@@ -102,9 +102,17 @@ evidence references, and local links. Golden commands regenerate or check the
 reviewed byte/digest/stream fixtures. `release-prep` writes mechanical release
 scaffolding but does not decide scope or create GitHub state.
 
-At the time this page was added, `xtask/src/main.rs` is still a large single
-file with inline tests. The audit backlog tracks splitting it into modules and
-relocating tests while preserving command behavior.
+The `xtask` implementation is split by responsibility:
+
+- `main.rs` owns command dispatch and the `verify` sequence;
+- `contract_check.rs` owns topic-shelf, evidence, and local-link validation;
+- `goldens.rs` owns Core, Target IR, bundle, and CLI golden check/write paths;
+- `release_prep.rs` owns mechanical release-prep scaffolding;
+- `util.rs` owns repository walking, command execution, and git-base helpers;
+- `tests.rs` keeps the contract-harness regression tests out of dispatch code.
+
+This split is structural only; command behavior remains guarded by
+`cargo test -p xtask` and `cargo xtask verify`.
 
 ## Layer Flow
 

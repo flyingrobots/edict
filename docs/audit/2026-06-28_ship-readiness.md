@@ -53,6 +53,9 @@ that is otherwise clean:
    production logic and a single ~2,400-line `#[cfg(test)] mod tests` covering
    unrelated concerns (release policy, contract graph, core goldens, grammar,
    TextMate, VS Code manifests, schema shapes, link checks).
+   - **✅ Addressed (2026-07-01, #85):** `xtask` production logic is split into
+     dispatch (`main.rs`), focused modules (`contract_check.rs`, `goldens.rs`,
+     `release_prep.rs`, `util.rs`), and relocated harness tests (`tests.rs`).
 2. **Crate scope sprawl.** `edict-syntax` owns far more than syntax — compiler
    spine, canonical encoder, Core IR, lowerability, target IR, contract-bundle
    validation, and Gate C admission — with no compile-time boundary between
@@ -82,6 +85,10 @@ gate.
   `xtask/src/main.rs` means scrolling past ~2,400 lines of tests to reach
   ~637 lines of logic.
   - **Mitigation Prompt 2:** `Split xtask/src/main.rs production logic into modules (release.rs, contract_check.rs, core_goldens.rs, schema_audit.rs) and move the inline tests into xtask/tests/*.rs or per-module test blocks, keeping cargo xtask verify behavior identical.`
+  - **✅ Addressed (2026-07-01, #85):** command dispatch, contract checks,
+    golden management, release scaffolding, shared utilities, and tests now
+    live in separate `xtask/src/*.rs` files with behavior parity verified by
+    `cargo test -p xtask` and `cargo xtask verify`.
 - **Issue 3 — CLI input-kind handling is implicit.** The supported input kinds
   live in a hand-written `match` rather than a typed model, so the supported set
   is not discoverable from a single type.

@@ -51,6 +51,10 @@ versions still track specification maturity rather than a released product.
 - Recorded the schema-as-source-of-truth codegen decision: defer generator work
   until cross-language drift or fixture-authoring pain is measurable, and do not
   reintroduce GraphQL semantics as the contract source.
+- Split `xtask` out of its former single-file shape: command dispatch,
+  contract checks, golden management, release scaffolding, shared utilities, and
+  harness tests now live in focused `xtask/src/*.rs` modules with command
+  behavior preserved.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.

@@ -104,6 +104,10 @@ Extensibility is good *by construction*: the front-end is pure functions over da
 **`xtask/src/main.rs` (3,052 lines).** Production logic is lines 1–637; a single `#[cfg(test)] mod tests` runs from line 638 to EOF (~2,400 lines). One module mixes release-policy validation, contract-graph checking, core-golden generation, schema-shape audits, grammar/TextMate/VS Code manifest tests, and link checks. It is the repo's largest file, the hardest to navigate, and a merge-conflict magnet. (By contrast, the *library* modules are healthy — see §3.3.)
 
 - **Action Prompt (Debt Reduction):** `Refactor xtask/src/main.rs into focused modules (release.rs, contract_check.rs, core_goldens.rs, schema_audit.rs, plus main.rs dispatch) and relocate the inline #[cfg(test)] tests either next to their modules or into xtask/tests/*.rs integration files. Keep cargo xtask verify / contract-check / core-goldens behavior byte-identical; run the full suite before and after to prove parity.`
+- **✅ Addressed (2026-07-01, #85):** `xtask` production logic is split into
+  `main.rs` dispatch, `contract_check.rs`, `goldens.rs`, `release_prep.rs`,
+  and `util.rs`; the former inline test body now lives in `tests.rs`. Parity is
+  guarded by `cargo test -p xtask` and the full `cargo xtask verify` gate.
 
 ### 3.2 Abstraction Violation
 
