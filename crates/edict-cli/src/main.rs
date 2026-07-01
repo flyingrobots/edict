@@ -3,8 +3,8 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use edict_cli::{
-    CHECK_RESULT_SCHEMA, COMPILER_INPUT_SCHEMA as INPUT_SCHEMA, DIAGNOSTIC_SCHEMA, EVENT_SCHEMA,
-    INFO_SCHEMA,
+    CHECK_RESULT_SCHEMA, COMPILER_INPUT_SCHEMA as INPUT_SCHEMA, DEFAULT_MAX_STDIN_BYTES,
+    DIAGNOSTIC_SCHEMA, EVENT_SCHEMA, INFO_SCHEMA, MAX_STDIN_BYTES_ENV,
 };
 use edict_syntax::{CheckOutcome, ParseError, SemanticError, Span};
 use serde::Deserialize;
@@ -94,16 +94,13 @@ fn run() -> i32 {
         }
     }
 
-    let mut input = String::new();
-    if let Err(err) = io::stdin().read_to_string(&mut input) {
-        let failure = CliFailure {
-            kind: "StdinRead",
-            line: None,
-            message: err.to_string(),
-        };
-        write_cli_failure(&failure);
-        return EXIT_CLI_FAILED;
-    }
+    let input = match read_stdin_bounded() {
+        Ok(input) => input,
+        Err(failure) => {
+            write_cli_failure(&failure);
+            return EXIT_CLI_FAILED;
+        }
+    };
 
     match parse_request(&input) {
         Ok(request) => match run_request(&request) {
@@ -117,6 +114,67 @@ fn run() -> i32 {
             write_cli_failure(&failure);
             EXIT_CLI_FAILED
         }
+    }
+}
+
+fn read_stdin_bounded() -> Result<String, CliFailure> {
+    let limit = configured_stdin_limit()?;
+    let max_read = limit.checked_add(1).ok_or_else(|| CliFailure {
+        kind: "InvalidStdinLimit",
+        line: None,
+        message: format!("{MAX_STDIN_BYTES_ENV} must be below usize::MAX"),
+    })?;
+    let max_read = u64::try_from(max_read).map_err(|_| CliFailure {
+        kind: "InvalidStdinLimit",
+        line: None,
+        message: format!("{MAX_STDIN_BYTES_ENV} exceeds the supported byte limit"),
+    })?;
+    let mut bytes = Vec::new();
+    io::stdin()
+        .take(max_read)
+        .read_to_end(&mut bytes)
+        .map_err(|err| CliFailure {
+            kind: "StdinRead",
+            line: None,
+            message: err.to_string(),
+        })?;
+    if bytes.len() > limit {
+        return Err(CliFailure {
+            kind: "InputTooLarge",
+            line: None,
+            message: format!("stdin exceeds the configured maximum of {limit} bytes"),
+        });
+    }
+    String::from_utf8(bytes).map_err(|err| CliFailure {
+        kind: "StdinRead",
+        line: None,
+        message: err.to_string(),
+    })
+}
+
+fn configured_stdin_limit() -> Result<usize, CliFailure> {
+    match std::env::var(MAX_STDIN_BYTES_ENV) {
+        Ok(raw) => {
+            let limit = raw.parse::<usize>().map_err(|_| CliFailure {
+                kind: "InvalidStdinLimit",
+                line: None,
+                message: format!("{MAX_STDIN_BYTES_ENV} must be a positive byte count"),
+            })?;
+            if limit == 0 {
+                return Err(CliFailure {
+                    kind: "InvalidStdinLimit",
+                    line: None,
+                    message: format!("{MAX_STDIN_BYTES_ENV} must be a positive byte count"),
+                });
+            }
+            Ok(limit)
+        }
+        Err(std::env::VarError::NotPresent) => Ok(DEFAULT_MAX_STDIN_BYTES),
+        Err(std::env::VarError::NotUnicode(_)) => Err(CliFailure {
+            kind: "InvalidStdinLimit",
+            line: None,
+            message: format!("{MAX_STDIN_BYTES_ENV} must be valid UTF-8"),
+        }),
     }
 }
 

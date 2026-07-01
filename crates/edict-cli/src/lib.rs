@@ -20,3 +20,9 @@ pub const EVENT_SCHEMA: &str = "edict.cli.event/v1";
 
 /// Stable schema identifier for CLI informational (`--help`/`--version`) records.
 pub const INFO_SCHEMA: &str = "edict.cli.info/v1";
+
+/// Environment variable that overrides the maximum stdin byte count.
+pub const MAX_STDIN_BYTES_ENV: &str = "EDICT_CLI_MAX_STDIN_BYTES";
+
+/// Default maximum stdin byte count accepted before request parsing.
+pub const DEFAULT_MAX_STDIN_BYTES: usize = 8 * 1024 * 1024;

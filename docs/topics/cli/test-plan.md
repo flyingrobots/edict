@@ -36,6 +36,7 @@ Out of scope:
 | CLI-REQ-007 | implemented | Terminal status events are declared as `edict.cli.event/v1` and have a checked-in JSON Schema contract. | docs/schemas/edict.cli-event.v1.schema.json |
 | CLI-REQ-008 | implemented | A checked-in golden fixture corpus replays end-to-end through the binary and matches stdout, stderr, and exit code byte-for-byte for success, compiler rejection, CLI-input rejection, and deterministic input expansion. | crates/edict-cli/tests/golden_cli.rs |
 | CLI-REQ-009 | implemented | The binary supports `--help`/`-h` and `--version`/`-V`, which emit a single `edict.cli.info/v1` record (declared by a checked-in JSON Schema) on stdout and exit 0; any other argument is rejected with an actionable `InvalidArguments` diagnostic and exit 2. | crates/edict-cli/tests/jsonl_cli.rs, docs/schemas/edict.cli-info.v1.schema.json |
+| CLI-REQ-010 | implemented | The binary rejects stdin that exceeds its configured byte limit before request parsing, emits a stable `InputTooLarge` CLI diagnostic, and exits 2. | crates/edict-cli/tests/jsonl_cli.rs, fixtures/cli/12-input-too-large/request.jsonl |
 
 ## Fixtures
 
@@ -50,6 +51,7 @@ Out of scope:
 | docs/schemas/edict.cli-info.v1.schema.json | Stable JSON Schema for `--help`/`--version` informational records. | The schema contract test validates the identifier, required fields, supported topics, and the help-topic conditional fields. |
 | crates/edict-cli/tests/golden_cli.rs | Golden replay harness for the `fixtures/cli/` corpus. | Replays each case through the binary and matches stdout, stderr, and exit code byte-for-byte against checked-in goldens. |
 | fixtures/cli/01-source-ok/request.jsonl | Representative golden CLI request record. | Replayed by the golden harness; its goldens pin the success-path stdout and status records. |
+| fixtures/cli/12-input-too-large/request.jsonl | Golden CLI request replayed with a tiny stdin cap. | Replayed by the golden harness; stderr pins the `InputTooLarge` diagnostic and exit 2. |
 
 ## Test Cases
 
@@ -70,6 +72,7 @@ Out of scope:
 | CLI-TP-013 | implemented | Error handling | CLI-REQ-009 | An unrecognized argument exits 2 with an `InvalidArguments` diagnostic whose message points at `--help` and the CLI docs. | unknown_argument_rejected_with_actionable_diagnostic | crates/edict-cli/tests/jsonl_cli.rs | Actionable error, not just a rejection. |
 | CLI-TP-014 | implemented | Schema guard | CLI-REQ-009 | The info JSON Schema declares `edict.cli.info/v1`, `info`, the `help` and `version` topics, and the help-topic conditional fields. | info_schema_declares_jsonl_contract | docs/schemas/edict.cli-info.v1.schema.json | Contract-artifact test, not prose matching. |
 | CLI-TP-015 | implemented | Error handling | CLI-REQ-004 | The binary rejects input records the `edict.compiler.input/v1` schema rejects: an unrecognized field and a record mixing fields from two input kinds both fail with `InvalidInputRecord` and exit 2. | golden_cli_fixtures_replay_exactly | crates/edict-cli/tests/golden_cli.rs | Parser accepts exactly what the published schema accepts. |
+| CLI-TP-016 | implemented | Error handling | CLI-REQ-010 | Stdin larger than the configured byte limit fails before request parsing with `InputTooLarge`, writes no stdout, and exits 2. | oversized_stdin_rejects_with_input_too_large_diagnostic, golden_cli_fixtures_replay_exactly | crates/edict-cli/tests/jsonl_cli.rs, fixtures/cli/12-input-too-large/request.jsonl | Prevents unbounded stdin buffering from a hostile or runaway producer. |
 
 ## Determinism Obligations
 
@@ -77,6 +80,8 @@ Out of scope:
 - Tests parse stdout and stderr as JSONL; they do not inspect diagnostic prose.
 - Raw source input is carried inside a JSON string field.
 - CLI input errors must not panic or fall back to non-JSON output.
+- Stdin must be bounded before request parsing; over-limit input must fail as
+  `InputTooLarge` rather than flowing into JSONL parsing.
 
 ## Open Gaps
 

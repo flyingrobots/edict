@@ -9,7 +9,10 @@ every output record is JSON Lines.
 ## Public Surface
 
 The `edict` binary reads compiler requests from stdin as JSONL records. It emits
-only JSONL records on stdout and stderr. [CLI-REQ-001]
+only JSONL records on stdout and stderr. Stdin is bounded before request parsing:
+the default cap is 8 MiB, and `EDICT_CLI_MAX_STDIN_BYTES` may override that cap
+with a positive byte count. Over-limit input is rejected with an `InputTooLarge`
+CLI diagnostic and exit `2`. [CLI-REQ-001, CLI-REQ-010]
 
 The binary takes no positional arguments. The only accepted flags are
 `--help`/`-h` and `--version`/`-V`, which emit a single `edict.cli.info/v1`
@@ -42,10 +45,9 @@ prose outside JSON string fields. [CLI-REQ-001]
 
 Every record family on the CLI boundary has a checked-in JSON Schema. These
 schemas are the stable contract for callers; the CLI does not embed a schema
-validation engine. The schemas pin `additionalProperties` closed and may be
-stricter than the parser, which ignores fields it does not recognize. Records
-that conform to the schema are always accepted; callers must not rely on the
-parser tolerating extra fields.
+validation engine. The binary rejects compiler input records with fields outside
+the closed `edict.compiler.input/v1` schema variants, so callers should treat
+the checked-in schemas as the accepted wire shape.
 
 | Record `schema` | Direction | Artifact |
 | --- | --- | --- |
