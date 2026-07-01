@@ -1,3 +1,5 @@
+#![deny(clippy::expect_used, clippy::unwrap_used)]
+
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -631,7 +633,7 @@ fn reject_glob_prefix_outside_root(
         return Ok(());
     };
     let literal = pattern
-        .find(|ch| matches!(ch, '*' | '?' | '[' | '{'))
+        .find(['*', '?', '[', '{'])
         .map_or(pattern, |index| &pattern[..index]);
     let probe = if literal.is_empty() {
         Path::new(".")

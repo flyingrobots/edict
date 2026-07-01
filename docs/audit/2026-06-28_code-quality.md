@@ -127,6 +127,10 @@ The clearest Separation-of-Concerns issue is **crate-level, not function-level**
 **None found.** The highest-value result of this audit is a *negative*: the parse/validate path is **panic-free on untrusted input**. A naive grep flags 71 `expect`-like calls in `parser.rs`, but every one is `self.expect(&TokenKind::…)?` — the parser's own graceful token-matching combinator returning `ParseError`, not `Result::expect`. Production code contains **zero `.unwrap()`**; the few real `.expect()` calls (4 in `canonical.rs`, 1 each in `token.rs`/`admission.rs`/`authority_facts.rs`) sit behind proven invariants (range-checked integer casts, infallible `String` writes) with self-documenting messages. `edict-cli` production code has **zero** panic sites and is entirely `Result`-driven.
 
 - **Action Prompt (Risk Mitigation):** `No critical flaw to neutralize. To lock in the property, add a clippy gate to deny unwrap_used and expect_used in non-test code for crates/edict-cli (where input is untrusted), allowing expect only where a // SAFETY/invariant comment is present, and document the parser's self.expect combinator naming so future audits don't re-flag it.`
+  - **✅ Addressed (2026-07-01, #93):** `edict-cli` production targets now deny
+    `clippy::unwrap_used` and `clippy::expect_used`; the parser's
+    `self.expect` helper is documented as a fallible token-matching combinator
+    that returns structured `ParseError` values rather than panicking.
 
 ### 4.2 Efficiency Sink
 

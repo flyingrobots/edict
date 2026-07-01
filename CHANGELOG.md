@@ -23,6 +23,9 @@ versions still track specification maturity rather than a released product.
   info records from typed `Serialize` structs instead of post-construction
   `serde_json::Value` mutation, while preserving the existing byte-for-byte
   golden output.
+- The `edict-cli` production targets now deny `clippy::unwrap_used` and
+  `clippy::expect_used`, and the parser's `self.expect` helper is documented as
+  a fallible token-matching combinator rather than a panic primitive.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.
