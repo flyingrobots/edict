@@ -130,6 +130,10 @@ explained in one map for new contributors.
 > **✅ Addressed (2026-06-29, #102):** `SECURITY.md`, `NOTICE`, and
 > `CODE_OF_CONDUCT.md` were added at repo root. `ARCHITECTURE.md` remains open
 > and is tracked separately in **#99**.
+> **✅ Addressed (2026-07-01, #99):** `ARCHITECTURE.md` was added at repo root
+> and linked from `README.md`. It records the current workspace dependency
+> direction, crate responsibilities, `edict-syntax` crate-scope caveat, and
+> current non-claims without changing the package layout.
 
 ### 2.3 Supplementary Documentation (undocumented complex area)
 

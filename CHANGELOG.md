@@ -39,6 +39,9 @@ versions still track specification maturity rather than a released product.
   package versions, dated changelog section, release policy boundary block,
   release notes stub, boundary test stub, changelog date guard entry, and paired
   release-process test-plan rows.
+- Added a root `ARCHITECTURE.md` workspace map covering current crate
+  responsibilities, dependency direction, the `edict-syntax` crate-scope caveat,
+  and current non-claims.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.
