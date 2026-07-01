@@ -22,6 +22,7 @@ The `edict_syntax` crate exposes `encode_core_module` for
 `edict.canonical-cbor/v1` Core bytes, `decode_canonical_cbor` for canonical byte
 validation, `encode_canonical_cbor` for decoded canonical values, and
 `digest_core_module` for the domain-separated `edict.core.module/v1` digest.
+The human walkthrough is [canonical-encoding.md](./canonical-encoding.md).
 [COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014]
 
 The Core module schema does not embed reviewed golden bytes, exact Core

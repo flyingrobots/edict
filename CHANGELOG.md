@@ -42,6 +42,9 @@ versions still track specification maturity rather than a released product.
 - Added a root `ARCHITECTURE.md` workspace map covering current crate
   responsibilities, dependency direction, the `edict-syntax` crate-scope caveat,
   and current non-claims.
+- Added a Core IR canonical encoding explainer covering the canonical value
+  model, canonical CBOR subset, Core digest frame, reviewed golden fixtures, and
+  byte/hash change discipline.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.

@@ -147,6 +147,11 @@ encoding rules, domain-separation rationale, or the "meaning freezes before
 bytes; bytes freeze before hashes" discipline that the release gates reference.
 A dedicated explainer would de-risk every future change to that file.
 
+> **✅ Addressed (2026-07-01, #100):**
+> `docs/topics/core-ir/canonical-encoding.md` now explains the canonical value
+> model, canonical CBOR subset, Core digest frame, golden fixtures, and
+> byte/hash change discipline, and the Core IR topic shelf links to it.
+
 ---
 
 ## 3. Final Action Plan
