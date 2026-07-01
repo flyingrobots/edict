@@ -621,7 +621,7 @@ fn expand_glob(
             kind: "GlobRead",
             line: None,
             message: err.to_string(),
-    })?;
+        })?;
     paths.sort();
     for path in paths {
         if !path.is_file() {
