@@ -48,6 +48,9 @@ versions still track specification maturity rather than a released product.
 - Recorded the crate-scope decision to prefer an eventual layered split behind
   an umbrella crate over a simple `edict-syntax` rename, while documenting the
   current crate-scope caveat in `ARCHITECTURE.md`.
+- Recorded the schema-as-source-of-truth codegen decision: defer generator work
+  until cross-language drift or fixture-authoring pain is measurable, and do not
+  reintroduce GraphQL semantics as the contract source.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.
