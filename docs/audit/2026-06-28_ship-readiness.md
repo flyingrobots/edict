@@ -184,6 +184,10 @@ automated pipeline). Worth pre-empting now.
   `io::stdin().read_to_string(&mut input)` — the entire stream is read into
   memory with no cap. A hostile or runaway producer can exhaust memory.
   - **Mitigation Prompt 11:** `Add a configurable maximum stdin size (sane default) and stream JSONL line-by-line instead of buffering the whole input; emit a stable "InputTooLarge" CLI diagnostic past the cap, with a golden fixture.`
+  - **✅ Addressed (2026-07-01, #96):** stdin is bounded before request parsing
+    with a default 8 MiB cap and an `EDICT_CLI_MAX_STDIN_BYTES` override.
+    Over-limit input emits `InputTooLarge`, exits 2, and is pinned by
+    `CLI-REQ-010` / `CLI-TP-016` plus `fixtures/cli/12-input-too-large`.
 
 ### 2.3 Operational Gaps (3)
 

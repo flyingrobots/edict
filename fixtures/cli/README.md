@@ -14,6 +14,7 @@ checked-in goldens.
 | `expected.stdout.jsonl` | no | Exact expected stdout. Absent means empty. |
 | `expected.stderr.jsonl` | no | Exact expected stderr. Absent means empty. |
 | `exit` | no | Expected process exit code. Absent means `0`. |
+| `env.json` | no | JSON object of environment variables applied while replaying the case. |
 | `inputs/…` | no | Source files referenced by `path`, `directory`, `pathList`, or `glob` requests. |
 
 The binary runs with the case directory as its working directory, so any path a
@@ -32,6 +33,7 @@ request names resolves to a stable relative path in the emitted records.
 - `09-shape-source-ok` — source importing a GraphQL `shape` schema; accepted because import resolution is deferred at the `check` stage.
 - `10-input-extra-field` — input record with an unrecognized field is rejected (schema parity: `additionalProperties: false`), exit `2`.
 - `11-input-hybrid-kind` — input record mixing fields from two kinds is rejected (schema parity: mutually exclusive kinds), exit `2`.
+- `12-input-too-large` — stdin larger than the configured byte limit is rejected before request parsing, exit `2`.
 
 ## Regenerating a case
 

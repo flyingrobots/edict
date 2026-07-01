@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- The `edict` CLI now bounds stdin before request parsing with a default 8 MiB
+  cap and an `EDICT_CLI_MAX_STDIN_BYTES` override. Over-limit input fails with
+  the stable `InputTooLarge` CLI diagnostic and exit 2, pinned by
+  `CLI-REQ-010` / `CLI-TP-016` and `fixtures/cli/12-input-too-large`.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.

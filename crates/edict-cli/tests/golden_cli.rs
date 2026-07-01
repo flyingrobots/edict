@@ -25,6 +25,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+use serde_json::Value;
+
 #[test]
 fn golden_cli_fixtures_replay_exactly() {
     // `fixtures/cli/` lives at the workspace root, two directories above this
@@ -38,8 +40,8 @@ fn golden_cli_fixtures_replay_exactly() {
     cases.sort();
 
     assert!(
-        cases.len() >= 11,
-        "expected at least 11 golden CLI cases, found {}",
+        cases.len() >= 12,
+        "expected at least 12 golden CLI cases, found {}",
         cases.len()
     );
 
@@ -55,6 +57,7 @@ fn replay_case(dir: &Path) {
         .unwrap_or_else(|| panic!("case dir {} has no name", dir.display()));
     let request = fs::read_to_string(dir.join("request.jsonl"))
         .unwrap_or_else(|err| panic!("[{name}] read request.jsonl: {err}"));
+    let env = read_env_overrides(dir);
     let expected_stdout = read_optional(&dir.join("expected.stdout.jsonl"));
     let expected_stderr = read_optional(&dir.join("expected.stderr.jsonl"));
     let expected_exit: i32 = read_optional(&dir.join("exit")).trim().parse().unwrap_or(0);
@@ -62,6 +65,11 @@ fn replay_case(dir: &Path) {
     let bin = env!("CARGO_BIN_EXE_edict");
     let mut child = Command::new(bin)
         .current_dir(dir)
+        .env_remove(edict_cli::MAX_STDIN_BYTES_ENV)
+        .envs(
+            env.iter()
+                .map(|(key, value)| (key.as_str(), value.as_str())),
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -93,4 +101,29 @@ fn replay_case(dir: &Path) {
 
 fn read_optional(path: &Path) -> String {
     fs::read_to_string(path).unwrap_or_default()
+}
+
+fn read_env_overrides(dir: &Path) -> Vec<(String, String)> {
+    let path = dir.join("env.json");
+    let text = match fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Vec::new(),
+        Err(err) => panic!("read {}: {err}", path.display()),
+    };
+    let value: Value =
+        serde_json::from_str(&text).unwrap_or_else(|err| panic!("parse {}: {err}", path.display()));
+    let object = value
+        .as_object()
+        .unwrap_or_else(|| panic!("{} must be a JSON object", path.display()));
+    let mut env = object
+        .iter()
+        .map(|(key, value)| {
+            let value = value
+                .as_str()
+                .unwrap_or_else(|| panic!("{} entry `{key}` must be a string", path.display()));
+            (key.clone(), value.to_owned())
+        })
+        .collect::<Vec<_>>();
+    env.sort();
+    env
 }

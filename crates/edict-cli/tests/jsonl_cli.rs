@@ -99,6 +99,39 @@ fn non_jsonl_input_rejects_with_jsonl_cli_diagnostic() {
 }
 
 #[test]
+fn oversized_stdin_rejects_with_input_too_large_diagnostic() {
+    let output = run_edict_with_env(&"x".repeat(65), &[(edict_cli::MAX_STDIN_BYTES_ENV, "64")]);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "oversized stdin must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("kind").and_then(Value::as_str) == Some("InputTooLarge"))
+        .expect("stderr must contain an InputTooLarge diagnostic");
+    assert_eq!(diagnostic.get("stage").and_then(Value::as_str), Some("cli"));
+    assert_eq!(
+        diagnostic
+            .get("input")
+            .and_then(|input| input.get("kind"))
+            .and_then(Value::as_str),
+        Some("stdin")
+    );
+    let message = diagnostic
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    assert!(
+        message.contains("64 bytes"),
+        "InputTooLarge should report the configured byte limit"
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
 fn check_accepts_path_directory_path_list_glob_and_source_records() {
     let root = temp_tree("inputs");
     let nested = root.join("nested");
@@ -318,8 +351,14 @@ fn jsonl<const N: usize>(records: [Value; N]) -> String {
 }
 
 fn run_edict(input: &str) -> Output {
+    run_edict_with_env(input, &[])
+}
+
+fn run_edict_with_env(input: &str, env: &[(&str, &str)]) -> Output {
     let bin = env!("CARGO_BIN_EXE_edict");
     let mut child = Command::new(bin)
+        .env_remove(edict_cli::MAX_STDIN_BYTES_ENV)
+        .envs(env.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
