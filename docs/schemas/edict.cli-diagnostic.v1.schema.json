@@ -14,7 +14,7 @@
       "const": "diagnostic"
     },
     "command": {
-      "const": "check"
+      "enum": ["check", "project"]
     },
     "severity": {
       "enum": ["error"]

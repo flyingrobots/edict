@@ -16,6 +16,9 @@ The developer-tooling alpha now has these editor-facing surfaces:
   `.edict` lexical scopes in TextMate-compatible editors.
 - [VS Code/Cursor extension package](../../../editors/vscode/package.json) for
   `.edict` language registration and TextMate-backed syntax highlighting.
+- CLI `project` JSONL records for editor-facing projection over dirty source
+  text: syntax spans, diagnostics, Core review JSON plus canonical digest, and
+  Target IR review JSON plus canonical digest.
 
 Highlighting is intentionally lexical. It does not parse, resolve, type-check,
 lower to Core, or evaluate admission policy. It keeps comments visible to
@@ -47,5 +50,11 @@ language id, `.edict` extension mapping, comment and bracket metadata, and the
 canonical TextMate grammar. It does not ship diagnostics, a formatter, semantic
 tokens, a compiler command, or a language server.
 
-Generated Tree-sitter packages plus Vim, Zed, and jedit integration packages
-remain future work. This shelf owns the behavior those adapters must preserve.
+The CLI projection records are the current Edict-side bridge surface for future
+Graft and jedit adapters. The projection review JSON is not canonical
+hash input; canonical digest fields still come from the Core and Target IR
+canonical encoders.
+
+Generated Tree-sitter packages plus Vim, Zed, Graft, and jedit integration
+packages remain future work. This shelf owns the behavior those adapters must
+preserve.

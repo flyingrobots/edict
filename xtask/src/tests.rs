@@ -1603,6 +1603,39 @@ fn compiler_settings_schema_declares_jsonl_contract() {
         "compiler settings schema must declare the `check` operation"
     );
     assert!(
+        json_string_array_contains(operation, "enum", "project"),
+        "compiler settings schema must declare the `project` operation"
+    );
+    for field in ["emit", "compilerContext", "target"] {
+        assert!(
+            properties.contains_key(field),
+            "compiler settings schema missing projection field `{field}`"
+        );
+    }
+    let emit = properties
+        .get("emit")
+        .unwrap_or_else(|| panic!("compiler settings schema missing `emit` property"));
+    assert_eq!(
+        emit.get("minItems").and_then(Value::as_u64),
+        Some(1),
+        "compiler settings projection emit list must reject empty arrays"
+    );
+    for value in ["syntax", "diagnostics", "core", "targetIr", "digests"] {
+        assert!(
+            emit.pointer("/items/enum")
+                .and_then(Value::as_array)
+                .is_some_and(|values| values.iter().any(|item| item.as_str() == Some(value))),
+            "compiler settings projection emit list must declare `{value}`"
+        );
+    }
+    assert_eq!(
+        schema
+            .pointer("/properties/target/properties/profileDigest/pattern")
+            .and_then(Value::as_str),
+        Some("^sha256:[0-9a-f]{64}$"),
+        "project target profile digest must be lowercase strict"
+    );
+    assert!(
         properties.contains_key("directoryExtensions"),
         "compiler settings schema missing deterministic directory extension field"
     );
@@ -1791,6 +1824,87 @@ fn check_result_schema_declares_jsonl_contract() {
 }
 
 #[test]
+fn projection_record_schemas_declare_jsonl_contract() {
+    let root = repo_root().expect("repo root");
+    let cases = [
+        (
+            "edict.projection-syntax.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/projection-syntax/v1",
+            "edict.projection.syntax/v1",
+            "syntax",
+        ),
+        (
+            "edict.projection-diagnostics.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/projection-diagnostics/v1",
+            "edict.projection.diagnostics/v1",
+            "diagnostics",
+        ),
+        (
+            "edict.projection-core.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/projection-core/v1",
+            "edict.projection.core/v1",
+            "core",
+        ),
+        (
+            "edict.projection-target-ir.v1.schema.json",
+            "https://flyingrobots.dev/schemas/edict/projection-target-ir/v1",
+            "edict.projection.target-ir/v1",
+            "targetIr",
+        ),
+    ];
+
+    for (file, id, schema_id, record_type) in cases {
+        let schema = cli_record_schema(&root, file, id, schema_id);
+        for required in ["schema", "type", "command", "input"] {
+            assert!(
+                json_string_array_contains(&schema, "required", required),
+                "{file} must require `{required}`"
+            );
+        }
+        let properties = json_object(&schema, "properties");
+        assert_eq!(property_const(properties, "type"), Some(record_type));
+        assert_eq!(property_const(properties, "command"), Some("project"));
+        assert!(
+            properties.contains_key("input"),
+            "{file} missing input descriptor"
+        );
+    }
+
+    let core = read_json_file(
+        &root
+            .join("docs/schemas")
+            .join("edict.projection-core.v1.schema.json"),
+    );
+    assert!(
+        json_string_array_contains(
+            json_object(&core, "properties").get("state").unwrap(),
+            "enum",
+            "available"
+        ) && json_string_array_contains(
+            json_object(&core, "properties").get("state").unwrap(),
+            "enum",
+            "blocked"
+        ),
+        "Core projection schema must declare available and blocked states"
+    );
+
+    let target_ir = read_json_file(
+        &root
+            .join("docs/schemas")
+            .join("edict.projection-target-ir.v1.schema.json"),
+    );
+    let target_state = json_object(&target_ir, "properties")
+        .get("state")
+        .unwrap_or_else(|| panic!("Target IR projection schema missing state"));
+    for value in ["available", "blocked", "failed"] {
+        assert!(
+            json_string_array_contains(target_state, "enum", value),
+            "Target IR projection schema must declare `{value}` state"
+        );
+    }
+}
+
+#[test]
 fn diagnostic_schema_declares_jsonl_contract() {
     let root = repo_root().expect("repo root");
     let schema = cli_record_schema(
@@ -1809,7 +1923,15 @@ fn diagnostic_schema_declares_jsonl_contract() {
     }
     let properties = json_object(&schema, "properties");
     assert_eq!(property_const(properties, "type"), Some("diagnostic"));
-    assert_eq!(property_const(properties, "command"), Some("check"));
+    let command = properties
+        .get("command")
+        .unwrap_or_else(|| panic!("diagnostic schema missing `command` property"));
+    for value in ["check", "project"] {
+        assert!(
+            json_string_array_contains(command, "enum", value),
+            "diagnostic schema must declare `{value}` command"
+        );
+    }
     let stage = properties
         .get("stage")
         .unwrap_or_else(|| panic!("diagnostic schema missing `stage` property"));
@@ -1846,7 +1968,15 @@ fn event_schema_declares_jsonl_contract() {
     }
     let properties = json_object(&schema, "properties");
     assert_eq!(property_const(properties, "type"), Some("status"));
-    assert_eq!(property_const(properties, "command"), Some("check"));
+    let command = properties
+        .get("command")
+        .unwrap_or_else(|| panic!("event schema missing `command` property"));
+    for value in ["check", "project"] {
+        assert!(
+            json_string_array_contains(command, "enum", value),
+            "event schema must declare `{value}` command"
+        );
+    }
     let status = properties
         .get("status")
         .unwrap_or_else(|| panic!("event schema missing `status` property"));

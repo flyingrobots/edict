@@ -14,7 +14,137 @@
       "const": "compilerSettings"
     },
     "operation": {
-      "enum": ["check"]
+      "enum": ["check", "project"]
+    },
+    "emit": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "enum": ["syntax", "diagnostics", "core", "targetIr", "digests"]
+      },
+      "uniqueItems": true,
+      "description": "Projection slots requested by the `project` operation."
+    },
+    "compilerContext": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Explicit deterministic compiler facts for Core projection.",
+      "properties": {
+        "operationProfiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "core"],
+            "properties": {
+              "source": { "type": "string" },
+              "core": { "type": "string" },
+              "allowedWriteClasses": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "none",
+                    "read",
+                    "create",
+                    "ensure",
+                    "append",
+                    "replace",
+                    "delete"
+                  ]
+                },
+                "default": []
+              }
+            }
+          },
+          "default": []
+        },
+        "effectWriteClasses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["effect", "writeClass"],
+            "properties": {
+              "effect": { "type": "string" },
+              "writeClass": {
+                "enum": [
+                  "none",
+                  "read",
+                  "create",
+                  "ensure",
+                  "append",
+                  "replace",
+                  "delete"
+                ]
+              }
+            }
+          },
+          "default": []
+        },
+        "budgets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "budget"],
+            "properties": {
+              "source": { "type": "string" },
+              "budget": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "maxSteps",
+                  "maxAllocatedBytes",
+                  "maxOutputBytes"
+                ],
+                "properties": {
+                  "maxSteps": { "type": "integer", "minimum": 0 },
+                  "maxAllocatedBytes": { "type": "integer", "minimum": 0 },
+                  "maxOutputBytes": { "type": "integer", "minimum": 0 }
+                }
+              }
+            }
+          },
+          "default": []
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Explicit deterministic target facts for Target IR projection.",
+      "required": ["coordinate", "profileDigest", "irDomain"],
+      "properties": {
+        "coordinate": { "type": "string", "minLength": 1 },
+        "profileDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "irDomain": { "type": "string", "minLength": 1 },
+        "operationProfiles": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "obstructionCoordinates": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": []
+        },
+        "effectLowerings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["effect", "targetIntrinsic"],
+            "properties": {
+              "effect": { "type": "string" },
+              "targetIntrinsic": { "type": "string" }
+            }
+          },
+          "default": []
+        }
+      }
     },
     "inputRoot": {
       "type": "string",
@@ -33,5 +163,31 @@
       "type": "boolean",
       "default": false
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": { "const": "check" }
+        }
+      },
+      "then": {
+        "properties": {
+          "emit": false,
+          "compilerContext": false,
+          "target": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": { "const": "project" }
+        }
+      },
+      "then": {
+        "required": ["emit"]
+      }
+    }
+  ]
 }

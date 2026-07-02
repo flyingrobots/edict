@@ -4,6 +4,11 @@ use std::path::PathBuf;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use edict_syntax::{
+    compile_to_core, digest_core_module, digest_target_ir_artifact, lower_to_target_ir,
+    CompilerContext, CoreBudget, ResourceRef, TargetEffectLowering, TargetIrLoweringFacts,
+    WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+};
 use serde_json::{json, Value};
 
 const VALID_SOURCE: &str = r#"package examples.hello@1;
@@ -23,6 +28,27 @@ intent sayHello(input: HelloInput)
   return { name: input.name };
 }
 "#;
+
+const ECHO_SOURCE: &str = r"package demo.echo@1;
+
+type Input = { id: String<max=16>, };
+type Receipt = { id: String<max=16>, };
+type Output = { id: String<max=16>, };
+
+intent replaceThing(input: Input)
+  returns Output
+  profile p.effectful
+  basis none
+  budget <= p.tiny
+{
+  let receipt: Receipt = target.replace(input.id)
+    else { rejected(reason) => domain.WriteRejected };
+  return { id: input.id };
+}
+";
+
+const ECHO_TARGET_PROFILE_DIGEST: &str =
+    "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
@@ -51,6 +77,258 @@ fn check_accepts_inline_source_jsonl_and_emits_jsonl_stdout() {
     let stdout = assert_jsonl_stream(&output.stdout, "stdout");
     assert_eq!(check_result_count(&stdout), 1);
     assert_status(&stdout, "ok", 0);
+}
+
+#[test]
+fn project_accepts_dirty_source_and_emits_syntax_core_target_ir_projection() {
+    let output = run_edict(&jsonl([
+        projection_settings(["syntax", "diagnostics", "core", "targetIr", "digests"]),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/demo.echo.edict",
+            "source": ECHO_SOURCE,
+        }),
+    ]));
+
+    let stdout = assert_successful_projection_output(&output);
+    let (expected_core_digest, expected_target_digest) =
+        expected_echo_projection_digests(ECHO_SOURCE);
+    assert_syntax_projection(&stdout);
+    assert_empty_projection_diagnostics(&stdout);
+    assert_available_core_projection(&stdout, &expected_core_digest);
+    assert_available_target_ir_projection(&stdout, &expected_target_digest);
+}
+
+#[test]
+fn project_invalid_source_emits_diagnostics_without_process_failure() {
+    let output = run_edict(&jsonl([
+        projection_settings(["syntax", "diagnostics", "core"]),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/broken.edict",
+            "source": "package demo.broken@1\n",
+        }),
+    ]));
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "compiler diagnostics are projection data, not process failure"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "projection diagnostics should be emitted on stdout"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_status(&stdout, "ok", 0);
+
+    let diagnostics = record_of_type(&stdout, "diagnostics");
+    let items = diagnostics
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .expect("diagnostics projection carries diagnostic items");
+    assert!(
+        items.iter().any(|item| {
+            item.get("stage").and_then(Value::as_str) == Some("parse")
+                && item.get("kind").and_then(Value::as_str) == Some("ExpectedToken")
+        }),
+        "parse failure should be reported as a stable projection diagnostic"
+    );
+
+    let core = record_of_type(&stdout, "core");
+    assert_eq!(core.get("state").and_then(Value::as_str), Some("blocked"));
+    assert_eq!(
+        core.pointer("/reason/0/kind").and_then(Value::as_str),
+        Some("ExpectedToken")
+    );
+}
+
+#[test]
+fn project_target_lowering_failure_is_structured_projection_data() {
+    let output = run_edict(&jsonl([
+        projection_settings(["diagnostics", "core", "targetIr"]),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/pure.edict",
+            "source": VALID_SOURCE,
+        }),
+    ]));
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "target lowering failure must not become a CLI transport failure"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "target lowering failure should be emitted on stdout"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_status(&stdout, "ok", 0);
+    assert_eq!(
+        record_of_type(&stdout, "core")
+            .get("state")
+            .and_then(Value::as_str),
+        Some("available"),
+        "Core should remain available when only Target IR lowering fails"
+    );
+
+    let target_ir = record_of_type(&stdout, "targetIr");
+    assert_eq!(
+        target_ir.get("state").and_then(Value::as_str),
+        Some("failed")
+    );
+    assert_eq!(
+        target_ir.pointer("/error/kind").and_then(Value::as_str),
+        Some("lowering_error")
+    );
+    assert!(
+        target_ir
+            .pointer("/error/failures")
+            .and_then(Value::as_array)
+            .is_some_and(|failures| failures.iter().any(|failure| {
+                failure.get("kind").and_then(Value::as_str) == Some("NoTargetSteps")
+            })),
+        "Target IR failure must preserve stable lowerer failure kinds"
+    );
+}
+
+#[test]
+fn project_syntax_only_does_not_run_authoritative_compiler_path() {
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "project",
+            "emit": ["syntax"],
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/incomplete.edict",
+            "source": "package demo.incomplete@1\n",
+        }),
+    ]));
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "syntax-only projection should not write stderr"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_eq!(
+        stdout
+            .iter()
+            .filter_map(|line| line.get("type").and_then(Value::as_str))
+            .collect::<Vec<_>>(),
+        ["syntax", "status"]
+    );
+    assert_status(&stdout, "ok", 0);
+    assert_status_counts(&stdout, 1, 0);
+}
+
+#[test]
+fn project_syntax_only_lex_failure_emits_visible_diagnostics() {
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "project",
+            "emit": ["syntax"],
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/broken-lex.edict",
+            "source": "package demo.broken@1;\nlet value = \"unterminated",
+        }),
+    ]));
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "syntax lex failures should remain projection data on stdout"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_eq!(
+        stdout
+            .iter()
+            .filter_map(|line| line.get("type").and_then(Value::as_str))
+            .collect::<Vec<_>>(),
+        ["diagnostics", "status"],
+        "status errors must be backed by visible structured projection data"
+    );
+    let diagnostics = record_of_type(&stdout, "diagnostics");
+    assert_eq!(
+        diagnostics
+            .pointer("/diagnostics/0/stage")
+            .and_then(Value::as_str),
+        Some("lex")
+    );
+    assert_eq!(
+        diagnostics
+            .pointer("/diagnostics/0/kind")
+            .and_then(Value::as_str),
+        Some("Lex")
+    );
+    assert_status_counts(&stdout, 1, 1);
+}
+
+#[test]
+fn invalid_project_settings_report_project_command() {
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "project",
+            "emit": ["targetIr"],
+            "target": {
+                "coordinate": "echo.dpo@1",
+                "profileDigest": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "irDomain": "echo.span-ir/v1",
+            },
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/demo.echo.edict",
+            "source": ECHO_SOURCE,
+        }),
+    ]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "invalid project settings must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("stderr must contain a CLI diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("project")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("InvalidSettings")
+    );
+    let status = record_of_type(&stderr, "status");
+    assert_eq!(
+        status.get("command").and_then(Value::as_str),
+        Some("project")
+    );
+    assert_status(&stderr, "error", 2);
 }
 
 #[test]
@@ -205,6 +483,58 @@ fn input_root_null_rejects_as_invalid_settings() {
         .expect("stderr must contain an InvalidSettings diagnostic");
     assert_eq!(diagnostic.get("stage").and_then(Value::as_str), Some("cli"));
     assert_status(&stderr, "error", 2);
+}
+
+#[test]
+fn projection_object_settings_null_reject_as_invalid_settings() {
+    for (operation, field) in [
+        ("check", "compilerContext"),
+        ("check", "target"),
+        ("project", "compilerContext"),
+        ("project", "target"),
+    ] {
+        let mut settings = json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": operation,
+        });
+        if operation == "project" {
+            settings["emit"] = json!(["syntax"]);
+        }
+        settings[field] = Value::Null;
+
+        let output = run_edict(&jsonl([
+            settings,
+            json!({
+                "schema": "edict.compiler.input/v1",
+                "type": "compilerInput",
+                "kind": "source",
+                "name": "inline.edict",
+                "source": VALID_SOURCE,
+            }),
+        ]));
+
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{operation} with null {field} must be rejected before source processing"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "settings failures must not write stdout"
+        );
+        let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+        let diagnostic = stderr
+            .iter()
+            .find(|line| line.get("kind").and_then(Value::as_str) == Some("InvalidSettings"))
+            .expect("stderr must contain an InvalidSettings diagnostic");
+        assert_eq!(diagnostic.get("stage").and_then(Value::as_str), Some("cli"));
+        assert_eq!(
+            diagnostic.get("command").and_then(Value::as_str),
+            Some(operation)
+        );
+        assert_status(&stderr, "error", 2);
+    }
 }
 
 #[test]
@@ -374,6 +704,22 @@ fn cli_schema_constants_match_checked_in_artifacts() {
             "edict.cli-check-result.v1.schema.json",
         ),
         (
+            edict_cli::PROJECTION_SYNTAX_SCHEMA,
+            "edict.projection-syntax.v1.schema.json",
+        ),
+        (
+            edict_cli::PROJECTION_DIAGNOSTICS_SCHEMA,
+            "edict.projection-diagnostics.v1.schema.json",
+        ),
+        (
+            edict_cli::PROJECTION_CORE_SCHEMA,
+            "edict.projection-core.v1.schema.json",
+        ),
+        (
+            edict_cli::PROJECTION_TARGET_IR_SCHEMA,
+            "edict.projection-target-ir.v1.schema.json",
+        ),
+        (
             edict_cli::DIAGNOSTIC_SCHEMA,
             "edict.cli-diagnostic.v1.schema.json",
         ),
@@ -447,6 +793,18 @@ fn help_flag_emits_info_record() {
             [0, 1, 2],
             "{flag} help must document exit codes 0, 1, 2 in order"
         );
+        let exit_one = record
+            .get("exitCodes")
+            .and_then(Value::as_array)
+            .expect("help record carries exitCodes")
+            .iter()
+            .find(|entry| entry.get("code").and_then(Value::as_i64) == Some(1))
+            .expect("help record documents exit code 1");
+        assert_eq!(
+            exit_one.get("meaning").and_then(Value::as_str),
+            Some("check operation compiler or validation diagnostics were produced"),
+            "{flag} help must scope exit 1 to the check operation"
+        );
         assert_eq!(
             record.get("docs").and_then(Value::as_str),
             Some("docs/topics/cli/README.md"),
@@ -494,6 +852,67 @@ fn compiler_settings() -> Value {
         "schema": "edict.compiler.settings/v1",
         "type": "compilerSettings",
         "operation": "check",
+    })
+}
+
+fn projection_settings<const N: usize>(emit: [&str; N]) -> Value {
+    let emit = emit.into_iter().collect::<Vec<_>>();
+    json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "compilerSettings",
+        "operation": "project",
+        "emit": emit,
+        "compilerContext": {
+            "operationProfiles": [
+                {
+                    "source": "p.effectful",
+                    "core": "continuum.profile.write/v1",
+                    "allowedWriteClasses": ["replace"]
+                },
+                {
+                    "source": "hello.readOnly",
+                    "core": "continuum.profile.read-only/v1",
+                    "allowedWriteClasses": ["read"]
+                }
+            ],
+            "effectWriteClasses": [
+                {
+                    "effect": "target.replace",
+                    "writeClass": "replace"
+                }
+            ],
+            "budgets": [
+                {
+                    "source": "p.tiny",
+                    "budget": {
+                        "maxSteps": 8,
+                        "maxAllocatedBytes": 1024,
+                        "maxOutputBytes": 256
+                    }
+                },
+                {
+                    "source": "hello.tinyBudget",
+                    "budget": {
+                        "maxSteps": 64,
+                        "maxAllocatedBytes": 4096,
+                        "maxOutputBytes": 1024
+                    }
+                }
+            ]
+        },
+        "target": {
+            "coordinate": "echo.dpo@1",
+            "profileDigest": ECHO_TARGET_PROFILE_DIGEST,
+            "irDomain": "echo.span-ir/v1",
+            "operationProfiles": ["continuum.profile.write/v1"],
+            "obstructionCoordinates": ["rejected"],
+            "effectLowerings": [
+                {
+                    "effect": "target.replace",
+                    "targetIntrinsic": "echo.dpo@1.replace"
+                }
+            ]
+        }
     })
 }
 
@@ -580,6 +999,192 @@ fn assert_status(lines: &[Value], expected_status: &str, expected_exit: i32) {
         status.get("exitCode").and_then(Value::as_i64),
         Some(i64::from(expected_exit))
     );
+}
+
+fn assert_status_counts(lines: &[Value], expected_checked: i64, expected_errors: i64) {
+    let status = lines
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("status"))
+        .expect("stream must contain a status record");
+    assert_eq!(
+        status.get("checked").and_then(Value::as_i64),
+        Some(expected_checked)
+    );
+    assert_eq!(
+        status.get("errors").and_then(Value::as_i64),
+        Some(expected_errors)
+    );
+}
+
+fn assert_successful_projection_output(output: &Output) -> Vec<Value> {
+    assert!(
+        output.status.success(),
+        "project should complete at process level for valid dirty source"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "successful projection must not write stderr"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_status(&stdout, "ok", 0);
+    stdout
+}
+
+fn assert_syntax_projection(stdout: &[Value]) {
+    let syntax = record_of_type(stdout, "syntax");
+    assert_eq!(
+        syntax.get("schema").and_then(Value::as_str),
+        Some("edict.projection.syntax/v1")
+    );
+    assert_eq!(
+        syntax
+            .get("input")
+            .and_then(|input| input.get("name"))
+            .and_then(Value::as_str),
+        Some("unsaved/demo.echo.edict")
+    );
+    let spans = syntax
+        .get("spans")
+        .and_then(Value::as_array)
+        .expect("syntax projection carries spans");
+    assert!(
+        spans.iter().any(|span| {
+            span.get("role").and_then(Value::as_str) == Some("keyword")
+                && span.get("lexeme").and_then(Value::as_str) == Some("intent")
+        }),
+        "syntax spans must expose editor roles over dirty source text"
+    );
+}
+
+fn assert_empty_projection_diagnostics(stdout: &[Value]) {
+    let diagnostics = record_of_type(stdout, "diagnostics");
+    assert_eq!(
+        diagnostics.get("schema").and_then(Value::as_str),
+        Some("edict.projection.diagnostics/v1")
+    );
+    assert_eq!(
+        diagnostics
+            .get("diagnostics")
+            .and_then(Value::as_array)
+            .map(Vec::len),
+        Some(0)
+    );
+}
+
+fn assert_available_core_projection(stdout: &[Value], expected_core_digest: &str) {
+    let core = record_of_type(stdout, "core");
+    assert_eq!(
+        core.get("schema").and_then(Value::as_str),
+        Some("edict.projection.core/v1")
+    );
+    assert_eq!(core.get("state").and_then(Value::as_str), Some("available"));
+    assert_eq!(
+        core.get("digest").and_then(Value::as_str),
+        Some(expected_core_digest)
+    );
+    assert_eq!(
+        core.pointer("/review/apiVersion").and_then(Value::as_str),
+        Some("edict.core/v1")
+    );
+    assert!(
+        core.pointer("/review/intents/replaceThing").is_some(),
+        "Core review must include the lowered intent"
+    );
+}
+
+fn assert_available_target_ir_projection(stdout: &[Value], expected_target_digest: &str) {
+    let target_ir = record_of_type(stdout, "targetIr");
+    assert_eq!(
+        target_ir.get("schema").and_then(Value::as_str),
+        Some("edict.projection.target-ir/v1")
+    );
+    assert_eq!(
+        target_ir.get("state").and_then(Value::as_str),
+        Some("available")
+    );
+    assert_eq!(
+        target_ir.get("domain").and_then(Value::as_str),
+        Some("echo.span-ir/v1")
+    );
+    assert_eq!(
+        target_ir
+            .pointer("/target/coordinate")
+            .and_then(Value::as_str),
+        Some("echo.dpo@1")
+    );
+    assert_eq!(
+        target_ir.get("digest").and_then(Value::as_str),
+        Some(expected_target_digest)
+    );
+    assert_eq!(
+        target_ir
+            .pointer("/review/intents/replaceThing/steps/0/targetIntrinsic")
+            .and_then(Value::as_str),
+        Some("echo.dpo@1.replace")
+    );
+}
+
+fn record_of_type<'a>(lines: &'a [Value], record_type: &str) -> &'a Value {
+    lines
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some(record_type))
+        .unwrap_or_else(|| panic!("stream must contain a `{record_type}` record"))
+}
+
+fn expected_echo_projection_digests(source: &str) -> (String, String) {
+    let module = edict_syntax::parse_module(source).expect("source parses");
+    let core = compile_to_core(&module, &projection_compiler_context()).expect("source compiles");
+    let target_ir = lower_to_target_ir(&core, &projection_target_facts())
+        .artifact
+        .expect("source lowers to Echo Target IR");
+    let core_digest = digest_core_module(&core)
+        .expect("Core digest computes")
+        .to_review_string();
+    let target_digest = digest_target_ir_artifact(&target_ir)
+        .expect("Target IR digest computes")
+        .to_review_string();
+    (core_digest, target_digest)
+}
+
+fn projection_compiler_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("p.effectful", "continuum.profile.write/v1")
+        .with_operation_profile_write_classes("p.effectful", [WriteClass::Replace])
+        .with_operation_profile("hello.readOnly", "continuum.profile.read-only/v1")
+        .with_operation_profile_write_classes("hello.readOnly", [WriteClass::Read])
+        .with_effect_write_class("target.replace", WriteClass::Replace)
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 8,
+                max_allocated_bytes: 1024,
+                max_output_bytes: 256,
+            },
+        )
+        .with_budget(
+            "hello.tinyBudget",
+            CoreBudget {
+                max_steps: 64,
+                max_allocated_bytes: 4096,
+                max_output_bytes: 1024,
+            },
+        )
+}
+
+fn projection_target_facts() -> TargetIrLoweringFacts {
+    TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
+            digest: Some(ECHO_TARGET_PROFILE_DIGEST.to_owned()),
+        },
+        target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
+        operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
+        obstruction_coordinates: vec!["rejected".to_owned()],
+        effect_lowerings: vec![TargetEffectLowering {
+            effect: "target.replace".to_owned(),
+            target_intrinsic: "echo.dpo@1.replace".to_owned(),
+        }],
+    }
 }
 
 fn temp_tree(name: &str) -> PathBuf {

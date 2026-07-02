@@ -10,6 +10,20 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Added the `edict` CLI `project` operation for editor-facing JSONL
+  projection over dirty source records. It can emit syntax spans, diagnostics,
+  Core review JSON plus canonical Core digest, and Echo Target IR review JSON
+  plus canonical Target IR digest without requiring the source to exist on disk;
+  compiler and lowering failures are structured projection data on stdout, not
+  CLI transport failures. The projection review JSON is not a canonical hash
+  contract. Syntax-only lexical failures now emit visible diagnostics projection
+  data, and CLI-input failures for known `project` requests report
+  `command: "project"` in their diagnostic and status records. Explicit `null`
+  values for object-valued compiler settings such as `compilerContext` and
+  `target` are rejected before serde can treat them as absent values, and the
+  settings schema now rejects empty `project` emit lists. The help record now
+  scopes exit code `1` to `check` diagnostics because `project` compiler
+  diagnostics are projection data and exit `0`.
 - The `edict` CLI now bounds stdin before request parsing with a default 8 MiB
   cap and an `EDICT_CLI_MAX_STDIN_BYTES` override. Over-limit input fails with
   the stable `InputTooLarge` CLI diagnostic and exit 2, pinned by
