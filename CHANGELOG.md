@@ -21,7 +21,9 @@ versions still track specification maturity rather than a released product.
   `command: "project"` in their diagnostic and status records. Explicit `null`
   values for object-valued compiler settings such as `compilerContext` and
   `target` are rejected before serde can treat them as absent values, and the
-  settings schema now rejects empty `project` emit lists.
+  settings schema now rejects empty `project` emit lists. The help record now
+  scopes exit code `1` to `check` diagnostics because `project` compiler
+  diagnostics are projection data and exit `0`.
 - The `edict` CLI now bounds stdin before request parsing with a default 8 MiB
   cap and an `EDICT_CLI_MAX_STDIN_BYTES` override. Over-limit input fails with
   the stable `InputTooLarge` CLI diagnostic and exit 2, pinned by

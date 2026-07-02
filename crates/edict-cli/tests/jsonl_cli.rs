@@ -793,6 +793,18 @@ fn help_flag_emits_info_record() {
             [0, 1, 2],
             "{flag} help must document exit codes 0, 1, 2 in order"
         );
+        let exit_one = record
+            .get("exitCodes")
+            .and_then(Value::as_array)
+            .expect("help record carries exitCodes")
+            .iter()
+            .find(|entry| entry.get("code").and_then(Value::as_i64) == Some(1))
+            .expect("help record documents exit code 1");
+        assert_eq!(
+            exit_one.get("meaning").and_then(Value::as_str),
+            Some("check operation compiler or validation diagnostics were produced"),
+            "{flag} help must scope exit 1 to the check operation"
+        );
         assert_eq!(
             record.get("docs").and_then(Value::as_str),
             Some("docs/topics/cli/README.md"),

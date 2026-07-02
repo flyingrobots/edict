@@ -1760,7 +1760,7 @@ fn help_record() -> Value {
             },
             ExitCodeRecord {
                 code: EXIT_CHECK_FAILED,
-                meaning: "compiler or validation diagnostics were produced",
+                meaning: "check operation compiler or validation diagnostics were produced",
             },
             ExitCodeRecord {
                 code: EXIT_CLI_FAILED,
