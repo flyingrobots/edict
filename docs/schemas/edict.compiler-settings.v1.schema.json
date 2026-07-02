@@ -18,6 +18,7 @@
     },
     "emit": {
       "type": "array",
+      "minItems": 1,
       "items": {
         "enum": ["syntax", "diagnostics", "core", "targetIr", "digests"]
       },

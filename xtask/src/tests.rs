@@ -1615,6 +1615,11 @@ fn compiler_settings_schema_declares_jsonl_contract() {
     let emit = properties
         .get("emit")
         .unwrap_or_else(|| panic!("compiler settings schema missing `emit` property"));
+    assert_eq!(
+        emit.get("minItems").and_then(Value::as_u64),
+        Some(1),
+        "compiler settings projection emit list must reject empty arrays"
+    );
     for value in ["syntax", "diagnostics", "core", "targetIr", "digests"] {
         assert!(
             emit.pointer("/items/enum")
