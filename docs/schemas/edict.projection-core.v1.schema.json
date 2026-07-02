@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/projection-core/v1",
+  "title": "Edict Projection Core v1",
+  "description": "JSONL Core projection record emitted by the public Edict CLI `project` operation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "command", "input", "state"],
+  "properties": {
+    "schema": {
+      "const": "edict.projection.core/v1"
+    },
+    "type": {
+      "const": "core"
+    },
+    "command": {
+      "const": "project"
+    },
+    "input": {
+      "type": "object"
+    },
+    "state": {
+      "enum": ["available", "blocked"]
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "review": {
+      "type": "object"
+    },
+    "reason": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "state": { "const": "available" },
+        "reason": false
+      },
+      "required": ["digest", "review"]
+    },
+    {
+      "properties": {
+        "state": { "const": "blocked" },
+        "digest": false,
+        "review": false
+      },
+      "required": ["reason"]
+    }
+  ]
+}

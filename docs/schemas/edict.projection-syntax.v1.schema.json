@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/projection-syntax/v1",
+  "title": "Edict Projection Syntax v1",
+  "description": "JSONL syntax projection record emitted by the public Edict CLI `project` operation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "command", "input", "spans"],
+  "properties": {
+    "schema": {
+      "const": "edict.projection.syntax/v1"
+    },
+    "type": {
+      "const": "syntax"
+    },
+    "command": {
+      "const": "project"
+    },
+    "input": {
+      "type": "object"
+    },
+    "spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "span", "lexeme"],
+        "properties": {
+          "role": {
+            "enum": [
+              "comment",
+              "identifier",
+              "keyword",
+              "number",
+              "operator",
+              "punctuation",
+              "string",
+              "typeIdentifier"
+            ]
+          },
+          "span": {
+            "$ref": "#/$defs/span"
+          },
+          "lexeme": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "span": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

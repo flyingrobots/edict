@@ -1,18 +1,28 @@
 #![deny(clippy::expect_used, clippy::unwrap_used)]
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use edict_cli::{
     CHECK_RESULT_SCHEMA, COMPILER_INPUT_SCHEMA as INPUT_SCHEMA, DEFAULT_MAX_STDIN_BYTES,
-    DIAGNOSTIC_SCHEMA, EVENT_SCHEMA, INFO_SCHEMA, MAX_STDIN_BYTES_ENV,
+    DIAGNOSTIC_SCHEMA, EVENT_SCHEMA, INFO_SCHEMA, MAX_STDIN_BYTES_ENV, PROJECTION_CORE_SCHEMA,
+    PROJECTION_DIAGNOSTICS_SCHEMA, PROJECTION_SYNTAX_SCHEMA, PROJECTION_TARGET_IR_SCHEMA,
 };
-use edict_syntax::{CheckOutcome, ParseError, SemanticError, Span};
+use edict_syntax::{
+    CheckOutcome, CompilerContext, CompilerError, CompilerErrorKind, CompilerStage, CoreBlock,
+    CoreBudget, CoreExpr, CoreImport, CoreNode, CoreObstructionArm, CorePredicate, CoreType,
+    CoreValue, HighlightRole, InputConstraint, InputConstraintSource, ParseError, ResourceRef,
+    SemanticError, Span, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
+    TargetIrLoweringFacts, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
+    WriteClass,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const COMMAND_CHECK: &str = "check";
+const COMMAND_PROJECT: &str = "project";
 const EXIT_OK: i32 = 0;
 const EXIT_CHECK_FAILED: i32 = 1;
 const EXIT_CLI_FAILED: i32 = 2;
@@ -24,6 +34,10 @@ struct CompilerSettings {
     #[serde(rename = "type")]
     record_type: String,
     operation: Operation,
+    #[serde(default)]
+    emit: Vec<ProjectionEmit>,
+    compiler_context: Option<ProjectionCompilerContext>,
+    target: Option<ProjectionTargetSettings>,
     input_root: Option<PathBuf>,
     #[serde(default = "default_directory_extensions")]
     directory_extensions: Vec<String>,
@@ -35,6 +49,83 @@ struct CompilerSettings {
 #[serde(rename_all = "camelCase")]
 enum Operation {
     Check,
+    Project,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+enum ProjectionEmit {
+    Syntax,
+    Diagnostics,
+    Core,
+    TargetIr,
+    Digests,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionCompilerContext {
+    #[serde(default)]
+    operation_profiles: Vec<ProjectionOperationProfileFact>,
+    #[serde(default)]
+    effect_write_classes: Vec<ProjectionEffectWriteClassFact>,
+    #[serde(default)]
+    budgets: Vec<ProjectionBudgetFact>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionOperationProfileFact {
+    source: String,
+    core: String,
+    #[serde(default)]
+    allowed_write_classes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionEffectWriteClassFact {
+    effect: String,
+    write_class: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionBudgetFact {
+    source: String,
+    budget: ProjectionBudget,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionBudget {
+    #[serde(rename = "maxSteps")]
+    steps: u64,
+    #[serde(rename = "maxAllocatedBytes")]
+    allocated_bytes: u64,
+    #[serde(rename = "maxOutputBytes")]
+    output_bytes: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionTargetSettings {
+    coordinate: String,
+    profile_digest: String,
+    ir_domain: String,
+    #[serde(default)]
+    operation_profiles: Vec<String>,
+    #[serde(default)]
+    obstruction_coordinates: Vec<String>,
+    #[serde(default)]
+    effect_lowerings: Vec<ProjectionTargetEffectLowering>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ProjectionTargetEffectLowering {
+    effect: String,
+    target_intrinsic: String,
 }
 
 #[derive(Debug, Clone)]
@@ -285,13 +376,7 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
             message: "compiler settings record type must be `compilerSettings`".to_owned(),
         });
     }
-    if settings.operation != Operation::Check {
-        return Err(CliFailure {
-            kind: "UnsupportedOperation",
-            line: Some(line),
-            message: "only the `check` operation is supported".to_owned(),
-        });
-    }
+    validate_operation_settings(&settings, line)?;
     if settings.directory_extensions.iter().any(|ext| {
         ext.len() < 2
             || !ext.starts_with('.')
@@ -307,6 +392,75 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
         });
     }
     Ok(settings)
+}
+
+fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Result<(), CliFailure> {
+    match settings.operation {
+        Operation::Check => {
+            if !settings.emit.is_empty()
+                || settings.compiler_context.is_some()
+                || settings.target.is_some()
+            {
+                return Err(CliFailure {
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "`emit`, `compilerContext`, and `target` are project-only settings"
+                        .to_owned(),
+                });
+            }
+        }
+        Operation::Project => {
+            if settings.emit.is_empty() {
+                return Err(CliFailure {
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "project operation requires a non-empty `emit` list".to_owned(),
+                });
+            }
+            if let Some(target) = &settings.target {
+                validate_project_target(target, line)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_project_target(
+    target: &ProjectionTargetSettings,
+    line: usize,
+) -> Result<(), CliFailure> {
+    if target.coordinate.is_empty() {
+        return Err(CliFailure {
+            kind: "InvalidSettings",
+            line: Some(line),
+            message: "project target coordinate must not be empty".to_owned(),
+        });
+    }
+    if !is_lowercase_sha256_digest(&target.profile_digest) {
+        return Err(CliFailure {
+            kind: "InvalidSettings",
+            line: Some(line),
+            message: "project target profileDigest must match sha256:<64 lowercase hex>".to_owned(),
+        });
+    }
+    if target.ir_domain.is_empty() {
+        return Err(CliFailure {
+            kind: "InvalidSettings",
+            line: Some(line),
+            message: "project target irDomain must not be empty".to_owned(),
+        });
+    }
+    Ok(())
+}
+
+fn is_lowercase_sha256_digest(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn parse_compiler_input(
@@ -435,24 +589,701 @@ fn run_request(request: &Request) -> Result<i32, CliFailure> {
             message: "request did not expand to any source inputs".to_owned(),
         });
     }
-    let report = check_sources(&sources);
+    match request.settings.operation {
+        Operation::Check => Ok(run_check_request(&sources)),
+        Operation::Project => run_project_request(&request.settings, &sources),
+    }
+}
+
+fn run_check_request(sources: &[SourceDocument]) -> i32 {
+    let report = check_sources(sources);
     if report.diagnostics.is_empty() {
         let mut stdout = io::stdout().lock();
         write_records(&mut stdout, &report.results);
-        let status = status_record("ok", sources.len(), 0, EXIT_OK);
+        let status = status_record(COMMAND_CHECK, "ok", sources.len(), 0, EXIT_OK);
         write_record(&mut stdout, &status);
-        Ok(EXIT_OK)
+        EXIT_OK
     } else {
         let mut stderr = io::stderr().lock();
         write_records(&mut stderr, &report.diagnostics);
         let status = status_record(
+            COMMAND_CHECK,
             "error",
             report.results.len(),
             report.diagnostics.len(),
             EXIT_CHECK_FAILED,
         );
         write_record(&mut stderr, &status);
-        Ok(EXIT_CHECK_FAILED)
+        EXIT_CHECK_FAILED
+    }
+}
+
+fn run_project_request(
+    settings: &CompilerSettings,
+    sources: &[SourceDocument],
+) -> Result<i32, CliFailure> {
+    let compiler_context = project_compiler_context(settings)?;
+    let mut stdout = io::stdout().lock();
+    let mut errors = 0usize;
+    for document in sources {
+        let report = project_source(settings, &compiler_context, document)?;
+        errors += report.errors;
+        write_records(&mut stdout, &report.records);
+    }
+    let status = status_record(COMMAND_PROJECT, "ok", sources.len(), errors, EXIT_OK);
+    write_record(&mut stdout, &status);
+    Ok(EXIT_OK)
+}
+
+#[derive(Debug)]
+struct ProjectionReport {
+    records: Vec<Value>,
+    errors: usize,
+}
+
+fn project_source(
+    settings: &CompilerSettings,
+    compiler_context: &CompilerContext,
+    document: &SourceDocument,
+) -> Result<ProjectionReport, CliFailure> {
+    let emit = &settings.emit;
+    let mut records = Vec::new();
+    let mut diagnostics = Vec::new();
+
+    if emit.contains(&ProjectionEmit::Syntax) {
+        match syntax_projection_record(document) {
+            Ok(record) => records.push(record),
+            Err(error) => diagnostics.push(lex_diagnostic_item(&error)),
+        }
+    }
+
+    let needs_authoritative_projection = emit.contains(&ProjectionEmit::Diagnostics)
+        || emit.contains(&ProjectionEmit::Core)
+        || emit.contains(&ProjectionEmit::TargetIr)
+        || emit.contains(&ProjectionEmit::Digests);
+    let core = if needs_authoritative_projection {
+        let module = match edict_syntax::parse_module(&document.source) {
+            Ok(module) => Some(module),
+            Err(error) => {
+                diagnostics.push(parse_diagnostic_item(&error));
+                None
+            }
+        };
+        module.as_ref().and_then(|module| {
+            match edict_syntax::compile_to_core(module, compiler_context) {
+                Ok(core) => Some(core),
+                Err(errors) => {
+                    diagnostics.extend(errors.iter().map(compiler_diagnostic_item));
+                    None
+                }
+            }
+        })
+    } else {
+        None
+    };
+
+    if emit.contains(&ProjectionEmit::Diagnostics) {
+        records.push(projection_diagnostics_record(document, &diagnostics));
+    }
+
+    if emit.contains(&ProjectionEmit::Core) || emit.contains(&ProjectionEmit::Digests) {
+        records.push(core_projection_record(
+            document,
+            core.as_ref(),
+            &diagnostics,
+        )?);
+    }
+
+    if emit.contains(&ProjectionEmit::TargetIr) || emit.contains(&ProjectionEmit::Digests) {
+        records.push(target_ir_projection_record(
+            settings,
+            document,
+            core.as_ref(),
+            &diagnostics,
+        )?);
+    }
+
+    Ok(ProjectionReport {
+        errors: diagnostics.len(),
+        records,
+    })
+}
+
+fn syntax_projection_record(document: &SourceDocument) -> Result<Value, edict_syntax::LexError> {
+    let spans = edict_syntax::highlight_source(&document.source)?
+        .into_iter()
+        .map(|token| {
+            json!({
+                "role": highlight_role_name(token.role),
+                "span": span_value(token.span),
+                "lexeme": token.lexeme(&document.source),
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "schema": PROJECTION_SYNTAX_SCHEMA,
+        "type": "syntax",
+        "command": COMMAND_PROJECT,
+        "input": document.input,
+        "spans": spans,
+    }))
+}
+
+fn projection_diagnostics_record(document: &SourceDocument, diagnostics: &[Value]) -> Value {
+    json!({
+        "schema": PROJECTION_DIAGNOSTICS_SCHEMA,
+        "type": "diagnostics",
+        "command": COMMAND_PROJECT,
+        "input": document.input,
+        "diagnostics": diagnostics,
+    })
+}
+
+fn core_projection_record(
+    document: &SourceDocument,
+    core: Option<&edict_syntax::CoreModule>,
+    diagnostics: &[Value],
+) -> Result<Value, CliFailure> {
+    let Some(core) = core else {
+        return Ok(json!({
+            "schema": PROJECTION_CORE_SCHEMA,
+            "type": "core",
+            "command": COMMAND_PROJECT,
+            "input": document.input,
+            "state": "blocked",
+            "reason": diagnostics,
+        }));
+    };
+    let digest = edict_syntax::digest_core_module(core).map_err(|err| CliFailure {
+        kind: "CoreDigest",
+        line: None,
+        message: format!("{:?}", err.kind()),
+    })?;
+    Ok(json!({
+        "schema": PROJECTION_CORE_SCHEMA,
+        "type": "core",
+        "command": COMMAND_PROJECT,
+        "input": document.input,
+        "state": "available",
+        "digest": digest.to_review_string(),
+        "review": core_review(core),
+    }))
+}
+
+fn target_ir_projection_record(
+    settings: &CompilerSettings,
+    document: &SourceDocument,
+    core: Option<&edict_syntax::CoreModule>,
+    diagnostics: &[Value],
+) -> Result<Value, CliFailure> {
+    let Some(core) = core else {
+        return Ok(json!({
+            "schema": PROJECTION_TARGET_IR_SCHEMA,
+            "type": "targetIr",
+            "command": COMMAND_PROJECT,
+            "input": document.input,
+            "state": "blocked",
+            "reason": diagnostics,
+        }));
+    };
+    let Some(target) = &settings.target else {
+        return Ok(target_ir_failed_record(
+            document,
+            None,
+            json!({
+                "kind": "missing_target_profile",
+                "message": "project target settings are required for Target IR projection",
+            }),
+        ));
+    };
+    let facts = project_target_facts(target);
+    let report = edict_syntax::lower_to_target_ir(core, &facts);
+    let Some(artifact) = report.artifact else {
+        return Ok(target_ir_failed_record(
+            document,
+            Some(target),
+            json!({
+                "kind": "lowering_error",
+                "failures": report
+                    .failures
+                    .iter()
+                    .map(target_lowering_failure_review)
+                    .collect::<Vec<_>>(),
+            }),
+        ));
+    };
+    let digest = edict_syntax::digest_target_ir_artifact(&artifact).map_err(|err| CliFailure {
+        kind: "TargetIrDigest",
+        line: None,
+        message: format!("{:?}", err.kind()),
+    })?;
+    Ok(json!({
+        "schema": PROJECTION_TARGET_IR_SCHEMA,
+        "type": "targetIr",
+        "command": COMMAND_PROJECT,
+        "input": document.input,
+        "state": "available",
+        "domain": artifact.domain,
+        "target": resource_ref_review(&artifact.target_profile),
+        "digest": digest.to_review_string(),
+        "review": target_ir_review(&artifact),
+    }))
+}
+
+fn target_ir_failed_record(
+    document: &SourceDocument,
+    target: Option<&ProjectionTargetSettings>,
+    error: Value,
+) -> Value {
+    let mut record = json!({
+        "schema": PROJECTION_TARGET_IR_SCHEMA,
+        "type": "targetIr",
+        "command": COMMAND_PROJECT,
+        "input": document.input,
+        "state": "failed",
+    });
+    if let Some(object) = record.as_object_mut() {
+        object.insert("error".to_owned(), error);
+        if let Some(target) = target {
+            object.insert("domain".to_owned(), Value::String(target.ir_domain.clone()));
+            object.insert(
+                "target".to_owned(),
+                resource_ref_review(&ResourceRef {
+                    coordinate: target.coordinate.clone(),
+                    digest: Some(target.profile_digest.clone()),
+                }),
+            );
+        }
+    }
+    record
+}
+
+fn project_compiler_context(settings: &CompilerSettings) -> Result<CompilerContext, CliFailure> {
+    let Some(raw) = &settings.compiler_context else {
+        return Ok(CompilerContext::new());
+    };
+    let mut context = CompilerContext::new();
+    for profile in &raw.operation_profiles {
+        let write_classes = profile
+            .allowed_write_classes
+            .iter()
+            .map(|value| parse_write_class(value))
+            .collect::<Result<Vec<_>, _>>()?;
+        context = context
+            .with_operation_profile(profile.source.clone(), profile.core.clone())
+            .with_operation_profile_write_classes(profile.source.clone(), write_classes);
+    }
+    for effect in &raw.effect_write_classes {
+        context = context.with_effect_write_class(
+            effect.effect.clone(),
+            parse_write_class(&effect.write_class)?,
+        );
+    }
+    for budget in &raw.budgets {
+        context = context.with_budget(
+            budget.source.clone(),
+            CoreBudget {
+                max_steps: budget.budget.steps,
+                max_allocated_bytes: budget.budget.allocated_bytes,
+                max_output_bytes: budget.budget.output_bytes,
+            },
+        );
+    }
+    Ok(context)
+}
+
+fn project_target_facts(target: &ProjectionTargetSettings) -> TargetIrLoweringFacts {
+    TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: target.coordinate.clone(),
+            digest: Some(target.profile_digest.clone()),
+        },
+        target_ir_domain: target.ir_domain.clone(),
+        operation_profiles: target.operation_profiles.clone(),
+        obstruction_coordinates: target.obstruction_coordinates.clone(),
+        effect_lowerings: target
+            .effect_lowerings
+            .iter()
+            .map(|lowering| TargetEffectLowering {
+                effect: lowering.effect.clone(),
+                target_intrinsic: lowering.target_intrinsic.clone(),
+            })
+            .collect(),
+    }
+}
+
+fn parse_write_class(value: &str) -> Result<WriteClass, CliFailure> {
+    match value {
+        "none" => Ok(WriteClass::None),
+        "read" => Ok(WriteClass::Read),
+        "create" => Ok(WriteClass::Create),
+        "ensure" => Ok(WriteClass::Ensure),
+        "append" => Ok(WriteClass::Append),
+        "replace" => Ok(WriteClass::Replace),
+        "delete" => Ok(WriteClass::Delete),
+        _ => Err(CliFailure {
+            kind: "InvalidSettings",
+            line: None,
+            message: format!("unsupported write class `{value}`"),
+        }),
+    }
+}
+
+fn lex_diagnostic_item(error: &edict_syntax::LexError) -> Value {
+    json!({
+        "stage": "lex",
+        "kind": "Lex",
+        "severity": "error",
+        "span": span_value(error.span),
+        "message": error.message,
+    })
+}
+
+fn parse_diagnostic_item(error: &ParseError) -> Value {
+    json!({
+        "stage": "parse",
+        "kind": error.kind.code(),
+        "severity": "error",
+        "span": span_value(error.span),
+    })
+}
+
+fn compiler_diagnostic_item(error: &CompilerError) -> Value {
+    json!({
+        "stage": compiler_stage_name(error.stage),
+        "kind": compiler_error_kind_name(error.kind),
+        "severity": "error",
+        "span": span_value(error.span),
+    })
+}
+
+fn span_value(span: Span) -> Value {
+    json!({
+        "start": span.start,
+        "end": span.end,
+    })
+}
+
+fn highlight_role_name(role: HighlightRole) -> &'static str {
+    match role {
+        HighlightRole::Comment => "comment",
+        HighlightRole::Identifier => "identifier",
+        HighlightRole::Keyword => "keyword",
+        HighlightRole::Number => "number",
+        HighlightRole::Operator => "operator",
+        HighlightRole::Punctuation => "punctuation",
+        HighlightRole::String => "string",
+        HighlightRole::TypeIdentifier => "typeIdentifier",
+    }
+}
+
+fn compiler_stage_name(stage: CompilerStage) -> &'static str {
+    match stage {
+        CompilerStage::SurfaceValidation => "surfaceValidation",
+        CompilerStage::Resolve => "resolve",
+        CompilerStage::TypeCheck => "typeCheck",
+        CompilerStage::LowerCore => "lowerCore",
+    }
+}
+
+fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
+    match kind {
+        CompilerErrorKind::SurfaceValidation => "SurfaceValidation",
+        CompilerErrorKind::MissingContextFact => "MissingContextFact",
+        CompilerErrorKind::UnsupportedSourceShape => "UnsupportedSourceShape",
+        CompilerErrorKind::UnresolvedType => "UnresolvedType",
+        CompilerErrorKind::UnknownField => "UnknownField",
+        CompilerErrorKind::TypeMismatch => "TypeMismatch",
+        CompilerErrorKind::ExpectedPredicate => "ExpectedPredicate",
+        CompilerErrorKind::ProfileEffectMismatch => "ProfileEffectMismatch",
+        CompilerErrorKind::DuplicateObstructionFailure => "DuplicateObstructionFailure",
+    }
+}
+
+fn core_review(core: &edict_syntax::CoreModule) -> Value {
+    json!({
+        "apiVersion": core.api_version,
+        "coordinate": core.coordinate,
+        "imports": core.imports.iter().map(core_import_review).collect::<Vec<_>>(),
+        "types": core.types
+            .iter()
+            .map(|(name, ty)| (name.clone(), core_type_review(ty)))
+            .collect::<BTreeMap<_, _>>(),
+        "intents": core.intents
+            .iter()
+            .map(|(name, intent)| {
+                (name.clone(), json!({
+                    "input": intent.input,
+                    "output": intent.output,
+                    "requiredOperationProfile": intent.required_operation_profile,
+                    "inputConstraints": intent
+                        .input_constraints
+                        .iter()
+                        .map(input_constraint_review)
+                        .collect::<Vec<_>>(),
+                    "coreEvaluationBudget": core_budget_review(&intent.core_evaluation_budget),
+                    "body": core_block_review(&intent.body),
+                }))
+            })
+            .collect::<BTreeMap<_, _>>(),
+        "requiredCoreCapabilities": core.required_core_capabilities,
+    })
+}
+
+fn target_ir_review(artifact: &TargetIrArtifact) -> Value {
+    json!({
+        "domain": artifact.domain,
+        "targetProfile": resource_ref_review(&artifact.target_profile),
+        "sourceCoreCoordinate": artifact.source_core_coordinate,
+        "intents": artifact.intents
+            .iter()
+            .map(|(name, intent)| (name.clone(), target_ir_intent_review(intent)))
+            .collect::<BTreeMap<_, _>>(),
+    })
+}
+
+fn target_ir_intent_review(intent: &TargetIrIntent) -> Value {
+    json!({
+        "operationProfile": intent.operation_profile,
+        "inputConstraints": intent
+            .input_constraints
+            .iter()
+            .map(input_constraint_review)
+            .collect::<Vec<_>>(),
+        "coreEvaluationBudget": core_budget_review(&intent.core_evaluation_budget),
+        "steps": intent.steps.iter().map(target_ir_step_review).collect::<Vec<_>>(),
+        "result": core_expr_review(&intent.result),
+    })
+}
+
+fn target_ir_step_review(step: &TargetIrStep) -> Value {
+    json!({
+        "id": step.id,
+        "binding": local_ref_review(&step.binding),
+        "effect": step.effect,
+        "targetIntrinsic": step.target_intrinsic,
+        "input": core_expr_review(&step.input),
+        "obstructionFailures": step.obstruction_failures,
+        "obstructionArms": step.obstruction_arms
+            .iter()
+            .map(|(name, arm)| (name.clone(), obstruction_arm_review(arm)))
+            .collect::<BTreeMap<_, _>>(),
+    })
+}
+
+fn core_import_review(import: &CoreImport) -> Value {
+    json!({
+        "kind": import.kind.as_str(),
+        "resource": resource_ref_review(&import.resource),
+        "alias": import.alias,
+    })
+}
+
+fn resource_ref_review(resource: &ResourceRef) -> Value {
+    json!({
+        "coordinate": resource.coordinate,
+        "digest": resource.digest,
+    })
+}
+
+fn core_type_review(ty: &CoreType) -> Value {
+    match ty {
+        CoreType::Bool => json!({ "kind": "bool" }),
+        CoreType::Int { width } => json!({ "kind": "int", "width": width }),
+        CoreType::String { max, canonical } => {
+            json!({ "kind": "string", "max": max, "canonical": canonical })
+        }
+        CoreType::Bytes { max } => json!({ "kind": "bytes", "max": max }),
+        CoreType::Record { fields } => json!({ "kind": "record", "fields": fields }),
+        CoreType::Variant { cases } => json!({ "kind": "variant", "cases": cases }),
+        CoreType::Option { item } => json!({ "kind": "option", "item": item }),
+        CoreType::List { item, max } => json!({ "kind": "list", "item": item, "max": max }),
+        CoreType::Map { key, value, max } => {
+            json!({ "kind": "map", "key": key, "value": value, "max": max })
+        }
+        CoreType::CapabilityRef { item } => json!({ "kind": "capabilityRef", "item": item }),
+    }
+}
+
+fn input_constraint_review(constraint: &InputConstraint) -> Value {
+    json!({
+        "coordinate": constraint.coordinate,
+        "source": input_constraint_source_name(constraint.source),
+        "predicate": core_predicate_review(&constraint.predicate),
+    })
+}
+
+fn input_constraint_source_name(source: InputConstraintSource) -> &'static str {
+    match source {
+        InputConstraintSource::Where => "where",
+        InputConstraintSource::Compiler => "compiler",
+    }
+}
+
+fn core_budget_review(budget: &CoreBudget) -> Value {
+    json!({
+        "maxSteps": budget.max_steps,
+        "maxAllocatedBytes": budget.max_allocated_bytes,
+        "maxOutputBytes": budget.max_output_bytes,
+    })
+}
+
+fn core_block_review(block: &CoreBlock) -> Value {
+    json!({
+        "locals": block.locals.iter().map(local_ref_review).collect::<Vec<_>>(),
+        "nodes": block.nodes.iter().map(core_node_review).collect::<Vec<_>>(),
+        "result": core_expr_review(&block.result),
+    })
+}
+
+fn core_node_review(node: &CoreNode) -> Value {
+    match node {
+        CoreNode::Let { binding, value } => json!({
+            "kind": "let",
+            "binding": local_ref_review(binding),
+            "value": core_expr_review(value),
+        }),
+        CoreNode::Effect {
+            binding,
+            effect,
+            input,
+            obstruction_map,
+        } => json!({
+            "kind": "effect",
+            "binding": local_ref_review(binding),
+            "effect": effect,
+            "input": core_expr_review(input),
+            "obstructionMap": obstruction_map
+                .iter()
+                .map(|(name, arm)| (name.clone(), obstruction_arm_review(arm)))
+                .collect::<BTreeMap<_, _>>(),
+        }),
+    }
+}
+
+fn obstruction_arm_review(arm: &CoreObstructionArm) -> Value {
+    json!({
+        "binder": local_ref_review(&arm.binder),
+        "value": core_expr_review(&arm.value),
+    })
+}
+
+fn local_ref_review(reference: &edict_syntax::LocalRef) -> Value {
+    json!({
+        "id": reference.id,
+        "alphaName": reference.alpha_name,
+        "ty": reference.ty,
+    })
+}
+
+fn core_expr_review(expr: &CoreExpr) -> Value {
+    match expr {
+        CoreExpr::Local { reference } => json!({
+            "kind": "local",
+            "reference": local_ref_review(reference),
+        }),
+        CoreExpr::Const(value) => json!({
+            "kind": "const",
+            "value": core_value_review(value),
+        }),
+        CoreExpr::Record { fields } => json!({
+            "kind": "record",
+            "fields": fields
+                .iter()
+                .map(|(name, value)| (name.clone(), core_expr_review(value)))
+                .collect::<BTreeMap<_, _>>(),
+        }),
+        CoreExpr::Field { base, field } => json!({
+            "kind": "field",
+            "base": core_expr_review(base),
+            "field": field,
+        }),
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } => json!({
+            "kind": "call",
+            "callee": callee,
+            "typeArgs": type_args,
+            "args": args.iter().map(core_expr_review).collect::<Vec<_>>(),
+        }),
+    }
+}
+
+fn core_value_review(value: &CoreValue) -> Value {
+    match value {
+        CoreValue::Null => json!({ "kind": "null" }),
+        CoreValue::Bool(value) => json!({ "kind": "bool", "value": value }),
+        CoreValue::Int { width, value } => {
+            json!({ "kind": "int", "width": width, "value": value })
+        }
+        CoreValue::String(value) => json!({ "kind": "string", "value": value }),
+        CoreValue::Bytes(value) => json!({ "kind": "bytes", "value": value }),
+    }
+}
+
+fn core_predicate_review(predicate: &CorePredicate) -> Value {
+    match predicate {
+        CorePredicate::True => json!({ "kind": "true" }),
+        CorePredicate::False => json!({ "kind": "false" }),
+        CorePredicate::Not(value) => json!({
+            "kind": "not",
+            "value": core_predicate_review(value),
+        }),
+        CorePredicate::All(values) => json!({
+            "kind": "all",
+            "values": values.iter().map(core_predicate_review).collect::<Vec<_>>(),
+        }),
+        CorePredicate::Any(values) => json!({
+            "kind": "any",
+            "values": values.iter().map(core_predicate_review).collect::<Vec<_>>(),
+        }),
+        CorePredicate::Compare { op, left, right } => json!({
+            "kind": "compare",
+            "op": compare_op_name(*op),
+            "left": core_expr_review(left),
+            "right": core_expr_review(right),
+        }),
+    }
+}
+
+fn compare_op_name(op: edict_syntax::CompareOp) -> &'static str {
+    match op {
+        edict_syntax::CompareOp::Eq => "eq",
+        edict_syntax::CompareOp::Ne => "ne",
+        edict_syntax::CompareOp::Lt => "lt",
+        edict_syntax::CompareOp::Le => "le",
+        edict_syntax::CompareOp::Gt => "gt",
+        edict_syntax::CompareOp::Ge => "ge",
+    }
+}
+
+fn target_lowering_failure_review(failure: &TargetLoweringFailure) -> Value {
+    json!({
+        "kind": target_lowering_failure_kind_name(failure.kind),
+        "intent": failure.intent,
+        "nodeIndex": failure.node_index,
+        "detail": failure.detail,
+    })
+}
+
+fn target_lowering_failure_kind_name(kind: TargetLoweringFailureKind) -> &'static str {
+    match kind {
+        TargetLoweringFailureKind::UnsupportedTargetProfile => "UnsupportedTargetProfile",
+        TargetLoweringFailureKind::UnsupportedTargetIrDomain => "UnsupportedTargetIrDomain",
+        TargetLoweringFailureKind::UndigestedTargetProfile => "UndigestedTargetProfile",
+        TargetLoweringFailureKind::UnsupportedCoreNode => "UnsupportedCoreNode",
+        TargetLoweringFailureKind::MissingOperationProfile => "MissingOperationProfile",
+        TargetLoweringFailureKind::MissingObstruction => "MissingObstruction",
+        TargetLoweringFailureKind::MissingEffectLowering => "MissingEffectLowering",
+        TargetLoweringFailureKind::AmbiguousEffectLowering => "AmbiguousEffectLowering",
+        TargetLoweringFailureKind::UnsupportedLowerabilityReport => "UnsupportedLowerabilityReport",
+        TargetLoweringFailureKind::UnsupportedTargetIntrinsic => "UnsupportedTargetIntrinsic",
+        TargetLoweringFailureKind::UnsupportedCoreAbi => "UnsupportedCoreAbi",
+        TargetLoweringFailureKind::UnsupportedCoreCapability => "UnsupportedCoreCapability",
+        TargetLoweringFailureKind::UndigestedCoreImport => "UndigestedCoreImport",
+        TargetLoweringFailureKind::NoTargetSteps => "NoTargetSteps",
     }
 }
 
@@ -731,6 +1562,7 @@ fn check_result_record(input: &Value) -> Value {
 
 fn parse_diagnostic(input: &Value, error: &ParseError) -> Value {
     diagnostic_record(
+        COMMAND_CHECK,
         "parse",
         error.kind.code(),
         input,
@@ -742,6 +1574,7 @@ fn parse_diagnostic(input: &Value, error: &ParseError) -> Value {
 
 fn semantic_diagnostic(input: &Value, error: &SemanticError) -> Value {
     diagnostic_record(
+        COMMAND_CHECK,
         "semantic",
         error.kind.code(),
         input,
@@ -753,6 +1586,7 @@ fn semantic_diagnostic(input: &Value, error: &SemanticError) -> Value {
 
 fn cli_diagnostic(failure: &CliFailure) -> Value {
     diagnostic_record(
+        COMMAND_CHECK,
         "cli",
         failure.kind,
         &json!({ "kind": "stdin" }),
@@ -763,6 +1597,7 @@ fn cli_diagnostic(failure: &CliFailure) -> Value {
 }
 
 fn diagnostic_record(
+    command: &'static str,
     stage: &str,
     kind: &str,
     input: &Value,
@@ -771,7 +1606,7 @@ fn diagnostic_record(
     message: Option<&str>,
 ) -> Value {
     record_value(DiagnosticRecord {
-        command: COMMAND_CHECK,
+        command,
         input,
         kind,
         line,
@@ -787,10 +1622,16 @@ fn diagnostic_record(
     })
 }
 
-fn status_record(status: &str, checked: usize, errors: usize, exit_code: i32) -> Value {
+fn status_record(
+    command: &'static str,
+    status: &str,
+    checked: usize,
+    errors: usize,
+    exit_code: i32,
+) -> Value {
     record_value(StatusRecord {
         checked,
-        command: COMMAND_CHECK,
+        command,
         errors,
         exit_code,
         schema: EVENT_SCHEMA,
@@ -931,7 +1772,7 @@ fn write_cli_failure(failure: &CliFailure) {
     let mut stderr = io::stderr().lock();
     let diagnostic = cli_diagnostic(failure);
     write_record(&mut stderr, &diagnostic);
-    let status = status_record("error", 0, 1, EXIT_CLI_FAILED);
+    let status = status_record(COMMAND_CHECK, "error", 0, 1, EXIT_CLI_FAILED);
     write_record(&mut stderr, &status);
 }
 

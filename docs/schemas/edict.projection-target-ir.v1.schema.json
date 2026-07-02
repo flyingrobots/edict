@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://flyingrobots.dev/schemas/edict/projection-target-ir/v1",
+  "title": "Edict Projection Target IR v1",
+  "description": "JSONL Target IR projection record emitted by the public Edict CLI `project` operation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "type", "command", "input", "state"],
+  "properties": {
+    "schema": {
+      "const": "edict.projection.target-ir/v1"
+    },
+    "type": {
+      "const": "targetIr"
+    },
+    "command": {
+      "const": "project"
+    },
+    "input": {
+      "type": "object"
+    },
+    "state": {
+      "enum": ["available", "blocked", "failed"]
+    },
+    "domain": {
+      "type": "string"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coordinate", "digest"],
+      "properties": {
+        "coordinate": { "type": "string" },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "review": {
+      "type": "object"
+    },
+    "reason": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "missing_target_profile",
+            "lowering_error",
+            "unsupported_target",
+            "internal_error"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "failures": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "properties": {
+        "state": { "const": "available" },
+        "reason": false,
+        "error": false
+      },
+      "required": ["domain", "target", "digest", "review"]
+    },
+    {
+      "properties": {
+        "state": { "const": "blocked" },
+        "digest": false,
+        "review": false,
+        "error": false
+      },
+      "required": ["reason"]
+    },
+    {
+      "properties": {
+        "state": { "const": "failed" },
+        "digest": false,
+        "review": false,
+        "reason": false
+      },
+      "required": ["error"]
+    }
+  ]
+}
