@@ -486,6 +486,58 @@ fn input_root_null_rejects_as_invalid_settings() {
 }
 
 #[test]
+fn projection_object_settings_null_reject_as_invalid_settings() {
+    for (operation, field) in [
+        ("check", "compilerContext"),
+        ("check", "target"),
+        ("project", "compilerContext"),
+        ("project", "target"),
+    ] {
+        let mut settings = json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": operation,
+        });
+        if operation == "project" {
+            settings["emit"] = json!(["syntax"]);
+        }
+        settings[field] = Value::Null;
+
+        let output = run_edict(&jsonl([
+            settings,
+            json!({
+                "schema": "edict.compiler.input/v1",
+                "type": "compilerInput",
+                "kind": "source",
+                "name": "inline.edict",
+                "source": VALID_SOURCE,
+            }),
+        ]));
+
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{operation} with null {field} must be rejected before source processing"
+        );
+        assert!(
+            output.stdout.is_empty(),
+            "settings failures must not write stdout"
+        );
+        let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+        let diagnostic = stderr
+            .iter()
+            .find(|line| line.get("kind").and_then(Value::as_str) == Some("InvalidSettings"))
+            .expect("stderr must contain an InvalidSettings diagnostic");
+        assert_eq!(diagnostic.get("stage").and_then(Value::as_str), Some("cli"));
+        assert_eq!(
+            diagnostic.get("command").and_then(Value::as_str),
+            Some(operation)
+        );
+        assert_status(&stderr, "error", 2);
+    }
+}
+
+#[test]
 fn input_root_rejects_glob_outside_configured_root() {
     let allowed = temp_tree("allowed-glob-root");
     let outside = temp_tree("outside-glob-root");

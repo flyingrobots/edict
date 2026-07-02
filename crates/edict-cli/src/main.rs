@@ -383,12 +383,12 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
 
 fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFailure> {
     let command = settings_value_command(&value);
-    if value.get("inputRoot").is_some_and(Value::is_null) {
+    if let Some(field) = null_compiler_settings_field(&value) {
         return Err(CliFailure {
             command,
             kind: "InvalidSettings",
             line: Some(line),
-            message: "compiler settings inputRoot must be a string when present".to_owned(),
+            message: format!("compiler settings {field} must not be null"),
         });
     }
     let settings = serde_json::from_value::<CompilerSettings>(value).map_err(|err| CliFailure {
@@ -431,6 +431,15 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
         });
     }
     Ok(settings)
+}
+
+fn null_compiler_settings_field(value: &Value) -> Option<&'static str> {
+    for field in ["inputRoot", "compilerContext", "target"] {
+        if value.get(field).is_some_and(Value::is_null) {
+            return Some(field);
+        }
+    }
+    None
 }
 
 fn settings_value_command(value: &Value) -> &'static str {
