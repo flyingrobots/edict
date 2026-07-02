@@ -151,9 +151,17 @@ struct SourceDocument {
 
 #[derive(Debug, Clone)]
 struct CliFailure {
+    command: &'static str,
     kind: &'static str,
     line: Option<usize>,
     message: String,
+}
+
+impl CliFailure {
+    fn with_command(mut self, command: &'static str) -> Self {
+        self.command = command;
+        self
+    }
 }
 
 fn main() {
@@ -175,6 +183,7 @@ fn run() -> i32 {
             }
             _ => {
                 let failure = CliFailure {
+                    command: COMMAND_CHECK,
                     kind: "InvalidArguments",
                     line: None,
                     message: "edict reads JSONL request records on stdin and takes no positional \
@@ -214,11 +223,13 @@ fn run() -> i32 {
 fn read_stdin_bounded() -> Result<String, CliFailure> {
     let limit = configured_stdin_limit()?;
     let max_read = limit.checked_add(1).ok_or_else(|| CliFailure {
+        command: COMMAND_CHECK,
         kind: "InvalidStdinLimit",
         line: None,
         message: format!("{MAX_STDIN_BYTES_ENV} must be below usize::MAX"),
     })?;
     let max_read = u64::try_from(max_read).map_err(|_| CliFailure {
+        command: COMMAND_CHECK,
         kind: "InvalidStdinLimit",
         line: None,
         message: format!("{MAX_STDIN_BYTES_ENV} exceeds the supported byte limit"),
@@ -228,18 +239,21 @@ fn read_stdin_bounded() -> Result<String, CliFailure> {
         .take(max_read)
         .read_to_end(&mut bytes)
         .map_err(|err| CliFailure {
+            command: COMMAND_CHECK,
             kind: "StdinRead",
             line: None,
             message: err.to_string(),
         })?;
     if bytes.len() > limit {
         return Err(CliFailure {
+            command: COMMAND_CHECK,
             kind: "InputTooLarge",
             line: None,
             message: format!("stdin exceeds the configured maximum of {limit} bytes"),
         });
     }
     String::from_utf8(bytes).map_err(|err| CliFailure {
+        command: COMMAND_CHECK,
         kind: "StdinRead",
         line: None,
         message: err.to_string(),
@@ -250,12 +264,14 @@ fn configured_stdin_limit() -> Result<usize, CliFailure> {
     match std::env::var(MAX_STDIN_BYTES_ENV) {
         Ok(raw) => {
             let limit = raw.parse::<usize>().map_err(|_| CliFailure {
+                command: COMMAND_CHECK,
                 kind: "InvalidStdinLimit",
                 line: None,
                 message: format!("{MAX_STDIN_BYTES_ENV} must be a positive byte count"),
             })?;
             if limit == 0 {
                 return Err(CliFailure {
+                    command: COMMAND_CHECK,
                     kind: "InvalidStdinLimit",
                     line: None,
                     message: format!("{MAX_STDIN_BYTES_ENV} must be a positive byte count"),
@@ -265,6 +281,7 @@ fn configured_stdin_limit() -> Result<usize, CliFailure> {
         }
         Err(std::env::VarError::NotPresent) => Ok(DEFAULT_MAX_STDIN_BYTES),
         Err(std::env::VarError::NotUnicode(_)) => Err(CliFailure {
+            command: COMMAND_CHECK,
             kind: "InvalidStdinLimit",
             line: None,
             message: format!("{MAX_STDIN_BYTES_ENV} must be valid UTF-8"),
@@ -275,6 +292,7 @@ fn configured_stdin_limit() -> Result<usize, CliFailure> {
 fn parse_request(input: &str) -> Result<Request, CliFailure> {
     if input.trim().is_empty() {
         return Err(CliFailure {
+            command: COMMAND_CHECK,
             kind: "EmptyInput",
             line: None,
             message: "stdin must contain at least one JSONL record".to_owned(),
@@ -282,22 +300,26 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
     }
 
     let mut settings = None;
+    let mut request_command = COMMAND_CHECK;
     let mut inputs = Vec::new();
     for (index, line) in input.lines().enumerate() {
         let line_number = index + 1;
         if line.trim().is_empty() {
             return Err(CliFailure {
+                command: request_command,
                 kind: "BlankLine",
                 line: Some(line_number),
                 message: "JSONL input must not contain blank lines".to_owned(),
             });
         }
         let value = serde_json::from_str::<Value>(line).map_err(|err| CliFailure {
+            command: request_command,
             kind: "InvalidJsonl",
             line: Some(line_number),
             message: err.to_string(),
         })?;
         let object = value.as_object().ok_or_else(|| CliFailure {
+            command: request_command,
             kind: "InvalidRecord",
             line: Some(line_number),
             message: "each JSONL record must be a JSON object".to_owned(),
@@ -306,6 +328,7 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
             .get("schema")
             .and_then(Value::as_str)
             .ok_or_else(|| CliFailure {
+                command: request_command,
                 kind: "InvalidRecord",
                 line: Some(line_number),
                 message: "JSONL record missing string field `schema`".to_owned(),
@@ -315,16 +338,23 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
             edict_cli::COMPILER_SETTINGS_SCHEMA => {
                 if settings.is_some() {
                     return Err(CliFailure {
+                        command: request_command,
                         kind: "DuplicateSettings",
                         line: Some(line_number),
                         message: "request may contain only one compiler settings record".to_owned(),
                     });
                 }
-                settings = Some(parse_settings(value, line_number)?);
+                let parsed_settings = parse_settings(value, line_number)?;
+                request_command = command_for_operation(parsed_settings.operation);
+                settings = Some(parsed_settings);
             }
-            INPUT_SCHEMA => inputs.push(parse_compiler_input(object, line_number)?),
+            INPUT_SCHEMA => inputs.push(
+                parse_compiler_input(object, line_number)
+                    .map_err(|failure| failure.with_command(request_command))?,
+            ),
             _ => {
                 return Err(CliFailure {
+                    command: request_command,
                     kind: "InvalidRecord",
                     line: Some(line_number),
                     message: format!("unsupported JSONL schema `{schema}`"),
@@ -334,12 +364,14 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
     }
 
     let settings = settings.ok_or_else(|| CliFailure {
+        command: request_command,
         kind: "MissingSettings",
         line: None,
         message: "request missing compiler settings record".to_owned(),
     })?;
     if inputs.is_empty() {
         return Err(CliFailure {
+            command: command_for_operation(settings.operation),
             kind: "MissingInput",
             line: None,
             message: "request must contain at least one compiler input record".to_owned(),
@@ -350,20 +382,25 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
 }
 
 fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFailure> {
+    let command = settings_value_command(&value);
     if value.get("inputRoot").is_some_and(Value::is_null) {
         return Err(CliFailure {
+            command,
             kind: "InvalidSettings",
             line: Some(line),
             message: "compiler settings inputRoot must be a string when present".to_owned(),
         });
     }
     let settings = serde_json::from_value::<CompilerSettings>(value).map_err(|err| CliFailure {
+        command,
         kind: "InvalidSettings",
         line: Some(line),
         message: err.to_string(),
     })?;
+    let command = command_for_operation(settings.operation);
     if settings.schema != edict_cli::COMPILER_SETTINGS_SCHEMA {
         return Err(CliFailure {
+            command,
             kind: "InvalidSettings",
             line: Some(line),
             message: "compiler settings schema field does not match the settings schema".to_owned(),
@@ -371,6 +408,7 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
     }
     if settings.record_type != "compilerSettings" {
         return Err(CliFailure {
+            command,
             kind: "InvalidSettings",
             line: Some(line),
             message: "compiler settings record type must be `compilerSettings`".to_owned(),
@@ -386,12 +424,36 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
                 .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
     }) {
         return Err(CliFailure {
+            command,
             kind: "InvalidSettings",
             line: Some(line),
             message: "directoryExtensions entries must be dotted ASCII extensions".to_owned(),
         });
     }
     Ok(settings)
+}
+
+fn settings_value_command(value: &Value) -> &'static str {
+    value
+        .get("operation")
+        .and_then(Value::as_str)
+        .and_then(command_for_operation_name)
+        .unwrap_or(COMMAND_CHECK)
+}
+
+fn command_for_operation(operation: Operation) -> &'static str {
+    match operation {
+        Operation::Check => COMMAND_CHECK,
+        Operation::Project => COMMAND_PROJECT,
+    }
+}
+
+fn command_for_operation_name(operation: &str) -> Option<&'static str> {
+    match operation {
+        COMMAND_CHECK => Some(COMMAND_CHECK),
+        COMMAND_PROJECT => Some(COMMAND_PROJECT),
+        _ => None,
+    }
 }
 
 fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Result<(), CliFailure> {
@@ -402,6 +464,7 @@ fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Resu
                 || settings.target.is_some()
             {
                 return Err(CliFailure {
+                    command: COMMAND_CHECK,
                     kind: "InvalidSettings",
                     line: Some(line),
                     message: "`emit`, `compilerContext`, and `target` are project-only settings"
@@ -412,6 +475,7 @@ fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Resu
         Operation::Project => {
             if settings.emit.is_empty() {
                 return Err(CliFailure {
+                    command: COMMAND_PROJECT,
                     kind: "InvalidSettings",
                     line: Some(line),
                     message: "project operation requires a non-empty `emit` list".to_owned(),
@@ -431,6 +495,7 @@ fn validate_project_target(
 ) -> Result<(), CliFailure> {
     if target.coordinate.is_empty() {
         return Err(CliFailure {
+            command: COMMAND_PROJECT,
             kind: "InvalidSettings",
             line: Some(line),
             message: "project target coordinate must not be empty".to_owned(),
@@ -438,6 +503,7 @@ fn validate_project_target(
     }
     if !is_lowercase_sha256_digest(&target.profile_digest) {
         return Err(CliFailure {
+            command: COMMAND_PROJECT,
             kind: "InvalidSettings",
             line: Some(line),
             message: "project target profileDigest must match sha256:<64 lowercase hex>".to_owned(),
@@ -445,6 +511,7 @@ fn validate_project_target(
     }
     if target.ir_domain.is_empty() {
         return Err(CliFailure {
+            command: COMMAND_PROJECT,
             kind: "InvalidSettings",
             line: Some(line),
             message: "project target irDomain must not be empty".to_owned(),
@@ -472,6 +539,7 @@ fn parse_compiler_input(
             Ok(())
         } else {
             Err(CliFailure {
+                command: COMMAND_CHECK,
                 kind: "InvalidInputRecord",
                 line: Some(line),
                 message: "compiler input record type must be `compilerInput`".to_owned(),
@@ -487,6 +555,7 @@ fn parse_compiler_input(
         "glob" => &["pattern"],
         _ => {
             return Err(CliFailure {
+                command: COMMAND_CHECK,
                 kind: "InvalidInputRecord",
                 line: Some(line),
                 message: format!("unsupported compiler input kind `{kind}`"),
@@ -512,6 +581,7 @@ fn parse_compiler_input(
                 .get("paths")
                 .and_then(Value::as_array)
                 .ok_or_else(|| CliFailure {
+                    command: COMMAND_CHECK,
                     kind: "InvalidInputRecord",
                     line: Some(line),
                     message: "pathList input records require an array field `paths`".to_owned(),
@@ -519,6 +589,7 @@ fn parse_compiler_input(
                 .iter()
                 .map(|value| {
                     value.as_str().map(PathBuf::from).ok_or_else(|| CliFailure {
+                        command: COMMAND_CHECK,
                         kind: "InvalidInputRecord",
                         line: Some(line),
                         message: "pathList `paths` entries must be strings".to_owned(),
@@ -534,6 +605,7 @@ fn parse_compiler_input(
             pattern: require_string_field(object, "pattern", line)?.to_owned(),
         }),
         _ => Err(CliFailure {
+            command: COMMAND_CHECK,
             kind: "InvalidInputRecord",
             line: Some(line),
             message: format!("unsupported compiler input kind `{kind}`"),
@@ -553,6 +625,7 @@ fn reject_foreign_input_fields(
             continue;
         }
         return Err(CliFailure {
+            command: COMMAND_CHECK,
             kind: "InvalidInputRecord",
             line: Some(line),
             message: format!("`{kind}` compiler input record has unexpected field `{key}`"),
@@ -570,6 +643,7 @@ fn require_string_field<'a>(
         .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| CliFailure {
+            command: COMMAND_CHECK,
             kind: "InvalidInputRecord",
             line: Some(line),
             message: format!("record missing string field `{key}`"),
@@ -581,9 +655,12 @@ fn optional_string_field(object: &serde_json::Map<String, Value>, key: &str) -> 
 }
 
 fn run_request(request: &Request) -> Result<i32, CliFailure> {
-    let sources = expand_inputs(&request.settings, &request.inputs)?;
+    let command = command_for_operation(request.settings.operation);
+    let sources = expand_inputs(&request.settings, &request.inputs)
+        .map_err(|failure| failure.with_command(command))?;
     if sources.is_empty() {
         return Err(CliFailure {
+            command,
             kind: "MissingInput",
             line: None,
             message: "request did not expand to any source inputs".to_owned(),
@@ -682,7 +759,12 @@ fn project_source(
         None
     };
 
-    if emit.contains(&ProjectionEmit::Diagnostics) {
+    let diagnostics_would_be_hidden = !diagnostics.is_empty()
+        && !emit.contains(&ProjectionEmit::Diagnostics)
+        && !emit.contains(&ProjectionEmit::Core)
+        && !emit.contains(&ProjectionEmit::TargetIr)
+        && !emit.contains(&ProjectionEmit::Digests);
+    if emit.contains(&ProjectionEmit::Diagnostics) || diagnostics_would_be_hidden {
         records.push(projection_diagnostics_record(document, &diagnostics));
     }
 
@@ -755,6 +837,7 @@ fn core_projection_record(
         }));
     };
     let digest = edict_syntax::digest_core_module(core).map_err(|err| CliFailure {
+        command: COMMAND_PROJECT,
         kind: "CoreDigest",
         line: None,
         message: format!("{:?}", err.kind()),
@@ -813,6 +896,7 @@ fn target_ir_projection_record(
         ));
     };
     let digest = edict_syntax::digest_target_ir_artifact(&artifact).map_err(|err| CliFailure {
+        command: COMMAND_PROJECT,
         kind: "TargetIrDigest",
         line: None,
         message: format!("{:?}", err.kind()),
@@ -922,6 +1006,7 @@ fn parse_write_class(value: &str) -> Result<WriteClass, CliFailure> {
         "replace" => Ok(WriteClass::Replace),
         "delete" => Ok(WriteClass::Delete),
         _ => Err(CliFailure {
+            command: COMMAND_PROJECT,
             kind: "InvalidSettings",
             line: None,
             message: format!("unsupported write class `{value}`"),
@@ -1358,6 +1443,7 @@ fn canonical_input_root(settings: &CompilerSettings) -> Result<Option<PathBuf>, 
         fs::metadata(&canonical).map_err(|err| path_failure("InputRootRead", &canonical, &err))?;
     if !metadata.is_dir() {
         return Err(CliFailure {
+            command: COMMAND_CHECK,
             kind: "InvalidInputRoot",
             line: None,
             message: format!("inputRoot is not a directory: {}", root.display()),
@@ -1409,6 +1495,7 @@ fn collect_directory_files(
         .map_err(|err| path_failure("DirectoryRead", path, &err))?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| CliFailure {
+            command: COMMAND_CHECK,
             kind: "DirectoryRead",
             line: None,
             message: err.to_string(),
@@ -1443,12 +1530,14 @@ fn expand_glob(
     reject_glob_prefix_outside_root(pattern, input_root)?;
     let mut paths = glob::glob(pattern)
         .map_err(|err| CliFailure {
+            command: COMMAND_CHECK,
             kind: "InvalidGlob",
             line: None,
             message: err.to_string(),
         })?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| CliFailure {
+            command: COMMAND_CHECK,
             kind: "GlobRead",
             line: None,
             message: err.to_string(),
@@ -1491,6 +1580,7 @@ fn reject_glob_prefix_outside_root(
         return Ok(());
     }
     Err(CliFailure {
+        command: COMMAND_CHECK,
         kind: "InputPathOutsideRoot",
         line: None,
         message: format!("{pattern} resolves outside configured inputRoot"),
@@ -1526,6 +1616,7 @@ fn confined_input_path(
         return Ok(canonical);
     }
     Err(CliFailure {
+        command: COMMAND_CHECK,
         kind: "InputPathOutsideRoot",
         line: None,
         message: format!("{} resolves outside configured inputRoot", path.display()),
@@ -1544,6 +1635,7 @@ fn directory_extension_matches(settings: &CompilerSettings, path: &Path) -> bool
 
 fn path_failure(kind: &'static str, path: &Path, err: &io::Error) -> CliFailure {
     CliFailure {
+        command: COMMAND_CHECK,
         kind,
         line: None,
         message: format!("{}: {err}", path.display()),
@@ -1586,7 +1678,7 @@ fn semantic_diagnostic(input: &Value, error: &SemanticError) -> Value {
 
 fn cli_diagnostic(failure: &CliFailure) -> Value {
     diagnostic_record(
-        COMMAND_CHECK,
+        failure.command,
         "cli",
         failure.kind,
         &json!({ "kind": "stdin" }),
@@ -1772,7 +1864,7 @@ fn write_cli_failure(failure: &CliFailure) {
     let mut stderr = io::stderr().lock();
     let diagnostic = cli_diagnostic(failure);
     write_record(&mut stderr, &diagnostic);
-    let status = status_record(COMMAND_CHECK, "error", 0, 1, EXIT_CLI_FAILED);
+    let status = status_record(failure.command, "error", 0, 1, EXIT_CLI_FAILED);
     write_record(&mut stderr, &status);
 }
 

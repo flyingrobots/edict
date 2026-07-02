@@ -27,7 +27,7 @@
     "errors": {
       "type": "integer",
       "minimum": 0,
-      "description": "Count of diagnostic records emitted for this run."
+      "description": "Count of structured error diagnostics or projection diagnostic items emitted for this run."
     },
     "exitCode": {
       "enum": [0, 1, 2],

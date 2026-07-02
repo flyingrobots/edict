@@ -1918,7 +1918,15 @@ fn diagnostic_schema_declares_jsonl_contract() {
     }
     let properties = json_object(&schema, "properties");
     assert_eq!(property_const(properties, "type"), Some("diagnostic"));
-    assert_eq!(property_const(properties, "command"), Some("check"));
+    let command = properties
+        .get("command")
+        .unwrap_or_else(|| panic!("diagnostic schema missing `command` property"));
+    for value in ["check", "project"] {
+        assert!(
+            json_string_array_contains(command, "enum", value),
+            "diagnostic schema must declare `{value}` command"
+        );
+    }
     let stage = properties
         .get("stage")
         .unwrap_or_else(|| panic!("diagnostic schema missing `stage` property"));

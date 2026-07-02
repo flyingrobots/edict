@@ -235,6 +235,103 @@ fn project_syntax_only_does_not_run_authoritative_compiler_path() {
 }
 
 #[test]
+fn project_syntax_only_lex_failure_emits_visible_diagnostics() {
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "project",
+            "emit": ["syntax"],
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/broken-lex.edict",
+            "source": "package demo.broken@1;\nlet value = \"unterminated",
+        }),
+    ]));
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        output.stderr.is_empty(),
+        "syntax lex failures should remain projection data on stdout"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_eq!(
+        stdout
+            .iter()
+            .filter_map(|line| line.get("type").and_then(Value::as_str))
+            .collect::<Vec<_>>(),
+        ["diagnostics", "status"],
+        "status errors must be backed by visible structured projection data"
+    );
+    let diagnostics = record_of_type(&stdout, "diagnostics");
+    assert_eq!(
+        diagnostics
+            .pointer("/diagnostics/0/stage")
+            .and_then(Value::as_str),
+        Some("lex")
+    );
+    assert_eq!(
+        diagnostics
+            .pointer("/diagnostics/0/kind")
+            .and_then(Value::as_str),
+        Some("Lex")
+    );
+    assert_status_counts(&stdout, 1, 1);
+}
+
+#[test]
+fn invalid_project_settings_report_project_command() {
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "project",
+            "emit": ["targetIr"],
+            "target": {
+                "coordinate": "echo.dpo@1",
+                "profileDigest": "sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                "irDomain": "echo.span-ir/v1",
+            },
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/demo.echo.edict",
+            "source": ECHO_SOURCE,
+        }),
+    ]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "invalid project settings must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("stderr must contain a CLI diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("project")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("InvalidSettings")
+    );
+    let status = record_of_type(&stderr, "status");
+    assert_eq!(
+        status.get("command").and_then(Value::as_str),
+        Some("project")
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
 fn check_rejects_invalid_source_with_jsonl_stderr_only() {
     let output = run_edict(&jsonl([
         compiler_settings(),

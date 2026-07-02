@@ -40,7 +40,9 @@ records for dirty editor buffers whose contents do not have to exist on disk.
 It emits editor-facing projection records for requested slots:
 
 - lexical syntax spans;
-- diagnostics, always as a projection record when requested, even when empty;
+- diagnostics, always as a projection record when requested, even when empty,
+  and also when a requested syntax projection cannot be produced because lexing
+  fails;
 - Core review JSON plus the canonical Core digest;
 - Target IR review JSON plus the canonical Target IR digest.
 
@@ -65,6 +67,11 @@ projection records, including compiler diagnostics and lowering failures, are
 emitted to stdout when the request itself is valid. Both streams use one JSON
 object per line with no banners, spinners, blank lines, or direct human prose
 outside JSON string fields. [CLI-REQ-001, CLI-REQ-014]
+
+When a CLI-input failure happens after the requested operation is known, the
+diagnostic and terminal status records carry that command. Invalid `project`
+settings therefore report `command: "project"` rather than falling back to the
+`check` command. [CLI-REQ-006, CLI-REQ-007]
 
 ## Stream Contract Artifacts
 
