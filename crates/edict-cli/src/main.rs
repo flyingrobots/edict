@@ -434,12 +434,9 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
 }
 
 fn null_compiler_settings_field(value: &Value) -> Option<&'static str> {
-    for field in ["inputRoot", "compilerContext", "target"] {
-        if value.get(field).is_some_and(Value::is_null) {
-            return Some(field);
-        }
-    }
-    None
+    ["inputRoot", "compilerContext", "target"]
+        .into_iter()
+        .find(|field| value.get(field).is_some_and(Value::is_null))
 }
 
 fn settings_value_command(value: &Value) -> &'static str {
