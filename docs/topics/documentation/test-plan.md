@@ -33,7 +33,7 @@ Out of scope:
 | DOCS-REQ-003 | policy | Edict tracks documentation coverage by capability and reader need. | docs/topics/documentation/README.md |
 | DOCS-REQ-004 | policy | Examples distinguish runnable, illustrative, and abridged use; copyable shell commands omit prompts. | docs/topics/documentation/README.md, fixtures/README.md |
 | DOCS-REQ-005 | policy | Contract-bearing changes update affected docs or declare `docs-impact: none`; changed documentation preserves page type. | AGENTS.md, CONTRIBUTING.md, docs/topics/documentation/README.md |
-| DOCS-REQ-006 | policy | Documentation quality uses deterministic checks for software facts and human review for reader-task success. | docs/topics/documentation/README.md, xtask/src/main.rs |
+| DOCS-REQ-006 | policy | Documentation quality uses deterministic checks for software facts and human review for reader-task success. | docs/topics/documentation/README.md, xtask/src/contract_check.rs, xtask/src/tests.rs |
 
 ## Fixtures
 
@@ -45,7 +45,7 @@ Out of scope:
 | docs/topics/README.md | Topic index. | Lists the documentation standards topic. |
 | docs/README.md | Documentation router. | Links to the documentation standards topic. |
 | fixtures/README.md | Fixture corpus contract. | Defines placeholder digest handling and golden fixture expectations. |
-| xtask/src/main.rs | Local verification implementation. | Provides contract-check behavior tests; documentation policy prose is reviewed, not string-tested. |
+| xtask/src/contract_check.rs, xtask/src/tests.rs | Local documentation-contract verification implementation. | Provides contract-check behavior and regression tests; documentation policy prose is reviewed, not string-tested. |
 
 ## Test Cases
 

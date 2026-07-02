@@ -665,6 +665,8 @@ execution tooling, or trusted fact governance.
 
 ## Where To Go Next
 
+- **[ARCHITECTURE](./ARCHITECTURE.md)** — the current workspace layering map,
+  crate responsibilities, dependency direction, and crate-scope caveats.
 - **[Authority Fact Governance Design Note](./docs/design/authority-fact-governance.md)** —
   the planning note for trusted lawpack and target-profile authorship,
   provenance, review, and the Edict/Continuum trust-policy boundary.

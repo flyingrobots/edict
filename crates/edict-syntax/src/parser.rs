@@ -268,6 +268,11 @@ impl Parser {
         }
     }
 
+    /// Fallibly match and consume one exact token kind.
+    ///
+    /// This is the parser's graceful token-matching combinator, not
+    /// [`Result::expect`]. Mismatches are returned as structured
+    /// [`ParseErrorKind::ExpectedToken`] diagnostics and never panic.
     fn expect(&mut self, k: &TokenKind) -> Result<(), ParseError> {
         if self.eat(k) {
             Ok(())

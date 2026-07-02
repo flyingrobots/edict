@@ -37,6 +37,17 @@ required_checks = [
 [release_runbook]
 manual_fallback_target = "verified_main_merge_commit"
 post_release_milestone_lookup = "all_states_paginated"
+scaffold_command = "cargo xtask release-prep <version>"
+scaffold_outputs = [
+  "workspace_package_versions",
+  "lockfile_package_versions",
+  "dated_changelog_section",
+  "release_policy_boundary_block",
+  "release_notes_stub",
+  "release_boundary_test_stub",
+  "alpha_changelog_date_guard_entry",
+  "release_process_test_plan_rows",
+]
 steps = [
   "prepare_branch",
   "write_release_thesis",

@@ -53,10 +53,18 @@ that is otherwise clean:
    production logic and a single ~2,400-line `#[cfg(test)] mod tests` covering
    unrelated concerns (release policy, contract graph, core goldens, grammar,
    TextMate, VS Code manifests, schema shapes, link checks).
+   - **✅ Addressed (2026-07-01, #85):** `xtask` production logic is split into
+     dispatch (`main.rs`), focused modules (`contract_check.rs`, `goldens.rs`,
+     `release_prep.rs`, `util.rs`), and relocated harness tests (`tests.rs`).
 2. **Crate scope sprawl.** `edict-syntax` owns far more than syntax — compiler
    spine, canonical encoder, Core IR, lowerability, target IR, contract-bundle
    validation, and Gate C admission — with no compile-time boundary between
    layers.
+   - **✅ Decided (2026-07-01, #84):**
+     `docs/design/crate-scope-v0.11.md` records the decision to prefer an
+     eventual layered split behind an umbrella crate over a simple rename. The
+     package split is deferred to its own migration slice; `ARCHITECTURE.md`
+     documents the current crate-scope caveat and layer rule.
 3. **Stringly-typed CLI envelope parsing.** `crates/edict-cli/src/main.rs`
    hand-rolls JSON field extraction (`parse_compiler_input`,
    `require_string_field`) that is *more lenient* than the checked-in schemas
@@ -77,6 +85,10 @@ gate.
   `xtask/src/main.rs` means scrolling past ~2,400 lines of tests to reach
   ~637 lines of logic.
   - **Mitigation Prompt 2:** `Split xtask/src/main.rs production logic into modules (release.rs, contract_check.rs, core_goldens.rs, schema_audit.rs) and move the inline tests into xtask/tests/*.rs or per-module test blocks, keeping cargo xtask verify behavior identical.`
+  - **✅ Addressed (2026-07-01, #85):** command dispatch, contract checks,
+    golden management, release scaffolding, shared utilities, and tests now
+    live in separate `xtask/src/*.rs` files with behavior parity verified by
+    `cargo test -p xtask` and `cargo xtask verify`.
 - **Issue 3 — CLI input-kind handling is implicit.** The supported input kinds
   live in a hand-written `match` rather than a typed model, so the supported set
   is not discoverable from a single type.
@@ -118,6 +130,10 @@ fn directory_extension_matches(settings: &CompilerSettings, path: &Path) -> bool
 ```
 
 - **Mitigation Prompt 5:** `Replace directory_extension_matches with the allocation-free version above; keep the .edict default and behavior identical; confirm fixtures/cli/06-directory-expansion-ok still passes.`
+  - **✅ Addressed (2026-07-01, #91):** `directory_extension_matches` now
+    compares `Path::extension()` directly against configured dotted extensions
+    without allocating a `String` for every visited file; the directory
+    expansion golden remains byte-identical.
 
 **Violation 3 — Post-construction mutation of a JSON value (record builder smell).**
 `diagnostic_record` builds a `json!` object then conditionally mutates it
@@ -139,6 +155,10 @@ struct Diagnostic<'a> {
 ```
 
 - **Mitigation Prompt 6:** `Introduce typed Serialize structs for the diagnostic, check-result, and event records with #[serde(skip_serializing_if = "Option::is_none")] for optional fields, replacing the json! + index-mutation construction in crates/edict-cli/src/main.rs. Keep emitted bytes identical (BTreeMap key order is preserved by serde_json) and verify against the golden corpus.`
+  - **✅ Addressed (2026-07-01, #92):** CLI check-result, diagnostic, status,
+    and info records are now built from typed `Serialize` structs and converted
+    through `serde_json::Value` to preserve the existing byte-for-byte golden
+    output; the `record[...]` mutation guard and CLI golden corpus are green.
 
 ---
 
@@ -180,6 +200,11 @@ automated pipeline). Worth pre-empting now.
   directory recursion follows symlinks when `followSymlinks` is true. Under
   untrusted input this is an information-disclosure / traversal vector.
   - **Mitigation Prompt 10:** `Document the CLI trust boundary (requests are trusted; paths are read with the caller's privileges) in docs/topics/cli/README.md, and add an optional root-confinement setting that rejects input paths resolving outside a configured root, with a stable CLI failure kind and a golden fixture.`
+  - **✅ Addressed (2026-07-01, #95):** compiler settings now accept optional
+    `inputRoot`; path, path-list, directory, and glob inputs resolving outside
+    that root fail with `InputPathOutsideRoot`, exit 2, and are pinned by
+    `CLI-REQ-011` / `CLI-TP-017` plus
+    `fixtures/cli/13-input-root-outside`.
 - **Vulnerability 2 — Unbounded stdin buffering (DoS).** `run()` does
   `io::stdin().read_to_string(&mut input)` — the entire stream is read into
   memory with no cap. A hostile or runaway producer can exhaust memory.
@@ -200,6 +225,9 @@ library + CLI:
 - **Gap 2 — No supply-chain gate in CI.** The dependency posture is excellent
   (3 deps, clean licenses) but unenforced — no `cargo-deny`/advisory check, so a
   future bad dependency would not be caught automatically.
+  - **✅ Addressed (2026-07-01, #94):** `deny.toml` plus the CI
+    `supply-chain (cargo-deny)` job now gate advisories, yanked crates, license
+    allowlisting, duplicate-version warnings, and unknown sources.
 - **Gap 3 — No distributable artifact / install path.** The prerelease has zero
   attached assets and `publish = false`, so obtaining `edict` requires building
   from source; there is no documented install. (`SECURITY.md` reporting channel

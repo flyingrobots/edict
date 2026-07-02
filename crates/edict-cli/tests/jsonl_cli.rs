@@ -132,6 +132,162 @@ fn oversized_stdin_rejects_with_input_too_large_diagnostic() {
 }
 
 #[test]
+fn input_root_rejects_path_outside_configured_root() {
+    let allowed = temp_tree("allowed-root");
+    let outside = temp_tree("outside-root");
+    let outside_source = outside.join("outside.edict");
+    fs::write(&outside_source, VALID_SOURCE).expect("write outside source");
+
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "check",
+            "inputRoot": allowed,
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "path",
+            "path": outside_source,
+        }),
+    ]));
+
+    let _ = fs::remove_dir_all(&outside);
+    let _ = fs::remove_dir_all(&allowed);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "root-confinement failures must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("kind").and_then(Value::as_str) == Some("InputPathOutsideRoot"))
+        .expect("stderr must contain an InputPathOutsideRoot diagnostic");
+    assert_eq!(diagnostic.get("stage").and_then(Value::as_str), Some("cli"));
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
+fn input_root_null_rejects_as_invalid_settings() {
+    let outside = temp_tree("null-input-root-outside");
+    let outside_source = outside.join("outside.edict");
+    fs::write(&outside_source, VALID_SOURCE).expect("write outside source");
+
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "check",
+            "inputRoot": null,
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "path",
+            "path": outside_source,
+        }),
+    ]));
+
+    let _ = fs::remove_dir_all(&outside);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "settings failures must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("kind").and_then(Value::as_str) == Some("InvalidSettings"))
+        .expect("stderr must contain an InvalidSettings diagnostic");
+    assert_eq!(diagnostic.get("stage").and_then(Value::as_str), Some("cli"));
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
+fn input_root_rejects_glob_outside_configured_root() {
+    let allowed = temp_tree("allowed-glob-root");
+    let outside = temp_tree("outside-glob-root");
+    fs::write(outside.join("outside.edict"), VALID_SOURCE).expect("write outside source");
+
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "check",
+            "inputRoot": allowed,
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "glob",
+            "pattern": format!("{}/*.edict", outside.display()),
+        }),
+    ]));
+
+    let _ = fs::remove_dir_all(&outside);
+    let _ = fs::remove_dir_all(&allowed);
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        output.stdout.is_empty(),
+        "root-confinement failures must not write stdout"
+    );
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    assert!(
+        stderr
+            .iter()
+            .any(|line| line.get("kind").and_then(Value::as_str) == Some("InputPathOutsideRoot")),
+        "stderr must contain an InputPathOutsideRoot diagnostic"
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
+#[cfg(unix)]
+fn input_root_glob_skips_dangling_symlink_matches() {
+    use std::os::unix::fs::symlink;
+
+    let root = temp_tree("glob-dangling-symlink");
+    let source = root.join("valid.edict");
+    let broken = root.join("broken.edict");
+    fs::write(&source, VALID_SOURCE).expect("write valid source");
+    symlink(root.join("missing.edict"), &broken).expect("create dangling symlink");
+
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "check",
+            "inputRoot": root,
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "glob",
+            "pattern": format!("{}/*.edict", root.display()),
+        }),
+    ]));
+
+    let _ = fs::remove_dir_all(&root);
+
+    assert!(
+        output.status.success(),
+        "dangling symlink glob matches should be skipped as non-files"
+    );
+    assert!(
+        output.stderr.is_empty(),
+        "successful check must not write stderr"
+    );
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    assert_eq!(check_result_count(&stdout), 1);
+    assert_status(&stdout, "ok", 0);
+}
+
+#[test]
 fn check_accepts_path_directory_path_list_glob_and_source_records() {
     let root = temp_tree("inputs");
     let nested = root.join("nested");

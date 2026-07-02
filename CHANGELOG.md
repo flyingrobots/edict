@@ -14,6 +14,52 @@ versions still track specification maturity rather than a released product.
   cap and an `EDICT_CLI_MAX_STDIN_BYTES` override. Over-limit input fails with
   the stable `InputTooLarge` CLI diagnostic and exit 2, pinned by
   `CLI-REQ-010` / `CLI-TP-016` and `fixtures/cli/12-input-too-large`.
+- The `edict` CLI now documents its trusted local request boundary and accepts
+  optional compiler setting `inputRoot` to confine path, path-list, directory,
+  and glob inputs. Inputs resolving outside that root fail with
+  `InputPathOutsideRoot`, exit 2, and are pinned by `CLI-REQ-011` /
+  `CLI-TP-017` plus `fixtures/cli/13-input-root-outside`; explicit JSON `null`
+  for `inputRoot` is rejected as `InvalidSettings`, and non-file glob matches
+  are skipped before root-confined canonicalization.
+- The `edict` CLI now builds its JSONL check-result, diagnostic, status, and
+  info records from typed `Serialize` structs instead of post-construction
+  `serde_json::Value` mutation, while preserving the existing byte-for-byte
+  golden output.
+- The `edict-cli` production targets now deny `clippy::unwrap_used` and
+  `clippy::expect_used`, and the parser's `self.expect` helper is documented as
+  a fallible token-matching combinator rather than a panic primitive.
+- CI now includes a dedicated `cargo deny check` supply-chain job backed by
+  `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
+  duplicate-version warnings, and source restrictions.
+- Directory expansion in the `edict` CLI no longer allocates a temporary dotted
+  extension string per visited file; behavior and golden output are unchanged.
+- Added `cargo xtask cli-goldens --check/--write` and wired check mode into
+  `cargo xtask verify`, giving the CLI golden corpus the same check/write
+  regeneration path as the Core, Target IR, and bundle goldens. The CLI golden
+  runner resolves the `edict` binary through Cargo metadata so custom target
+  directories are honored.
+- Added `cargo xtask release-prep <version>` to scaffold the mechanical release
+  prep surfaces that must move together: workspace package versions, lockfile
+  package versions, dated changelog section, release policy boundary block,
+  release notes stub, boundary test stub, changelog date guard entry, and paired
+  release-process test-plan rows. Generated boundary tests now require operators
+  to replace scaffolded scope/non-goal placeholders before the branch can pass.
+- Added a root `ARCHITECTURE.md` workspace map covering current crate
+  responsibilities, dependency direction, the `edict-syntax` crate-scope caveat,
+  and current non-claims.
+- Added a Core IR canonical encoding explainer covering the canonical value
+  model, canonical CBOR subset, Core digest frame, reviewed golden fixtures, and
+  byte/hash change discipline.
+- Recorded the crate-scope decision to prefer an eventual layered split behind
+  an umbrella crate over a simple `edict-syntax` rename, while documenting the
+  current crate-scope caveat in `ARCHITECTURE.md`.
+- Recorded the schema-as-source-of-truth codegen decision: defer generator work
+  until cross-language drift or fixture-authoring pain is measurable, and do not
+  reintroduce GraphQL semantics as the contract source.
+- Split `xtask` out of its former single-file shape: command dispatch,
+  contract checks, golden management, release scaffolding, shared utilities, and
+  harness tests now live in focused `xtask/src/*.rs` modules with command
+  behavior preserved.
 - Marked `v0.11.0-alpha.1` as published in the release-process contract and
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.

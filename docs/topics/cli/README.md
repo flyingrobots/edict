@@ -34,7 +34,13 @@ Each input is represented by a JSON object whose `schema` is
 the `source` field of a JSONL input record. [CLI-REQ-002]
 
 Compiler settings are represented by a JSON object whose `schema` is
-`edict.compiler.settings/v1`. [CLI-REQ-003]
+`edict.compiler.settings/v1`. The request is trusted local input by default:
+path, directory, path-list, and glob records read files with the caller's
+filesystem privileges. Callers that accept untrusted request records can set
+`inputRoot` in compiler settings; then every resolved filesystem input must stay
+within that root, or the CLI rejects the request with `InputPathOutsideRoot` and
+exit `2`. Inline source records are not filesystem reads. [CLI-REQ-003,
+CLI-REQ-011]
 
 Successful compiler results are emitted to stdout. Compiler diagnostics, CLI
 input errors, and failure status records are emitted to stderr. Both streams use
@@ -72,7 +78,7 @@ The CLI contract is pinned by a checked-in golden corpus under
 through the binary and its stdout, stderr, and exit code are matched
 byte-for-byte. The corpus covers success, parse and semantic rejection,
 CLI-input rejection, and the deterministic path, directory, path-list, and glob
-expansion paths. [CLI-REQ-008]
+expansion paths, including optional root-confinement rejection. [CLI-REQ-008]
 
 ## Deferred
 

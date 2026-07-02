@@ -104,12 +104,22 @@ Extensibility is good *by construction*: the front-end is pure functions over da
 **`xtask/src/main.rs` (3,052 lines).** Production logic is lines 1–637; a single `#[cfg(test)] mod tests` runs from line 638 to EOF (~2,400 lines). One module mixes release-policy validation, contract-graph checking, core-golden generation, schema-shape audits, grammar/TextMate/VS Code manifest tests, and link checks. It is the repo's largest file, the hardest to navigate, and a merge-conflict magnet. (By contrast, the *library* modules are healthy — see §3.3.)
 
 - **Action Prompt (Debt Reduction):** `Refactor xtask/src/main.rs into focused modules (release.rs, contract_check.rs, core_goldens.rs, schema_audit.rs, plus main.rs dispatch) and relocate the inline #[cfg(test)] tests either next to their modules or into xtask/tests/*.rs integration files. Keep cargo xtask verify / contract-check / core-goldens behavior byte-identical; run the full suite before and after to prove parity.`
+- **✅ Addressed (2026-07-01, #85):** `xtask` production logic is split into
+  `main.rs` dispatch, `contract_check.rs`, `goldens.rs`, `release_prep.rs`,
+  and `util.rs`; the former inline test body now lives in `tests.rs`. Parity is
+  guarded by `cargo test -p xtask` and the full `cargo xtask verify` gate.
 
 ### 3.2 Abstraction Violation
 
 The clearest Separation-of-Concerns issue is **crate-level, not function-level**: `edict-syntax` bundles lexing/parsing, semantic validation, the compiler spine, the canonical CBOR encoder, Core IR, lowerability, target profiles, **target IR lowering, contract-bundle validation, and Gate C admission checks** into one crate named for only the first of those. There is no compile-time boundary preventing, say, the parser from reaching into admission types. The fix is crate (or at least module-visibility) segmentation behind an umbrella.
 
 - **Action Prompt (SoC Refactoring):** `Propose (do not execute without sign-off, per house rules) a crate split: edict-syntax (lex/parse/AST), edict-core (semantic + compiler spine + canonical + Core IR), edict-targets (lowerability + target profiles + target IR), edict-admission (contract bundle + Gate C), and an edict umbrella re-exporting a curated surface. Produce a dependency-direction diagram proving an acyclic layering and an inventory of which current pub items move where.`
+
+- **✅ Decided (2026-07-01, #84):** `docs/design/crate-scope-v0.11.md`
+  records the decision to prefer an eventual layered split behind an umbrella
+  crate over a simple rename. The split is intentionally not executed in the
+  audit omnibus branch; `ARCHITECTURE.md` now documents the current
+  `edict-syntax` scope caveat and dependency-direction rule.
 
 ### 3.3 Testability Barrier
 
@@ -127,18 +137,29 @@ The clearest Separation-of-Concerns issue is **crate-level, not function-level**
 **None found.** The highest-value result of this audit is a *negative*: the parse/validate path is **panic-free on untrusted input**. A naive grep flags 71 `expect`-like calls in `parser.rs`, but every one is `self.expect(&TokenKind::…)?` — the parser's own graceful token-matching combinator returning `ParseError`, not `Result::expect`. Production code contains **zero `.unwrap()`**; the few real `.expect()` calls (4 in `canonical.rs`, 1 each in `token.rs`/`admission.rs`/`authority_facts.rs`) sit behind proven invariants (range-checked integer casts, infallible `String` writes) with self-documenting messages. `edict-cli` production code has **zero** panic sites and is entirely `Result`-driven.
 
 - **Action Prompt (Risk Mitigation):** `No critical flaw to neutralize. To lock in the property, add a clippy gate to deny unwrap_used and expect_used in non-test code for crates/edict-cli (where input is untrusted), allowing expect only where a // SAFETY/invariant comment is present, and document the parser's self.expect combinator naming so future audits don't re-flag it.`
+  - **✅ Addressed (2026-07-01, #93):** `edict-cli` production targets now deny
+    `clippy::unwrap_used` and `clippy::expect_used`; the parser's
+    `self.expect` helper is documented as a fallible token-matching combinator
+    that returns structured `ParseError` values rather than panicking.
 
 ### 4.2 Efficiency Sink
 
 No meaningful sink for the current scale (single-file/dir/glob check runs). The only micro-allocation worth noting: `directory_extension_matches` in `crates/edict-cli/src/main.rs` builds a `format!(".{extension}")` `String` per file during directory walks to compare against `directory_extensions`. Negligible today; would matter only on very large trees.
 
 - **Action Prompt (Optimization):** `In crates/edict-cli/src/main.rs::directory_extension_matches, compare the path extension to the configured directory_extensions without allocating per file — e.g. strip the leading '.' from each configured extension once into a reusable set and compare against path.extension() directly. Add no new behavior; keep the .edict default. Benchmark only if a large-tree fixture is added.`
+  - **✅ Addressed (2026-07-01, #91):** `directory_extension_matches` now
+    compares `Path::extension()` directly against configured dotted extensions,
+    removing the per-file `format!(".{extension}")` allocation while preserving
+    the existing directory-expansion behavior.
 
 ### 4.3 Dependency Health — Excellent
 
 Three runtime dependencies total: `serde`, `serde_json`, `glob` — all current, widely-maintained, permissively licensed (MIT/Apache-2.0), Apache-2.0-compatible. `unsafe_code = "forbid"`, `clippy::all`+`pedantic` denied, warnings-as-errors. No deprecated APIs, no known-CVE dependencies, no transitive bloat. This is a model minimal-surface dependency posture.
 
 - **Action Prompt (Dependency Update):** `No problematic dependency to update. Optionally add cargo-deny (advisories + licenses + bans) to CI to make the current clean posture an enforced gate rather than an incidental property.`
+  - **✅ Addressed (2026-07-01, #94):** `deny.toml` now enforces advisories,
+    yanked crates, license allowlisting, bans, and source restrictions, and CI
+    runs `cargo deny check` as a dedicated supply-chain job.
 
 ---
 

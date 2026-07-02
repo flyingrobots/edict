@@ -34,16 +34,22 @@ request names resolves to a stable relative path in the emitted records.
 - `10-input-extra-field` — input record with an unrecognized field is rejected (schema parity: `additionalProperties: false`), exit `2`.
 - `11-input-hybrid-kind` — input record mixing fields from two kinds is rejected (schema parity: mutually exclusive kinds), exit `2`.
 - `12-input-too-large` — stdin larger than the configured byte limit is rejected before request parsing, exit `2`.
+- `13-input-root-outside` — path input resolving outside configured `inputRoot` is rejected before source checking, exit `2`.
 
 ## Regenerating a case
 
-After an intentional contract change, regenerate a case from inside its
-directory and review the diff before committing:
+After an intentional contract change, regenerate the corpus from the repository
+root and review the diff before committing:
 
 ```sh
-cd fixtures/cli/<case>
-edict < request.jsonl > expected.stdout.jsonl 2> expected.stderr.jsonl
+cargo xtask cli-goldens --write
 ```
 
-Delete `expected.stdout.jsonl` or `expected.stderr.jsonl` if the corresponding
-stream is empty, and keep the `exit` file in sync with the binary's exit code.
+Check mode replays the same corpus without writing:
+
+```sh
+cargo xtask cli-goldens --check
+```
+
+Write mode deletes `expected.stdout.jsonl`, `expected.stderr.jsonl`, or `exit`
+when the corresponding stream is empty or the exit code is `0`.

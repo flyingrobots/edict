@@ -130,6 +130,10 @@ explained in one map for new contributors.
 > **✅ Addressed (2026-06-29, #102):** `SECURITY.md`, `NOTICE`, and
 > `CODE_OF_CONDUCT.md` were added at repo root. `ARCHITECTURE.md` remains open
 > and is tracked separately in **#99**.
+> **✅ Addressed (2026-07-01, #99):** `ARCHITECTURE.md` was added at repo root
+> and linked from `README.md`. It records the current workspace dependency
+> direction, crate responsibilities, `edict-syntax` crate-scope caveat, and
+> current non-claims without changing the package layout.
 
 ### 2.3 Supplementary Documentation (undocumented complex area)
 
@@ -142,6 +146,11 @@ the byte/hash foundation everything else will be admitted against, it has a
 encoding rules, domain-separation rationale, or the "meaning freezes before
 bytes; bytes freeze before hashes" discipline that the release gates reference.
 A dedicated explainer would de-risk every future change to that file.
+
+> **✅ Addressed (2026-07-01, #100):**
+> `docs/topics/core-ir/canonical-encoding.md` now explains the canonical value
+> model, canonical CBOR subset, Core digest frame, golden fixtures, and
+> byte/hash change discipline, and the Core IR topic shelf links to it.
 
 ---
 
