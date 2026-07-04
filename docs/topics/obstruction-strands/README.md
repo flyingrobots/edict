@@ -7,7 +7,7 @@ This topic records the current Edict boundary for obstruction-strand planning.
 The parser currently accepts `require ... else <obstruction>` as a source
 statement carrying a predicate and terminal typed obstruction target. It also
 accepts `require ... else continue obstructed { reason: ... }` as a distinct
-source AST arm for preserving a blocked attempt as an obstruction strand.
+source AST arm reserved for future obstruction-strand preservation semantics.
 Compiler lowering, Target IR, participant receipts, and runtime execution for
 `require` obstructions are not implemented in HEAD.
 

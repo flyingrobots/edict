@@ -258,12 +258,12 @@ pub enum ElseClause {
 pub enum RequireElseArm {
     /// Terminal obstruction: `else rope.StaleBase`.
     Terminal(ObstructionTarget),
-    /// First-class preserved obstruction syntax:
+    /// First-class source syntax reserved for obstruction-strand preservation:
     /// `else continue obstructed { reason: ..., ... }`.
     ContinueObstructed(ContinueObstructedArm),
 }
 
-/// Source-only syntax for preserving an obstructed strand.
+/// Source-only obstruction-strand continuation arm.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContinueObstructedArm {
     pub reason: Expr,
