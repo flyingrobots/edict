@@ -1100,19 +1100,24 @@ impl Parser {
         let mut reason = None;
         for entry in entries {
             let candidate = match entry {
-                RecordEntry::Field { name, value } if name == "reason" => Some(value.clone()),
-                RecordEntry::Shorthand { name, span } if name == "reason" => Some(Expr::Ident {
-                    name: name.clone(),
-                    span: *span,
-                }),
+                RecordEntry::Field { name, value } if name == "reason" => {
+                    Some((value.clone(), expr_span(value)))
+                }
+                RecordEntry::Shorthand { name, span } if name == "reason" => Some((
+                    Expr::Ident {
+                        name: name.clone(),
+                        span: *span,
+                    },
+                    *span,
+                )),
                 _ => None,
             };
-            if let Some(value) = candidate {
+            if let Some((value, span)) = candidate {
                 if reason.is_some() {
                     return Self::err_at(
                         ParseErrorKind::DuplicateField,
                         "`continue obstructed` may contain only one `reason` field",
-                        payload_span,
+                        span,
                     );
                 }
                 reason = Some(value);
@@ -1570,6 +1575,25 @@ impl Parser {
             entries,
             span: Span::new(start, self.prev_end()),
         })
+    }
+}
+
+fn expr_span(expr: &Expr) -> Span {
+    match expr {
+        Expr::Ident { span, .. }
+        | Expr::Int { span, .. }
+        | Expr::Str { span, .. }
+        | Expr::Bool { span, .. }
+        | Expr::Digest { span, .. }
+        | Expr::Field { span, .. }
+        | Expr::Call { span, .. }
+        | Expr::Unary { span, .. }
+        | Expr::Binary { span, .. }
+        | Expr::Record { span, .. }
+        | Expr::If { span, .. }
+        | Expr::IfYield { span, .. }
+        | Expr::VariantLit { span, .. }
+        | Expr::Match { span, .. } => *span,
     }
 }
 

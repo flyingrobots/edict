@@ -10,7 +10,7 @@ In scope:
 - current parser support for `require ... else` obstruction source shape;
 - current compiler boundary that rejects `Stmt::Require` before lowering;
 - first-class source syntax for preserved repairable obstruction attempts;
-- future Core and Target IR disposition for obstruction preservation;
+- planned-row ledger entries for future Core and Target IR disposition work;
 - negative guard against hidden control flow in ordinary obstruction-target
   constructors.
 

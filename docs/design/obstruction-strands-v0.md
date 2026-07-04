@@ -146,16 +146,24 @@ unless they are explicitly supplied as deterministic test inputs.
 - No canonical Echo receipt digest may be claimed until canonical Echo receipt
   bytes exist.
 
-## Future Verification
+## Verification
+
+Already verified in PR #128:
+
+- a distinct source AST node for repairable obstruction preservation;
+  `continue_obstructed_source_arm_parses` and
+  `stale_basis_obstruction_strand_fixture_parses`;
+- a negative guard proving helper-shaped obstruction constructors do not gain
+  hidden control-flow semantics:
+  `helper_shaped_continue_in_obstructed_strand_is_terminal`;
+- parser rejection for missing or duplicate `reason` fields;
+  `continue_obstructed_requires_reason_field` and
+  `continue_obstructed_rejects_duplicate_reason_field`;
+- parser rejection when `continue obstructed { ... }` appears outside a
+  require-else arm: `continue_obstructed_is_contextual_to_require_else`.
 
 Future implementation work should add RED/GREEN evidence for:
 
-- a distinct source AST node for repairable obstruction preservation;
-- a negative guard proving helper-shaped obstruction constructors do not gain
-  hidden control-flow semantics;
-- parser rejection for missing or duplicate `reason` fields;
-- parser rejection when `continue obstructed { ... }` appears outside a
-  require-else arm;
 - Core and Target IR fields that distinguish terminal obstruction from preserved
   obstruction;
 - digest or mutation evidence if the new disposition becomes part of canonical

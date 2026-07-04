@@ -298,11 +298,15 @@ fn continue_obstructed_requires_reason_field() {
 
 #[test]
 fn continue_obstructed_rejects_duplicate_reason_field() {
-    reject_kind(
-        &body(
-            "  require input.ok else continue obstructed { reason: jim.EditObstruction.StaleBase, reason: jim.EditObstruction.Other };\n  return { input };",
-        ),
-        ParseErrorKind::DuplicateField,
+    let src = body(
+        "  require input.ok else continue obstructed { reason: jim.EditObstruction.StaleBase, reason: jim.EditObstruction.Other };\n  return { input };",
+    );
+    let err = parse_module(&src).expect_err("duplicate reason rejects");
+    assert_eq!(err.kind, ParseErrorKind::DuplicateField);
+    assert_eq!(
+        err.span.start,
+        src.find("jim.EditObstruction.Other")
+            .expect("source contains second reason value"),
     );
 }
 
