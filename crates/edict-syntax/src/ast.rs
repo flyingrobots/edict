@@ -205,10 +205,10 @@ pub enum Stmt {
         els: Option<ObstructionHandler>,
         span: Span,
     },
-    /// `require predicate else Obstruction;` (always carries `else`).
+    /// `require predicate else <arm>;` (always carries `else`).
     Require {
         predicate: Expr,
-        obstruction: ObstructionTarget,
+        arm: RequireElseArm,
         span: Span,
     },
     /// `guarantee predicate [else Obstruction];` (`else` for precommit checks).
@@ -251,6 +251,24 @@ pub enum ElseClause {
     Block(Block),
     /// Always a [`Stmt::If`].
     If(Box<Stmt>),
+}
+
+/// The `else` arm of a `require` statement.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequireElseArm {
+    /// Terminal obstruction: `else rope.StaleBase`.
+    Terminal(ObstructionTarget),
+    /// First-class preserved obstruction syntax:
+    /// `else continue obstructed { reason: ..., ... }`.
+    ContinueObstructed(ContinueObstructedArm),
+}
+
+/// Source-only syntax for preserving an obstructed strand.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContinueObstructedArm {
+    pub reason: Expr,
+    pub payload: Vec<RecordEntry>,
+    pub span: Span,
 }
 
 /// How an effect's failures map to typed domain obstructions.

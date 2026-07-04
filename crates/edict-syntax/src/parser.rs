@@ -4,10 +4,10 @@
 //! text so they remain usable as member names after `.`.
 
 use crate::ast::{
-    BinOp, Block, BoundRef, Decl, ElseClause, EnumDecl, Expr, FieldConstraint, FieldDecl, Import,
-    ImportKind, IntentClause, IntentDecl, MatchArm, Module, ObstructionArm, ObstructionHandler,
-    ObstructionTarget, PackageRef, Param, RecordEntry, ScalarRefine, Stmt, TypeDecl, TypeExpr,
-    TypeRef, UnOp, VariantCase, YieldBlock,
+    BinOp, Block, BoundRef, ContinueObstructedArm, Decl, ElseClause, EnumDecl, Expr,
+    FieldConstraint, FieldDecl, Import, ImportKind, IntentClause, IntentDecl, MatchArm, Module,
+    ObstructionArm, ObstructionHandler, ObstructionTarget, PackageRef, Param, RecordEntry,
+    RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp, VariantCase, YieldBlock,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -28,6 +28,8 @@ pub enum ParseErrorKind {
     EmptyEnum,
     EmptyObstructionMap,
     EmptyMatch,
+    MissingRequiredField,
+    DuplicateField,
     NonCallEffect,
     ReturnInYieldBlock,
     InvalidTypeCall,
@@ -58,6 +60,8 @@ impl ParseErrorKind {
             ParseErrorKind::EmptyEnum => "EmptyEnum",
             ParseErrorKind::EmptyObstructionMap => "EmptyObstructionMap",
             ParseErrorKind::EmptyMatch => "EmptyMatch",
+            ParseErrorKind::MissingRequiredField => "MissingRequiredField",
+            ParseErrorKind::DuplicateField => "DuplicateField",
             ParseErrorKind::NonCallEffect => "NonCallEffect",
             ParseErrorKind::ReturnInYieldBlock => "ReturnInYieldBlock",
             ParseErrorKind::InvalidTypeCall => "InvalidTypeCall",
@@ -216,6 +220,12 @@ impl Parser {
         self.tokens
             .get(self.idx + 1)
             .is_some_and(|token| &token.kind == k)
+    }
+
+    fn next_is_kw(&self, kw: &str) -> bool {
+        self.tokens
+            .get(self.idx + 1)
+            .is_some_and(|token| matches!(&token.kind, TokenKind::Ident(s) if s == kw))
     }
 
     fn prev_end(&self) -> usize {
@@ -893,11 +903,11 @@ impl Parser {
         } else if self.eat_kw("require") {
             let predicate = self.expr()?;
             self.expect_kw("else")?;
-            let obstruction = self.obstruction_target()?;
+            let arm = self.require_else_arm()?;
             self.expect(&TokenKind::Semi)?;
             Ok(Stmt::Require {
                 predicate,
-                obstruction,
+                arm,
                 span: Span::new(start, self.prev_end()),
             })
         } else if self.eat_kw("guarantee") {
@@ -1057,6 +1067,62 @@ impl Parser {
         } else {
             Ok(ObstructionHandler::Single(self.obstruction_target()?))
         }
+    }
+
+    fn require_else_arm(&mut self) -> Result<RequireElseArm, ParseError> {
+        if self.at_kw("continue") && self.next_is_kw("obstructed") {
+            let start = self.peek_span().start;
+            self.expect_kw("continue")?;
+            self.expect_kw("obstructed")?;
+            let payload_expr = self.record_literal()?;
+            let Expr::Record {
+                entries,
+                span: payload_span,
+            } = payload_expr
+            else {
+                unreachable!("record_literal always returns Expr::Record");
+            };
+            let reason = Self::require_obstructed_reason(&entries, payload_span)?;
+            Ok(RequireElseArm::ContinueObstructed(ContinueObstructedArm {
+                reason,
+                payload: entries,
+                span: Span::new(start, self.prev_end()),
+            }))
+        } else {
+            Ok(RequireElseArm::Terminal(self.obstruction_target()?))
+        }
+    }
+
+    fn require_obstructed_reason(
+        entries: &[RecordEntry],
+        payload_span: Span,
+    ) -> Result<Expr, ParseError> {
+        let mut reason = None;
+        for entry in entries {
+            let candidate = match entry {
+                RecordEntry::Field { name, value } if name == "reason" => Some(value.clone()),
+                RecordEntry::Shorthand { name, span } if name == "reason" => Some(Expr::Ident {
+                    name: name.clone(),
+                    span: *span,
+                }),
+                _ => None,
+            };
+            if let Some(value) = candidate {
+                if reason.is_some() {
+                    return Self::err_at(
+                        ParseErrorKind::DuplicateField,
+                        "`continue obstructed` may contain only one `reason` field",
+                        payload_span,
+                    );
+                }
+                reason = Some(value);
+            }
+        }
+        reason.ok_or_else(|| ParseError {
+            kind: ParseErrorKind::MissingRequiredField,
+            message: "`continue obstructed` requires a `reason` field".to_owned(),
+            span: payload_span,
+        })
     }
 
     fn obstruction_target(&mut self) -> Result<ObstructionTarget, ParseError> {
@@ -1528,6 +1594,8 @@ mod parse_error_kind_codes {
             (ParseErrorKind::EmptyEnum, "EmptyEnum"),
             (ParseErrorKind::EmptyObstructionMap, "EmptyObstructionMap"),
             (ParseErrorKind::EmptyMatch, "EmptyMatch"),
+            (ParseErrorKind::MissingRequiredField, "MissingRequiredField"),
+            (ParseErrorKind::DuplicateField, "DuplicateField"),
             (ParseErrorKind::NonCallEffect, "NonCallEffect"),
             (ParseErrorKind::ReturnInYieldBlock, "ReturnInYieldBlock"),
             (ParseErrorKind::InvalidTypeCall, "InvalidTypeCall"),

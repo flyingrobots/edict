@@ -5,11 +5,13 @@
 
 mod common;
 use common::{body, intent_of};
-use edict_syntax::ast::{BinOp, BoundRef, Decl, Expr, Stmt, TypeExpr, TypeRef};
+use edict_syntax::ast::{BinOp, BoundRef, Decl, Expr, RequireElseArm, Stmt, TypeExpr, TypeRef};
 use edict_syntax::token::IntSuffix;
 use edict_syntax::{parse_module, ParseErrorKind};
 
 const ZERO_DIGEST: &str = "sha256:0000000000000000000000000000000000000000000000000000000000000000";
+const STALE_BASIS_OBSTRUCTION_STRAND: &str =
+    include_str!("../../../fixtures/obstruction-strands/v0/stale-basis/source.edict");
 
 fn reject_kind(src: &str, kind: ParseErrorKind) {
     let err = parse_module(src).expect_err("source must reject");
@@ -244,12 +246,7 @@ fn require_statement_parses_terminal_obstruction_source_shape() {
     ))
     .expect("require statement parses");
     let intent = intent_of(&m);
-    let Stmt::Require {
-        predicate,
-        obstruction,
-        ..
-    } = &intent.body.stmts[0]
-    else {
+    let Stmt::Require { predicate, arm, .. } = &intent.body.stmts[0] else {
         panic!("first statement is a require");
     };
 
@@ -257,8 +254,103 @@ fn require_statement_parses_terminal_obstruction_source_shape() {
         predicate,
         Expr::Field { field, .. } if field == "ok"
     ));
+    let RequireElseArm::Terminal(obstruction) = arm else {
+        panic!("require terminal obstruction remains terminal");
+    };
     assert_eq!(obstruction.coordinate, vec!["domain", "Blocked"]);
     assert!(matches!(obstruction.payload, Some(Expr::Record { .. }),));
+}
+
+#[test]
+fn continue_obstructed_source_arm_parses() {
+    let m = parse_module(&body(
+        "  require input.ok else continue obstructed { reason: jim.EditObstruction.StaleBase, basis: input.basis };\n  return { input };",
+    ))
+    .expect("continue-obstructed require arm parses");
+    let intent = intent_of(&m);
+    let Stmt::Require { predicate, arm, .. } = &intent.body.stmts[0] else {
+        panic!("first statement is a require");
+    };
+
+    assert!(matches!(
+        predicate,
+        Expr::Field { field, .. } if field == "ok"
+    ));
+    let RequireElseArm::ContinueObstructed(obstruction) = arm else {
+        panic!("require arm is first-class continue-obstructed syntax");
+    };
+    assert!(matches!(
+        &obstruction.reason,
+        Expr::Field { field, .. } if field == "StaleBase"
+    ));
+    assert_eq!(obstruction.payload.len(), 2);
+}
+
+#[test]
+fn continue_obstructed_requires_reason_field() {
+    reject_kind(
+        &body(
+            "  require input.ok else continue obstructed { basis: input.basis };\n  return { input };",
+        ),
+        ParseErrorKind::MissingRequiredField,
+    );
+}
+
+#[test]
+fn continue_obstructed_rejects_duplicate_reason_field() {
+    reject_kind(
+        &body(
+            "  require input.ok else continue obstructed { reason: jim.EditObstruction.StaleBase, reason: jim.EditObstruction.Other };\n  return { input };",
+        ),
+        ParseErrorKind::DuplicateField,
+    );
+}
+
+#[test]
+fn continue_obstructed_is_contextual_to_require_else() {
+    reject_kind(
+        &body(
+            "  let x = continue obstructed { reason: jim.EditObstruction.StaleBase };\n  return { x };",
+        ),
+        ParseErrorKind::ExpectedToken,
+    );
+}
+
+#[test]
+fn helper_shaped_continue_in_obstructed_strand_is_terminal() {
+    let m = parse_module(&body(
+        "  require input.ok else continueInObstructedStrand({ reason: jim.EditObstruction.StaleBase });\n  return { input };",
+    ))
+    .expect("helper-shaped obstruction constructor remains terminal");
+    let intent = intent_of(&m);
+    let Stmt::Require { arm, .. } = &intent.body.stmts[0] else {
+        panic!("first statement is a require");
+    };
+    let RequireElseArm::Terminal(obstruction) = arm else {
+        panic!("helper-shaped constructor must not become continuation syntax");
+    };
+
+    assert_eq!(obstruction.coordinate, vec!["continueInObstructedStrand"]);
+    assert!(matches!(obstruction.payload, Some(Expr::Record { .. }),));
+}
+
+#[test]
+fn stale_basis_obstruction_strand_fixture_parses() {
+    let m = parse_module(STALE_BASIS_OBSTRUCTION_STRAND)
+        .expect("stale-basis obstruction strand fixture parses");
+    let intent = intent_of(&m);
+    let Stmt::Require { arm, .. } = &intent.body.stmts[0] else {
+        panic!("first fixture statement is a require");
+    };
+    let RequireElseArm::ContinueObstructed(obstruction) = arm else {
+        panic!("fixture uses first-class continue-obstructed syntax");
+    };
+
+    assert!(matches!(
+        &obstruction.reason,
+        Expr::Field { field, .. } if field == "StaleBase"
+    ));
+    assert_eq!(obstruction.payload.len(), 4);
 }
 
 #[test]
