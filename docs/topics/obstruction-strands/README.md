@@ -4,9 +4,10 @@ Status: current HEAD boundary. No first-class obstruction-strand syntax is
 implemented in HEAD.
 
 This topic records the current Edict boundary for obstruction-strand planning.
-Edict's current `require ... else <obstruction>` form is terminal: when the
-predicate is false, the success path stops and the target returns a typed
-obstruction with no visible success-path write.
+The parser currently accepts `require ... else <obstruction>` as a source
+statement carrying a predicate and typed obstruction target. Compiler lowering,
+Target IR, participant receipts, and runtime execution for `require` obstructions
+are not implemented in HEAD.
 
 No source syntax, Core model, Target IR disposition, participant receipt, or
 runtime behavior exists yet for preserving a blocked attempt as a repairable
@@ -18,27 +19,30 @@ behavior.
 
 ## Current Contract
 
-Current syntax:
+Current parser-supported syntax:
 
 ```edict
 require jim.basisFresh(input.basis)
   else jim.EditObstruction.StaleBase;
 ```
 
-Meaning:
+Current source-level shape:
 
 ```text
-The success path cannot proceed.
-No write occurs.
-Return a typed domain obstruction.
+Stmt::Require {
+  predicate,
+  obstruction,
+}
 ```
 
 ## Invariants
 
-- Terminal obstruction and resumable obstruction are different semantics.
+- Terminal obstruction and resumable obstruction are different planned semantics.
 - Resumable obstruction is not currently implemented.
 - Current `else <obstruction>` parses as an obstruction constructor, not as a
   hidden continuation or recovery workflow.
+- Current compiler lowering rejects `Stmt::Require` before Core, Target IR,
+  receipt, or runtime behavior exists.
 - A helper-like obstruction constructor such as
   `continueInObstructedStrand(...)` must not acquire hidden control-flow
   semantics without a first-class language/runtime contract.

@@ -11,10 +11,11 @@ compiler-spine, Target IR, and obstruction-strands topic shelves.
 
 ## Problem
 
-Current Edict `require ... else <obstruction>` syntax is terminal. If the
-predicate is false, the success path stops and returns a typed domain
-obstruction. That is the correct default for optimistic concurrency checks such
-as stale bases: the requested write did not happen.
+Current Edict `require ... else <obstruction>` syntax parses as a source
+statement with a predicate and obstruction target. The planned terminal meaning
+is that, if the predicate is false, the success path stops and returns a typed
+domain obstruction. That remains the correct default for optimistic concurrency
+checks such as stale bases: the requested write must not happen.
 
 Some runtimes and editor workflows also need to preserve the blocked attempt as
 repairable causal material. A stale-base edit, for example, may be useful as a

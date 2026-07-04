@@ -238,6 +238,30 @@ fn reserved_words_are_rejected_as_coordinate_roots() {
 }
 
 #[test]
+fn require_statement_parses_terminal_obstruction_source_shape() {
+    let m = parse_module(&body(
+        "  require input.ok else domain.Blocked({ reason: input.reason });\n  return { input };",
+    ))
+    .expect("require statement parses");
+    let intent = intent_of(&m);
+    let Stmt::Require {
+        predicate,
+        obstruction,
+        ..
+    } = &intent.body.stmts[0]
+    else {
+        panic!("first statement is a require");
+    };
+
+    assert!(matches!(
+        predicate,
+        Expr::Field { field, .. } if field == "ok"
+    ));
+    assert_eq!(obstruction.coordinate, vec!["domain", "Blocked"]);
+    assert!(matches!(obstruction.payload, Some(Expr::Record { .. }),));
+}
+
+#[test]
 fn effect_positions_must_be_calls() {
     reject_kind(
         &body("  input.value;\n  return { input };"),
