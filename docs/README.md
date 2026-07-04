@@ -16,6 +16,8 @@ The current specification set is:
 - [v2 Obligation-Closure Design Note](./design/v2-obligation-closure.md):
   non-topic planning note for future adapter composition and
   obligation-closure resolution.
+- [Obstruction Strands Design Note](./design/obstruction-strands-v0.md):
+  non-topic planning note for future repairable obstruction preservation.
 - [Documentation Standards Topic](./topics/documentation/): reader-task page
   types, documentation coverage, examples, and docs-impact rules.
 - [Release Roadmap](../ROADMAP.md): scheduled alpha milestones, release gates,

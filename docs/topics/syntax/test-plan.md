@@ -39,6 +39,7 @@ Out of scope:
 | SYNTAX-REQ-010 | implemented | Negative tests assert stable error kinds, not diagnostic prose or incidental output. | crates/edict-syntax/src/parser.rs |
 | SYNTAX-REQ-011 | implemented | Source/surface validation rejects context-free semantic errors while deferring resolution, contextual typing, bound proof, and target/lawpack-dependent checks. | issue #10 |
 | SYNTAX-REQ-012 | planned | Full source lowering emits canonical Core IR with byte-stable golden artifacts. | issue #21, issue #22 |
+| SYNTAX-REQ-013 | planned | Resumable obstruction preservation, if added, has first-class syntax and does not parse as an ordinary obstruction-target function call. | docs/topics/obstruction-strands/test-plan.md |
 
 ## Fixtures
 
@@ -59,7 +60,7 @@ Out of scope:
 | SYNTAX-TP-004 | implemented | Golden path | SYNTAX-REQ-004 | Type AST nodes match expected records, bytes, variants, enums, and bounds. | bounded_hello_parses, bytes_accept_coordinate_bounds, enum_decl_parses, variant_type_with_and_without_payloads_parses | fixtures/lang/bounds/bounded-hello.edict | Structural AST equality. |
 | SYNTAX-TP-005 | implemented | Error handling | SYNTAX-REQ-004 | Empty enums reject with `ParseErrorKind::EmptyEnum`. | empty_enum_and_empty_obstruction_maps_reject | - | Parser-level syntactic emptiness. |
 | SYNTAX-TP-006 | implemented | Edge case | SYNTAX-REQ-005 | Integer suffix is preserved in `Expr::Int` and `BoundRef::Int`. | typed_integer_suffix, bound_integer_suffixes_are_preserved | - | Source-significant suffix oracle. |
-| SYNTAX-TP-007 | implemented | Golden path | SYNTAX-REQ-006 | Intent clauses and bodies parse into expected AST. | bounded_hello_parses, read_greeting_parses | fixtures/lang/bounds/bounded-hello.edict, fixtures/lang/effects/read-greeting.edict | Requiredness deferred. |
+| SYNTAX-TP-007 | implemented | Golden path | SYNTAX-REQ-006 | Intent clauses and bodies parse into expected AST. | bounded_hello_parses, read_greeting_parses, require_statement_parses_terminal_obstruction_source_shape | fixtures/lang/bounds/bounded-hello.edict, fixtures/lang/effects/read-greeting.edict | Requiredness and `require` lowering semantics are deferred. |
 | SYNTAX-TP-008 | implemented | Golden path | SYNTAX-REQ-007 | Bounded loops parse literal and coordinate bounds. | for_with_integer_bound_parses, for_with_coordinate_bound_parses | - | Loop semantic proof deferred. |
 | SYNTAX-TP-009 | implemented | Known failure | SYNTAX-REQ-007 | Missing `bounded` rejects. | for_without_bounded_is_rejected | - | Syntactic mandatory bound. |
 | SYNTAX-TP-010 | implemented | Error handling | SYNTAX-REQ-007 | Effect positions reject non-call expressions. | effect_positions_must_be_calls | - | Stable `NonCallEffect` kind. |
@@ -75,6 +76,7 @@ Out of scope:
 | SYNTAX-TP-020 | implemented | Error handling | SYNTAX-REQ-010 | Negative cases assert stable `ParseErrorKind` identities. | reserved_future_decls_are_rejected_at_top_level, missing_package_is_rejected, bytes_rejects_canonical_policy, unterminated_string_is_rejected | - | No stdout/stderr scraping. |
 | SYNTAX-TP-021 | implemented | Semantic validation | SYNTAX-REQ-011 | The source/surface validator returns stable diagnostic kinds for context-free source errors and accepts unresolved downstream facts. | validate_module_remains_surface_stage_compatibility_alias, surface_validation_defers_import_and_name_resolution, surface_validation_defers_contextual_typing_and_loop_bound_proof, surface_validation_defers_obstruction_exhaustiveness | - | Owned by the semantic-validation shelf. |
 | SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Full source lowering emits byte-stable canonical artifacts. | - | - | Initial Core golden artifacts exist in the Core IR shelf; full source-language coverage remains planned. |
+| SYNTAX-TP-023 | planned | Future syntax guard | SYNTAX-REQ-013 | A future resumable-obstruction form parses as a distinct AST node, while `else continueInObstructedStrand(...)` remains just an obstruction target or rejects under the future grammar. | - | - | Prevents hidden control-flow semantics in ordinary obstruction constructors. |
 
 ## Determinism Obligations
 
@@ -100,6 +102,10 @@ deterministic regression cases in `crates/edict-syntax/tests/`.
   [compiler-spine](../compiler-spine/) shelf, and initial canonical Core golden
   artifacts are implemented by the [core-ir](../core-ir/) shelf. Full
   source-language Core artifact coverage remains planned.
+- `SYNTAX-REQ-013`: resumable obstruction preservation is planned in the
+  [obstruction-strands](../obstruction-strands/) shelf. Current
+  `require ... else` is source parser syntax; Core lowering and runtime
+  obstruction behavior remain deferred.
 - Fixture coverage is not exhaustive across every `EDICT-LANG-*` row in
   `docs/REQUIREMENTS.md`; this shelf covers the landed Phase 1 syntax parser
   only.
