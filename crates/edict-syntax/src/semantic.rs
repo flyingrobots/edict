@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 
 use crate::ast::{
     Block, Decl, ElseClause, Expr, IntentClause, IntentDecl, Module, ObstructionHandler,
-    ObstructionTarget, RecordEntry, Stmt, TypeExpr, TypeRef, YieldBlock,
+    ObstructionTarget, RecordEntry, RequireElseArm, Stmt, TypeExpr, TypeRef, YieldBlock,
 };
 use crate::token::Span;
 
@@ -362,13 +362,9 @@ fn validate_stmt(stmt: &Stmt, names: &mut NameEnv, errors: &mut Vec<SemanticErro
                 validate_obstruction_handler(els, names, errors);
             }
         }
-        Stmt::Require {
-            predicate,
-            obstruction,
-            ..
-        } => {
+        Stmt::Require { predicate, arm, .. } => {
             validate_expr(predicate, names, errors);
-            validate_obstruction_target(obstruction, names, errors);
+            validate_require_else_arm(arm, names, errors);
         }
         Stmt::Guarantee {
             predicate,
@@ -417,6 +413,19 @@ fn validate_stmt(stmt: &Stmt, names: &mut NameEnv, errors: &mut Vec<SemanticErro
     }
 }
 
+fn validate_require_else_arm(
+    arm: &RequireElseArm,
+    names: &mut NameEnv,
+    errors: &mut Vec<SemanticError>,
+) {
+    match arm {
+        RequireElseArm::Terminal(target) => validate_obstruction_target(target, names, errors),
+        RequireElseArm::ContinueObstructed(obstruction) => {
+            validate_record_entries(&obstruction.payload, names, errors);
+        }
+    }
+}
+
 fn validate_obstruction_handler(
     handler: &ObstructionHandler,
     names: &mut NameEnv,
@@ -444,6 +453,21 @@ fn validate_obstruction_target(
 ) {
     if let Some(payload) = &target.payload {
         validate_expr(payload, names, errors);
+    }
+}
+
+fn validate_record_entries(
+    entries: &[RecordEntry],
+    names: &mut NameEnv,
+    errors: &mut Vec<SemanticError>,
+) {
+    for entry in entries {
+        match entry {
+            RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                validate_expr(value, names, errors);
+            }
+            RecordEntry::Shorthand { .. } => {}
+        }
     }
 }
 
@@ -476,14 +500,7 @@ fn validate_expr(expr: &Expr, names: &mut NameEnv, errors: &mut Vec<SemanticErro
             validate_expr(rhs, names, errors);
         }
         Expr::Record { entries, .. } => {
-            for entry in entries {
-                match entry {
-                    RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
-                        validate_expr(value, names, errors);
-                    }
-                    RecordEntry::Shorthand { .. } => {}
-                }
-            }
+            validate_record_entries(entries, names, errors);
         }
         Expr::If {
             cond, then, els, ..

@@ -10,6 +10,14 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- The parser now accepts first-class obstruction-strand source syntax:
+  `require ... else continue obstructed { reason: ... }`. The form is preserved
+  as a distinct `RequireElseArm::ContinueObstructed` source AST arm, requires
+  exactly one `reason` field, rejects duplicate `reason` fields, and remains
+  contextual to a `require ... else` arm. Helper-shaped constructors such as
+  `continueInObstructedStrand(...)` remain ordinary terminal obstruction
+  targets. Core lowering, Target IR, Echo receipts, and editor projection remain
+  deferred.
 - Added the `edict` CLI `project` operation for editor-facing JSONL
   projection over dirty source records. It can emit syntax spans, diagnostics,
   Core review JSON plus canonical Core digest, and Echo Target IR review JSON

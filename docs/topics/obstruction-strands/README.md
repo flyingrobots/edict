@@ -1,18 +1,19 @@
 # Obstruction Strands
 
-Status: current HEAD boundary. No first-class obstruction-strand syntax is
-implemented in HEAD.
+Status: current HEAD boundary. First-class obstruction-strand source syntax is
+implemented for parsing only.
 
 This topic records the current Edict boundary for obstruction-strand planning.
 The parser currently accepts `require ... else <obstruction>` as a source
-statement carrying a predicate and typed obstruction target. Compiler lowering,
-Target IR, participant receipts, and runtime execution for `require` obstructions
-are not implemented in HEAD.
+statement carrying a predicate and terminal typed obstruction target. It also
+accepts `require ... else continue obstructed { reason: ... }` as a distinct
+source AST arm reserved for future obstruction-strand preservation semantics.
+Compiler lowering, Target IR, participant receipts, and runtime execution for
+`require` obstructions are not implemented in HEAD.
 
-No source syntax, Core model, Target IR disposition, participant receipt, or
-runtime behavior exists yet for preserving a blocked attempt as a repairable
-obstruction strand. Future design work is tracked in issue #116 and the
-non-topic design note
+No Core model, Target IR disposition, participant receipt, or runtime behavior
+exists yet for preserving a blocked attempt as a repairable obstruction strand.
+Future design work is tracked in issue #116 and the non-topic design note
 [`docs/design/obstruction-strands-v0.md`](../../design/obstruction-strands-v0.md).
 That document is planning material, not a topic README contract for landed
 behavior.
@@ -26,21 +27,37 @@ require jim.basisFresh(input.basis)
   else jim.EditObstruction.StaleBase;
 ```
 
+First-class parser-supported obstruction-strand syntax:
+
+```edict
+require jim.basisFresh(input.basis)
+  else continue obstructed {
+    reason: jim.EditObstruction.StaleBase,
+    providedBasis: input.basis,
+  };
+```
+
 Current source-level shape:
 
 ```text
 Stmt::Require {
   predicate,
-  obstruction,
+  arm: RequireElseArm::Terminal(...)
+     | RequireElseArm::ContinueObstructed(...),
 }
 ```
+
+The `continue obstructed { ... }` form is contextual to a `require ... else`
+arm. It is not an expression, and a helper-shaped obstruction constructor such
+as `continueInObstructedStrand({ reason: ... })` remains terminal obstruction
+syntax rather than hidden control flow.
 
 ## Invariants
 
 - Terminal obstruction and resumable obstruction are different planned semantics.
-- Resumable obstruction is not currently implemented.
 - Current `else <obstruction>` parses as an obstruction constructor, not as a
   hidden continuation or recovery workflow.
+- Current `else continue obstructed { reason: ... }` parses only as source AST.
 - Current compiler lowering rejects `Stmt::Require` before Core, Target IR,
   receipt, or runtime behavior exists.
 - A helper-like obstruction constructor such as

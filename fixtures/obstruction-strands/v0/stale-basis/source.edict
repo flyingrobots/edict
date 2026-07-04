@@ -1,0 +1,16 @@
+package examples.obstruction@1;
+
+intent edit(input: jim.EditInput) returns jim.EditOutput
+  profile jim.edit
+  basis input.basis
+  budget <= jim.tiny {
+  require jim.basisFresh(input.basis)
+    else continue obstructed {
+      reason: jim.EditObstruction.StaleBase,
+      providedBasis: input.basis,
+      draftDigest: hash("Draft", input.content),
+      repair: jim.RepairHint.RebaseRequired,
+    };
+
+  return { id: input.id };
+}
