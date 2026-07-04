@@ -39,7 +39,7 @@ Out of scope:
 | SYNTAX-REQ-010 | implemented | Negative tests assert stable error kinds, not diagnostic prose or incidental output. | crates/edict-syntax/src/parser.rs |
 | SYNTAX-REQ-011 | implemented | Source/surface validation rejects context-free semantic errors while deferring resolution, contextual typing, bound proof, and target/lawpack-dependent checks. | issue #10 |
 | SYNTAX-REQ-012 | planned | Full source lowering emits canonical Core IR with byte-stable golden artifacts. | issue #21, issue #22 |
-| SYNTAX-REQ-013 | implemented | Resumable obstruction preservation has first-class source syntax and does not parse as an ordinary obstruction-target function call. | issue #118, docs/topics/obstruction-strands/test-plan.md |
+| SYNTAX-REQ-013 | implemented | Obstruction-strand source spelling has first-class parser syntax and does not parse as an ordinary obstruction-target function call. | issue #118, docs/topics/obstruction-strands/test-plan.md |
 
 ## Fixtures
 
