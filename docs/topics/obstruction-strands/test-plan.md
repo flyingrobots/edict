@@ -1,6 +1,7 @@
 # Obstruction Strands Test Plan
 
-Status: planned verification design for future resumable obstruction syntax.
+Status: current verification ledger for terminal obstruction syntax and planned
+verification design for future resumable obstruction syntax.
 
 ## Scope
 
@@ -24,17 +25,18 @@ Out of scope:
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
 | OBSTRAND-REQ-001 | implemented | Current `require ... else <obstruction>` remains terminal obstruction syntax. | docs/topics/syntax/test-plan.md |
-| OBSTRAND-REQ-002 | planned | A future resumable obstruction form uses first-class syntax, not an ordinary helper call hidden inside `else`. | issue #116 |
-| OBSTRAND-REQ-003 | planned | Future Core/Target IR exposes a distinct preserved-obstruction disposition such as `continue_obstructed_strand`. | issue #116 |
+| OBSTRAND-REQ-002 | planned | A future resumable obstruction form uses first-class syntax, not an ordinary helper call hidden inside `else`. | issue #116, docs/design/obstruction-strands-v0.md |
+| OBSTRAND-REQ-003 | planned | Future Core/Target IR exposes a distinct preserved-obstruction disposition. | issue #116, docs/design/obstruction-strands-v0.md |
 | OBSTRAND-REQ-004 | planned | Future preserved obstruction records no success-path write and carries repair metadata only as causal support. | issue #116 |
 
 ## Fixtures
 
 | Fixture | Purpose | Oracle |
 | --- | --- | --- |
-| docs/topics/obstruction-strands/README.md | Planned semantics shelf. | Human review confirms terminal obstruction and preserved obstruction remain separate. |
+| docs/topics/obstruction-strands/README.md | Current boundary shelf. | Human review confirms HEAD claims terminal obstruction only. |
+| docs/design/obstruction-strands-v0.md | Future design note. | Human review confirms planned syntax/lowering material is outside the topic README contract. |
 | docs/topics/syntax/test-plan.md | Syntax ledger for future parser coverage. | `SYNTAX-REQ-013` and `SYNTAX-TP-023` preserve the planned parser guard. |
-| docs/topics/target-ir/README.md | Target IR deferred-boundary note. | Target IR explicitly does not yet claim `continue_obstructed_strand`. |
+| docs/topics/target-ir/README.md | Target IR deferred-boundary note. | Target IR explicitly does not yet claim first-class resumable obstruction strands. |
 
 ## Test Cases
 
@@ -58,5 +60,5 @@ Out of scope:
 
 - No parser support exists for first-class preserved obstruction syntax.
 - No Core model exists for preserved obstruction disposition.
-- No Target IR model exists for `continue_obstructed_strand`.
+- No Target IR model exists for preserved obstruction disposition.
 - No Echo/Jim receipt fixture exists for preserved repairable obstruction.

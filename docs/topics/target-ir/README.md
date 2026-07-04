@@ -119,8 +119,8 @@ The following are not implemented by this slice:
 - general target-lowering plugin dispatch;
 - git-warp runtime execution, commit object creation, and CRDT reducer
   verification;
-- first-class resumable obstruction strands or a
-  `continue_obstructed_strand` target disposition;
+- first-class resumable obstruction strands or a preserved-obstruction target
+  disposition;
 - additional target profiles beyond Echo and git-warp;
 - v2 chained or composite adapter resolution.
 
