@@ -8,9 +8,11 @@ layer at a time as the obstruction-strand implementation advances.
 This fixture records one stale-basis obstruction strand from source syntax
 through later Core, Target IR, Echo receipt, and projection surfaces.
 
-Each implementation PR may add only the artifact for the layer it owns:
+Each implementation PR may add only the artifact for the layer it owns. A row in
+this table identifies the first layer allowed to add that artifact; it does not
+claim that every eligible artifact already exists.
 
-| Artifact | Expected Layer | Authority |
+| Artifact | First Eligible Layer | Authority |
 | --- | --- | --- |
 | `source.edict` | PR 1 | Edict parser |
 | `source.parse.review` | PR 1 | Edict parser |
