@@ -116,6 +116,34 @@ Continuum can transport the support, and XYPH can decide whether the supported
 native consequence is blocked, repairable, diagnostic completion, or something
 else.
 
+The Target IR v0 shape models source/Core `require` guards as explicit
+requirements on the intent, separate from target effect steps:
+
+```text
+TargetIrIntent {
+  requirements: [
+    {
+      id,
+      predicate,
+      onFailure:
+        | terminal { reason }
+        | continueObstructed { reason }
+    }
+  ],
+  steps: [...]
+}
+```
+
+`steps` remain target effect operations. `requirements` are target-owned
+precondition or guard obligations. This keeps hard rejection and preserved
+obstruction digest-distinct without pretending that an obstructed strand is a
+success-path write.
+
+Intent-level Target IR requirements are pre-step guards. A source/Core `require`
+after an emitted target step, including a guard that depends on a prior effect
+result, needs an ordered or step-attached Target IR shape before it can be
+represented honestly.
+
 The v0 reason envelope should use a stable reason kind plus an opaque canonical
 payload value. The outer envelope is closed; the payload policy can evolve only
 through explicit versioned semantics.
@@ -179,12 +207,26 @@ Already verified in the Core slice for issue #129:
 - duplicate reason payload fields reject before Core digesting:
   `duplicate_obstruction_reason_payload_fields_reject_before_core_digest`.
 
+Already verified in the Target IR slice for issue #131:
+
+- Echo Target IR carries `require` guards as explicit requirements with
+  `terminal` and `continueObstructed` dispositions:
+  `echo_target_ir_contains_obstruction_requirement_payload` and
+  `terminal_and_preserved_requirements_are_target_ir_distinct`;
+- requirement predicate, reason kind, reason payload value, and disposition
+  mutations move the Target IR digest:
+  `target_ir_requirement_mutations_move_digest`;
+- targets without requirement support reject with a stable target-feature
+  failure before artifact emission:
+  `targets_without_obstruction_requirement_support_reject_with_stable_feature_kind`;
+- requirements after emitted target steps reject with a stable target-feature
+  failure before artifact emission, with a more specific detail when they read a
+  step output:
+  `requirement_after_target_step_rejects_with_stable_feature_kind` and
+  `requirement_that_reads_step_output_rejects_with_stable_feature_kind`.
+
 Future implementation work should add RED/GREEN evidence for:
 
-- Target IR fields that distinguish terminal obstruction from preserved
-  obstruction;
-- digest or mutation evidence when the new disposition becomes part of
-  canonical Target IR bytes;
 - receipt fixtures proving success, terminal obstruction, and preserved
   repairable obstruction are distinct runtime outcomes.
 

@@ -12,10 +12,12 @@ Each implementation PR may add only the artifact for the layer it owns. A row in
 this table identifies the first layer allowed to add that artifact; it does not
 claim that every eligible artifact already exists.
 
-PR #129 adds Core lowering for the currently lowerable `require` subset. This
-stale-basis source remains source-only until the compiler spine supports
-non-`basis none` intent bases and the `jim.basisFresh(...)` predicate form, so
-this directory still intentionally has no `core.review` artifact.
+PR #129 adds Core lowering for the currently lowerable `require` subset. PR #131
+adds Echo Target IR requirements for synthetic Core-compatible obstruction
+fixtures. This stale-basis source remains source-only until the compiler spine
+supports non-`basis none` intent bases and the `jim.basisFresh(...)` predicate
+form, so this directory still intentionally has no `core.review` or
+`echo-target-ir.review` artifact.
 
 | Artifact | First Eligible Layer | Authority |
 | --- | --- | --- |
@@ -33,6 +35,7 @@ this directory still intentionally has no `core.review` artifact.
 
 ## Non-Claims
 
-This manifest does not claim that Core obstruction semantics, Echo Target IR,
-Echo execution receipts, canonical receipt bytes, Graft projection, or jedit UI
-support exist before the corresponding layer lands.
+This manifest does not claim that this Jim-shaped source fixture currently
+reaches Core, Echo Target IR, Echo execution receipts, canonical receipt bytes,
+Graft projection, or jedit UI support before the corresponding compiler/runtime
+layer lands for this exact source shape.

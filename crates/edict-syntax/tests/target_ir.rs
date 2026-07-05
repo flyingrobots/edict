@@ -12,9 +12,9 @@ use edict_syntax::{
     CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CorePredicate, CoreValue,
     GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus, LoweringRequirements,
     NativeEffectSupport, ResourceRef, SemanticEffectRequirement, TargetEffectLowering,
-    TargetIrArtifact, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
-    TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
-    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure, TargetLoweringFailureKind,
+    TargetLoweringStatus, TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
+    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
@@ -57,6 +57,74 @@ const GITWARP_APPEND_EVENT: &str = "package a.git@1;\n\
         else { conflict(reason) => domain.MergeConflict };\n\
       return { id: receipt.id };\n\
     }";
+const ECHO_CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      require true else continue obstructed {\n\
+        reason: jim.EditObstruction.StaleBase,\n\
+        provided: input.id,\n\
+      };\n\
+      return { id: input.id };\n\
+    }";
+const ECHO_TERMINAL_REQUIRE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      require true else jim.EditObstruction.StaleBase({ reason: input.id });\n\
+      return { id: input.id };\n\
+    }";
+const ECHO_EFFECT_OUTPUT_DEPENDENT_REQUIRE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else { rejected(reason) => domain.WriteRejected };\n\
+      require receipt.id != \"\" else continue obstructed {\n\
+        reason: jim.EditObstruction.StaleBase,\n\
+        provided: receipt.id,\n\
+      };\n\
+      return { id: receipt.id };\n\
+    }";
+const ECHO_POST_STEP_INPUT_REQUIRE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else { rejected(reason) => domain.WriteRejected };\n\
+      require input.id != \"\" else continue obstructed {\n\
+        reason: jim.EditObstruction.StaleBase,\n\
+        provided: input.id,\n\
+      };\n\
+      return { id: receipt.id };\n\
+    }";
+const GITWARP_CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.git@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.gitwarp\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      require true else continue obstructed {\n\
+        reason: jim.EditObstruction.StaleBase,\n\
+        provided: input.id,\n\
+      };\n\
+      return { id: input.id };\n\
+    }";
 
 const PURE_LOCAL_RECORD: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
 const ECHO_PROFILE_DIGEST: &str =
@@ -92,6 +160,13 @@ fn pure_core() -> edict_syntax::CoreModule {
 fn gitwarp_core() -> edict_syntax::CoreModule {
     let module = edict_syntax::parse_module(GITWARP_APPEND_EVENT).expect("git-warp source parses");
     compile_to_core(&module, &gitwarp_context()).expect("git-warp source compiles to Core")
+}
+
+fn gitwarp_obstruction_core() -> edict_syntax::CoreModule {
+    let module = edict_syntax::parse_module(GITWARP_CONTINUE_OBSTRUCTED_REQUIRE)
+        .expect("git-warp obstruction source parses");
+    compile_to_core(&module, &gitwarp_context())
+        .expect("git-warp obstruction source compiles to Core")
 }
 
 fn effectful_context() -> CompilerContext {
@@ -412,6 +487,144 @@ fn lowerability_native_support_feeds_gitwarp_target_lowering() {
     let step = &artifact.intents.get("t").expect("intent t").steps[0];
     assert_eq!(step.effect, "gitwarp.appendEvent");
     assert_eq!(step.target_intrinsic, "gitwarp.ref_crdt@1.appendEvent");
+}
+
+#[test]
+fn echo_target_ir_contains_obstruction_requirement_payload() {
+    let artifact = effectful_artifact(ECHO_CONTINUE_OBSTRUCTED_REQUIRE);
+    let intent = artifact.intents.get("t").expect("lowered intent t");
+
+    assert!(intent.steps.is_empty());
+    assert_eq!(intent.requirements.len(), 1);
+    let requirement = &intent.requirements[0];
+    assert_eq!(requirement.id, "t.require.0");
+    assert_eq!(requirement.predicate, CorePredicate::True);
+
+    let TargetIrRequireFailure::ContinueObstructed { reason } = &requirement.on_failure else {
+        panic!("continue obstructed require remains preserved in Target IR");
+    };
+    assert_eq!(reason.kind, "jim.EditObstruction.StaleBase");
+    assert_eq!(reason.payload.keys().collect::<Vec<_>>(), vec!["provided"]);
+    assert!(matches!(
+        &reason.payload["provided"],
+        CoreExpr::Field { field, .. } if field == "id"
+    ));
+}
+
+#[test]
+fn terminal_and_preserved_requirements_are_target_ir_distinct() {
+    let terminal = effectful_artifact(ECHO_TERMINAL_REQUIRE);
+    let preserved_source = replace_required(
+        ECHO_CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id,\n",
+        "",
+    );
+    let preserved = effectful_artifact(&preserved_source);
+
+    let terminal_requirement = &terminal.intents.get("t").expect("intent t").requirements[0];
+    let preserved_requirement = &preserved.intents.get("t").expect("intent t").requirements[0];
+    assert!(matches!(
+        terminal_requirement.on_failure,
+        TargetIrRequireFailure::Terminal { .. }
+    ));
+    assert!(matches!(
+        preserved_requirement.on_failure,
+        TargetIrRequireFailure::ContinueObstructed { .. }
+    ));
+    assert_ne!(
+        digest_target_ir_artifact(&terminal).expect("terminal Target IR digests"),
+        digest_target_ir_artifact(&preserved).expect("preserved Target IR digests")
+    );
+}
+
+#[test]
+fn target_ir_requirement_mutations_move_digest() {
+    let baseline = effectful_artifact(ECHO_CONTINUE_OBSTRUCTED_REQUIRE);
+    assert_target_ir_digest_changes(&baseline, "require predicate", |artifact| {
+        requirement_mut(artifact).predicate = CorePredicate::False;
+    });
+    assert_target_ir_digest_changes(&baseline, "require reason kind", |artifact| {
+        let TargetIrRequireFailure::ContinueObstructed { reason } =
+            &mut requirement_mut(artifact).on_failure
+        else {
+            panic!("baseline requirement stays preserved");
+        };
+        reason.kind = "jim.EditObstruction.Other".to_owned();
+    });
+    assert_target_ir_digest_changes(&baseline, "require reason payload value", |artifact| {
+        let TargetIrRequireFailure::ContinueObstructed { reason } =
+            &mut requirement_mut(artifact).on_failure
+        else {
+            panic!("baseline requirement stays preserved");
+        };
+        reason.payload.insert(
+            "provided".to_owned(),
+            CoreExpr::Const(CoreValue::String("changed".to_owned())),
+        );
+    });
+    assert_target_ir_digest_changes(&baseline, "require failure disposition", |artifact| {
+        let TargetIrRequireFailure::ContinueObstructed { reason } =
+            requirement_mut(artifact).on_failure.clone()
+        else {
+            panic!("baseline requirement stays preserved");
+        };
+        requirement_mut(artifact).on_failure = TargetIrRequireFailure::Terminal { reason };
+    });
+}
+
+#[test]
+fn targets_without_obstruction_requirement_support_reject_with_stable_feature_kind() {
+    let report = lower_to_target_ir(&gitwarp_obstruction_core(), &gitwarp_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedTargetFeature]
+    );
+    assert_eq!(report.failures[0].detail, "obstruction_requirement");
+}
+
+#[test]
+fn requirement_that_reads_step_output_rejects_with_stable_feature_kind() {
+    let module = edict_syntax::parse_module(ECHO_EFFECT_OUTPUT_DEPENDENT_REQUIRE)
+        .expect("effect output dependent require source parses");
+    let core = compile_to_core(&module, &effectful_context())
+        .expect("effect output dependent require source compiles to Core");
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedTargetFeature]
+    );
+    assert_eq!(
+        report.failures[0].detail,
+        "obstruction_requirement_step_output_dependency"
+    );
+}
+
+#[test]
+fn requirement_after_target_step_rejects_with_stable_feature_kind() {
+    let module = edict_syntax::parse_module(ECHO_POST_STEP_INPUT_REQUIRE)
+        .expect("post-step input require source parses");
+    let core = compile_to_core(&module, &effectful_context())
+        .expect("post-step input require source compiles to Core");
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedTargetFeature]
+    );
+    assert_eq!(
+        report.failures[0].detail,
+        "obstruction_requirement_after_target_step"
+    );
 }
 
 #[test]
@@ -1115,6 +1328,24 @@ fn target_step_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::Target
         .steps
         .get_mut(0)
         .expect("step 0")
+}
+
+fn requirement_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::TargetIrRequirement {
+    artifact
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .requirements
+        .get_mut(0)
+        .expect("requirement 0")
+}
+
+fn replace_required(source: &str, from: &str, to: &str) -> String {
+    assert!(
+        source.contains(from),
+        "test fixture must contain replacement fragment {from:?}"
+    );
+    source.replace(from, to)
 }
 
 fn digest_text(hex: char) -> String {

@@ -16,7 +16,9 @@ use crate::core_ir::{
     CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource,
     LocalRef, ResourceRef,
 };
-use crate::target_ir::{TargetIrArtifact, TargetIrIntent, TargetIrStep};
+use crate::target_ir::{
+    TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement, TargetIrStep,
+};
 
 /// Canonical encoding profile for Core artifacts.
 pub const CORE_CANONICAL_ENCODING: &str = "edict.canonical-cbor/v1";
@@ -509,11 +511,43 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
             core_budget_value(&intent.core_evaluation_budget),
         ),
         (
+            "requirements",
+            array_results(intent.requirements.iter().map(target_ir_requirement_value))?,
+        ),
+        (
             "steps",
             array_results(intent.steps.iter().map(target_ir_step_value))?,
         ),
         ("result", core_expr_value(&intent.result)?),
     ]))
+}
+
+fn target_ir_requirement_value(
+    requirement: &TargetIrRequirement,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("id", text(&requirement.id)),
+        ("predicate", core_predicate_value(&requirement.predicate)?),
+        (
+            "onFailure",
+            target_ir_require_failure_value(&requirement.on_failure)?,
+        ),
+    ]))
+}
+
+fn target_ir_require_failure_value(
+    failure: &TargetIrRequireFailure,
+) -> Result<CanonicalValue, CanonicalError> {
+    match failure {
+        TargetIrRequireFailure::Terminal { reason } => Ok(map([
+            ("kind", text("terminal")),
+            ("reason", core_obstruction_reason_value(reason)?),
+        ])),
+        TargetIrRequireFailure::ContinueObstructed { reason } => Ok(map([
+            ("kind", text("continueObstructed")),
+            ("reason", core_obstruction_reason_value(reason)?),
+        ])),
+    }
 }
 
 fn target_ir_step_value(step: &TargetIrStep) -> Result<CanonicalValue, CanonicalError> {
