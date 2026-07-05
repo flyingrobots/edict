@@ -169,7 +169,7 @@ the candidate never reached scheduler selection as a valid execution candidate.
 
 | Term | Short definition | Owning authority |
 | --- | --- | --- |
-| Not-admitted scheduler counterfactual | Candidate did not run after scheduler/runtime selection. | Scheduler/runtime receipt authority |
+| Not-admitted scheduler counterfactual | Candidate did not run after scheduler/runtime selection. | Scheduler/runtime authority |
 | Admitted obstructed strand | Accepted/evaluated attempt continued into obstruction outcome. | Runtime receipt authority, grounded in Edict-produced artifact semantics |
 | Hard rejection | Artifact, input, profile, validation, or runtime refused before admitted execution. | Validator or target/runtime acceptor |
 
