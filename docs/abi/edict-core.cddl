@@ -236,13 +236,32 @@ core-block = {
   result: core-expr,
 }
 
-core-node = let-node / effect-node / guard-node / branch-node / for-node /
-            match-node / proof-obligation-node
+core-node = let-node / require-node / effect-node / guard-node / branch-node /
+            for-node / match-node / proof-obligation-node
 
 let-node = {
   kind: "let",
   binding: local-ref,
   value: core-expr,
+}
+require-node = {
+  kind: "require",
+  predicate: core-predicate,
+  onFailure: require-failure-arm,
+}
+require-failure-arm = terminal-require-failure /
+                      continue-obstructed-require-failure
+terminal-require-failure = {
+  kind: "terminal",
+  reason: obstruction-reason,
+}
+continue-obstructed-require-failure = {
+  kind: "continueObstructed",
+  reason: obstruction-reason,
+}
+obstruction-reason = {
+  reasonKind: tstr,
+  payload: { * tstr => core-expr },
 }
 effect-node = {
   kind: "effect",

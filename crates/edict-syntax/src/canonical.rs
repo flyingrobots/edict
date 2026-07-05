@@ -740,6 +740,11 @@ fn core_node_value(node: &CoreNode) -> Result<CanonicalValue, CanonicalError> {
             ("binding", local_ref_value(binding)),
             ("value", core_expr_value(value)?),
         ])),
+        CoreNode::Require { predicate, arm } => Ok(map([
+            ("kind", text("require")),
+            ("predicate", core_predicate_value(predicate)?),
+            ("onFailure", core_require_failure_arm_value(arm)?),
+        ])),
         CoreNode::Effect {
             binding,
             effect,
@@ -758,6 +763,38 @@ fn core_node_value(node: &CoreNode) -> Result<CanonicalValue, CanonicalError> {
             ),
         ])),
     }
+}
+
+fn core_require_failure_arm_value(
+    arm: &crate::core_ir::CoreRequireFailureArm,
+) -> Result<CanonicalValue, CanonicalError> {
+    match arm {
+        crate::core_ir::CoreRequireFailureArm::Terminal { reason } => Ok(map([
+            ("kind", text("terminal")),
+            ("reason", core_obstruction_reason_value(reason)?),
+        ])),
+        crate::core_ir::CoreRequireFailureArm::ContinueObstructed { reason } => Ok(map([
+            ("kind", text("continueObstructed")),
+            ("reason", core_obstruction_reason_value(reason)?),
+        ])),
+    }
+}
+
+fn core_obstruction_reason_value(
+    reason: &crate::core_ir::CoreObstructionReason,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("reasonKind", text(&reason.kind)),
+        (
+            "payload",
+            string_map_results(
+                reason
+                    .payload
+                    .iter()
+                    .map(|(name, expr)| Ok((name.as_str(), core_expr_value(expr)?))),
+            )?,
+        ),
+    ]))
 }
 
 fn core_obstruction_arm_value(arm: &CoreObstructionArm) -> Result<CanonicalValue, CanonicalError> {

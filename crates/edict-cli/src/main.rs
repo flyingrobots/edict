@@ -12,11 +12,11 @@ use edict_cli::{
 };
 use edict_syntax::{
     CheckOutcome, CompilerContext, CompilerError, CompilerErrorKind, CompilerStage, CoreBlock,
-    CoreBudget, CoreExpr, CoreImport, CoreNode, CoreObstructionArm, CorePredicate, CoreType,
-    CoreValue, HighlightRole, InputConstraint, InputConstraintSource, ParseError, ResourceRef,
-    SemanticError, Span, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
-    TargetIrLoweringFacts, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
-    WriteClass,
+    CoreBudget, CoreExpr, CoreImport, CoreNode, CoreObstructionArm, CoreObstructionReason,
+    CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, HighlightRole, InputConstraint,
+    InputConstraintSource, ParseError, ResourceRef, SemanticError, Span, TargetEffectLowering,
+    TargetIrArtifact, TargetIrIntent, TargetIrLoweringFacts, TargetIrStep, TargetLoweringFailure,
+    TargetLoweringFailureKind, WriteClass,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1088,6 +1088,7 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::ExpectedPredicate => "ExpectedPredicate",
         CompilerErrorKind::ProfileEffectMismatch => "ProfileEffectMismatch",
         CompilerErrorKind::DuplicateObstructionFailure => "DuplicateObstructionFailure",
+        CompilerErrorKind::DuplicateObstructionPayloadField => "DuplicateObstructionPayloadField",
     }
 }
 
@@ -1234,6 +1235,11 @@ fn core_node_review(node: &CoreNode) -> Value {
             "binding": local_ref_review(binding),
             "value": core_expr_review(value),
         }),
+        CoreNode::Require { predicate, arm } => json!({
+            "kind": "require",
+            "predicate": core_predicate_review(predicate),
+            "onFailure": core_require_failure_arm_review(arm),
+        }),
         CoreNode::Effect {
             binding,
             effect,
@@ -1250,6 +1256,30 @@ fn core_node_review(node: &CoreNode) -> Value {
                 .collect::<BTreeMap<_, _>>(),
         }),
     }
+}
+
+fn core_require_failure_arm_review(arm: &CoreRequireFailureArm) -> Value {
+    match arm {
+        CoreRequireFailureArm::Terminal { reason } => json!({
+            "kind": "terminal",
+            "reason": core_obstruction_reason_review(reason),
+        }),
+        CoreRequireFailureArm::ContinueObstructed { reason } => json!({
+            "kind": "continueObstructed",
+            "reason": core_obstruction_reason_review(reason),
+        }),
+    }
+}
+
+fn core_obstruction_reason_review(reason: &CoreObstructionReason) -> Value {
+    json!({
+        "reasonKind": reason.kind,
+        "payload": reason
+            .payload
+            .iter()
+            .map(|(name, expr)| (name.clone(), core_expr_review(expr)))
+            .collect::<BTreeMap<_, _>>(),
+    })
 }
 
 fn obstruction_arm_review(arm: &CoreObstructionArm) -> Value {

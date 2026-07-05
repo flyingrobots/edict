@@ -219,12 +219,33 @@ pub enum CoreNode {
         binding: LocalRef,
         value: CoreExpr,
     },
+    Require {
+        predicate: CorePredicate,
+        arm: CoreRequireFailureArm,
+    },
     Effect {
         binding: LocalRef,
         effect: String,
         input: CoreExpr,
         obstruction_map: BTreeMap<String, CoreObstructionArm>,
     },
+}
+
+/// Core disposition for a failed `require` predicate.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoreRequireFailureArm {
+    /// Terminal typed obstruction: the success path cannot continue.
+    Terminal { reason: CoreObstructionReason },
+    /// Preserved obstruction strand: the attempt continues as obstructed
+    /// causal support rather than collapsing into terminal obstruction.
+    ContinueObstructed { reason: CoreObstructionReason },
+}
+
+/// Closed Core reason envelope with opaque canonical payload fields.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreObstructionReason {
+    pub kind: String,
+    pub payload: BTreeMap<String, CoreExpr>,
 }
 
 /// Core obstruction arm for a semantic effect failure.
