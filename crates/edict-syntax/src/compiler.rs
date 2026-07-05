@@ -760,7 +760,7 @@ impl<'a> TypeChecker<'a> {
                 }
             }
             Stmt::Require { predicate, arm, .. } => {
-                self.check_require_stmt(predicate, arm, env, state)
+                self.check_require_stmt(predicate, arm, env, state);
             }
             Stmt::Guarantee { span, .. }
             | Stmt::Assert { span, .. }
