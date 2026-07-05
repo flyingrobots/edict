@@ -130,10 +130,6 @@ fn effectful_artifact(source: &str) -> edict_syntax::TargetIrArtifact {
         .expect("supported source lowers to Target IR")
 }
 
-fn echo_obstruction_artifact(source: &str) -> edict_syntax::TargetIrArtifact {
-    effectful_artifact(source)
-}
-
 fn gitwarp_artifact() -> edict_syntax::TargetIrArtifact {
     lower_to_target_ir(&gitwarp_core(), &gitwarp_facts())
         .artifact
@@ -479,7 +475,7 @@ fn lowerability_native_support_feeds_gitwarp_target_lowering() {
 
 #[test]
 fn echo_target_ir_contains_obstruction_requirement_payload() {
-    let artifact = echo_obstruction_artifact(ECHO_CONTINUE_OBSTRUCTED_REQUIRE);
+    let artifact = effectful_artifact(ECHO_CONTINUE_OBSTRUCTED_REQUIRE);
     let intent = artifact.intents.get("t").expect("lowered intent t");
 
     assert!(intent.steps.is_empty());
@@ -501,10 +497,13 @@ fn echo_target_ir_contains_obstruction_requirement_payload() {
 
 #[test]
 fn terminal_and_preserved_requirements_are_target_ir_distinct() {
-    let terminal = echo_obstruction_artifact(ECHO_TERMINAL_REQUIRE);
-    let preserved = echo_obstruction_artifact(
-        &ECHO_CONTINUE_OBSTRUCTED_REQUIRE.replace("        provided: input.id,\n", ""),
+    let terminal = effectful_artifact(ECHO_TERMINAL_REQUIRE);
+    let preserved_source = replace_required(
+        ECHO_CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id,\n",
+        "",
     );
+    let preserved = effectful_artifact(&preserved_source);
 
     let terminal_requirement = &terminal.intents.get("t").expect("intent t").requirements[0];
     let preserved_requirement = &preserved.intents.get("t").expect("intent t").requirements[0];
@@ -524,7 +523,7 @@ fn terminal_and_preserved_requirements_are_target_ir_distinct() {
 
 #[test]
 fn target_ir_requirement_mutations_move_digest() {
-    let baseline = echo_obstruction_artifact(ECHO_CONTINUE_OBSTRUCTED_REQUIRE);
+    let baseline = effectful_artifact(ECHO_CONTINUE_OBSTRUCTED_REQUIRE);
     assert_target_ir_digest_changes(&baseline, "require predicate", |artifact| {
         requirement_mut(artifact).predicate = CorePredicate::False;
     });
@@ -1302,6 +1301,14 @@ fn requirement_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::Target
         .requirements
         .get_mut(0)
         .expect("requirement 0")
+}
+
+fn replace_required(source: &str, from: &str, to: &str) -> String {
+    assert!(
+        source.contains(from),
+        "test fixture must contain replacement fragment {from:?}"
+    );
+    source.replace(from, to)
 }
 
 fn digest_text(hex: char) -> String {
