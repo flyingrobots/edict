@@ -428,6 +428,12 @@ struct BodyState {
     obstruction_index: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReasonPayloadMode {
+    PreserveReasonField,
+    SkipReasonField,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct LetStatement<'a> {
     name: &'a str,
@@ -753,11 +759,9 @@ impl<'a> TypeChecker<'a> {
                     self.unsupported_stmt(*span, "effect statement");
                 }
             }
-            Stmt::Require {
-                predicate,
-                arm,
-                span,
-            } => self.check_require_stmt(predicate, arm, env, state, *span),
+            Stmt::Require { predicate, arm, .. } => {
+                self.check_require_stmt(predicate, arm, env, state)
+            }
             Stmt::Guarantee { span, .. }
             | Stmt::Assert { span, .. }
             | Stmt::If { span, .. }
@@ -771,12 +775,11 @@ impl<'a> TypeChecker<'a> {
         arm: &RequireElseArm,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         state: &mut BodyState,
-        span: Span,
     ) {
         let Some(predicate) = self.check_predicate(predicate, env) else {
             return;
         };
-        let Some(arm) = self.check_require_else_arm(arm, env, span) else {
+        let Some(arm) = self.check_require_else_arm(arm, env) else {
             return;
         };
         state.nodes.push(CoreNode::Require { predicate, arm });
@@ -786,17 +789,19 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         arm: &RequireElseArm,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        span: Span,
     ) -> Option<CoreRequireFailureArm> {
         match arm {
             RequireElseArm::Terminal(target) => {
-                let reason = self.check_terminal_require_reason(target, env, span)?;
+                let reason = self.check_terminal_require_reason(target, env)?;
                 Some(CoreRequireFailureArm::Terminal { reason })
             }
             RequireElseArm::ContinueObstructed(obstruction) => {
                 let reason_kind = self.check_reason_kind(&obstruction.reason, obstruction.span)?;
-                let payload =
-                    self.check_reason_payload(&obstruction.payload, env, obstruction.span)?;
+                let payload = self.check_reason_payload(
+                    &obstruction.payload,
+                    env,
+                    ReasonPayloadMode::SkipReasonField,
+                )?;
                 Some(CoreRequireFailureArm::ContinueObstructed {
                     reason: CoreObstructionReason {
                         kind: reason_kind,
@@ -811,10 +816,11 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         target: &ObstructionTarget,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        span: Span,
     ) -> Option<CoreObstructionReason> {
         let payload = match &target.payload {
-            Some(Expr::Record { entries, .. }) => self.check_reason_payload(entries, env, span)?,
+            Some(Expr::Record { entries, .. }) => {
+                self.check_reason_payload(entries, env, ReasonPayloadMode::PreserveReasonField)?
+            }
             Some(_) => {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -850,14 +856,14 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         entries: &[RecordEntry],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        _span: Span,
+        mode: ReasonPayloadMode,
     ) -> Option<BTreeMap<String, CoreExpr>> {
         let mut fields = BTreeMap::new();
         let mut accepted = true;
         for entry in entries {
             match entry {
                 RecordEntry::Field { name, .. } | RecordEntry::Shorthand { name, .. }
-                    if name == "reason" => {}
+                    if mode == ReasonPayloadMode::SkipReasonField && name == "reason" => {}
                 RecordEntry::Field { name, value } => {
                     if fields.contains_key(name) {
                         self.errors.push(error(

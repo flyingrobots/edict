@@ -96,6 +96,16 @@ const TERMINAL_REQUIRE_OBSTRUCTION: &str = "package a.b@1;\n\
       require true else jim.EditObstruction.StaleBase;\n\
       return { id: input.id };\n\
     }";
+const TERMINAL_REQUIRE_WITH_REASON_PAYLOAD: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      require true else jim.EditObstruction.StaleBase({ reason: input.id });\n\
+      return { id: input.id };\n\
+    }";
 const CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
@@ -609,6 +619,23 @@ fn terminal_require_obstruction_lowers_to_core_failure_arm() {
         panic!("terminal require obstruction remains terminal in Core");
     };
     assert_reason(reason, "jim.EditObstruction.StaleBase", []);
+}
+
+#[test]
+fn terminal_require_preserves_reason_payload_field() {
+    let core = compile_pure_source(TERMINAL_REQUIRE_WITH_REASON_PAYLOAD);
+    let CoreNode::Require { arm, .. } = only_require_node(&core) else {
+        panic!("terminal require lowers to Core require node");
+    };
+    let CoreRequireFailureArm::Terminal { reason } = arm else {
+        panic!("terminal require obstruction remains terminal in Core");
+    };
+
+    assert_reason(reason, "jim.EditObstruction.StaleBase", ["reason"]);
+    assert!(matches!(
+        &reason.payload["reason"],
+        CoreExpr::Field { field, .. } if field == "id"
+    ));
 }
 
 #[test]
