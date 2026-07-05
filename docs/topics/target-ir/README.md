@@ -56,8 +56,8 @@ becomes a deterministic Target IR step that records:
 - the structured Core input expression;
 - sorted obstruction failure keys and their structured obstruction arm values.
 
-For the supported Echo slice, each supported Core `require` node becomes a
-deterministic Target IR requirement that records:
+For the supported Echo slice, each supported Core `require` node before any
+target step becomes a deterministic Target IR requirement that records:
 
 - the requirement id;
 - the structured Core predicate;
@@ -68,11 +68,13 @@ git-warp does not currently claim Target IR requirement support. A Core module
 with `require` nodes selected for git-warp rejects before artifact emission with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`.
 
-Intent-level Target IR requirements cannot read target step outputs. If a
-requirement predicate or reason payload references a local produced by an
-earlier target step, lowering rejects with
-`TargetLoweringFailureKind::UnsupportedTargetFeature` before emitting an
-artifact. Ordered or step-attached guards remain a future artifact-model change.
+Intent-level Target IR requirements are pre-step guards. A Core `require` after
+an emitted target step rejects with
+`TargetLoweringFailureKind::UnsupportedTargetFeature` before artifact emission.
+If the requirement predicate or reason payload references a local produced by an
+earlier target step, lowering uses the same stable failure kind with a more
+specific step-output-dependency detail. Ordered or step-attached guards remain a
+future artifact-model change.
 
 Each Target IR intent also preserves the Core input constraints, Core evaluation
 budget, source-ordered requirements, source-ordered effect steps, and structured

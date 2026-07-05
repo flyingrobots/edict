@@ -480,6 +480,15 @@ fn lower_require_node(
         });
         return;
     }
+    if !state.steps.is_empty() {
+        failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "obstruction_requirement_after_target_step".to_owned(),
+        });
+        return;
+    }
     state.requirements.push(TargetIrRequirement {
         id: format!("{}.require.{}", intent_name, state.requirements.len()),
         predicate: predicate.clone(),
