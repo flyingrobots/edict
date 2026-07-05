@@ -657,6 +657,28 @@ fn continue_obstructed_require_lowers_to_core_failure_arm() {
 }
 
 #[test]
+fn assert_reason_matches_payload_key_sets_without_order_sensitivity() {
+    let source = replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id,",
+        "provided: input.id,\nechoed: input.id,",
+    );
+    let core = compile_pure_source(&source);
+    let CoreNode::Require { arm, .. } = only_require_node(&core) else {
+        panic!("continue obstructed require lowers to Core require node");
+    };
+    let CoreRequireFailureArm::ContinueObstructed { reason } = arm else {
+        panic!("continue obstructed source remains preserved in Core");
+    };
+
+    assert_reason(
+        reason,
+        "jim.EditObstruction.StaleBase",
+        ["provided", "echoed"],
+    );
+}
+
+#[test]
 fn terminal_and_continue_obstructed_require_arms_are_core_distinct() {
     let terminal = compile_pure_source(TERMINAL_REQUIRE_OBSTRUCTION);
     let continued = compile_pure_source(&replace_required(
@@ -814,14 +836,15 @@ fn assert_reason<'a>(
     payload_keys: impl IntoIterator<Item = &'a str>,
 ) {
     assert_eq!(reason.kind, kind);
-    assert_eq!(
-        reason
-            .payload
-            .keys()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        payload_keys.into_iter().collect::<Vec<_>>()
-    );
+    let mut actual = reason
+        .payload
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let mut expected = payload_keys.into_iter().collect::<Vec<_>>();
+    actual.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(actual, expected);
 }
 
 fn replace_required(source: &str, needle: &str, replacement: &str) -> String {
