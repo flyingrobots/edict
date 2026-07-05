@@ -796,7 +796,8 @@ impl<'a> TypeChecker<'a> {
                 Some(CoreRequireFailureArm::Terminal { reason })
             }
             RequireElseArm::ContinueObstructed(obstruction) => {
-                let reason_kind = self.check_reason_kind(&obstruction.reason, obstruction.span)?;
+                let reason_kind =
+                    self.check_reason_kind(&obstruction.reason, env, obstruction.span)?;
                 let payload = self.check_reason_payload(
                     &obstruction.payload,
                     env,
@@ -838,18 +839,33 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
-    fn check_reason_kind(&mut self, reason: &Expr, span: Span) -> Option<String> {
-        if let Some(kind) = plain_path_coordinate(reason) {
-            Some(kind)
-        } else {
+    fn check_reason_kind(
+        &mut self,
+        reason: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<String> {
+        let Some(kind) = plain_path_coordinate(reason) else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnsupportedSourceShape,
                 "obstruction reason must be a stable coordinate",
                 span,
             ));
-            None
+            return None;
+        };
+        if let Some(root) = plain_path_root(reason) {
+            if env.contains_key(root) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "obstruction reason must be a stable coordinate, not a local expression",
+                    span,
+                ));
+                return None;
+            }
         }
+        Some(kind)
     }
 
     fn check_reason_payload(
@@ -1761,6 +1777,25 @@ fn plain_callee_coordinate(expr: &Expr) -> Option<String> {
 
 fn plain_path_coordinate(expr: &Expr) -> Option<String> {
     plain_callee_coordinate(expr)
+}
+
+fn plain_path_root(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Ident { name, .. } => Some(name),
+        Expr::Field { base, .. } => plain_path_root(base),
+        Expr::Call { .. }
+        | Expr::Int { .. }
+        | Expr::Str { .. }
+        | Expr::Bool { .. }
+        | Expr::Digest { .. }
+        | Expr::Unary { .. }
+        | Expr::Binary { .. }
+        | Expr::Record { .. }
+        | Expr::If { .. }
+        | Expr::IfYield { .. }
+        | Expr::VariantLit { .. }
+        | Expr::Match { .. } => None,
+    }
 }
 
 fn package_coordinate(path: &[String], version: &str) -> String {

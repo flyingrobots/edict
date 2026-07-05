@@ -731,6 +731,37 @@ fn duplicate_obstruction_reason_payload_fields_reject_before_core_digest() {
 }
 
 #[test]
+fn continue_obstructed_reason_rejects_local_expression() {
+    let source = "package a.b@1;\n\
+        type Input = { id: String<max=16>, };\n\
+        type Output = { id: String<max=16>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          require true else continue obstructed {\n\
+            reason: input.id,\n\
+            provided: input.id,\n\
+          };\n\
+          return { id: input.id };\n\
+        }";
+    let module = parse_module(source).expect("local reason source parses");
+    let errors =
+        compile_to_core(&module, &pure_context()).expect_err("local reason rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|err| err.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::UnsupportedSourceShape]
+    );
+}
+
+#[test]
 fn initial_core_lowering_makes_no_canonical_or_target_claim() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
