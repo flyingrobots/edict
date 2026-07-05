@@ -1,20 +1,22 @@
 # Obstruction Strands
 
 Status: current HEAD boundary. First-class obstruction-strand source syntax is
-implemented through Core lowering for the currently lowerable `require` subset.
+implemented through Core lowering and Echo Target IR requirements for the
+currently lowerable `require` subset.
 
 This topic records the current Edict boundary for obstruction-strand planning.
 The parser currently accepts `require ... else <obstruction>` as a source
 statement carrying a predicate and terminal typed obstruction target. It also
 accepts `require ... else continue obstructed { reason: ... }` as a distinct
 source AST arm that lowers into a distinct Core require-failure arm when the
-surrounding source is inside the current compiler-spine subset. Target IR,
-participant receipts, and runtime execution for preserved obstruction strands
-are not implemented in HEAD.
+surrounding source is inside the current compiler-spine subset. Echo Target IR
+now preserves that arm as an explicit requirement with a
+`continueObstructed` failure disposition. Participant receipts and runtime
+execution for preserved obstruction strands are not implemented in HEAD.
 
-No Target IR disposition, participant receipt, or runtime behavior exists yet
-for preserving a blocked attempt as a repairable obstruction strand. Future
-design work is tracked in issue #116 and the non-topic design note
+No participant receipt or runtime behavior exists yet for preserving a blocked
+attempt as a repairable obstruction strand. Future design work is tracked in
+issue #116 and the non-topic design note
 [`docs/design/obstruction-strands-v0.md`](../../design/obstruction-strands-v0.md).
 That document is planning material, not a topic README contract for landed
 behavior.
@@ -58,6 +60,21 @@ CoreNode::Require {
 }
 ```
 
+Current lowerable Echo Target IR shape:
+
+```text
+TargetIrIntent {
+  requirements: [
+    TargetIrRequirement {
+      predicate,
+      on_failure: TargetIrRequireFailure::Terminal { reason }
+                | TargetIrRequireFailure::ContinueObstructed { reason },
+    }
+  ],
+  steps: [...]
+}
+```
+
 The Core reason envelope is closed around a stable `reason.kind` coordinate and
 a canonical map of opaque payload fields. The `reason` field in source selects
 the reason kind; the other `continue obstructed { ... }` fields become the
@@ -78,8 +95,10 @@ syntax rather than hidden control flow.
   predicates.
 - Current Core lowering distinguishes terminal require obstruction from
   preserved obstruction continuation in the canonical Core preimage.
-- Current Target IR lowering rejects Core require nodes before Target IR,
-  receipt, or runtime behavior exists.
+- Current Echo Target IR lowering distinguishes terminal require obstruction
+  from preserved obstruction continuation in the canonical Target IR preimage.
+- Current git-warp Target IR lowering rejects Core require nodes with a stable
+  unsupported-feature failure before artifact emission.
 - A helper-like obstruction constructor such as
   `continueInObstructedStrand(...)` must not acquire hidden control-flow
   semantics without a first-class language/runtime contract.

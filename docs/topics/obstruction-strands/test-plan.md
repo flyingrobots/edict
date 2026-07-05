@@ -10,14 +10,13 @@ In scope:
 
 - current parser support for `require ... else` obstruction source shape;
 - current Core lowering for `Stmt::Require` obstruction arms;
+- current Echo Target IR lowering for Core `require` requirements;
 - first-class source syntax for preserved repairable obstruction attempts;
-- planned-row ledger entries for future Target IR disposition work;
 - negative guard against hidden control flow in ordinary obstruction-target
   constructors.
 
 Out of scope:
 
-- Target IR lowering for the first-class source syntax;
 - Echo or Jim runtime execution;
 - Continuum support-ledger verification;
 - XYPH Quest settlement policy.
@@ -30,8 +29,8 @@ Out of scope:
 | OBSTRAND-REQ-002 | implemented | The `require ... else continue obstructed { reason: ... }` form parses as first-class source syntax, not an ordinary helper call hidden inside `else`. | issue #118, docs/design/obstruction-strands-v0.md |
 | OBSTRAND-REQ-003 | implemented | The `continue obstructed { ... }` form is contextual to `require ... else`, requires exactly one `reason` field, and rejects duplicate `reason` fields before Core digesting. | issue #118, docs/design/obstruction-strands-v0.md |
 | OBSTRAND-REQ-004 | implemented | Helper-shaped obstruction constructors such as `continueInObstructedStrand(...)` do not acquire hidden continuation semantics. | issue #118, docs/design/obstruction-strands-v0.md |
-| OBSTRAND-REQ-005 | planned | Future Target IR exposes a distinct preserved-obstruction disposition. | issue #116, docs/design/obstruction-strands-v0.md |
-| OBSTRAND-REQ-006 | planned | Future preserved obstruction records no success-path write and carries repair metadata only as causal support. | issue #116 |
+| OBSTRAND-REQ-005 | implemented | Echo Target IR exposes a distinct preserved-obstruction disposition. | issue #131, docs/design/obstruction-strands-v0.md |
+| OBSTRAND-REQ-006 | implemented | Preserved obstruction Target IR records no success-path write and carries repair metadata only as causal support. | issue #131 |
 | OBSTRAND-REQ-007 | implemented | Core lowering preserves terminal require obstruction and preserved obstruction continuation as distinct require-failure arms. | issue #129, docs/design/obstruction-strands-v0.md |
 | OBSTRAND-REQ-008 | implemented | Core digest behavior binds require-failure disposition, reason kind, and canonical reason payload values while ignoring non-semantic formatting. | issue #129, docs/design/obstruction-strands-v0.md |
 
@@ -42,7 +41,7 @@ Out of scope:
 | docs/topics/obstruction-strands/README.md | Current boundary shelf. | Human review confirms HEAD claims parser and Core support only for the currently lowerable `require` obstruction subset. |
 | docs/design/obstruction-strands-v0.md | Future design note. | Human review confirms planned syntax/lowering material is outside the topic README contract. |
 | docs/topics/syntax/test-plan.md | Syntax ledger for future parser coverage. | `SYNTAX-REQ-013` and `SYNTAX-TP-023` preserve the planned parser guard. |
-| docs/topics/target-ir/README.md | Target IR deferred-boundary note. | Target IR explicitly does not yet claim first-class resumable obstruction strands. |
+| docs/topics/target-ir/README.md | Target IR current-boundary note. | Target IR explicitly claims Echo requirement disposition support while leaving Echo receipts and runtime execution deferred. |
 | fixtures/obstruction-strands/v0/stale-basis/README.md | Golden corridor manifest. | Human review confirms future artifacts appear only after the owning layer lands. |
 | fixtures/obstruction-strands/v0/stale-basis/source.edict | Stale-basis source corridor fixture. | Parsed by `stale_basis_obstruction_strand_fixture_parses`. |
 
@@ -55,7 +54,7 @@ Out of scope:
 | OBSTRAND-TP-003 | implemented | Source validation | OBSTRAND-REQ-003 | `continue obstructed { ... }` requires a `reason` field and rejects duplicate `reason` fields. | continue_obstructed_requires_reason_field, continue_obstructed_rejects_duplicate_reason_field | crates/edict-syntax/tests/parse_review_regressions.rs | Rejection happens before Core digesting. |
 | OBSTRAND-TP-004 | implemented | Contextual syntax guard | OBSTRAND-REQ-003 | `continue obstructed { ... }` is not a normal expression outside a require-else arm. | continue_obstructed_is_contextual_to_require_else | crates/edict-syntax/tests/parse_review_regressions.rs | Prevents function-like or value-like use. |
 | OBSTRAND-TP-005 | implemented | Negative guard | OBSTRAND-REQ-004 | `else continueInObstructedStrand(...)` is not interpreted as hidden control flow. | helper_shaped_continue_in_obstructed_strand_is_terminal | crates/edict-syntax/tests/parse_review_regressions.rs | It remains an ordinary terminal obstruction target. |
-| OBSTRAND-TP-006 | planned | Future Target IR guard | OBSTRAND-REQ-005, OBSTRAND-REQ-006 | Lowering emits a distinct preserved-obstruction disposition with no success-path write. | - | - | Must remain separate from terminal obstruction and success. |
+| OBSTRAND-TP-006 | implemented | Target IR guard | OBSTRAND-REQ-005, OBSTRAND-REQ-006 | Lowering emits a distinct preserved-obstruction disposition with no success-path write. | echo_target_ir_contains_obstruction_requirement_payload, terminal_and_preserved_requirements_are_target_ir_distinct | crates/edict-syntax/tests/target_ir.rs | Must remain separate from terminal obstruction and success. |
 | OBSTRAND-TP-007 | implemented | Core lowering | OBSTRAND-REQ-007 | Terminal `require ... else <obstruction>` lowers to a terminal require-failure arm. | terminal_require_obstruction_lowers_to_core_failure_arm | crates/edict-syntax/tests/compiler_spine.rs | Core evidence only; no Target IR or Echo claim. |
 | OBSTRAND-TP-008 | implemented | Core lowering | OBSTRAND-REQ-007 | `require ... else continue obstructed { ... }` lowers to a preserved-obstruction require-failure arm. | continue_obstructed_require_lowers_to_core_failure_arm | crates/edict-syntax/tests/compiler_spine.rs | Core evidence only; no Target IR or Echo claim. |
 | OBSTRAND-TP-009 | implemented | Core distinction | OBSTRAND-REQ-007, OBSTRAND-REQ-008 | Terminal obstruction and `continue obstructed` with the same reason are Core-distinct and digest-distinct. | terminal_and_continue_obstructed_require_arms_are_core_distinct | crates/edict-syntax/tests/compiler_spine.rs | Prevents semantic collapse into one failure bucket. |
@@ -73,5 +72,4 @@ Out of scope:
 
 ## Open Gaps
 
-- No Target IR model exists for preserved obstruction disposition.
 - No Echo/Jim receipt fixture exists for preserved repairable obstruction.

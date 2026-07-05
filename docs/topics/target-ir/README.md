@@ -14,7 +14,8 @@ The current target IR implementation is deliberately narrow:
 - selected target profile: `echo.dpo@1` or `gitwarp.ref_crdt@1`;
 - selected Target IR artifact domain: `echo.span-ir/v1` or
   `gitwarp.commit-reducer-ir/v1`;
-- selected source/Core shape: the first supported effectful Core effect node;
+- selected source/Core shape: the first supported effectful Core effect node
+  and Echo `require` guard requirements;
 - selected outcome: a deterministic target-owned review artifact with canonical
   `edict.canonical-cbor/v1` bytes and a reviewed
   `edict.target-ir.artifact/v1` digest;
@@ -55,9 +56,22 @@ becomes a deterministic Target IR step that records:
 - the structured Core input expression;
 - sorted obstruction failure keys and their structured obstruction arm values.
 
+For the supported Echo slice, each supported Core `require` node becomes a
+deterministic Target IR requirement that records:
+
+- the requirement id;
+- the structured Core predicate;
+- a terminal or `continueObstructed` failure disposition;
+- the stable obstruction reason kind and canonical reason payload fields.
+
+git-warp does not currently claim Target IR requirement support. A Core module
+with `require` nodes selected for git-warp rejects before artifact emission with
+`TargetLoweringFailureKind::UnsupportedTargetFeature`.
+
 Each Target IR intent also preserves the Core input constraints, Core evaluation
-budget, and structured Core result expression for the supported slice. This
-records preconditions, evaluation limits, and success-output semantics without
+budget, source-ordered requirements, source-ordered effect steps, and structured
+Core result expression for the supported slice. This records preconditions,
+evaluation limits, guard dispositions, and success-output semantics without
 executing Echo or admitting a bundle.
 
 Canonical Target IR uses an intentional artifact-envelope value model rather
@@ -70,7 +84,8 @@ CBOR for:
 
 The canonical value includes the artifact's own domain, digest-locked target
 profile resource, source Core coordinate, sorted intent map, input constraints,
-Core evaluation budget, source-ordered target steps, sorted obstruction failure
+Core evaluation budget, source-ordered requirements, requirement predicates and
+failure dispositions, source-ordered target steps, sorted obstruction failure
 keys and arms, and structured Core result expression. Target profile digests are
 strict artifact references: missing digests and non-lowercase
 `sha256:<64 hex>` review strings reject before hashing.
@@ -99,15 +114,17 @@ with an unsupported ABI rejects with
 floating imports rejects with `TargetLoweringFailureKind::UndigestedCoreImport`.
 Supplying unsupported Core capability flags rejects with
 `TargetLoweringFailureKind::UnsupportedCoreCapability`. Supplying Core nodes
-outside the first supported effect shape rejects with
-`TargetLoweringFailureKind::UnsupportedCoreNode`. Missing or ambiguous effect
-lowering facts, non-Echo target intrinsics, missing operation-profile support,
-and obstruction keys absent from the selected target facts also reject before any
-artifact is emitted. A Core intent with no target-owned steps, or a Core module
-with no intents, rejects with `TargetLoweringFailureKind::NoTargetSteps`.
-Duplicate target-lowering facts are ambiguous only when they match an effect
-used by the Core module being lowered; unrelated duplicate facts do not block
-the supported artifact.
+outside the supported effect and Echo requirement shapes rejects with
+`TargetLoweringFailureKind::UnsupportedCoreNode`. Supplying a target-specific
+Core feature that the selected target does not support rejects with
+`TargetLoweringFailureKind::UnsupportedTargetFeature`. Missing or ambiguous
+effect lowering facts, non-Echo target intrinsics, missing operation-profile
+support, and obstruction keys absent from the selected target facts also reject
+before any artifact is emitted. A Core intent with no target-owned requirements
+or steps, or a Core module with no intents, rejects with
+`TargetLoweringFailureKind::NoTargetSteps`. Duplicate target-lowering facts are
+ambiguous only when they match an effect used by the Core module being lowered;
+unrelated duplicate facts do not block the supported artifact.
 
 ## Deferred
 
@@ -119,8 +136,7 @@ The following are not implemented by this slice:
 - general target-lowering plugin dispatch;
 - git-warp runtime execution, commit object creation, and CRDT reducer
   verification;
-- first-class resumable obstruction strands or a preserved-obstruction target
-  disposition;
+- Echo runtime receipts for first-class resumable obstruction strands;
 - additional target profiles beyond Echo and git-warp;
 - v2 chained or composite adapter resolution.
 

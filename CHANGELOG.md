@@ -16,14 +16,23 @@ versions still track specification maturity rather than a released product.
   exactly one `reason` field, rejects duplicate `reason` fields, and remains
   contextual to a `require ... else` arm. Helper-shaped constructors such as
   `continueInObstructedStrand(...)` remain ordinary terminal obstruction
-  targets. Target IR, Echo receipts, and editor projection remain deferred.
+  targets. Echo receipts, runtime execution, and editor projection remain
+  deferred.
 - Core lowering now represents `require` statements as explicit Core require
   nodes with terminal and preserved-obstruction failure arms. The canonical Core
   preimage distinguishes `else <obstruction>` from
   `else continue obstructed { ... }`, binds stable reason kinds and canonical
   payload fields, rejects duplicate payload fields before Core digesting, and
-  keeps non-semantic formatting out of Core digests. Target IR and runtime
-  receipt behavior for obstruction strands remain deferred.
+  keeps non-semantic formatting out of Core digests. Runtime receipt behavior
+  for obstruction strands remains deferred.
+- Echo Target IR lowering now represents supported Core `require` guards as
+  explicit Target IR requirements with terminal and `continueObstructed` failure
+  dispositions. Canonical Target IR bytes and digests now bind requirement
+  predicates, reason kinds, reason payload values, and terminal-vs-preserved
+  disposition, while targets without requirement support reject with a stable
+  `UnsupportedTargetFeature` failure before artifact emission. Echo runtime
+  receipts, admission, scheduler counterfactuals, and editor projection remain
+  deferred.
 - Added the `edict` CLI `project` operation for editor-facing JSONL
   projection over dirty source records. It can emit syntax spans, diagnostics,
   Core review JSON plus canonical Core digest, and Echo Target IR review JSON

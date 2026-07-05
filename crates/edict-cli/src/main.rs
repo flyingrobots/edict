@@ -15,8 +15,9 @@ use edict_syntax::{
     CoreBudget, CoreExpr, CoreImport, CoreNode, CoreObstructionArm, CoreObstructionReason,
     CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, HighlightRole, InputConstraint,
     InputConstraintSource, ParseError, ResourceRef, SemanticError, Span, TargetEffectLowering,
-    TargetIrArtifact, TargetIrIntent, TargetIrLoweringFacts, TargetIrStep, TargetLoweringFailure,
-    TargetLoweringFailureKind, WriteClass,
+    TargetIrArtifact, TargetIrIntent, TargetIrLoweringFacts, TargetIrRequireFailure,
+    TargetIrRequirement, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
+    WriteClass,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1143,9 +1144,35 @@ fn target_ir_intent_review(intent: &TargetIrIntent) -> Value {
             .map(input_constraint_review)
             .collect::<Vec<_>>(),
         "coreEvaluationBudget": core_budget_review(&intent.core_evaluation_budget),
+        "requirements": intent
+            .requirements
+            .iter()
+            .map(target_ir_requirement_review)
+            .collect::<Vec<_>>(),
         "steps": intent.steps.iter().map(target_ir_step_review).collect::<Vec<_>>(),
         "result": core_expr_review(&intent.result),
     })
+}
+
+fn target_ir_requirement_review(requirement: &TargetIrRequirement) -> Value {
+    json!({
+        "id": requirement.id,
+        "predicate": core_predicate_review(&requirement.predicate),
+        "onFailure": target_ir_require_failure_review(&requirement.on_failure),
+    })
+}
+
+fn target_ir_require_failure_review(failure: &TargetIrRequireFailure) -> Value {
+    match failure {
+        TargetIrRequireFailure::Terminal { reason } => json!({
+            "kind": "terminal",
+            "reason": core_obstruction_reason_review(reason),
+        }),
+        TargetIrRequireFailure::ContinueObstructed { reason } => json!({
+            "kind": "continueObstructed",
+            "reason": core_obstruction_reason_review(reason),
+        }),
+    }
 }
 
 fn target_ir_step_review(step: &TargetIrStep) -> Value {
@@ -1394,6 +1421,7 @@ fn target_lowering_failure_kind_name(kind: TargetLoweringFailureKind) -> &'stati
         TargetLoweringFailureKind::UnsupportedTargetProfile => "UnsupportedTargetProfile",
         TargetLoweringFailureKind::UnsupportedTargetIrDomain => "UnsupportedTargetIrDomain",
         TargetLoweringFailureKind::UndigestedTargetProfile => "UndigestedTargetProfile",
+        TargetLoweringFailureKind::UnsupportedTargetFeature => "UnsupportedTargetFeature",
         TargetLoweringFailureKind::UnsupportedCoreNode => "UnsupportedCoreNode",
         TargetLoweringFailureKind::MissingOperationProfile => "MissingOperationProfile",
         TargetLoweringFailureKind::MissingObstruction => "MissingObstruction",

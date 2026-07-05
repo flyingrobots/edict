@@ -7,8 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    CoreBudget, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, InputConstraint,
-    LocalRef, ResourceRef, CORE_API_VERSION,
+    CoreBudget, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm,
+    CoreObstructionReason, CorePredicate, CoreRequireFailureArm, InputConstraint, LocalRef,
+    ResourceRef, CORE_API_VERSION,
 };
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
 
@@ -21,6 +22,7 @@ pub const GITWARP_COMMIT_REDUCER_IR_DOMAIN: &str = "gitwarp.commit-reducer-ir/v1
 struct TargetSelection {
     target_ir_domain: &'static str,
     target_intrinsic_prefix: &'static str,
+    supports_requirements: bool,
 }
 
 impl TargetSelection {
@@ -36,10 +38,12 @@ fn target_selection_for_profile(target_profile: &str) -> Option<TargetSelection>
         ECHO_DPO_TARGET_PROFILE => Some(TargetSelection {
             target_ir_domain: ECHO_SPAN_IR_DOMAIN,
             target_intrinsic_prefix: ECHO_DPO_TARGET_PROFILE,
+            supports_requirements: true,
         }),
         GITWARP_REF_CRDT_TARGET_PROFILE => Some(TargetSelection {
             target_ir_domain: GITWARP_COMMIT_REDUCER_IR_DOMAIN,
             target_intrinsic_prefix: GITWARP_REF_CRDT_TARGET_PROFILE,
+            supports_requirements: false,
         }),
         _ => None,
     }
@@ -138,6 +142,7 @@ pub enum TargetLoweringFailureKind {
     UnsupportedTargetProfile,
     UnsupportedTargetIrDomain,
     UndigestedTargetProfile,
+    UnsupportedTargetFeature,
     UnsupportedCoreNode,
     MissingOperationProfile,
     MissingObstruction,
@@ -179,8 +184,22 @@ pub struct TargetIrIntent {
     pub operation_profile: String,
     pub input_constraints: Vec<InputConstraint>,
     pub core_evaluation_budget: CoreBudget,
+    pub requirements: Vec<TargetIrRequirement>,
     pub steps: Vec<TargetIrStep>,
     pub result: CoreExpr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetIrRequirement {
+    pub id: String,
+    pub predicate: CorePredicate,
+    pub on_failure: TargetIrRequireFailure,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TargetIrRequireFailure {
+    Terminal { reason: CoreObstructionReason },
+    ContinueObstructed { reason: CoreObstructionReason },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -347,11 +366,20 @@ fn lower_intent(
         });
     }
 
+    let mut requirements = Vec::new();
     let mut steps = Vec::new();
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
-        lower_node(intent_name, node_index, node, context, &mut steps, failures);
+        lower_node(
+            intent_name,
+            node_index,
+            node,
+            context,
+            &mut requirements,
+            &mut steps,
+            failures,
+        );
     }
-    if steps.is_empty() && intent.body.nodes.is_empty() {
+    if requirements.is_empty() && steps.is_empty() && intent.body.nodes.is_empty() {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::NoTargetSteps,
             intent: Some(intent_name.to_owned()),
@@ -364,6 +392,7 @@ fn lower_intent(
         operation_profile: intent.required_operation_profile.clone(),
         input_constraints: intent.input_constraints.clone(),
         core_evaluation_budget: intent.core_evaluation_budget.clone(),
+        requirements,
         steps,
         result: intent.body.result.clone(),
     }
@@ -380,6 +409,7 @@ fn lower_node(
     node_index: usize,
     node: &CoreNode,
     context: &TargetLoweringContext<'_>,
+    requirements: &mut Vec<TargetIrRequirement>,
     steps: &mut Vec<TargetIrStep>,
     failures: &mut Vec<TargetLoweringFailure>,
 ) {
@@ -408,12 +438,53 @@ fn lower_node(
             node_index: Some(node_index),
             detail: "let".to_owned(),
         }),
-        CoreNode::Require { .. } => failures.push(TargetLoweringFailure {
-            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+        CoreNode::Require { predicate, arm } => lower_require_node(
+            intent_name,
+            node_index,
+            predicate,
+            arm,
+            context,
+            requirements,
+            failures,
+        ),
+    }
+}
+
+fn lower_require_node(
+    intent_name: &str,
+    node_index: usize,
+    predicate: &CorePredicate,
+    arm: &CoreRequireFailureArm,
+    context: &TargetLoweringContext<'_>,
+    requirements: &mut Vec<TargetIrRequirement>,
+    failures: &mut Vec<TargetLoweringFailure>,
+) {
+    if !context.target_selection.supports_requirements {
+        failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
             intent: Some(intent_name.to_owned()),
             node_index: Some(node_index),
-            detail: "require".to_owned(),
-        }),
+            detail: "obstruction_requirement".to_owned(),
+        });
+        return;
+    }
+    requirements.push(TargetIrRequirement {
+        id: format!("{}.require.{}", intent_name, requirements.len()),
+        predicate: predicate.clone(),
+        on_failure: target_ir_require_failure(arm),
+    });
+}
+
+fn target_ir_require_failure(arm: &CoreRequireFailureArm) -> TargetIrRequireFailure {
+    match arm {
+        CoreRequireFailureArm::Terminal { reason } => TargetIrRequireFailure::Terminal {
+            reason: reason.clone(),
+        },
+        CoreRequireFailureArm::ContinueObstructed { reason } => {
+            TargetIrRequireFailure::ContinueObstructed {
+                reason: reason.clone(),
+            }
+        }
     }
 }
 
