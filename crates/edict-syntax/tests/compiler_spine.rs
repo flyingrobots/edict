@@ -659,9 +659,11 @@ fn continue_obstructed_require_lowers_to_core_failure_arm() {
 #[test]
 fn terminal_and_continue_obstructed_require_arms_are_core_distinct() {
     let terminal = compile_pure_source(TERMINAL_REQUIRE_OBSTRUCTION);
-    let continued = compile_pure_source(
-        &CONTINUE_OBSTRUCTED_REQUIRE.replace("        provided: input.id,\n", ""),
-    );
+    let continued = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id,\n",
+        "",
+    ));
 
     assert_ne!(terminal, continued);
     assert_ne!(
@@ -673,18 +675,23 @@ fn terminal_and_continue_obstructed_require_arms_are_core_distinct() {
 #[test]
 fn obstruction_reason_mutations_move_core_digest() {
     let baseline = compile_pure_source(CONTINUE_OBSTRUCTED_REQUIRE);
-    let changed_reason = compile_pure_source(
-        &CONTINUE_OBSTRUCTED_REQUIRE
-            .replace("jim.EditObstruction.StaleBase", "jim.EditObstruction.Other"),
-    );
-    let changed_payload = compile_pure_source(
-        &CONTINUE_OBSTRUCTED_REQUIRE.replace("provided: input.id", "provided: \"changed\""),
-    );
-    let reordered_payload = compile_pure_source(&CONTINUE_OBSTRUCTED_REQUIRE.replace(
-        "        reason: jim.EditObstruction.StaleBase,\n        provided: input.id,\n",
-        "        provided: input.id,\n        reason: jim.EditObstruction.StaleBase,\n",
+    let changed_reason = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "jim.EditObstruction.StaleBase",
+        "jim.EditObstruction.Other",
     ));
-    let reformatted = compile_pure_source(&CONTINUE_OBSTRUCTED_REQUIRE.replace(
+    let changed_payload = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id",
+        "provided: \"changed\"",
+    ));
+    let reordered_payload = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "reason: jim.EditObstruction.StaleBase,\nprovided: input.id,\n",
+        "provided: input.id,\nreason: jim.EditObstruction.StaleBase,\n",
+    ));
+    let reformatted = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
         "require true else continue obstructed",
         "require    true\n        else continue obstructed",
     ));
@@ -710,7 +717,8 @@ fn obstruction_reason_mutations_move_core_digest() {
 
 #[test]
 fn duplicate_obstruction_reason_payload_fields_reject_before_core_digest() {
-    let source = CONTINUE_OBSTRUCTED_REQUIRE.replace(
+    let source = replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
         "provided: input.id,",
         "provided: input.id,\n        provided: \"duplicate\",",
     );
@@ -814,6 +822,19 @@ fn assert_reason<'a>(
             .collect::<Vec<_>>(),
         payload_keys.into_iter().collect::<Vec<_>>()
     );
+}
+
+fn replace_required(source: &str, needle: &str, replacement: &str) -> String {
+    assert!(
+        source.contains(needle),
+        "fixture mutation target was not present: {needle:?}"
+    );
+    let mutated = source.replace(needle, replacement);
+    assert_ne!(
+        mutated, source,
+        "fixture mutation did not change source for target: {needle:?}"
+    );
+    mutated
 }
 
 fn temp_case_dir(name: &str) -> PathBuf {
