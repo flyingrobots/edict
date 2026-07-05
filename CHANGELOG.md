@@ -35,6 +35,11 @@ versions still track specification maturity rather than a released product.
   reads a target step output, reject until Target IR owns an ordered or
   step-attached guard shape. Echo runtime receipts, admission, scheduler
   counterfactuals, and editor projection remain deferred.
+- The obstruction-strands design note now formalizes the cross-project taxonomy
+  separating not-admitted scheduler counterfactuals, admitted obstructed strands,
+  and hard rejections. The taxonomy records authority boundaries only; it does
+  not add Edict-owned runtime execution, scheduler exploration, Graft
+  projection, jedit display, Continuum settlement, or XYPH settlement behavior.
 - Added the `edict` CLI `project` operation for editor-facing JSONL
   projection over dirty source records. It can emit syntax spans, diagnostics,
   Core review JSON plus canonical Core digest, and Echo Target IR review JSON
