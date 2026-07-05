@@ -171,7 +171,7 @@ the candidate never reached scheduler selection as a valid execution candidate.
 | --- | --- | --- |
 | Not-admitted scheduler counterfactual | Candidate did not run after scheduler/runtime selection. | Scheduler/runtime receipt authority |
 | Admitted obstructed strand | Accepted/evaluated attempt continued into obstruction outcome. | Runtime receipt authority, grounded in Edict-produced artifact semantics |
-| Hard rejection | Artifact, input, profile, validation, or runtime refused before admitted execution. | Validator, target/runtime acceptor, or receipt authority |
+| Hard rejection | Artifact, input, profile, validation, or runtime refused before admitted execution. | Validator or target/runtime acceptor |
 
 The source, Core, Target IR, receipt, projection, and editor layers may carry
 evidence for these terms, but they must not claim another layer's authority.
