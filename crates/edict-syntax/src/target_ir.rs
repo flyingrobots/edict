@@ -366,20 +366,11 @@ fn lower_intent(
         });
     }
 
-    let mut requirements = Vec::new();
-    let mut steps = Vec::new();
+    let mut state = IntentLoweringState::default();
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
-        lower_node(
-            intent_name,
-            node_index,
-            node,
-            context,
-            &mut requirements,
-            &mut steps,
-            failures,
-        );
+        lower_node(intent_name, node_index, node, context, &mut state, failures);
     }
-    if requirements.is_empty() && steps.is_empty() && intent.body.nodes.is_empty() {
+    if state.requirements.is_empty() && state.steps.is_empty() && intent.body.nodes.is_empty() {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::NoTargetSteps,
             intent: Some(intent_name.to_owned()),
@@ -392,8 +383,8 @@ fn lower_intent(
         operation_profile: intent.required_operation_profile.clone(),
         input_constraints: intent.input_constraints.clone(),
         core_evaluation_budget: intent.core_evaluation_budget.clone(),
-        requirements,
-        steps,
+        requirements: state.requirements,
+        steps: state.steps,
         result: intent.body.result.clone(),
     }
 }
@@ -404,13 +395,19 @@ struct TargetLoweringContext<'a> {
     effect_lowerings: &'a BTreeMap<&'a str, Vec<&'a TargetEffectLowering>>,
 }
 
+#[derive(Default)]
+struct IntentLoweringState {
+    requirements: Vec<TargetIrRequirement>,
+    steps: Vec<TargetIrStep>,
+    step_outputs: BTreeSet<String>,
+}
+
 fn lower_node(
     intent_name: &str,
     node_index: usize,
     node: &CoreNode,
     context: &TargetLoweringContext<'_>,
-    requirements: &mut Vec<TargetIrRequirement>,
-    steps: &mut Vec<TargetIrStep>,
+    state: &mut IntentLoweringState,
     failures: &mut Vec<TargetLoweringFailure>,
 ) {
     match node {
@@ -419,19 +416,25 @@ fn lower_node(
             effect,
             input,
             obstruction_map,
-        } => lower_effect_node(
-            intent_name,
-            node_index,
-            EffectNodeParts {
-                binding,
-                effect,
-                input,
-                obstruction_map,
-            },
-            context,
-            steps,
-            failures,
-        ),
+        } => {
+            let steps_before = state.steps.len();
+            lower_effect_node(
+                intent_name,
+                node_index,
+                EffectNodeParts {
+                    binding,
+                    effect,
+                    input,
+                    obstruction_map,
+                },
+                context,
+                &mut state.steps,
+                failures,
+            );
+            if state.steps.len() > steps_before {
+                state.step_outputs.insert(binding.id.clone());
+            }
+        }
         CoreNode::Let { .. } => failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedCoreNode,
             intent: Some(intent_name.to_owned()),
@@ -444,7 +447,7 @@ fn lower_node(
             predicate,
             arm,
             context,
-            requirements,
+            state,
             failures,
         ),
     }
@@ -456,7 +459,7 @@ fn lower_require_node(
     predicate: &CorePredicate,
     arm: &CoreRequireFailureArm,
     context: &TargetLoweringContext<'_>,
-    requirements: &mut Vec<TargetIrRequirement>,
+    state: &mut IntentLoweringState,
     failures: &mut Vec<TargetLoweringFailure>,
 ) {
     if !context.target_selection.supports_requirements {
@@ -468,8 +471,17 @@ fn lower_require_node(
         });
         return;
     }
-    requirements.push(TargetIrRequirement {
-        id: format!("{}.require.{}", intent_name, requirements.len()),
+    if require_references_step_output(predicate, arm, &state.step_outputs) {
+        failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "obstruction_requirement_step_output_dependency".to_owned(),
+        });
+        return;
+    }
+    state.requirements.push(TargetIrRequirement {
+        id: format!("{}.require.{}", intent_name, state.requirements.len()),
         predicate: predicate.clone(),
         on_failure: target_ir_require_failure(arm),
     });
@@ -485,6 +497,59 @@ fn target_ir_require_failure(arm: &CoreRequireFailureArm) -> TargetIrRequireFail
                 reason: reason.clone(),
             }
         }
+    }
+}
+
+fn require_references_step_output(
+    predicate: &CorePredicate,
+    arm: &CoreRequireFailureArm,
+    step_outputs: &BTreeSet<String>,
+) -> bool {
+    predicate_references_step_output(predicate, step_outputs)
+        || require_arm_references_step_output(arm, step_outputs)
+}
+
+fn require_arm_references_step_output(
+    arm: &CoreRequireFailureArm,
+    step_outputs: &BTreeSet<String>,
+) -> bool {
+    match arm {
+        CoreRequireFailureArm::Terminal { reason }
+        | CoreRequireFailureArm::ContinueObstructed { reason } => reason
+            .payload
+            .values()
+            .any(|expr| expr_references_step_output(expr, step_outputs)),
+    }
+}
+
+fn predicate_references_step_output(
+    predicate: &CorePredicate,
+    step_outputs: &BTreeSet<String>,
+) -> bool {
+    match predicate {
+        CorePredicate::True | CorePredicate::False => false,
+        CorePredicate::Not(value) => predicate_references_step_output(value, step_outputs),
+        CorePredicate::All(values) | CorePredicate::Any(values) => values
+            .iter()
+            .any(|value| predicate_references_step_output(value, step_outputs)),
+        CorePredicate::Compare { left, right, .. } => {
+            expr_references_step_output(left, step_outputs)
+                || expr_references_step_output(right, step_outputs)
+        }
+    }
+}
+
+fn expr_references_step_output(expr: &CoreExpr, step_outputs: &BTreeSet<String>) -> bool {
+    match expr {
+        CoreExpr::Local { reference } => step_outputs.contains(&reference.id),
+        CoreExpr::Const(_) => false,
+        CoreExpr::Record { fields } => fields
+            .values()
+            .any(|field| expr_references_step_output(field, step_outputs)),
+        CoreExpr::Field { base, .. } => expr_references_step_output(base, step_outputs),
+        CoreExpr::Call { args, .. } => args
+            .iter()
+            .any(|arg| expr_references_step_output(arg, step_outputs)),
     }
 }
 

@@ -30,9 +30,10 @@ versions still track specification maturity rather than a released product.
   dispositions. Canonical Target IR bytes and digests now bind requirement
   predicates, reason kinds, reason payload values, and terminal-vs-preserved
   disposition, while targets without requirement support reject with a stable
-  `UnsupportedTargetFeature` failure before artifact emission. Echo runtime
-  receipts, admission, scheduler counterfactuals, and editor projection remain
-  deferred.
+  `UnsupportedTargetFeature` failure before artifact emission. Requirements
+  whose predicate or reason payload reads a target step output also reject until
+  Target IR owns an ordered or step-attached guard shape. Echo runtime receipts,
+  admission, scheduler counterfactuals, and editor projection remain deferred.
 - Added the `edict` CLI `project` operation for editor-facing JSONL
   projection over dirty source records. It can emit syntax spans, diagnostics,
   Core review JSON plus canonical Core digest, and Echo Target IR review JSON

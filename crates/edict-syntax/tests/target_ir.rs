@@ -80,6 +80,22 @@ const ECHO_TERMINAL_REQUIRE: &str = "package a.b@1;\n\
       require true else jim.EditObstruction.StaleBase({ reason: input.id });\n\
       return { id: input.id };\n\
     }";
+const ECHO_EFFECT_OUTPUT_DEPENDENT_REQUIRE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.effectful\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let receipt: Receipt = target.replace(input.id)\n\
+        else { rejected(reason) => domain.WriteRejected };\n\
+      require receipt.id != \"\" else continue obstructed {\n\
+        reason: jim.EditObstruction.StaleBase,\n\
+        provided: receipt.id,\n\
+      };\n\
+      return { id: receipt.id };\n\
+    }";
 const GITWARP_CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.git@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
@@ -552,6 +568,27 @@ fn targets_without_obstruction_requirement_support_reject_with_stable_feature_ki
         vec![TargetLoweringFailureKind::UnsupportedTargetFeature]
     );
     assert_eq!(report.failures[0].detail, "obstruction_requirement");
+}
+
+#[test]
+fn requirement_that_reads_step_output_rejects_with_stable_feature_kind() {
+    let module = edict_syntax::parse_module(ECHO_EFFECT_OUTPUT_DEPENDENT_REQUIRE)
+        .expect("effect output dependent require source parses");
+    let core = compile_to_core(&module, &effectful_context())
+        .expect("effect output dependent require source compiles to Core");
+
+    let report = lower_to_target_ir(&core, &echo_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::UnsupportedTargetFeature]
+    );
+    assert_eq!(
+        report.failures[0].detail,
+        "obstruction_requirement_step_output_dependency"
+    );
 }
 
 #[test]

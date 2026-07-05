@@ -68,6 +68,12 @@ git-warp does not currently claim Target IR requirement support. A Core module
 with `require` nodes selected for git-warp rejects before artifact emission with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`.
 
+Intent-level Target IR requirements cannot read target step outputs. If a
+requirement predicate or reason payload references a local produced by an
+earlier target step, lowering rejects with
+`TargetLoweringFailureKind::UnsupportedTargetFeature` before emitting an
+artifact. Ordered or step-attached guards remain a future artifact-model change.
+
 Each Target IR intent also preserves the Core input constraints, Core evaluation
 budget, source-ordered requirements, source-ordered effect steps, and structured
 Core result expression for the supported slice. This records preconditions,

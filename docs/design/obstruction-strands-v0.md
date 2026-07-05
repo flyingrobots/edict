@@ -139,6 +139,10 @@ precondition or guard obligations. This keeps hard rejection and preserved
 obstruction digest-distinct without pretending that an obstructed strand is a
 success-path write.
 
+Intent-level Target IR requirements must not read target step outputs. A guard
+that depends on a prior effect result needs an ordered or step-attached Target
+IR shape before it can be represented honestly.
+
 The v0 reason envelope should use a stable reason kind plus an opaque canonical
 payload value. The outer envelope is closed; the payload policy can evolve only
 through explicit versioned semantics.
@@ -213,7 +217,10 @@ Already verified in the Target IR slice for issue #131:
   `target_ir_requirement_mutations_move_digest`;
 - targets without requirement support reject with a stable target-feature
   failure before artifact emission:
-  `targets_without_obstruction_requirement_support_reject_with_stable_feature_kind`.
+  `targets_without_obstruction_requirement_support_reject_with_stable_feature_kind`;
+- requirements that read earlier target step outputs reject with a stable
+  target-feature failure before artifact emission:
+  `requirement_that_reads_step_output_rejects_with_stable_feature_kind`.
 
 Future implementation work should add RED/GREEN evidence for:
 
