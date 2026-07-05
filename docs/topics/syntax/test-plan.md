@@ -103,8 +103,10 @@ deterministic regression cases in `crates/edict-syntax/tests/`.
   artifacts are implemented by the [core-ir](../core-ir/) shelf. Full
   source-language Core artifact coverage remains planned.
 - `SYNTAX-REQ-013`: first-class obstruction-strand source syntax is implemented
-  by the [obstruction-strands](../obstruction-strands/) shelf. Core lowering and
-  runtime obstruction behavior remain deferred.
+  by the [obstruction-strands](../obstruction-strands/) shelf. Core lowering
+  for the currently lowerable `require` subset is implemented by the
+  compiler-spine shelf; Target IR and runtime obstruction behavior remain
+  deferred.
 - Fixture coverage is not exhaustive across every `EDICT-LANG-*` row in
   `docs/REQUIREMENTS.md`; this shelf covers the landed Phase 1 syntax parser
   only.

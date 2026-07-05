@@ -38,9 +38,10 @@ loading explicit authority-facts files through
 - The lowerable subset is deliberately narrow: local record type declarations,
   one-parameter intents, `profile`, `basis none`, `budget <=`, `where`
   predicates, pure `let` bindings, one annotated effectful `let ... else`
-  shape, `return`, strings, booleans, integers, field access, record literals,
-  equality predicates, and string concatenation. [CSPINE-REQ-006]
-  [CSPINE-REQ-011]
+  shape, lowerable `require ... else` obstruction arms, `return`, strings,
+  booleans, integers, field access, record literals, equality predicates, and
+  string concatenation. [CSPINE-REQ-006] [CSPINE-REQ-011]
+  [CSPINE-REQ-017]
 - Core lowering produces structured in-memory `CoreModule` values with module
   coordinate, imports, types, intents, input constraints, budgets, locals,
   ordered nodes, and result expressions. [CSPINE-REQ-003]
@@ -61,6 +62,12 @@ loading explicit authority-facts files through
   [CSPINE-REQ-012]
 - Duplicate failure keys in an obstruction map reject with
   `DuplicateObstructionFailure` before Core lowering. [CSPINE-REQ-013]
+- Lowerable `require ... else <obstruction>` statements lower to Core
+  terminal require-failure arms, and
+  `require ... else continue obstructed { reason: ... }` lowers to a preserved
+  obstruction require-failure arm. Duplicate preserved-obstruction payload
+  fields reject with `DuplicateObstructionPayloadField` before Core digesting.
+  [CSPINE-REQ-017] [CSPINE-REQ-018]
 - File-backed authority facts can supply the same profile, budget, profile
   write-class, and effect write-class facts consumed by the compiler spine.
   [CSPINE-REQ-010]
@@ -75,7 +82,7 @@ The following are not implemented by this compiler-spine slice:
 
 - target-profile lowering;
 - obstruction exhaustiveness against target/lawpack failure facts;
-- obstruction payload lowering;
+- effect obstruction payload lowering;
 - bare effect-statement lowering;
 - effectful branch-yield lowering;
 - shape/lawpack schema loading;

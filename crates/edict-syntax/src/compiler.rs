@@ -8,12 +8,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ast::{
     BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldDecl, Import, ImportKind, IntentClause,
     IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, RecordEntry,
-    ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
+    RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
 };
 use crate::core_ir::{
     CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
+    CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
+    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
+    CORE_API_VERSION,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -40,6 +41,7 @@ pub enum CompilerErrorKind {
     ExpectedPredicate,
     ProfileEffectMismatch,
     DuplicateObstructionFailure,
+    DuplicateObstructionPayloadField,
 }
 
 /// A compiler-spine failure with stable stage/kind identity.
@@ -426,6 +428,12 @@ struct BodyState {
     obstruction_index: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReasonPayloadMode {
+    PreserveReasonField,
+    SkipReasonField,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct LetStatement<'a> {
     name: &'a str,
@@ -751,11 +759,187 @@ impl<'a> TypeChecker<'a> {
                     self.unsupported_stmt(*span, "effect statement");
                 }
             }
-            Stmt::Require { span, .. }
-            | Stmt::Guarantee { span, .. }
+            Stmt::Require { predicate, arm, .. } => {
+                self.check_require_stmt(predicate, arm, env, state);
+            }
+            Stmt::Guarantee { span, .. }
             | Stmt::Assert { span, .. }
             | Stmt::If { span, .. }
             | Stmt::For { span, .. } => self.unsupported_stmt(*span, "statement"),
+        }
+    }
+
+    fn check_require_stmt(
+        &mut self,
+        predicate: &Expr,
+        arm: &RequireElseArm,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+    ) {
+        let Some(predicate) = self.check_predicate(predicate, env) else {
+            return;
+        };
+        let Some(arm) = self.check_require_else_arm(arm, env) else {
+            return;
+        };
+        state.nodes.push(CoreNode::Require { predicate, arm });
+    }
+
+    fn check_require_else_arm(
+        &mut self,
+        arm: &RequireElseArm,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<CoreRequireFailureArm> {
+        match arm {
+            RequireElseArm::Terminal(target) => {
+                let reason = self.check_terminal_require_reason(target, env)?;
+                Some(CoreRequireFailureArm::Terminal { reason })
+            }
+            RequireElseArm::ContinueObstructed(obstruction) => {
+                let reason_kind =
+                    self.check_reason_kind(&obstruction.reason, env, obstruction.span)?;
+                let payload = self.check_reason_payload(
+                    &obstruction.payload,
+                    env,
+                    ReasonPayloadMode::SkipReasonField,
+                )?;
+                Some(CoreRequireFailureArm::ContinueObstructed {
+                    reason: CoreObstructionReason {
+                        kind: reason_kind,
+                        payload,
+                    },
+                })
+            }
+        }
+    }
+
+    fn check_terminal_require_reason(
+        &mut self,
+        target: &ObstructionTarget,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<CoreObstructionReason> {
+        let payload = match &target.payload {
+            Some(Expr::Record { entries, .. }) => {
+                self.check_reason_payload(entries, env, ReasonPayloadMode::PreserveReasonField)?
+            }
+            Some(_) => {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "terminal require obstruction payloads must be record values",
+                    target.span,
+                ));
+                return None;
+            }
+            None => BTreeMap::new(),
+        };
+        Some(CoreObstructionReason {
+            kind: path_key(&target.coordinate),
+            payload,
+        })
+    }
+
+    fn check_reason_kind(
+        &mut self,
+        reason: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<String> {
+        let Some(kind) = plain_path_coordinate(reason) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "obstruction reason must be a stable coordinate",
+                span,
+            ));
+            return None;
+        };
+        if let Some(root) = plain_path_root(reason) {
+            if env.contains_key(root) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "obstruction reason must be a stable coordinate, not a local expression",
+                    span,
+                ));
+                return None;
+            }
+        }
+        Some(kind)
+    }
+
+    fn check_reason_payload(
+        &mut self,
+        entries: &[RecordEntry],
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        mode: ReasonPayloadMode,
+    ) -> Option<BTreeMap<String, CoreExpr>> {
+        let mut fields = BTreeMap::new();
+        let mut accepted = true;
+        for entry in entries {
+            match entry {
+                RecordEntry::Field { name, .. } | RecordEntry::Shorthand { name, .. }
+                    if mode == ReasonPayloadMode::SkipReasonField && name == "reason" => {}
+                RecordEntry::Field { name, value } => {
+                    if fields.contains_key(name) {
+                        self.errors.push(error(
+                            CompilerStage::TypeCheck,
+                            CompilerErrorKind::DuplicateObstructionPayloadField,
+                            format!("obstruction reason payload repeats field `{name}`"),
+                            expr_span(value),
+                        ));
+                        accepted = false;
+                        continue;
+                    }
+                    if let Some(value) = self.check_expr(value, env) {
+                        fields.insert(name.clone(), value.expr);
+                    } else {
+                        accepted = false;
+                    }
+                }
+                RecordEntry::Shorthand { name, span } => {
+                    if fields.contains_key(name) {
+                        self.errors.push(error(
+                            CompilerStage::TypeCheck,
+                            CompilerErrorKind::DuplicateObstructionPayloadField,
+                            format!("obstruction reason payload repeats field `{name}`"),
+                            *span,
+                        ));
+                        accepted = false;
+                        continue;
+                    }
+                    let Some((local, _)) = env.get(name) else {
+                        self.errors.push(error(
+                            CompilerStage::TypeCheck,
+                            CompilerErrorKind::UnresolvedType,
+                            format!("obstruction reason payload field `{name}` has no binding"),
+                            *span,
+                        ));
+                        accepted = false;
+                        continue;
+                    };
+                    fields.insert(
+                        name.clone(),
+                        CoreExpr::Local {
+                            reference: local.clone(),
+                        },
+                    );
+                }
+                RecordEntry::Spread(value) => {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "obstruction reason payload spreads are outside the Core subset",
+                        expr_span(value),
+                    ));
+                    accepted = false;
+                }
+            }
+        }
+        if accepted {
+            Some(fields)
+        } else {
+            None
         }
     }
 
@@ -1576,6 +1760,29 @@ fn plain_callee_coordinate(expr: &Expr) -> Option<String> {
         Expr::Field { base, field, .. } => {
             Some(format!("{}.{}", plain_callee_coordinate(base)?, field))
         }
+        Expr::Call { .. }
+        | Expr::Int { .. }
+        | Expr::Str { .. }
+        | Expr::Bool { .. }
+        | Expr::Digest { .. }
+        | Expr::Unary { .. }
+        | Expr::Binary { .. }
+        | Expr::Record { .. }
+        | Expr::If { .. }
+        | Expr::IfYield { .. }
+        | Expr::VariantLit { .. }
+        | Expr::Match { .. } => None,
+    }
+}
+
+fn plain_path_coordinate(expr: &Expr) -> Option<String> {
+    plain_callee_coordinate(expr)
+}
+
+fn plain_path_root(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::Ident { name, .. } => Some(name),
+        Expr::Field { base, .. } => plain_path_root(base),
         Expr::Call { .. }
         | Expr::Int { .. }
         | Expr::Str { .. }

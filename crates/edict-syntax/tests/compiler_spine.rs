@@ -7,9 +7,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use edict_syntax::{
-    compile_to_core, load_compiler_context_from_authority_fact_files, lower_core, parse_module,
-    resolve_module, type_check, CompilerContext, CompilerErrorKind, CompilerStage, CoreBudget,
-    CoreExpr, CoreNode, CorePredicate, CoreType, WriteClass,
+    compile_to_core, digest_core_module, load_compiler_context_from_authority_fact_files,
+    lower_core, parse_module, resolve_module, type_check, CompilerContext, CompilerErrorKind,
+    CompilerStage, CoreBudget, CoreExpr, CoreNode, CoreObstructionReason, CorePredicate,
+    CoreRequireFailureArm, CoreType, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -85,6 +86,39 @@ const REVERSED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
         };\n\
       return { id: input.id };\n\
     }";
+const TERMINAL_REQUIRE_OBSTRUCTION: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      require true else jim.EditObstruction.StaleBase;\n\
+      return { id: input.id };\n\
+    }";
+const TERMINAL_REQUIRE_WITH_REASON_PAYLOAD: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      require true else jim.EditObstruction.StaleBase({ reason: input.id });\n\
+      return { id: input.id };\n\
+    }";
+const CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.b@1;\n\
+    type Input = { id: String<max=16>, };\n\
+    type Output = { id: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      require true else continue obstructed {\n\
+        reason: jim.EditObstruction.StaleBase,\n\
+        provided: input.id,\n\
+      };\n\
+      return { id: input.id };\n\
+    }";
 
 fn hello_context() -> CompilerContext {
     CompilerContext::new()
@@ -95,6 +129,19 @@ fn hello_context() -> CompilerContext {
                 max_steps: 64,
                 max_allocated_bytes: 4096,
                 max_output_bytes: 1024,
+            },
+        )
+}
+
+fn pure_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("p.read", "continuum.profile.read-only/v1")
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 8,
+                max_allocated_bytes: 1024,
+                max_output_bytes: 256,
             },
         )
 }
@@ -561,6 +608,190 @@ fn obstruction_binder_ids_are_stable_by_failure_key() {
 }
 
 #[test]
+fn terminal_require_obstruction_lowers_to_core_failure_arm() {
+    let core = compile_pure_source(TERMINAL_REQUIRE_OBSTRUCTION);
+    let CoreNode::Require { predicate, arm } = only_require_node(&core) else {
+        panic!("terminal require lowers to Core require node");
+    };
+
+    assert_eq!(predicate, &CorePredicate::True);
+    let CoreRequireFailureArm::Terminal { reason } = arm else {
+        panic!("terminal require obstruction remains terminal in Core");
+    };
+    assert_reason(reason, "jim.EditObstruction.StaleBase", []);
+}
+
+#[test]
+fn terminal_require_preserves_reason_payload_field() {
+    let core = compile_pure_source(TERMINAL_REQUIRE_WITH_REASON_PAYLOAD);
+    let CoreNode::Require { arm, .. } = only_require_node(&core) else {
+        panic!("terminal require lowers to Core require node");
+    };
+    let CoreRequireFailureArm::Terminal { reason } = arm else {
+        panic!("terminal require obstruction remains terminal in Core");
+    };
+
+    assert_reason(reason, "jim.EditObstruction.StaleBase", ["reason"]);
+    assert!(matches!(
+        &reason.payload["reason"],
+        CoreExpr::Field { field, .. } if field == "id"
+    ));
+}
+
+#[test]
+fn continue_obstructed_require_lowers_to_core_failure_arm() {
+    let core = compile_pure_source(CONTINUE_OBSTRUCTED_REQUIRE);
+    let CoreNode::Require { predicate, arm } = only_require_node(&core) else {
+        panic!("continue obstructed require lowers to Core require node");
+    };
+
+    assert_eq!(predicate, &CorePredicate::True);
+    let CoreRequireFailureArm::ContinueObstructed { reason } = arm else {
+        panic!("continue obstructed source remains preserved in Core");
+    };
+    assert_reason(reason, "jim.EditObstruction.StaleBase", ["provided"]);
+    assert!(matches!(
+        &reason.payload["provided"],
+        CoreExpr::Field { field, .. } if field == "id"
+    ));
+}
+
+#[test]
+fn assert_reason_matches_payload_key_sets_without_order_sensitivity() {
+    let source = replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id,",
+        "provided: input.id,\nechoed: input.id,",
+    );
+    let core = compile_pure_source(&source);
+    let CoreNode::Require { arm, .. } = only_require_node(&core) else {
+        panic!("continue obstructed require lowers to Core require node");
+    };
+    let CoreRequireFailureArm::ContinueObstructed { reason } = arm else {
+        panic!("continue obstructed source remains preserved in Core");
+    };
+
+    assert_reason(
+        reason,
+        "jim.EditObstruction.StaleBase",
+        ["provided", "echoed"],
+    );
+}
+
+#[test]
+fn terminal_and_continue_obstructed_require_arms_are_core_distinct() {
+    let terminal = compile_pure_source(TERMINAL_REQUIRE_OBSTRUCTION);
+    let continued = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id,\n",
+        "",
+    ));
+
+    assert_ne!(terminal, continued);
+    assert_ne!(
+        digest_core_module(&terminal).expect("terminal Core digests"),
+        digest_core_module(&continued).expect("continued Core digests")
+    );
+}
+
+#[test]
+fn obstruction_reason_mutations_move_core_digest() {
+    let baseline = compile_pure_source(CONTINUE_OBSTRUCTED_REQUIRE);
+    let changed_reason = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "jim.EditObstruction.StaleBase",
+        "jim.EditObstruction.Other",
+    ));
+    let changed_payload = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id",
+        "provided: \"changed\"",
+    ));
+    let reordered_payload = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "reason: jim.EditObstruction.StaleBase,\nprovided: input.id,\n",
+        "provided: input.id,\nreason: jim.EditObstruction.StaleBase,\n",
+    ));
+    let reformatted = compile_pure_source(&replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "require true else continue obstructed",
+        "require    true\n        else continue obstructed",
+    ));
+
+    let baseline_digest = digest_core_module(&baseline).expect("baseline Core digests");
+    assert_ne!(
+        baseline_digest,
+        digest_core_module(&changed_reason).expect("reason mutation digests")
+    );
+    assert_ne!(
+        baseline_digest,
+        digest_core_module(&changed_payload).expect("payload mutation digests")
+    );
+    assert_eq!(
+        baseline_digest,
+        digest_core_module(&reordered_payload).expect("payload ordering digests")
+    );
+    assert_eq!(
+        baseline_digest,
+        digest_core_module(&reformatted).expect("formatting variant digests")
+    );
+}
+
+#[test]
+fn duplicate_obstruction_reason_payload_fields_reject_before_core_digest() {
+    let source = replace_required(
+        CONTINUE_OBSTRUCTED_REQUIRE,
+        "provided: input.id,",
+        "provided: input.id,\n        provided: \"duplicate\",",
+    );
+    let module = parse_module(&source).expect("duplicate payload source parses");
+    let errors =
+        compile_to_core(&module, &pure_context()).expect_err("duplicate payload keys reject");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|err| err.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::DuplicateObstructionPayloadField]
+    );
+}
+
+#[test]
+fn continue_obstructed_reason_rejects_local_expression() {
+    let source = "package a.b@1;\n\
+        type Input = { id: String<max=16>, };\n\
+        type Output = { id: String<max=16>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          require true else continue obstructed {\n\
+            reason: input.id,\n\
+            provided: input.id,\n\
+          };\n\
+          return { id: input.id };\n\
+        }";
+    let module = parse_module(source).expect("local reason source parses");
+    let errors =
+        compile_to_core(&module, &pure_context()).expect_err("local reason rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|err| err.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|err| err.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::UnsupportedSourceShape]
+    );
+}
+
+#[test]
 fn initial_core_lowering_makes_no_canonical_or_target_claim() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
@@ -586,6 +817,47 @@ fn compile_effectful_source(source: &str) -> edict_syntax::CoreModule {
             .expect("authority facts load");
     let module = parse_module(source).expect("effectful source parses");
     compile_to_core(&module, &context).expect("effectful source compiles")
+}
+
+fn compile_pure_source(source: &str) -> edict_syntax::CoreModule {
+    let module = parse_module(source).expect("pure source parses");
+    compile_to_core(&module, &pure_context()).expect("pure source compiles to Core")
+}
+
+fn only_require_node(core: &edict_syntax::CoreModule) -> &CoreNode {
+    let intent = core.intents.get("t").expect("compiled intent");
+    assert_eq!(intent.body.nodes.len(), 1);
+    &intent.body.nodes[0]
+}
+
+fn assert_reason<'a>(
+    reason: &'a CoreObstructionReason,
+    kind: &str,
+    payload_keys: impl IntoIterator<Item = &'a str>,
+) {
+    assert_eq!(reason.kind, kind);
+    let mut actual = reason
+        .payload
+        .keys()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let mut expected = payload_keys.into_iter().collect::<Vec<_>>();
+    actual.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(actual, expected);
+}
+
+fn replace_required(source: &str, needle: &str, replacement: &str) -> String {
+    assert!(
+        source.contains(needle),
+        "fixture mutation target was not present: {needle:?}"
+    );
+    let mutated = source.replace(needle, replacement);
+    assert_ne!(
+        mutated, source,
+        "fixture mutation did not change source for target: {needle:?}"
+    );
+    mutated
 }
 
 fn temp_case_dir(name: &str) -> PathBuf {

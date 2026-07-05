@@ -408,6 +408,12 @@ fn lower_node(
             node_index: Some(node_index),
             detail: "let".to_owned(),
         }),
+        CoreNode::Require { .. } => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "require".to_owned(),
+        }),
     }
 }
 

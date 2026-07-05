@@ -12,6 +12,11 @@ Each implementation PR may add only the artifact for the layer it owns. A row in
 this table identifies the first layer allowed to add that artifact; it does not
 claim that every eligible artifact already exists.
 
+PR #129 adds Core lowering for the currently lowerable `require` subset. This
+stale-basis source remains source-only until the compiler spine supports
+non-`basis none` intent bases and the `jim.basisFresh(...)` predicate form, so
+this directory still intentionally has no `core.review` artifact.
+
 | Artifact | First Eligible Layer | Authority |
 | --- | --- | --- |
 | `source.edict` | PR 1 | Edict parser |

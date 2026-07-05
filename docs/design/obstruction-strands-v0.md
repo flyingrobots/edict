@@ -162,12 +162,29 @@ Already verified in PR #128:
 - parser rejection when `continue obstructed { ... }` appears outside a
   require-else arm: `continue_obstructed_is_contextual_to_require_else`.
 
+Already verified in the Core slice for issue #129:
+
+- terminal `require ... else <obstruction>` lowers to
+  `CoreRequireFailureArm::Terminal`;
+  `terminal_require_obstruction_lowers_to_core_failure_arm`;
+- `require ... else continue obstructed { ... }` lowers to
+  `CoreRequireFailureArm::ContinueObstructed`;
+  `continue_obstructed_require_lowers_to_core_failure_arm`;
+- terminal and preserved-obstruction require arms remain Core-distinct and
+  Core-digest-distinct:
+  `terminal_and_continue_obstructed_require_arms_are_core_distinct`;
+- reason kind and payload value changes move the Core digest, while payload
+  field order and non-semantic formatting do not:
+  `obstruction_reason_mutations_move_core_digest`;
+- duplicate reason payload fields reject before Core digesting:
+  `duplicate_obstruction_reason_payload_fields_reject_before_core_digest`.
+
 Future implementation work should add RED/GREEN evidence for:
 
-- Core and Target IR fields that distinguish terminal obstruction from preserved
+- Target IR fields that distinguish terminal obstruction from preserved
   obstruction;
-- digest or mutation evidence if the new disposition becomes part of canonical
-  Core or Target IR bytes;
+- digest or mutation evidence when the new disposition becomes part of
+  canonical Target IR bytes;
 - receipt fixtures proving success, terminal obstruction, and preserved
   repairable obstruction are distinct runtime outcomes.
 

@@ -13,6 +13,7 @@ In scope:
 - file-backed authority facts for the first compiler context fact set;
 - typed representation boundary distinct from source AST;
 - source-to-Core lowering for the initial pure local-record subset;
+- source-to-Core lowering for lowerable `require ... else` obstruction arms;
 - structured compiler error identity.
 
 Out of scope:
@@ -43,6 +44,8 @@ Out of scope:
 | CSPINE-REQ-014 | implemented | Chained effect-call shapes reject instead of lowering as plain one-argument effects. | issue #62 |
 | CSPINE-REQ-015 | implemented | Typed effect-call shapes reject instead of dropping unsupported type arguments. | issue #62 |
 | CSPINE-REQ-016 | implemented | Obstruction binder identities are stable under source obstruction-arm reordering. | issue #62 |
+| CSPINE-REQ-017 | implemented | The compiler spine lowers terminal and preserved-obstruction `require ... else` arms into distinct Core require-failure arms. | issue #129 |
+| CSPINE-REQ-018 | implemented | Duplicate preserved-obstruction payload fields reject with a stable compiler error before Core digesting. | issue #129 |
 
 ## Fixtures
 
@@ -69,6 +72,8 @@ Out of scope:
 | CSPINE-TP-013 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-012, CSPINE-REQ-014 | A chained effect-call RHS rejects in `CompilerStage::TypeCheck` with `UnsupportedSourceShape`. | chained_effect_calls_reject_before_core_lowering | - | Prevents the lowerer from discarding the inner call shape. |
 | CSPINE-TP-014 | implemented | Boundary guard | CSPINE-REQ-007, CSPINE-REQ-012, CSPINE-REQ-015 | A typed effect-call RHS rejects in `CompilerStage::TypeCheck` with `UnsupportedSourceShape`. | typed_effect_calls_reject_before_core_lowering | - | Prevents unsupported effect type arguments from disappearing during Core lowering. |
 | CSPINE-TP-015 | implemented | Determinism | CSPINE-REQ-011, CSPINE-REQ-016 | Equivalent obstruction maps with the same arms in different source orders lower to identical Core. | obstruction_binder_ids_are_stable_by_failure_key | - | Ensures binder identities are derived after failure-key normalization. |
+| CSPINE-TP-016 | implemented | Golden path | CSPINE-REQ-003, CSPINE-REQ-004, CSPINE-REQ-017 | Terminal `require ... else <obstruction>` and `require ... else continue obstructed { ... }` source shapes lower to distinct Core require-failure arms. | terminal_require_obstruction_lowers_to_core_failure_arm, continue_obstructed_require_lowers_to_core_failure_arm, terminal_and_continue_obstructed_require_arms_are_core_distinct | - | Core evidence only; no Target IR or runtime claim. |
+| CSPINE-TP-017 | implemented | Error handling | CSPINE-REQ-007, CSPINE-REQ-018 | Duplicate preserved-obstruction payload fields reject in `CompilerStage::TypeCheck` with `DuplicateObstructionPayloadField`. | duplicate_obstruction_reason_payload_fields_reject_before_core_digest | - | Prevents silent payload overwrite before canonical Core digesting. |
 
 ## Determinism Obligations
 
@@ -85,5 +90,5 @@ Out of scope:
 - Full target/lawpack/shape artifact loading beyond authority-facts documents
   belongs to later lowerability and lawpack work.
 - Effectful branch-yield, bare effect statements, loops, matches, variants, and
-  obstruction payloads are present in the source AST and Core schema but outside
-  the first effectful lowerable subset.
+  effect obstruction payloads are present in the source AST and Core schema but
+  outside the first effectful lowerable subset.
