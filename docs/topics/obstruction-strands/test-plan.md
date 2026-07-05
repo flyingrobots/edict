@@ -40,12 +40,11 @@ Out of scope:
 | Fixture | Purpose | Oracle |
 | --- | --- | --- |
 | docs/topics/obstruction-strands/README.md | Current boundary shelf. | Human review confirms HEAD claims parser and Core support only for the currently lowerable `require` obstruction subset. |
-| docs/design/obstruction-strands-v0.md | Future design note. | Human review confirms planned syntax/lowering material is outside the topic README contract. |
+| docs/design/obstruction-strands-v0.md | Future design note and cross-project taxonomy. | Human review confirms planned syntax/lowering material is outside the topic README contract, separates not-admitted scheduler counterfactuals, admitted obstructed strands, and hard rejections, and does not claim runtime/editor behavior in Edict. |
 | docs/topics/syntax/test-plan.md | Syntax ledger for future parser coverage. | `SYNTAX-REQ-013` and `SYNTAX-TP-023` preserve the planned parser guard. |
 | docs/topics/target-ir/README.md | Target IR current-boundary note. | Target IR explicitly claims Echo requirement disposition support while leaving Echo receipts and runtime execution deferred. |
 | fixtures/obstruction-strands/v0/stale-basis/README.md | Golden corridor manifest. | Human review confirms future artifacts appear only after the owning layer lands. |
 | fixtures/obstruction-strands/v0/stale-basis/source.edict | Stale-basis source corridor fixture. | Parsed by `stale_basis_obstruction_strand_fixture_parses`. |
-| docs/design/obstruction-strands-v0.md | Cross-project obstruction taxonomy. | Human review confirms the taxonomy separates not-admitted scheduler counterfactuals, admitted obstructed strands, and hard rejections, and does not claim runtime/editor behavior in Edict. |
 
 ## Test Cases
 
