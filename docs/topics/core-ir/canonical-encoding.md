@@ -53,8 +53,9 @@ For Core, `core_module_value` projects a `CoreModule` into a map containing:
 Nested Core values follow the same rule: each semantic variant becomes an
 explicit map with stable text keys and a `kind` field where the variant needs one.
 For example, Core effect nodes encode their binding, effect coordinate, input
-expression, and obstruction map; Core local references encode compiler-owned
-`id`, `alphaName`, and `type`.
+expression, and obstruction map; Core require nodes encode their predicate plus
+an explicit terminal or `continueObstructed` failure disposition; Core local
+references encode compiler-owned `id`, `alphaName`, and `type`.
 
 ## CBOR Subset
 
@@ -87,14 +88,15 @@ The canonicalizer preserves order only where order is semantic:
 It sorts or canonicalizes collections where order is not semantic:
 
 - Core maps such as type maps, record fields, variant cases, record expression
-  fields, and obstruction maps are encoded as canonical maps.
+  fields, require reason payloads, and effect obstruction maps are encoded as
+  canonical maps.
 - Required Core capabilities are deduplicated and sorted as a text set.
 - Input constraints are sorted by their canonical encoded value.
 - Imports are sorted by their canonical encoded value.
 
 This is why equivalent construction order does not move Core canonical bytes,
-while semantic mutations such as a changed local identity, effect coordinate, or
-Core expression do.
+while semantic mutations such as a changed local identity, require-failure
+disposition, effect coordinate, or Core expression do.
 
 ## Digest Values
 

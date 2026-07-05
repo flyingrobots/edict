@@ -57,8 +57,9 @@ cargo xtask verify
   reference, and deferred manifest-validation boundary.
 - [Lowerability](./lowerability/README.md): typed v1 lowering requirements,
   target-profile facts, and direct-only support classification.
-- [Obstruction Strands](./obstruction-strands/README.md): current terminal
-  obstruction boundary and planned verification ledger for future preservation.
+- [Obstruction Strands](./obstruction-strands/README.md): current terminal and
+  preserved-obstruction source/Core boundary plus planned Target IR/runtime
+  verification ledger.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract, release runbook, and verification matrix.
 - [Review Process](./review-process/README.md): pull request review-bot fallback

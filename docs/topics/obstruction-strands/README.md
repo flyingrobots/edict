@@ -1,19 +1,20 @@
 # Obstruction Strands
 
 Status: current HEAD boundary. First-class obstruction-strand source syntax is
-implemented for parsing only.
+implemented through Core lowering for the currently lowerable `require` subset.
 
 This topic records the current Edict boundary for obstruction-strand planning.
 The parser currently accepts `require ... else <obstruction>` as a source
 statement carrying a predicate and terminal typed obstruction target. It also
 accepts `require ... else continue obstructed { reason: ... }` as a distinct
-source AST arm reserved for future obstruction-strand preservation semantics.
-Compiler lowering, Target IR, participant receipts, and runtime execution for
-`require` obstructions are not implemented in HEAD.
+source AST arm that lowers into a distinct Core require-failure arm when the
+surrounding source is inside the current compiler-spine subset. Target IR,
+participant receipts, and runtime execution for preserved obstruction strands
+are not implemented in HEAD.
 
-No Core model, Target IR disposition, participant receipt, or runtime behavior
-exists yet for preserving a blocked attempt as a repairable obstruction strand.
-Future design work is tracked in issue #116 and the non-topic design note
+No Target IR disposition, participant receipt, or runtime behavior exists yet
+for preserving a blocked attempt as a repairable obstruction strand. Future
+design work is tracked in issue #116 and the non-topic design note
 [`docs/design/obstruction-strands-v0.md`](../../design/obstruction-strands-v0.md).
 That document is planning material, not a topic README contract for landed
 behavior.
@@ -47,6 +48,21 @@ Stmt::Require {
 }
 ```
 
+Current lowerable Core shape:
+
+```text
+CoreNode::Require {
+  predicate,
+  arm: CoreRequireFailureArm::Terminal { reason }
+     | CoreRequireFailureArm::ContinueObstructed { reason },
+}
+```
+
+The Core reason envelope is closed around a stable `reason.kind` coordinate and
+a canonical map of opaque payload fields. The `reason` field in source selects
+the reason kind; the other `continue obstructed { ... }` fields become the
+payload. Duplicate payload fields reject before Core digesting.
+
 The `continue obstructed { ... }` form is contextual to a `require ... else`
 arm. It is not an expression, and a helper-shaped obstruction constructor such
 as `continueInObstructedStrand({ reason: ... })` remains terminal obstruction
@@ -57,8 +73,12 @@ syntax rather than hidden control flow.
 - Terminal obstruction and resumable obstruction are different planned semantics.
 - Current `else <obstruction>` parses as an obstruction constructor, not as a
   hidden continuation or recovery workflow.
-- Current `else continue obstructed { reason: ... }` parses only as source AST.
-- Current compiler lowering rejects `Stmt::Require` before Core, Target IR,
+- Current `else continue obstructed { reason: ... }` parses as source AST and
+  lowers to a distinct Core require-failure arm for lowerable require
+  predicates.
+- Current Core lowering distinguishes terminal require obstruction from
+  preserved obstruction continuation in the canonical Core preimage.
+- Current Target IR lowering rejects Core require nodes before Target IR,
   receipt, or runtime behavior exists.
 - A helper-like obstruction constructor such as
   `continueInObstructedStrand(...)` must not acquire hidden control-flow
