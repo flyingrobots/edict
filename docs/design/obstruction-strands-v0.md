@@ -106,9 +106,77 @@ obstructed strand = admitted/evaluated and continued into obstruction outcome
 hard rejection    = artifact, input, profile, validation, or runtime refused
 ```
 
-This note defines only the minimal taxonomy needed to prevent term collapse.
-The broader cross-project taxonomy should be formalized after Echo receipt
-artifacts exist.
+This note now formalizes the broader cross-project taxonomy after the source,
+Core, Target IR, and Echo receipt-bridge slices have landed. The taxonomy is a
+language and evidence boundary. It does not implement runtime scheduling,
+counterfactual exploration, editor projection, Continuum settlement, or XYPH
+settlement.
+
+## Outcome Taxonomy
+
+The obstruction-strand corridor uses three outcome families. They must not be
+collapsed into a generic failure bucket.
+
+### Not-Admitted Scheduler Counterfactual
+
+A not-admitted scheduler counterfactual is a candidate that was available to a
+scheduler or runtime-selection surface but did not run. The expected early
+reason is a footprint conflict or scheduler choice, but the important property
+is prior to execution:
+
+```text
+not admitted = did not run
+```
+
+The scheduler/runtime authority owns whether a candidate was considered,
+selected, or left unselected. Edict source syntax, Core lowering, and Target IR
+artifact emission do not create not-admitted counterfactuals. Graft and jedit
+may display such records only after an authority emits them.
+
+### Admitted Obstructed Strand
+
+An admitted obstructed strand is an accepted/evaluated attempt whose guard or
+runtime condition continued into an obstruction outcome instead of producing a
+success-path write. In the first corridor, the Edict source/Core/Target IR
+contract makes the obstruction disposition explicit, and Echo can emit an
+in-memory receipt that binds the Target IR digest.
+
+```text
+obstructed strand = ran into an obstruction outcome
+```
+
+The obstruction record is support for a blocked or repairable attempt. It is
+not a success, not a hidden retry, and not a scheduler counterfactual. The
+receipt authority owns the fact that an accepted artifact was evaluated and
+obstructed.
+
+### Hard Rejection
+
+A hard rejection is a refusal before the candidate can be treated as an admitted
+execution attempt. Examples include malformed artifacts, unsupported target
+profiles, invalid digests, validation failures, unsupported runtime features,
+and runtime refusal before execution.
+
+```text
+hard rejection = refused
+```
+
+Hard rejection is not an obstructed strand, even when both mention the same
+domain reason. It is also not a not-admitted scheduler counterfactual, because
+the candidate never reached scheduler selection as a valid execution candidate.
+
+### Authority Split
+
+| Term | Short definition | Owning authority |
+| --- | --- | --- |
+| Not-admitted scheduler counterfactual | Candidate was considered or available but left unselected before execution. | Scheduler/runtime authority |
+| Admitted obstructed strand | Accepted/evaluated attempt continued into obstruction outcome. | Runtime receipt authority, grounded in Edict-produced artifact semantics |
+| Hard rejection | Artifact, input, profile, validation, or runtime refused before admitted execution. | Validator or target/runtime acceptor |
+
+The source, Core, Target IR, receipt, projection, and editor layers may carry
+evidence for these terms, but they must not claim another layer's authority.
+Target IR emission is not Echo acceptance. Echo acceptance is not execution.
+Execution receipt display is not semantic interpretation by the editor.
 
 The future form must lower differently from terminal obstruction. Target IR
 needs an explicit disposition so Echo/Jim can record an obstruction witness,
@@ -224,6 +292,16 @@ Already verified in the Target IR slice for issue #131:
   step output:
   `requirement_after_target_step_rejects_with_stable_feature_kind` and
   `requirement_that_reads_step_output_rejects_with_stable_feature_kind`.
+
+Already verified in the Echo receipt bridge for flyingrobots/echo#641:
+
+- Echo accepts the Edict Echo Target IR obstruction fixture shape as an
+  acceptance phase separate from execution;
+- invalid domain, digest, requirement-count, requirement-disposition, and
+  requirement-predicate shapes reject with stable acceptance failures before an
+  execution receipt exists;
+- stale-basis execution produces an obstructed attempt receipt that binds the
+  Target IR digest, while a fresh basis produces a committed-success receipt.
 
 Future implementation work should add RED/GREEN evidence for:
 

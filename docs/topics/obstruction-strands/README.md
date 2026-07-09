@@ -14,9 +14,10 @@ now preserves that arm as an explicit requirement with a
 `continueObstructed` failure disposition. Participant receipts and runtime
 execution for preserved obstruction strands are not implemented in HEAD.
 
-No participant receipt or runtime behavior exists yet for preserving a blocked
-attempt as a repairable obstruction strand. Future design work is tracked in
-issue #116 and the non-topic design note
+No Edict-owned participant receipt or runtime behavior exists for preserving a
+blocked attempt as a repairable obstruction strand. Echo receipt bridge work is
+downstream runtime evidence, not an Edict runtime claim. Future design work is
+tracked in issue #116 and the non-topic design note
 [`docs/design/obstruction-strands-v0.md`](../../design/obstruction-strands-v0.md).
 That document is planning material, not a topic README contract for landed
 behavior.
@@ -99,6 +100,9 @@ syntax rather than hidden control flow.
   from preserved obstruction continuation in the canonical Target IR preimage.
 - Current git-warp Target IR lowering rejects Core require nodes with a stable
   unsupported-feature failure before artifact emission.
+- Cross-project taxonomy now distinguishes not-admitted scheduler
+  counterfactuals, admitted obstructed strands, and hard rejections without
+  making Edict, Graft, or jedit semantic authorities for Echo runtime outcomes.
 - A helper-like obstruction constructor such as
   `continueInObstructedStrand(...)` must not acquire hidden control-flow
   semantics without a first-class language/runtime contract.
