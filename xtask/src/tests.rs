@@ -171,6 +171,43 @@ fn contract_graph_accepts_policy_rows_without_rust_evidence() {
 }
 
 #[test]
+fn obstruction_taxonomy_boundary_uses_layer_authority_terms() {
+    let root = repo_root().expect("repo root");
+    let design = fs::read_to_string(root.join("docs/design/obstruction-strands-v0.md"))
+        .expect("obstruction strand design note");
+    let test_plan = fs::read_to_string(root.join("docs/topics/obstruction-strands/test-plan.md"))
+        .expect("obstruction strand test plan");
+
+    assert!(
+        design.contains(
+            "| Not-admitted scheduler counterfactual | Candidate was considered or available but left unselected before execution. | Scheduler/runtime authority |",
+        ),
+        "not-admitted taxonomy must describe an unselected candidate, not a selected-but-unrun candidate"
+    );
+    assert!(
+        design.contains(
+            "| Admitted obstructed strand | Accepted/evaluated attempt continued into obstruction outcome. | Runtime receipt authority, grounded in Edict-produced artifact semantics |",
+        ),
+        "admitted obstruction taxonomy must remain owned by runtime receipt authority"
+    );
+    assert!(
+        design.contains(
+            "| Hard rejection | Artifact, input, profile, validation, or runtime refused before admitted execution. | Validator or target/runtime acceptor |",
+        ),
+        "hard rejection taxonomy must remain distinct from scheduler counterfactuals"
+    );
+    assert!(
+        test_plan.contains("| OBSTRAND-REQ-009 | implemented |"),
+        "taxonomy boundary requirement must use implemented contract evidence"
+    );
+    assert!(
+        !test_plan.contains("| OBSTRAND-REQ-009 | policy |")
+            && !test_plan.contains("| OBSTRAND-TP-012 | policy |"),
+        "taxonomy boundary rows must not use policy status"
+    );
+}
+
+#[test]
 fn contract_graph_rejects_unknown_requirement_status() {
     let root = temp_root("unknown-requirement-status");
     let topic = root.join("docs/topics/example");
