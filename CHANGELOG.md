@@ -8,6 +8,14 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added `EDICT.md`, a comprehensive cited introduction and deep-dive report:
+  hello-world walkthrough, feature deep dive, plain-English walkthrough with
+  glossary and diagrams, unique technical details, roadmap discussion, and a
+  claims-to-citations appendix pinned to commit `56f82ec`. It is a
+  reader-facing report, not a normative spec or topic shelf.
+
 ### Changed
 
 - The parser now accepts first-class obstruction-strand source syntax:
