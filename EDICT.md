@@ -3,6 +3,8 @@
 > A deep-dive introduction to the Edict language, compiler, and artifact stack — what it is, how it works, what makes it unusual, and where it is going.
 >
 > Evidence basis: repository `flyingrobots/edict` at commit `56f82ec14a3741f7c0d97264da76148e18cef1c3` (2026-07-09). Claims are cited inline as `[claim:<id>, confidence:<0..1>]` and mapped to source citations in [Appendix A](#appendix-a-claims-and-citations). Source citations use the format `<filepath>#<line-number>@<git-sha>`.
+>
+> Theory basis (added in revision 2): the AION Foundations paper summaries, Observer Geometry summaries, and Continuum API notes in the `agy-readings` corpus at commit `25ff542`, cited with the prefix `agy:` (e.g. `agy:paper-7-summary.md#29@25ff542`). Per that corpus's own handoff notes, these are orientation summaries — "never the source of truth" — so theory claims cite them at correspondingly calibrated confidence; load-bearing definitions were cross-checked across at least two independent summary documents before use.
 
 ---
 
@@ -16,6 +18,7 @@
 6. [Unique Aspects and Cool Technical Details](#6-unique-aspects-and-cool-technical-details)
 7. [The Roadmap, and What the Future May Hold](#7-the-roadmap-and-what-the-future-may-hold)
 8. [Appendix A: Claims and Citations](#appendix-a-claims-and-citations)
+9. [Appendix B: Personal Reflections, Reactions, and Brainstorms](#appendix-b-personal-reflections-reactions-and-brainstorms)
 
 ---
 
@@ -97,7 +100,7 @@ Edict describes itself as "a restricted deterministic source language for lawful
 | *restricted* | Not Turing-complete by design: no unbounded loops, no recursion, no dynamic dispatch surprises. Every intent's cost can be computed and capped statically [claim:C18, confidence:0.95]. |
 | *deterministic* | No wall clock, no randomness, no ambient environment, no I/O, no locale, no nondeterministic iteration. Byte-identical inputs produce byte-identical outputs [claim:C19, confidence:0.9]. |
 | *lawful* | Every effect is imported from a digest-locked **lawpack** (domain rules) or **target profile** (runtime capabilities). There are no ambient effects [claim:C20, confidence:0.9]. |
-| *optics over witnessed causal history* | An intent is modeled as an *optic* — a focused, bounded aperture placed over a slice of causal history, with a declared basis (where it reads from) and a declared footprint (what it may touch). This vocabulary is inherited from the Observer Geometry theory work in the sibling AION project [claim:C21, confidence:0.85]. |
+| *optics over witnessed causal history* | An intent is modeled as a **WARP optic** — in the theory, a five-part control structure `Ψ = (Ω observer plan, χ aperture, ρ claim-lowering surface, Π admissibility law, Λ retention contract)` that performs one act: *slice* a bounded window of causal history, *lower* the claims inside it under a law, *witness* the result, and *retain* a compact hash-sealed boundary shell (a *hologram*). An Edict intent is a source-language encoding of exactly that tuple: aperture/footprint (χ over the slice), profile and lawpack law (Π), budget-bounded observer (Ω), and the contract bundle as the retained shell (Λ's output) [claim:T01, confidence:0.85]. The vocabulary comes from AION Paper VII and the Observer Geometry series [claim:C21, confidence:0.95]. |
 
 ### 3.2 The pipeline at a glance
 
@@ -295,8 +298,14 @@ The repository's process is unusually explicit. Release gates require that "No c
 | --- | --- | --- |
 | **FIDLAR** | "Footprints Ignored; Developer Lies About Risk" — the gap between what a function's name promises and what its process can actually do | The founding villain of the project; also an invariant (I-007 "FIDLAR Rejection") [claim:C02, confidence:1.0] |
 | **Intent** | Edict's unit of execution: an operation declaring bounded inputs/outputs, basis, budget, footprint, profile, and failure mapping | Replaces "function"; modeled as an *optic* [claim:C03, confidence:1.0] |
-| **Aperture** | The bounded set of state an intent may read or write | Reaching outside it is a compile-time rejection [claim:C76, confidence:0.9] |
-| **Basis** | The causal-history anchor an intent reads from | Must be declared, even as `basis none`; evaluated in the pure pre-body environment [claim:C12, confidence:0.9] |
+| **Aperture** | The bounded set of state an intent may read or write; in Observer Geometry terms, the *projection* — what history detail is visible to the observer | Reaching outside it is a compile-time rejection [claim:C76, confidence:0.9]. Theory keeps aperture (what is visible) orthogonal to basis (how it is expressed / where it is judged) [claim:T02, confidence:0.8] |
+| **Basis** | The causal-history anchor an intent reads from — theory calls this the *bounded basis* an admission is "judged against under explicit law," resolved to a coordinate in causal history | Must be declared, even as `basis none`; evaluated in the pure pre-body environment [claim:C12, confidence:0.9]. In the Continuum API this is the Coordinate, with determinism laws applying to the *resolved* coordinate receipt, not the request [claim:T03, confidence:0.8] |
+| **Footprint** | The read/write/delete contact set of an operation — descended from the delete/use sets of double-pushout graph rewriting, where footprint disjointness is the formal test for safe concurrency | "Delete–use interference is the only sin"; footprint honesty (computed ≤ declared) is Edict invariant I-006 [claim:T04, confidence:0.85] |
+| **WARP graph** | The substrate state object: a recursively nested graph where every node and edge can carry another WARP graph, bottoming out at atoms | "Graphs all the way down — but with a floor." Paper VII then demotes it: the graph is a coordinate chart over history, not the territory [claim:T05, confidence:0.85] |
+| **Hologram / boundary shell** | A witness-bearing boundary artifact sufficient to verify, replay, transport, or selectively reveal a slice of history without exposing its interior | The contract bundle is Edict's hologram; its direct theoretical ancestor is the content-addressed Boundary Transition Record (BTR) [claim:T06, confidence:0.85] |
+| **Support ledger** | A four-compartment evidence ledger tracking how support for a claim travels: *carried*, *declared-lost*, *blocked*, *refuting* | Distinct from the footprint (resource contact) — this tracks evidence and trust, not reads/writes [claim:T07, confidence:0.85] |
+| **Witness debt** | The gap between what a system *claims* (emitted report) and what it can *prove* (justified status) | The theory defines hallucination structurally as overreporting beyond carried support [claim:T08, confidence:0.85] |
+| **Four-outcome law** | Lowering a slice of claims under an admissibility law returns one of four honest outcomes: `Derived`, `Plural`, `Conflict`, `Obstruction` — plurality and conflict are lawful results, not errors | From Continuum (Paper VIII); explains the README's "accept · reject · obstruct · pluralize" admission phrasing [claim:T09, confidence:0.85] |
 | **Lawpack** | A digest-locked, authority-free package of pure helpers, typed constants, semantic effect signatures, obstructions, and target adapters | "Domain law" — imported with `use lawpack ... digest "sha256:..."` [claim:C77, confidence:0.9] |
 | **Target profile** | A digest-locked description of a runtime: its intrinsics, write classes, cost/footprint algebras, verifier, sandbox | Owns the storage model so Core doesn't have to [claim:C49, confidence:0.95] |
 | **Core IR** | The runtime-neutral compiled form (`edict.core/v1`) — no storage nouns, no spans, alpha-normalized names | The thing that gets hashed [claim:C44, confidence:0.95] |
@@ -784,6 +793,62 @@ sequenceDiagram
 
 </details>
 
+#### 5.8 Level 7 — The theory beneath it all
+
+Everything above has a formal ancestry: the eight-paper **AION Foundations** series (WARP graphs), the three-paper **Observer Geometry** series, and the **Continuum** protocol work. You do not need the theory to *use* Edict, but nearly every load-bearing Edict noun turns out to be a precise term of art rather than a metaphor. The core inversion: **history (the causal graph of transformations) is the primary, immutable artifact, and current "state" is a materialized view projected from it** [claim:T10, confidence:0.85]. Paper VII compresses the whole architecture into one repeated act — *"Slice. Lower. Witness. Retain."* — and then delivers the series' most striking demotion: *the graph is a coordinate chart over causal history; there is no privileged, substrate-owned graph.* What is real is witnessed causal history; "the graph," "the state," "the database" are readings an observer emits over it [claim:T05, confidence:0.85].
+
+```mermaid
+flowchart LR
+    subgraph Theory["AION / Observer Geometry / Continuum"]
+        P2["Paper II<br/>ticks, DPO footprints,<br/>confluence, receipts"]
+        P3["Paper III<br/>holography, patches,<br/>BTRs, slicing"]
+        P7["Paper VII<br/>WARP optic 5-tuple,<br/>commitment / folding / revelation"]
+        P8["Paper VIII / Continuum<br/>admission, four outcomes,<br/>evidence posture"]
+        OG1["OG-I<br/>projection, basis,<br/>degeneracy, budgets"]
+        OG2["OG-II<br/>suffix transport,<br/>intent-loss floor"]
+        OG3["OG-III<br/>support ledger,<br/>witness debt, holonomy"]
+    end
+    subgraph Edict["Edict constructs"]
+        FP["footprint clause +<br/>write-class checks"]
+        CB["contract bundle +<br/>digest pinning"]
+        INT["intent = optic<br/>(profile, budget, basis, law)"]
+        ADM["Gate C admission +<br/>typed obstructions"]
+        BAS["basis clause +<br/>aperture + budget"]
+        OBS["obstruction strands"]
+        AL["Aperture Ledger +<br/>assurance evidence"]
+    end
+    P2 --> FP
+    P3 --> CB
+    P7 --> INT
+    P8 --> ADM
+    OG1 --> BAS
+    OG2 --> OBS
+    OG3 --> AL
+```
+
+<details>
+  <summary>Caption: Which theory papers ground which Edict constructs</summary>
+
+  | Theory source | What it defines | The Edict construct it grounds |
+  | --- | --- | --- |
+  | Paper II (ticks) | Read/write (delete/use) footprints as the formal independence test for safe concurrency; tick confluence; deterministic scheduler; descriptive receipts | The `footprint` clause, write-class checking, and determinism-as-contract. FIDLAR's "Footprints Ignored" is a literal Paper II accusation, not a metaphor [claim:T04, confidence:0.85] |
+  | Paper III (holography) | The bulk/boundary split: full history reconstructible from initial state + tick patches; the prescriptive patch ("what happened") vs descriptive receipt ("why") split; content-addressed Boundary Transition Records | The contract bundle (Edict's BTR/hologram), the hash ladder, and the intent/witness envelope separation. The "anti-tautology" — holography holds only when patches pin every choice — is the formal reason Edict digest-locks lawpacks, targets, and bases [claim:T06, confidence:0.85] [claim:T11, confidence:0.8] |
+  | Paper VII (optics) | The WARP optic five-tuple; the one act at every scale; the commitment/folding/revelation plane split; "there is no graph" | The intent as optic; the revelation-vs-affect intent classes; runtime-neutral Core ("no storage nouns" because storage is a *reading*, not a substrate) [claim:T01, confidence:0.85] |
+  | Paper VIII (Continuum) | Admission as "a runtime-owned, witnessed act judged against a bounded basis under explicit law"; four canonical outcomes `Derived / Plural / Conflict / Obstruction`; evidence posture lattice; obstruction witnesses as "causal teaching artifacts" for agents | Gate C, typed obstruction outcomes, the participant-neutral bundle, and the whole YOLO lane posture [claim:T09, confidence:0.85] [claim:T12, confidence:0.8] |
+  | OG-I | Projection (aperture) vs basis (native expression) vs accumulation as orthogonal observer axes; degeneracy; budget elasticity | The `basis` and `budget` clauses; why aperture and basis are separate declarations [claim:T02, confidence:0.8] |
+  | OG-II | Suffix transport without rollback; the last-write-wins "intent-recovery insufficiency floor" — silent merges permanently erase intent | Obstruction strands: preserving a blocked attempt as first-class causal material is exactly how a system avoids the insufficiency floor [claim:T13, confidence:0.8] |
+  | OG-III | The four-compartment support ledger (carried/declared-lost/blocked/refuting); witness holonomy (loop defect); witness debt; hallucination as structural overreport | The Aperture Ledger's support-carried/lost/blocked/refuting fields and witness-debt vocabulary in the Edict spec [claim:T07, confidence:0.85] [claim:T08, confidence:0.85] |
+
+</details>
+
+Three consequences of the theory are worth spelling out, because they sharpen claims made earlier in this report:
+
+1. **"Pluralize" is not a README typo.** This report's first revision flagged the README's "accept · reject · obstruct · pluralize" admission phrasing as unevidenced, because the Edict repo's admission spec models accept/reject/lower-ceilings. The theory resolves it: Continuum's lowering law returns four honest outcomes — `Derived`, `Plural`, `Conflict`, `Obstruction` — where *plural is a lawful result, not a merge failure*. The Edict-repo admission spec simply has not absorbed that outcome axis yet; the README line is fidelity to Paper VIII, not aspiration [claim:T09, confidence:0.85].
+2. **Determinism is conditional, and the conditions are exactly what Edict pins.** In Paper II, a state admits many candidate rewrites; determinism holds once the batch (scheduler policy) is fixed. In the Continuum API, determinism laws apply to the *resolved* coordinate, not the request. Edict's obsessive digest-locking of lawpacks, target profiles, bases, and compiler facts is the language-level enforcement of those conditions — the "anti-tautology" that a sealed artifact only means replay if its boundary is sufficient and stable [claim:T11, confidence:0.8] [claim:T03, confidence:0.8].
+3. **Obstruction is pedagogy, not just failure.** Continuum frames the machine-readable obstruction witness as a "causal teaching artifact" that an agent uses to refine its next attempt. That reframes Edict's typed obstructions and obstruction strands: they are the feedback channel of the lawful-autonomous loop, which is why they must be typed, structured, and preserved rather than collapsed into exceptions [claim:T12, confidence:0.8].
+
+There is also real Edict source circulating in the theory corpus itself — a `task.edit_document@1` intent with a `require jim.basisFresh(input.basis) else ... StaleBase` optimistic-concurrency guard and a typed `EditReceipt | EditObstruction` return union — confirming that the README's aspirational `createEntry` example reflects a syntax already being exercised in cross-project design work [claim:T14, confidence:0.8].
+
 ---
 
 ## 6. Unique Aspects and Cool Technical Details
@@ -853,6 +918,8 @@ The near-term trajectory is legible from the train itself: after v0.12–v0.15, 
 
 Strategically, Edict is a bet that **provable-by-construction beats guarded-at-runtime** for agent infrastructure. If that bet is right, the most valuable artifacts long-term may not be the language at all but the *artifact discipline*: domain-separated typed-preimage hashing, the semantic/release digest split, fixture constitutions, and hash-impact matrices are all portable ideas that other toolchains could adopt. The nutrition label plus lawfulness certificate could become the interchange format for "what is this agent about to do?" across ecosystems — the project's participant-neutral framing reads like it was designed for exactly that plurality.
 
+The theory corpus sharpens the long arc considerably. The Continuum design work already sketches a **PROVE-IT ladder** of evidence levels — from L0 (bare agent assertion, worthless) through L1 (signed receipt), L2 (history inclusion proof, called the "minimum serious alpha requirement"), L3 (holographic witness capsules with Verkle/IPA openings over pre/post state), L4 (challenge replay), up to L5 (proof-carrying transitions via zkVM, aspirational) — with the "buildable Continuum" resting on L2 + L3 + signatures [claim:T15, confidence:0.8]. Expect Edict's verifier-report and assurance-evidence slots to climb that ladder rung by rung, and expect the **evidence posture lattice** (origin × proof strength × access × completeness) and the FULL/ZK/OPAQUE revelation tiers from the ethics paper to eventually surface as bundle and admission vocabulary — the machinery for "perfect provenance and real privacy at the same time" [claim:T16, confidence:0.75].
+
 The biggest open risks are visible in the project's own honest non-claims: trusted authorship without a registry is a hard social problem (v0.13 addresses shape, not trust); the obligation-closure resolver (v2) is where language expressiveness will collide with decidability; and adoption requires authors to accept real friction — bounded types, mandatory budgets, exhaustive obstruction maps — in exchange for verifiability. The project's disciplined honesty about what it does *not* yet claim is, ironically, its best evidence of being able to deliver what it does.
 
 ---
@@ -883,7 +950,7 @@ All file citations are at git sha `56f82ec` (`56f82ec14a3741f7c0d97264da76148e18
 | C18 | Not Turing-complete: no unbounded loops/recursion; cost computable statically | `docs/TECHNICAL_EXPLANATION.md#598-603@56f82ec`, `docs/SPEC_edict-language-v1.md#962@56f82ec` | 0.95 | |
 | C19 | Determinism invariant I-003 forbids clock, randomness, env, IO, locale, nondeterministic iteration | `docs/SPEC_edict-language-v1.md#935@56f82ec` | 0.9 | |
 | C20 | All effects are imported from digest-locked lawpacks/target profiles; no ambient effects (I-017) | `docs/SPEC_edict-language-v1.md#441@56f82ec` | 0.9 | |
-| C21 | Optic/basis/aperture vocabulary inherits from Observer Geometry; AION named as theory source | `docs/SPEC_edict-language-v1.md#91@56f82ec`, `README.md#687-690@56f82ec` | 0.85 | "AION" appears in README, not in specs |
+| C21 | Optic/basis/aperture vocabulary inherits from Observer Geometry; AION named as theory source | `docs/SPEC_edict-language-v1.md#91@56f82ec`, `README.md#687-690@56f82ec`, `agy:paper-7-summary.md#15@25ff542`, `agy:og-1-summary.md#18-20@25ff542` | 0.95 | Raised from 0.85 in revision 2: the theory corpus confirms the lineage directly |
 | C22 | Stack layering: GraphQL → Wesley → Edict → Core → targets → Continuum → runtimes | `README.md#453-470@56f82ec` | 0.95 | |
 | C23 | Workspace = edict-cli, edict-syntax, xtask; strict dependency direction | `ARCHITECTURE.md#7-20@56f82ec`, `Cargo.toml#2@56f82ec` | 1.0 | |
 | C24 | edict-syntax's breadth is acknowledged; layered crate split planned (not a rename) | `ARCHITECTURE.md#23-45@56f82ec`, `docs/design/crate-scope-v0.11.md#1@56f82ec` | 1.0 | |
@@ -970,11 +1037,34 @@ All file citations are at git sha `56f82ec` (`56f82ec14a3741f7c0d97264da76148e18
 | C105 | Obstruction-strand fixture reserves Echo receipt layers; references Echo runtime PR | `fixtures/obstruction-strands/v0/stale-basis/README.md#1-42@56f82ec`, `docs/design/obstruction-strands-v0.md#250@56f82ec` | 0.85 | |
 | C106 | WIT boundary defines lowerer and verifier worlds exchanging {domain, bytes} canonical artifacts | `docs/abi/edict-target-lowerer.wit#1@56f82ec` (file-level) | 0.85 | Agent-verified |
 
+### Theory claims (added in revision 2)
+
+Citations prefixed `agy:` refer to files in the `agy-readings` corpus at commit `25ff542`. These are curated summaries of the AION, Observer Geometry, and Continuum papers — per the corpus's own handoff notes, "fast orientation only, never the source of truth" (`agy:onramp-HANDOFF.md#67@25ff542`) — so confidence is capped at 0.85 even for directly quoted material, and every load-bearing definition below was corroborated across at least two independent summary documents.
+
+| Claim ID | Claim | Citation(s) | Confidence | Notes |
+| --- | --- | --- | --- | --- |
+| T01 | A WARP optic is a five-part control structure Ψ = (observer plan Ω, aperture χ, claim-lowering surface ρ, admissibility law Π, retention contract Λ) performing "Slice. Lower. Witness. Retain."; an Edict intent encodes that tuple | `agy:paper-7-summary.md#28@25ff542`, `agy:braid-optics-design.md#15-18@25ff542`, `agy:onramp-aion-07-its-all-optics.md#29-39@25ff542` | 0.85 | Five-tuple corroborated in two documents; component letter-assignments vary slightly between them |
+| T02 | Observer Geometry keeps projection/aperture (what is visible), basis (native expression vocabulary), and accumulation (aggregation over history) as orthogonal observer axes; degeneracy = how many histories collapse to one trace | `agy:og-1-summary.md#18-20@25ff542`, `agy:observer-geometry-overview.md#27-37@25ff542` | 0.8 | Edict's `basis` clause uses the Paper VIII "bounded basis" sense (see T03), not the OG-I trace-vocabulary sense — a naming subtlety worth a docs note |
+| T03 | Admission is "a runtime-owned, witnessed act judged against a bounded basis under explicit law"; determinism laws apply to the resolved coordinate (receipt), not the request | `agy:paper-8-summary.md#21@25ff542`, `agy:WARP-CONTINUUM-APIs.md#148-158@25ff542` | 0.8 | |
+| T04 | Footprints originate in Paper II's double-pushout rewriting as delete/use sets; disjoint footprints are the formal independence test enabling confluent parallel execution ("delete–use interference is the only sin") | `agy:paper-2-summary.md#15@25ff542`, `agy:onramp-aion-02-ticks.md#62-73@25ff542`, `agy:og-2-summary.md#17@25ff542` | 0.85 | Grounds Edict invariant I-006 (footprint honesty) and gives FIDLAR's "Footprints Ignored" its technical bite |
+| T05 | "The graph is a coordinate chart over causal history; there is no privileged, substrate-owned graph" — what is real is witnessed causal history; state/files/processes are materialized views (readings) | `agy:onramp-aion-07-its-all-optics.md#66-88@25ff542`, `agy:paper-8-summary.md#13@25ff542` | 0.85 | Direct quote verified in the onramp document |
+| T06 | The contract bundle's theoretical ancestor is the Boundary Transition Record: a content-addressed, tamper-evident package binding initial/final state hashes, payload, and signatures; "tamper-evident, not tamper-proof" | `agy:paper-3-summary.md#28@25ff542`, `agy:onramp-aion-03-holography.md#130-134@25ff542` | 0.85 | |
+| T07 | The support ledger has four compartments — carried, declared-lost, blocked, refuting — tracking evidence transport along paths; it is distinct from the resource footprint | `agy:og-3-summary.md#28@25ff542`, `agy:observer-geometry-overview.md#42-48@25ff542`, `agy:WARP-CONTINUUM-APIs.md#601@25ff542` | 0.85 | The Continuum API carries it as `SupportLedger{carried, declaredLost, blocked, refuted, status}` |
+| T08 | Witness debt = the gap between emitted report and justified status; hallucination is structurally defined as overreporting beyond carried support | `agy:og-3-summary.md#23-34@25ff542`, `agy:observer-geometry-overview.md#45@25ff542` | 0.85 | Formally checked in Coq/Rocq per the summaries |
+| T09 | Continuum defines four canonical admission/lowering outcomes — Derived, Plural, Conflict, Obstruction — with plurality and conflict as first-class honest results; the Continuum app API mirrors this as `Accepted/Plural/Conflict/Obstruction` and `Observed/Plural/Conflict/Obstructed` | `agy:paper-8-summary.md#30@25ff542`, `agy:aion-overview.md#65@25ff542`, `agy:onramp-aion-07-its-all-optics.md#33@25ff542`, `agy:WARP-CONTINUUM-APIs.md#559@25ff542` | 0.85 | Corroborated in four documents; resolves this report's original "pluralize" evidence gap |
+| T10 | AION's core inversion: history is the primary immutable artifact; current state is a materialized view projected from it | `agy:aion-overview.md#8@25ff542` | 0.85 | |
+| T11 | Computational holography (bulk reconstructible from initial state + tick patches) holds only when patches are sufficient and stable — every choice pinned, nothing outside the declared boundary ("the anti-tautology") — which is the formal justification for Edict's digest pinning; Paper III also predicts "what happened" and "why" become *intent* and *witness* in separate envelopes | `agy:onramp-aion-03-holography.md#53-75@25ff542`, `agy:paper-3-summary.md#20-21@25ff542` | 0.8 | |
+| T12 | Agents interacting through Continuum receive machine-readable "obstruction witnesses" as "causal teaching artifacts" to refine behavior | `agy:paper-8-summary.md#37@25ff542` | 0.8 | Reframes Edict obstructions as the feedback channel of the lawful-autonomous loop |
+| T13 | OG-II proves silent last-write-wins merges create a permanent "intent-recovery insufficiency floor"; only preserving conflict/authored acts as first-class objects avoids it | `agy:og-2-summary.md#29@25ff542`, `agy:observer-geometry-overview.md#38@25ff542` | 0.8 | The theoretical case for Edict's obstruction strands |
+| T14 | Real Edict source exists in cross-project design docs: a `task.edit_document@1` intent with pinned digests, `budget <=`, a `require jim.basisFresh(input.basis) else ... StaleBase` guard, effect-level `else` obstructions, and a typed `EditReceipt \| EditObstruction` return union | `agy:agy/continuum-receipts.md#12-46@25ff542` | 0.8 | Matches the README's aspirational `createEntry` syntax family |
+| T15 | The PROVE-IT evidence ladder runs L0 (agent assertion) → L1 (signed receipt) → L2 (history inclusion proof, "minimum serious alpha requirement") → L3 (holographic witness capsule) → L4 (challenge replay) → L5 (proof-carrying transition); the "buildable Continuum" rests on L2+L3+signature | `agy:agy/continuum-receipts.md#57-84@25ff542` | 0.8 | |
+| T16 | The evidence posture lattice spans origin, proof strength, access, and completeness dimensions; Paper VI defines FULL/ZK/OPAQUE provenance tiers; Paper VII's commitment/folding/revelation split enables "perfect provenance and real privacy at the same time" | `agy:paper-8-summary.md#32@25ff542`, `agy:paper-6-summary.md#28@25ff542`, `agy:onramp-aion-07-its-all-optics.md#94-96@25ff542` | 0.75 | Speculative as an *Edict roadmap* claim; well-attested as theory |
+
 ### Evidence gaps
 
 | Topic | Status |
 | --- | --- |
-| "Pluralize" as an admission outcome | Mentioned in `README.md#269@56f82ec` ("accept · reject · obstruct · pluralize") but **no evidence found** in `docs/SPEC_continuum-admission-v1.md` or `crates/edict-syntax/src/admission.rs`; the implemented/specified outcomes are accept, reject (with taxonomy), and accept-with-lowered-ceilings. Treated as aspirational README language. |
+| "Pluralize" as an admission outcome | Mentioned in `README.md#269@56f82ec` ("accept · reject · obstruct · pluralize") with no support in `docs/SPEC_continuum-admission-v1.md` or `crates/edict-syntax/src/admission.rs` (which model accept, reject-with-taxonomy, and accept-with-lowered-ceilings). **Revision 2 update:** this phrasing is grounded in theory — Continuum's four canonical lowering outcomes are `Derived / Plural / Conflict / Obstruction` (`agy:paper-8-summary.md#30@25ff542`, `agy:aion-overview.md#65@25ff542`); the Edict-repo admission spec has not yet absorbed that outcome axis. See §5.8. |
 | FIDLAR acronym expansion in the specs | The expansion appears only in `README.md#62@56f82ec` and `docs/TECHNICAL_EXPLANATION.md#63@56f82ec`; the language spec uses the term without expansion. |
 | HOLMES/Watson/Moriarty as running software | No implementation found in this repository; only typed, hash-bound evidence *references* are validated (`crates/edict-syntax/src/contract_bundle.rs#396-425@56f82ec`). Descriptions of their behavior are design/guide material. |
 | WASM sandbox execution | Specified (WIT worlds, sandbox/fuel manifest fields) but **no executable sandbox exists** in this repo; `ARCHITECTURE.md#157-172@56f82ec` lists runtime execution among current non-claims. |
@@ -982,4 +1072,43 @@ All file citations are at git sha `56f82ec` (`56f82ec14a3741f7c0d97264da76148e18
 
 ---
 
-*Report generated 2026-07-10 against `flyingrobots/edict` @ `56f82ec`. Edict is part of the [Continuum](https://github.com/flyingrobots/continuum) project; Apache-2.0 licensed.*
+## Appendix B: Personal Reflections, Reactions, and Brainstorms
+
+*This appendix is explicitly first-person and non-normative: my own reactions after reading the codebase, the specs, and then the AION / Observer Geometry / Continuum theory corpus. Nothing here is a claim about the repository; it is what the material made me think.*
+
+### B.1 Reactions
+
+**The theory reading changed what I think Edict *is*.** My first pass read Edict as excellent security tooling — a capability-verifying compiler for the agent era, in the same conceptual neighborhood as OPA or CHERI but at the language layer. After the theory corpus, that framing feels too small. If history is the territory and every state is a reading (Paper VII/VIII), then Edict is not "a DSL that restricts what code can do" — it is the **source language for authoring lawful acts of observation and admission** in a post-Unix substrate where "running," "merging," "syncing," and "revealing" are all the same act. The compiler's paranoia (canonical bytes, digest pinning, alpha-normalization) stops looking like defense-in-depth and starts looking like the *minimum machinery required for a reading to be trustworthy at all*. Security is the marketing; epistemology is the product.
+
+**FIDLAR is a much better joke than it first appears.** Before reading Paper II, "Footprints Ignored; Developer Lies About Risk" reads as a catchy acronym. After Paper II, "footprint" is the precise delete/use contact set whose disjointness is the formal test for safe concurrency — the very thing tick confluence is built on. So "footprints ignored" is not rhetorical: it names the exact mathematical object that mainstream software declines to track, and everything else (races, ambient authority, unauditable agents) follows from that one omission. The acronym is a theorem wearing a clown nose.
+
+**The intellectual honesty is structural, not performative.** Three separate places enforce the same discipline: release notes must state non-claims (ROADMAP gates), requirements without fixtures are "advisory" (REQUIREMENTS.md), and witness debt makes overreporting a *formal defect* (OG-III). The project's culture and its theory agree: claiming beyond your carried support is the cardinal sin, whether you are a database, an AI agent, or a release note. I have not seen a project where the engineering process is this isomorphic to its own theory.
+
+### B.2 Observations
+
+**A naming collision worth a docs note: `basis`.** OG-I uses *basis* for the observer's native trace vocabulary (orthogonal to aperture); Paper VIII and the Continuum API use *bounded basis* / Coordinate for the causal anchor admission is judged against. Edict's `basis` clause is clearly the latter. Both senses are legitimate, but a reader coming from Observer Geometry will trip on it — one clarifying sentence in `SPEC_edict-language-v1.md` would prevent the drift the theory corpus itself warns about.
+
+**A possible pun worth confirming: `echo.dpo@1`.** The Edict technical explanation glosses DPO as "Deterministic Process Object"; the theory's tick engine is built on **D**ouble-**P**ush**O**ut rewriting. If the collision is intentional, it's delightful and deserves a footnote; if accidental, it will eventually confuse someone who has read Paper II. Either way it's worth one sentence somewhere.
+
+**The bundle is a hologram — and calling it a "receipt" anywhere would be a category error.** The theory keeps three artifacts rigorously apart: the descriptive *receipt* (why, audit-grade), the prescriptive *patch* (what, replay-grade), and the sealed *hologram/BTR* (boundary, transport-grade). Edict's code already respects this (bundles exclude admission artifacts; receipts are admission-side), but as prose accumulates, that three-way distinction is the easiest one to blur. It might deserve its own topic shelf.
+
+**Obstruction strands are OG-II's theorem wearing work clothes.** The "intent-recovery insufficiency floor" — silent merges permanently erase intent — is, to me, the single most practical result in the whole corpus, and `require ... else continue obstructed { reason: ... }` is its direct engineering consequence: never collapse an authored attempt, preserve it as repairable causal material. I'd surface that lineage in the obstruction-strands design note; it upgrades the feature from "nice error handling" to "provably necessary."
+
+### B.3 Ideas and brainstorms
+
+1. **Moriarty is measuring holonomy — say so.** OG-III's loop defect measures how evidence degrades around a translation loop. Moriarty's hash-impact matrix is exactly a discrete holonomy measurement over the artifact graph: mutate, propagate, and check which digests move. Formalizing the matrix as "digest holonomy must be zero on semantics-preserving loops and provably nonzero on semantic mutations" would give Moriarty a crisp mathematical spec — and might surface canonicalization bugs as *loop defects* rather than ad-hoc test failures.
+2. **Watson should carry a support ledger.** If Watson is ever implemented over an LLM, OG-III hands you its compliance test for free: every explanation is an emitted report, so require Watson to attach the support ledger (carried/lost/blocked/refuting) for each remedial claim, and reject explanations with nonzero witness debt. "The explainer may not hallucinate" becomes a checkable property, not a hope. A `watson.explanation/v1` schema with mandatory per-claim support references would be a striking first.
+3. **Nutrition labels could advertise witness debt = 0.** The label already reports profile, budget, footprint, obstructions. Adding an evidence-posture line (origin / proof strength / access / completeness, per the Paper VIII lattice) and an explicit "witness debt: none — every claim below is compiler-derived" would make the label's own trustworthiness self-describing.
+4. **Budget elasticity as a v2 budget refinement.** OG-I models observers with *budget elasticity* — how much more they recover as budgets grow. Edict budgets today are scalar ceilings. An elasticity-aware budget ("this intent degrades gracefully: at half budget it returns a coarser reading") would let participants admit operations at negotiated resolution instead of binary accept/reject. That pairs naturally with the accept-with-lowered-ceilings outcome already in the admission spec.
+5. **Adopt the four-outcome coproduct at the Edict admission boundary.** The repo's admission spec models accept/reject/lower; the theory's `Derived | Plural | Conflict | Obstruction` is richer and already leaked into the README. When v0.12's admission harness lands, aligning the receipt decision taxonomy with the Continuum coproduct early would avoid a painful migration later — exhaustive-match handling of all four outcomes is exactly the kind of law (`Exhaustive Admission`) the Continuum API notes already state.
+6. **The two-lowerer trial is a rulial-distance experiment.** Paper IV defines translation cost between observers; two independent lowerers producing byte-identical Target IR is a demonstration that the semantic digest sits at rulial distance zero between two implementations. Framing conformance that way suggests a generalization: *measure* the divergence when they disagree (where in the artifact, under which mutation class) instead of just failing — a diagnostic gold mine for canonicalization work.
+7. **Obstruction strands will eventually meet Paper VI.** If agents' blocked attempts are preserved as first-class causal material, then strands are behavioral records of an agent's decision-making — precisely the material provenance sovereignty exists to protect. A future where strand payloads support ZK/OPAQUE tiers ("prove the strand exists and is repairable, without revealing the attempt's content") feels less like speculation and more like an inevitable v3 issue.
+8. **"There is no graph" deserves to be Edict's recruiting pitch.** The most compelling single document I read was the Paper VII onramp. Edict's README sells safety; the theory sells a worldview. Somewhere between them is a short document — "Why Edict looks weird" — that explains bounded types, mandatory bases, and typed obstructions as consequences of one sentence: *state is a reading, and readings must be lawful.* I suspect that document would convert more contributors than any feature list.
+
+### B.4 A closing thought
+
+The thing that most impressed me isn't in any single file. It's that a three-week-old repository, a stack of dense theory papers, and a pile of cross-project design notes all *agree with each other* — same vocabulary, same invariants, same refusal to overclaim, from Coq-checked support algebra down to a clippy lint that bans `unwrap()`. An external review in the corpus scored the project "a masterclass in paranoid, deterministic systems engineering" and I'd sharpen that: the paranoia is not a style, it's the theory expressing itself as engineering. Systems that make honesty structural are rare; systems whose *tests, hashes, and jokes* all enforce the same honesty are rarer. I came away convinced the hard part — the part you can't retrofit — is already done.
+
+---
+
+*Report generated 2026-07-10 against `flyingrobots/edict` @ `56f82ec`; revision 2 (same day) folds in the AION / Observer Geometry / Continuum theory corpus (`agy-readings` @ `25ff542`). Edict is part of the [Continuum](https://github.com/flyingrobots/continuum) project; Apache-2.0 licensed.*

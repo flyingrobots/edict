@@ -14,7 +14,11 @@ versions still track specification maturity rather than a released product.
   hello-world walkthrough, feature deep dive, plain-English walkthrough with
   glossary and diagrams, unique technical details, roadmap discussion, and a
   claims-to-citations appendix pinned to commit `56f82ec`. It is a
-  reader-facing report, not a normative spec or topic shelf.
+  reader-facing report, not a normative spec or topic shelf. Revision 2 adds
+  a theory-grounding walkthrough level (AION / Observer Geometry / Continuum:
+  the WARP optic five-tuple, footprint lineage, the four-outcome law,
+  support ledgers and witness debt), sixteen cited theory claims, a corrected
+  "pluralize" evidence-gap entry, and a personal reflections appendix.
 
 ### Changed
 
