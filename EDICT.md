@@ -19,6 +19,9 @@
 7. [The Roadmap, and What the Future May Hold](#7-the-roadmap-and-what-the-future-may-hold)
 8. [Appendix A: Claims and Citations](#appendix-a-claims-and-citations)
 9. [Appendix B: Personal Reflections, Reactions, and Brainstorms](#appendix-b-personal-reflections-reactions-and-brainstorms)
+10. [Appendix C: Hands-On Lab — Six Verified Transcripts](#appendix-c-hands-on-lab--six-verified-transcripts)
+11. [Appendix D: Quick Reference](#appendix-d-quick-reference)
+12. [Appendix E: Edict and the Wider World](#appendix-e-edict-and-the-wider-world)
 
 ---
 
@@ -1111,4 +1114,233 @@ The thing that most impressed me isn't in any single file. It's that a three-wee
 
 ---
 
-*Report generated 2026-07-10 against `flyingrobots/edict` @ `56f82ec`; revision 2 (same day) folds in the AION / Observer Geometry / Continuum theory corpus (`agy-readings` @ `25ff542`). Edict is part of the [Continuum](https://github.com/flyingrobots/continuum) project; Apache-2.0 licensed.*
+## Appendix C: Hands-On Lab — Six Verified Transcripts
+
+*Every transcript below was captured live from `target/debug/edict` built from this working tree (Rust sources identical to `56f82ec`; only docs changed since). Labs 5–6 use the `project` operation, which is on `main` but **unreleased** (post-`v0.11.0-alpha.1`). Digest values in Labs 5b–6 depend on the supplied authority facts — they are live demonstrations, not reviewed goldens.*
+
+### Lab 1 — A clean check (exit 0)
+
+```sh
+printf '%s\n%s\n' \
+  '{"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"check"}' \
+  '{"schema":"edict.compiler.input/v1","type":"compilerInput","kind":"path","path":"fixtures/lang/bounds/bounded-hello.edict"}' \
+  | target/debug/edict
+```
+
+```json
+{"command":"check","input":{"kind":"path","path":"fixtures/lang/bounds/bounded-hello.edict"},"schema":"edict.cli.check-result/v1","status":"ok","type":"checkResult"}
+{"checked":1,"command":"check","errors":0,"exitCode":0,"schema":"edict.cli.event/v1","status":"ok","type":"status"}
+```
+
+### Lab 2 — Sloppy source, three typed diagnostics (exit 1)
+
+Feed it an inline source with an unbounded `String` and an intent missing its `budget` and `basis` clauses:
+
+```graphql
+package examples.broken@1;
+
+type Sloppy = {
+  name: String,        // unbounded — not allowed
+};
+
+intent greet(input: Sloppy)
+  returns Sloppy
+  profile hello.readOnly
+{
+  return { name: input.name };
+}
+```
+
+All three violations are reported in one pass, on stderr, with byte spans:
+
+```json
+{"command":"check","input":{"kind":"source","name":"inline.edict"},"kind":"UnboundedScalar","schema":"edict.cli.diagnostic/v1","severity":"error","span":{"end":58,"start":46},"stage":"semantic","type":"diagnostic"}
+{"command":"check","input":{"kind":"source","name":"inline.edict"},"kind":"MissingBudget","schema":"edict.cli.diagnostic/v1","severity":"error","span":{"end":168,"start":64},"stage":"semantic","type":"diagnostic"}
+{"command":"check","input":{"kind":"source","name":"inline.edict"},"kind":"MissingBasis","schema":"edict.cli.diagnostic/v1","severity":"error","span":{"end":168,"start":64},"stage":"semantic","type":"diagnostic"}
+{"checked":0,"command":"check","errors":3,"exitCode":1,"schema":"edict.cli.event/v1","status":"error","type":"status"}
+```
+
+There is no "warning" escape hatch: an unbounded scalar is an error, full stop.
+
+### Lab 3 — A malformed digest is a parse error, not a lint (exit 1)
+
+`use lawpack hello.optics@1 digest "sha256:tooshort" as hello;` fails in the *parser* — digest well-formedness (`sha256:` + 64 hex) is grammar, not policy:
+
+```json
+{"command":"check","input":{"kind":"source","name":"inline.edict"},"kind":"InvalidDigest","schema":"edict.cli.diagnostic/v1","severity":"error","span":{"end":76,"start":59},"stage":"parse","type":"diagnostic"}
+{"checked":0,"command":"check","errors":1,"exitCode":1,"schema":"edict.cli.event/v1","status":"error","type":"status"}
+```
+
+### Lab 4 — The CLI rejects fields it doesn't know (exit 2)
+
+Add a stray `"hacker":"yes"` field to an input record and the request is refused before any file is touched — the stream contract is closed, mirroring the published JSON Schemas' `additionalProperties: false`:
+
+```json
+{"command":"check","input":{"kind":"stdin"},"kind":"InvalidInputRecord","line":2,"message":"`path` compiler input record has unexpected field `hacker`","schema":"edict.cli.diagnostic/v1","severity":"error","stage":"cli","type":"diagnostic"}
+{"checked":0,"command":"check","errors":1,"exitCode":2,"schema":"edict.cli.event/v1","status":"error","type":"status"}
+```
+
+### Lab 5 — The compiler invents no facts
+
+Ask the unreleased `project` operation for Core IR *without* supplying authority facts, and compilation is **blocked** — the compiler will not guess what `hello.readOnly` or `hello.tinyBudget` mean. Note two things: the failure is *projection data on stdout with exit 0* (an editor querying a half-written file is not a transport failure), and the reason is structured:
+
+```json
+{"command":"project","input":{"kind":"path","path":"fixtures/lang/bounds/bounded-hello.edict"},"reason":[{"kind":"MissingContextFact","severity":"error","span":{"end":464,"start":249},"stage":"resolve"},{"kind":"MissingContextFact","severity":"error","span":{"end":464,"start":249},"stage":"resolve"}],"schema":"edict.projection.core/v1","state":"blocked","type":"core"}
+{"checked":1,"command":"project","errors":2,"exitCode":0,"schema":"edict.cli.event/v1","status":"ok","type":"status"}
+```
+
+Supply the facts in `compilerContext` — a read-only profile for `hello.readOnly` and a `{maxSteps: 64, maxAllocatedBytes: 4096, maxOutputBytes: 1024}` budget for `hello.tinyBudget` — and the same request yields a live Core review and a canonical digest:
+
+```json
+{"schema":"edict.projection.core/v1","state":"available","digest":"sha256:f8243875a77aa3cc8f02529e2c8b18e183ed6b02ad5f6fd6d0795c6ad532ce85","review":{"apiVersion":"edict.core/v1","coordinate":"examples.hello@1","intents":{"sayHello":{"body":{"locals":[{"alphaName":"$arg0","id":"arg.0","ty":"examples.hello@1.HelloInput"},{"alphaName":"$local0","id":"local.0","ty":"String<max=263,canonical=raw-utf8>"}],"...":"..."}}}}}
+```
+
+Two details in that review are worth savoring. The locals are the alpha-normalized `$arg0` / `$local0` — your variable names are already gone. And the concatenation `"hello, " + input.name` was typed `String<max=263>`: the compiler summed the literal's length (7) and the input's bound (256). Bounds are arithmetic, not annotations.
+
+### Lab 6 — The identity experiment
+
+Finally, the whole identity story in two runs. First, take the same program but add a comment **and rename the local** `message` → `msg`. Then, separately, keep the source byte-identical but change one number in the *budget fact* (`maxSteps: 64` → `65`):
+
+| Mutation | Core digest | Verdict |
+| --- | --- | --- |
+| (baseline) | `sha256:f8243875a77aa3cc…` | — |
+| + comment, local renamed `message`→`msg` | `sha256:f8243875a77aa3cc…` | **Identical.** Spans are stripped; locals are alpha-normalized. Formatting and naming cannot touch identity. |
+| budget fact `maxSteps` 64→65, source untouched | `sha256:d5a85b4021837e97…` | **Moved.** The evaluation budget is hash-significant Core meaning — change what the operation is *allowed to cost* and it is a different operation. |
+
+This is Moriarty's hash-impact matrix in miniature, reproduced against the real binary: non-semantic mutations must not move the digest; semantic mutations must.
+
+---
+
+## Appendix D: Quick Reference
+
+### D.1 Module skeleton
+
+```graphql
+package <qual.ident>@<version>;                      // exactly one, first
+
+use shape "<path>" as <alias>;                       // GraphQL types
+use lawpack <pkg>@<ver> digest "sha256:<64hex>" as <alias>;
+use target  <pkg>@<ver> digest "sha256:<64hex>" as <alias>;
+
+type <Name> = { field: Type, ... };                  // record | variant | ref
+enum <Name> { Case1, Case2 }
+
+intent <name>(input: <Type>)
+  returns <Type>                                     // may be a union: Reading | Obstruction
+  profile <alias>.<profile>                          // and/or implements
+  basis <expr> | basis none                          // mandatory
+  budget <= <alias>.<budget>                         // mandatory
+  where <pure predicate>                             // optional
+  footprint <= <alias>.<bound>                       // optional
+{ ... }
+```
+
+### D.2 Statements and effect shapes
+
+| Form | Notes |
+| --- | --- |
+| `let x = <pure expr>;` | Locals are immutable; no assignment statement exists |
+| `let x = eff(arg) else <Obstruction>;` | Single-obstruction shorthand: legal only when exactly one mappable failure remains |
+| `let x = eff(arg) else { failure(binder) => <Obstruction> { ... }, ... };` | Full obstruction map; duplicate failure keys rejected |
+| `let x = if p { ...; yield e1; } else { ...; yield e2; };` | Branch-yield: the only conditional effect form; `return` illegal inside |
+| `require <pred> else <Obstruction>;` | Precondition; always carries a typed `else` |
+| `require <pred> else continue obstructed { reason: <expr> };` | Obstruction strand: preserve the blocked attempt (unreleased) |
+| `guarantee <pred> else <Obstruction>;` / `assert <pred>;` | Postcondition (precommit) / proof-only, never `else` |
+| `for x in xs bounded N { ... }` | The only loop; `max(xs) <= N` must be provable statically |
+| `return { field, other: expr };` | Record shorthand `{ message }` = `{ message: message }` |
+
+### D.3 Types and prelude
+
+| Category | Forms |
+| --- | --- |
+| Scalars | `Bool`, `I32`, `I64`, `U32`, `U64`, `String`, `Bytes`, `Digest`, `Unit` — no floats |
+| Refined | `String<max=N>`, `String<max=N, canonical=nfc>`, `Bytes<max=N>` — runtime `String`/`Bytes` must be bounded |
+| Compound | records, `variant { Case(T), ... }`, `enum`, `Option<T>`, `List<T, max=N>`, `Map<K, V, max=N>`, `CapabilityRef<T>` |
+| Prelude | `hash(label, v...)`, `canonicalEncode<T>`, `len`, `some`, `none`, `default`, `isSome`, `unwrap`, `checkedAdd/Sub/Mul/Div/Rem -> Option<T>` — closed set, no bitwise ops |
+
+### D.4 Diagnostic code inventory (wire-stable)
+
+| Family | Codes |
+| --- | --- |
+| Parser (19) | `Lex`, `ExpectedToken`, `ExpectedKeyword`, `ExpectedIdentifier`, `ExpectedExpression`, `InvalidInteger`, `InvalidDigest`, `InvalidVersion`, `ReservedKeyword`, `UnsupportedSyntax`, `InvalidName`, `EmptyEnum`, `EmptyObstructionMap`, `EmptyMatch`, `MissingRequiredField`, `DuplicateField`, `NonCallEffect`, `ReturnInYieldBlock`, `InvalidTypeCall` |
+| Semantic (7) | `UnboundedScalar`, `MissingOperationMode`, `MissingBudget`, `MissingBasis`, `DuplicateIntentClause`, `DuplicateName`, `ShadowedName` |
+| Compiler (10) | `SurfaceValidation`, `MissingContextFact`, `UnsupportedSourceShape`, `UnresolvedType`, `UnknownField`, `TypeMismatch`, `ExpectedPredicate`, `ProfileEffectMismatch`, `DuplicateObstructionFailure`, `DuplicateObstructionPayloadField` |
+| CLI exit codes | `0` ok · `1` compiler/validation diagnostics · `2` invalid CLI input |
+
+### D.5 Digest domains
+
+Every digest is `SHA-256(canonical-cbor(["edict.digest/v1", "<domain>", <typed value>]))`:
+
+| Domain | Hashes |
+| --- | --- |
+| `edict.core.module/v1` | Canonical Core module bytes |
+| `edict.target-ir.artifact/v1` | Canonical Target IR artifact bytes |
+| `edict.bundle.semantic/v1` | Executable-semantics bundle preimage |
+| `edict.bundle.release/v1` | Semantic digest + provenance + toolchain preimage |
+| `edict.admission-request/v1` | Admission requests (separate length-prefixed framing, not CBOR) |
+
+### D.6 Repository verbs
+
+| Command | Does |
+| --- | --- |
+| `cargo build -p edict-cli` | Build the `edict` binary |
+| `cargo xtask verify` | fmt + clippy + tests + doctests + all goldens + topic contracts + diff hygiene |
+| `cargo xtask contract-check` | Topic-shelf tables, evidence refs, local links |
+| `cargo xtask core-goldens / target-ir-goldens / bundle-goldens / cli-goldens --check/--write` | Reviewed byte/digest/stream fixtures |
+| `cargo xtask release-prep <version>` | Mechanical release scaffolding |
+
+---
+
+## Appendix E: Edict and the Wider World
+
+Edict sits at the intersection of several research and engineering traditions. None of them is what Edict is; each contributes one axis.
+
+```mermaid
+flowchart TD
+    OCAP["Object-capability systems<br/>(E, seL4, CHERI)"]
+    EFF["Effect systems<br/>(Koka, Eff, monadic IO)"]
+    SC["Smart-contract languages<br/>(Move, Pact)"]
+    POL["Policy engines<br/>(OPA/Rego, Cedar)"]
+    SUPPLY["Supply-chain integrity<br/>(in-toto, SLSA, Nix)"]
+    WASM["WASM component model<br/>(WIT, sandboxing)"]
+    EDICT(("Edict"))
+
+    OCAP -->|"no ambient authority"| EDICT
+    EFF -->|"effects in types"| EDICT
+    SC -->|"budgets + determinism"| EDICT
+    POL -->|"admission as policy input"| EDICT
+    SUPPLY -->|"hash-locked provenance"| EDICT
+    WASM -->|"lowerer/verifier plugin ABI"| EDICT
+```
+
+<details>
+  <summary>Caption: Traditions Edict draws from</summary>
+
+  | Tradition | What Edict borrows | Where Edict departs |
+  | --- | --- | --- |
+  | Object-capability security (E, seL4, CHERI) | The rejection of ambient authority: you can only touch what you were explicitly handed | Enforcement moves from runtime reference-passing (or hardware, in CHERI's case) to compile-time proof over a declared aperture; `CapabilityRef<T>` carries only a receipt *digest*, powerless until a participant admits it |
+  | Effect systems (Koka, Eff, monadic IO) | Effects are visible in types and cannot hide in pure code | Edict adds *authority* and *cost* to the effect: every effect has a write class, a footprint obligation, an obstruction vocabulary, and a digest-locked owner — not just a type tag |
+  | Smart-contract languages (Move, Pact) | Deterministic, budgeted, sandboxed execution of untrusted logic | Edict is participant-neutral: no chain, no consensus, no fee market, no coupled storage model — the same bundle can be admitted by many independent runtimes |
+  | Policy engines (OPA/Rego, Cedar) | Admission is explicit policy, separate from the code it governs | Policy engines answer "is this allowed?" about an opaque request; Edict makes the request *self-describing and proven* so policy has real facts to evaluate |
+  | Supply-chain integrity (in-toto, SLSA, Nix) | Hash-locked dependencies, attestations, reproducible artifacts | Edict pushes provenance below the package: into the operation, its effects, and its two-level (semantic/release) identity; the bundle spec explicitly plans in-toto Statement + DSSE signing |
+  | WASM component model | A typed, language-neutral plugin ABI (`edict-target-lowerer.wit` defines `lowerer` and `verifier` worlds) | The sandbox is planned for *toolchain* components (lowerers, verifiers) and runtimes — the Edict language itself never gets general computation to sandbox |
+
+</details>
+
+The one-line positioning: **capability discipline from OCap, effect visibility from PL research, determinism-and-budgets from smart contracts, admission from policy engines, identity from supply-chain security — unified by a theory (WARP optics over witnessed causal history) that none of those traditions has.**
+
+### E.1 Suggested reading order
+
+| Step | Read | You come away with |
+| --- | --- | --- |
+| 1 | This report's [TLDR](#tldr) and [walkthrough Levels 0–2](#51-level-0--the-problem-your-functions-can-do-anything) | The problem and the language surface |
+| 2 | `README.md`, then `fixtures/lang/` | The official pitch, plus every currently-parseable construct |
+| 3 | `ARCHITECTURE.md` + `docs/topics/` shelves for whatever you touch | The workspace map and per-subsystem current truth |
+| 4 | `docs/SPEC_edict-language-v1.md` (skim §invariants I-001…I-031 first) | The normative language contract |
+| 5 | `docs/GUIDE_edict-assurance-transparency.md` | HOLMES/Watson/Moriarty, nutrition labels, the hash ladder |
+| 6 | Theory: the OG/AION onramps (`onramp-aion-01…07`), then Paper VII/VIII summaries | Why the whole thing is shaped this way — "the graph is a chart; history is the territory" |
+| 7 | `ROADMAP.md` + `docs/REQUIREMENTS.md` | Where it's going, and the fixture constitution that keeps it honest |
+
+---
+
+*Report generated 2026-07-10 against `flyingrobots/edict` @ `56f82ec`; revision 2 (same day) folds in the AION / Observer Geometry / Continuum theory corpus (`agy-readings` @ `25ff542`); revision 3 (same day) adds the verified hands-on lab, quick reference, and wider-world positioning. Edict is part of the [Continuum](https://github.com/flyingrobots/continuum) project; Apache-2.0 licensed.*

@@ -19,6 +19,11 @@ versions still track specification maturity rather than a released product.
   the WARP optic five-tuple, footprint lineage, the four-outcome law,
   support ledgers and witness debt), sixteen cited theory claims, a corrected
   "pluralize" evidence-gap entry, and a personal reflections appendix.
+  Revision 3 adds a hands-on lab of six transcripts captured live from the
+  built CLI (including a digest invariance/sensitivity experiment over the
+  `project` operation), a quick-reference appendix (syntax skeleton,
+  wire-stable diagnostic code inventory, digest domains, xtask verbs), and a
+  wider-world positioning appendix with a suggested reading order.
 
 ### Changed
 
