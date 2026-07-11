@@ -10,6 +10,11 @@ admission claim. The separate authority-facts loader can load first compiler
 context facts from digest-bound files whose source kind is `targetProfile`, but
 that is not full target-profile manifest loading.
 
+Provider manifests can describe target profiles and authority facts as generated
+provider artifacts with digest-locked semantic-source and generator provenance.
+This validates only the provider envelope and provenance lock; it does not load
+or interpret target-profile runtime semantics. [TPROF-REQ-009]
+
 ## Public Surface
 
 The `edict_syntax` crate exposes `validate_target_profile_manifest` and typed
@@ -22,6 +27,10 @@ target-profile data structures for:
 
 The crate also exposes authority-facts loading for target-profile-sourced
 operation-profile facts consumed by the compiler context. [TPROF-REQ-008]
+
+Provider manifest validation can carry generated target-profile and
+authority-facts artifact references without making Edict runtime-aware.
+[TPROF-REQ-009]
 
 The canonical artifact shape for `edict.target-profile/v1` is named in
 [`docs/abi/edict-target-profile.cddl`](../../abi/edict-target-profile.cddl).
@@ -52,6 +61,10 @@ The canonical artifact shape for `edict.target-profile/v1` is named in
 - Authority-facts documents may identify a `targetProfile` source and provide
   operation-profile facts for the compiler context. This is not full
   target-profile manifest file loading. [TPROF-REQ-008]
+- Provider manifests may identify target profiles and authority facts as
+  generated artifacts. The provider validator checks lowercase digest locks for
+  the artifact, semantic source, and generator, and rejects component
+  provenance for target-profile metadata roles. [TPROF-REQ-009]
 
 ## Deferred
 

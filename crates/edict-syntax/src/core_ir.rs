@@ -6,6 +6,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 /// The Core ABI identifier emitted by this crate.
 pub const CORE_API_VERSION: &str = "edict.core/v1";
 
@@ -48,7 +50,7 @@ impl CoreImportKind {
 }
 
 /// Digest-locked external artifact reference.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResourceRef {
     pub coordinate: String,
     pub digest: Option<String>,

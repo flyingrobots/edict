@@ -8,6 +8,18 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Added
+
+- Added the first runtime-neutral provider manifest boundary:
+  `TargetProviderManifest`, provider artifact provenance types, stable
+  provider-manifest validation failure kinds, a checked Echo-shaped provider
+  manifest fixture, and provider topic/design documentation. This models
+  lawpacks, target profiles, authority facts, and provider manifests as
+  generated provider artifacts with digest-locked semantic-source and generator
+  provenance, while keeping lowerer/verifier entries as provider-owned
+  components. It does not load providers, execute WIT components, interpret Echo
+  semantics, run verifiers, or perform runtime execution/admission.
+
 ### Changed
 
 - The parser now accepts first-class obstruction-strand source syntax:
