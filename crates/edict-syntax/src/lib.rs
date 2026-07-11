@@ -72,6 +72,7 @@ pub mod core_ir;
 pub mod highlight;
 pub mod lowerability;
 pub mod parser;
+pub mod provider;
 pub mod semantic;
 pub mod target_ir;
 pub mod target_profile;
@@ -129,6 +130,12 @@ pub use lowerability::{
     NativeEffectSupport, SemanticEffectRequirement, TargetProfileFacts, WriteClass,
 };
 pub use parser::{parse_module, ParseError, ParseErrorKind};
+pub use provider::{
+    validate_target_provider_manifest, ProviderArtifactKind, ProviderArtifactRef,
+    ProviderArtifactSource, ProviderManifestValidationFailure,
+    ProviderManifestValidationFailureKind, ProviderManifestValidationReport,
+    ProviderManifestValidationStatus, TargetProviderManifest, TARGET_PROVIDER_MANIFEST_API_VERSION,
+};
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{
     lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
