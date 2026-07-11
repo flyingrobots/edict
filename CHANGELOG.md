@@ -10,6 +10,15 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the first runtime-neutral provider manifest boundary:
+  `TargetProviderManifest`, provider artifact provenance types, stable
+  provider-manifest validation failure kinds, a checked Echo-shaped provider
+  manifest fixture, and provider topic/design documentation. This models
+  lawpacks, target profiles, authority facts, and provider manifests as
+  generated provider artifacts with digest-locked semantic-source and generator
+  provenance, while keeping lowerer/verifier entries as provider-owned
+  components. It does not load providers, execute WIT components, interpret Echo
+  semantics, run verifiers, or perform runtime execution/admission.
 - Added `EDICT.md`, a comprehensive cited introduction and deep-dive report:
   hello-world walkthrough, feature deep dive, plain-English walkthrough with
   glossary and diagrams, unique technical details, roadmap discussion, and a

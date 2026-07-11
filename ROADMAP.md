@@ -27,6 +27,46 @@ Every release cut must satisfy these gates on the release commit:
 The crate remains `publish = false` until package policy and API stability are
 deliberately changed.
 
+## Current Frontier: Provider Artifact Pipeline Alpha
+
+Milestone: `Provider Artifact Pipeline Alpha`
+
+Goalpost: #138
+
+Primary frontier issue: #139
+
+Release labels: `release:lawpacks`, `release:target-profiles`,
+`release:target-ir`, `release:bundles`
+
+Scope:
+
+- Provider manifest and provenance vocabulary for generated lawpack,
+  target-profile, authority-facts, provider-manifest, review, and generated
+  artifact-profile entries.
+- Provider-owned lowerer and verifier component role declarations.
+- Digest-locked generated semantic-source and generator provenance.
+- Generic envelope validation before any WIT provider host or runtime-specific
+  provider implementation.
+
+Exit gates:
+
+- #139, #140, #141, and #142 land or have reviewed scope splits.
+- Existing in-tree target lowering can be represented through provider-shaped
+  wrappers without changing Target IR canonical bytes or semantic bundle
+  identity.
+- WIT provider hosting passes only explicit, digest-locked inputs to provider
+  components and validates returned envelopes before bundle assembly.
+- Echo-owned provider implementation issues exist once the Edict provider ABI is
+  concrete enough to scope them accurately.
+
+Non-goals:
+
+- No Echo-specific lawpack semantics in Edict.
+- No Wesley execution or lawpack generation inside Edict.
+- No runtime execution.
+- No admission or registration.
+- No provider filesystem or network discovery.
+
 ## v0.1.0-alpha.1 - Front-End Alpha
 
 Target date: 2026-06-24
