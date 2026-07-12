@@ -5,6 +5,10 @@ use std::path::{Path, PathBuf};
 use edict_syntax::parse_module;
 use regex::Regex;
 use serde_json::Value;
+use wit_parser::{
+    Function, FunctionKind, Interface, Package, Record, Resolve, Type, TypeDefKind, TypeId, World,
+    WorldItem, WorldKey,
+};
 
 use super::contract_check::{check_links, check_topic, contract_check};
 use super::goldens::{
@@ -2708,6 +2712,861 @@ fn alpha_changelog_dates_match_release_policy() {
             "{tag} changelog date must match release policy target date {target}"
         );
     }
+}
+
+fn wit_named_type(interface: &Interface, name: &str) -> TypeId {
+    *interface
+        .types
+        .get(name)
+        .unwrap_or_else(|| panic!("WIT interface missing named type `{name}`"))
+}
+
+fn wit_record(resolve: &Resolve, type_id: TypeId) -> &Record {
+    match &resolve.types[type_id].kind {
+        TypeDefKind::Record(record) => record,
+        other => panic!("WIT type must be a record, found {}", other.as_str()),
+    }
+}
+
+fn wit_world_function<'a>(world: &'a World, name: &str) -> &'a Function {
+    match world
+        .exports
+        .get(&WorldKey::Name(name.to_owned()))
+        .unwrap_or_else(|| panic!("WIT world missing export `{name}`"))
+    {
+        WorldItem::Function(function) => function,
+        _ => panic!("WIT world export `{name}` must be a function"),
+    }
+}
+
+fn wit_unaliased_type(resolve: &Resolve, mut ty: Type) -> Type {
+    while let Type::Id(type_id) = ty {
+        match &resolve.types[type_id].kind {
+            TypeDefKind::Type(next) => ty = *next,
+            _ => return ty,
+        }
+    }
+    ty
+}
+
+fn assert_wit_record_fields(resolve: &Resolve, type_id: TypeId, expected: &[&str]) {
+    let actual = wit_record(resolve, type_id)
+        .fields
+        .iter()
+        .map(|field| field.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+}
+
+fn assert_wit_named_field_type(
+    resolve: &Resolve,
+    record_id: TypeId,
+    field_name: &str,
+    expected_type: TypeId,
+) {
+    let field = wit_record(resolve, record_id)
+        .fields
+        .iter()
+        .find(|field| field.name == field_name)
+        .unwrap_or_else(|| panic!("WIT record missing field `{field_name}`"));
+    assert_eq!(field.ty, Type::Id(expected_type));
+}
+
+fn assert_wit_field_type(
+    resolve: &Resolve,
+    record_id: TypeId,
+    field_name: &str,
+    expected_type: Type,
+) {
+    let field = wit_record(resolve, record_id)
+        .fields
+        .iter()
+        .find(|field| field.name == field_name)
+        .unwrap_or_else(|| panic!("WIT record missing field `{field_name}`"));
+    assert_eq!(field.ty, expected_type);
+}
+
+fn assert_wit_list_field_type(
+    resolve: &Resolve,
+    record_id: TypeId,
+    field_name: &str,
+    expected_element_type: Type,
+) {
+    let field = wit_record(resolve, record_id)
+        .fields
+        .iter()
+        .find(|field| field.name == field_name)
+        .unwrap_or_else(|| panic!("WIT record missing field `{field_name}`"));
+    let Type::Id(list_id) = field.ty else {
+        panic!("WIT field `{field_name}` must be a named list type");
+    };
+    assert_eq!(
+        resolve.types[list_id].kind,
+        TypeDefKind::List(expected_element_type)
+    );
+}
+
+fn assert_wit_option_field_type(
+    resolve: &Resolve,
+    record_id: TypeId,
+    field_name: &str,
+    expected_element_type: Type,
+) {
+    let field = wit_record(resolve, record_id)
+        .fields
+        .iter()
+        .find(|field| field.name == field_name)
+        .unwrap_or_else(|| panic!("WIT record missing field `{field_name}`"));
+    let Type::Id(option_id) = field.ty else {
+        panic!("WIT field `{field_name}` must be a named option type");
+    };
+    assert_eq!(
+        resolve.types[option_id].kind,
+        TypeDefKind::Option(expected_element_type)
+    );
+}
+
+fn assert_wit_enum_cases(resolve: &Resolve, type_id: TypeId, expected: &[&str]) {
+    let TypeDefKind::Enum(enumeration) = &resolve.types[type_id].kind else {
+        panic!("WIT type must be an enum");
+    };
+    let actual = enumeration
+        .cases
+        .iter()
+        .map(|case| case.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+}
+
+fn assert_wit_variant_cases(resolve: &Resolve, type_id: TypeId, expected: &[&str]) {
+    let TypeDefKind::Variant(variant) = &resolve.types[type_id].kind else {
+        panic!("WIT type must be a variant");
+    };
+    let actual = variant
+        .cases
+        .iter()
+        .map(|case| case.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
+}
+
+fn assert_wit_variant_case_type(
+    resolve: &Resolve,
+    type_id: TypeId,
+    case_name: &str,
+    expected_type: Option<Type>,
+) {
+    let TypeDefKind::Variant(variant) = &resolve.types[type_id].kind else {
+        panic!("WIT type must be a variant");
+    };
+    let case = variant
+        .cases
+        .iter()
+        .find(|case| case.name == case_name)
+        .unwrap_or_else(|| panic!("WIT variant missing case `{case_name}`"));
+    assert_eq!(case.ty, expected_type);
+}
+
+fn assert_wit_result(
+    resolve: &Resolve,
+    result_id: TypeId,
+    expected_ok: TypeId,
+    expected_err: TypeId,
+) {
+    let TypeDefKind::Result(result) = &resolve.types[result_id].kind else {
+        panic!("WIT type must be a result");
+    };
+    assert_eq!(result.ok, Some(Type::Id(expected_ok)));
+    assert_eq!(result.err, Some(Type::Id(expected_err)));
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProviderWitTypes {
+    protocol_version: TypeId,
+    digest_algorithm: TypeId,
+    digest: TypeId,
+    resource_ref: TypeId,
+    artifact: TypeId,
+    bound_artifact: TypeId,
+    semantic_input_kind: TypeId,
+    semantic_input: TypeId,
+    lowering_output_kind: TypeId,
+    lowering_output_request: TypeId,
+    lowering_output_artifact: TypeId,
+    verification_output_kind: TypeId,
+    verification_output_request: TypeId,
+    verification_output_artifact: TypeId,
+    response_limits: TypeId,
+    diagnostic_severity: TypeId,
+    diagnostic: TypeId,
+    refusal_kind: TypeId,
+    refusal: TypeId,
+    lowering_request: TypeId,
+    verification_request: TypeId,
+    lowering_success: TypeId,
+    verification_success: TypeId,
+    lowering_result: TypeId,
+    verification_result: TypeId,
+}
+
+impl ProviderWitTypes {
+    fn resolve(protocol: &Interface) -> Self {
+        Self {
+            protocol_version: wit_named_type(protocol, "protocol-version-v1"),
+            digest_algorithm: wit_named_type(protocol, "digest-algorithm"),
+            digest: wit_named_type(protocol, "digest"),
+            resource_ref: wit_named_type(protocol, "resource-ref"),
+            artifact: wit_named_type(protocol, "artifact"),
+            bound_artifact: wit_named_type(protocol, "bound-artifact"),
+            semantic_input_kind: wit_named_type(protocol, "semantic-input-kind"),
+            semantic_input: wit_named_type(protocol, "semantic-input"),
+            lowering_output_kind: wit_named_type(protocol, "lowering-output-kind"),
+            lowering_output_request: wit_named_type(protocol, "lowering-output-request"),
+            lowering_output_artifact: wit_named_type(protocol, "lowering-output-artifact"),
+            verification_output_kind: wit_named_type(protocol, "verification-output-kind"),
+            verification_output_request: wit_named_type(protocol, "verification-output-request"),
+            verification_output_artifact: wit_named_type(protocol, "verification-output-artifact"),
+            response_limits: wit_named_type(protocol, "response-limits-v1"),
+            diagnostic_severity: wit_named_type(protocol, "diagnostic-severity"),
+            diagnostic: wit_named_type(protocol, "diagnostic"),
+            refusal_kind: wit_named_type(protocol, "provider-refusal-kind"),
+            refusal: wit_named_type(protocol, "provider-refusal-v1"),
+            lowering_request: wit_named_type(protocol, "lowering-request-v1"),
+            verification_request: wit_named_type(protocol, "verification-request-v1"),
+            lowering_success: wit_named_type(protocol, "lowering-success-v1"),
+            verification_success: wit_named_type(protocol, "verification-success-v1"),
+            lowering_result: wit_named_type(protocol, "lowering-result-v1"),
+            verification_result: wit_named_type(protocol, "verification-result-v1"),
+        }
+    }
+}
+
+fn assert_provider_wit_package_shape(resolve: &Resolve, package: &Package, protocol: &Interface) {
+    assert_eq!(resolve.packages.len(), 1);
+    assert_eq!(
+        package
+            .interfaces
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["protocol"])
+    );
+    assert_eq!(
+        package
+            .worlds
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["lowerer", "verifier"])
+    );
+    assert!(protocol.functions.is_empty());
+    assert_eq!(
+        protocol
+            .types
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "protocol-version-v1",
+            "digest-algorithm",
+            "digest",
+            "resource-ref",
+            "artifact",
+            "bound-artifact",
+            "semantic-input-kind",
+            "semantic-input",
+            "lowering-output-kind",
+            "lowering-output-request",
+            "lowering-output-artifact",
+            "verification-output-kind",
+            "verification-output-request",
+            "verification-output-artifact",
+            "response-limits-v1",
+            "diagnostic-severity",
+            "diagnostic",
+            "provider-refusal-kind",
+            "provider-refusal-v1",
+            "lowering-request-v1",
+            "verification-request-v1",
+            "lowering-success-v1",
+            "verification-success-v1",
+            "lowering-result-v1",
+            "verification-result-v1",
+        ])
+    );
+}
+
+fn assert_provider_wit_artifact_shapes(resolve: &Resolve, types: &ProviderWitTypes) {
+    assert_wit_record_fields(
+        resolve,
+        types.protocol_version,
+        &["major", "minor", "patch"],
+    );
+    assert_wit_enum_cases(resolve, types.digest_algorithm, &["sha256"]);
+    assert_wit_record_fields(resolve, types.digest, &["algorithm", "bytes"]);
+    assert_wit_record_fields(resolve, types.resource_ref, &["coordinate", "digest"]);
+    assert_wit_record_fields(resolve, types.artifact, &["domain", "bytes"]);
+    assert_wit_record_fields(resolve, types.bound_artifact, &["reference", "artifact"]);
+    assert_wit_variant_cases(
+        resolve,
+        types.semantic_input_kind,
+        &[
+            "lawpack",
+            "authority-facts",
+            "lowerability-facts",
+            "auxiliary",
+        ],
+    );
+    assert_wit_record_fields(resolve, types.semantic_input, &["role", "kind", "artifact"]);
+    assert_wit_enum_cases(
+        resolve,
+        types.lowering_output_kind,
+        &["target-ir", "generated-artifact", "review-payload"],
+    );
+    assert_wit_record_fields(
+        resolve,
+        types.lowering_output_request,
+        &["role", "kind", "domain"],
+    );
+    assert_wit_record_fields(
+        resolve,
+        types.lowering_output_artifact,
+        &["role", "kind", "artifact", "logical-path"],
+    );
+    assert_wit_enum_cases(
+        resolve,
+        types.verification_output_kind,
+        &["verifier-report"],
+    );
+    assert_wit_record_fields(
+        resolve,
+        types.verification_output_request,
+        &["role", "kind", "domain"],
+    );
+    assert_wit_record_fields(
+        resolve,
+        types.verification_output_artifact,
+        &["role", "kind", "artifact", "logical-path"],
+    );
+}
+
+fn assert_provider_wit_invocation_shapes(resolve: &Resolve, types: &ProviderWitTypes) {
+    assert_wit_record_fields(
+        resolve,
+        types.response_limits,
+        &[
+            "max-output-count",
+            "max-diagnostic-count",
+            "max-total-response-bytes",
+        ],
+    );
+    assert_wit_enum_cases(
+        resolve,
+        types.diagnostic_severity,
+        &["error", "warning", "info"],
+    );
+    assert_wit_record_fields(
+        resolve,
+        types.diagnostic,
+        &["code", "severity", "message", "repair"],
+    );
+    assert_wit_enum_cases(
+        resolve,
+        types.refusal_kind,
+        &[
+            "unsupported-core-abi",
+            "unsupported-target-profile",
+            "unsupported-semantics",
+            "unsupported-output-role",
+            "invalid-semantic-artifact",
+        ],
+    );
+    assert_wit_record_fields(resolve, types.refusal, &["kind", "subject", "diagnostics"]);
+    assert_wit_record_fields(
+        resolve,
+        types.lowering_request,
+        &[
+            "protocol-version",
+            "core",
+            "target-profile",
+            "semantic-inputs",
+            "requested-outputs",
+            "limits",
+        ],
+    );
+    assert_wit_record_fields(
+        resolve,
+        types.verification_request,
+        &[
+            "protocol-version",
+            "core",
+            "target-profile",
+            "target-ir",
+            "semantic-inputs",
+            "requested-outputs",
+            "limits",
+        ],
+    );
+    assert_wit_record_fields(resolve, types.lowering_success, &["outputs", "diagnostics"]);
+    assert_wit_record_fields(
+        resolve,
+        types.verification_success,
+        &["outputs", "diagnostics"],
+    );
+}
+
+fn assert_provider_wit_resource_bindings(resolve: &Resolve, types: &ProviderWitTypes) {
+    for field_name in ["major", "minor", "patch"] {
+        assert_wit_field_type(resolve, types.protocol_version, field_name, Type::U32);
+    }
+    assert_wit_named_field_type(resolve, types.digest, "algorithm", types.digest_algorithm);
+    assert_wit_list_field_type(resolve, types.digest, "bytes", Type::U8);
+    assert_wit_field_type(resolve, types.resource_ref, "coordinate", Type::String);
+    assert_wit_named_field_type(resolve, types.resource_ref, "digest", types.digest);
+    assert_wit_field_type(resolve, types.artifact, "domain", Type::String);
+    assert_wit_list_field_type(resolve, types.artifact, "bytes", Type::U8);
+    assert_wit_named_field_type(
+        resolve,
+        types.bound_artifact,
+        "reference",
+        types.resource_ref,
+    );
+    assert_wit_named_field_type(resolve, types.bound_artifact, "artifact", types.artifact);
+    for case_name in ["lawpack", "authority-facts", "lowerability-facts"] {
+        assert_wit_variant_case_type(resolve, types.semantic_input_kind, case_name, None);
+    }
+    assert_wit_variant_case_type(
+        resolve,
+        types.semantic_input_kind,
+        "auxiliary",
+        Some(Type::String),
+    );
+    assert_wit_field_type(resolve, types.semantic_input, "role", Type::String);
+    assert_wit_named_field_type(
+        resolve,
+        types.semantic_input,
+        "kind",
+        types.semantic_input_kind,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.semantic_input,
+        "artifact",
+        types.bound_artifact,
+    );
+}
+
+fn assert_provider_wit_output_bindings(resolve: &Resolve, types: &ProviderWitTypes) {
+    assert_wit_field_type(resolve, types.lowering_output_request, "role", Type::String);
+    assert_wit_named_field_type(
+        resolve,
+        types.lowering_output_request,
+        "kind",
+        types.lowering_output_kind,
+    );
+    assert_wit_field_type(
+        resolve,
+        types.lowering_output_request,
+        "domain",
+        Type::String,
+    );
+    assert_wit_field_type(
+        resolve,
+        types.lowering_output_artifact,
+        "role",
+        Type::String,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.lowering_output_artifact,
+        "kind",
+        types.lowering_output_kind,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.lowering_output_artifact,
+        "artifact",
+        types.artifact,
+    );
+    assert_wit_option_field_type(
+        resolve,
+        types.lowering_output_artifact,
+        "logical-path",
+        Type::String,
+    );
+    assert_wit_field_type(
+        resolve,
+        types.verification_output_request,
+        "role",
+        Type::String,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_output_request,
+        "kind",
+        types.verification_output_kind,
+    );
+    assert_wit_field_type(
+        resolve,
+        types.verification_output_request,
+        "domain",
+        Type::String,
+    );
+    assert_wit_field_type(
+        resolve,
+        types.verification_output_artifact,
+        "role",
+        Type::String,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_output_artifact,
+        "kind",
+        types.verification_output_kind,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_output_artifact,
+        "artifact",
+        types.artifact,
+    );
+    assert_wit_option_field_type(
+        resolve,
+        types.verification_output_artifact,
+        "logical-path",
+        Type::String,
+    );
+}
+
+fn assert_provider_wit_diagnostic_bindings(resolve: &Resolve, types: &ProviderWitTypes) {
+    assert_wit_field_type(resolve, types.diagnostic, "code", Type::String);
+    assert_wit_named_field_type(
+        resolve,
+        types.diagnostic,
+        "severity",
+        types.diagnostic_severity,
+    );
+    assert_wit_field_type(resolve, types.diagnostic, "message", Type::String);
+    assert_wit_option_field_type(resolve, types.diagnostic, "repair", Type::String);
+    assert_wit_named_field_type(resolve, types.refusal, "kind", types.refusal_kind);
+    assert_wit_option_field_type(resolve, types.refusal, "subject", Type::String);
+    assert_wit_list_field_type(
+        resolve,
+        types.refusal,
+        "diagnostics",
+        Type::Id(types.diagnostic),
+    );
+    assert_wit_field_type(
+        resolve,
+        types.response_limits,
+        "max-output-count",
+        Type::U32,
+    );
+    assert_wit_field_type(
+        resolve,
+        types.response_limits,
+        "max-diagnostic-count",
+        Type::U32,
+    );
+    assert_wit_field_type(
+        resolve,
+        types.response_limits,
+        "max-total-response-bytes",
+        Type::U64,
+    );
+}
+
+fn assert_provider_wit_lowering_bindings(resolve: &Resolve, types: &ProviderWitTypes) {
+    assert_wit_named_field_type(
+        resolve,
+        types.lowering_request,
+        "protocol-version",
+        types.protocol_version,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.lowering_request,
+        "core",
+        types.bound_artifact,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.lowering_request,
+        "target-profile",
+        types.bound_artifact,
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.lowering_request,
+        "semantic-inputs",
+        Type::Id(types.semantic_input),
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.lowering_request,
+        "requested-outputs",
+        Type::Id(types.lowering_output_request),
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.lowering_request,
+        "limits",
+        types.response_limits,
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.lowering_success,
+        "outputs",
+        Type::Id(types.lowering_output_artifact),
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.lowering_success,
+        "diagnostics",
+        Type::Id(types.diagnostic),
+    );
+    assert_wit_result(
+        resolve,
+        types.lowering_result,
+        types.lowering_success,
+        types.refusal,
+    );
+}
+
+fn assert_provider_wit_verification_bindings(resolve: &Resolve, types: &ProviderWitTypes) {
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_request,
+        "protocol-version",
+        types.protocol_version,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_request,
+        "core",
+        types.bound_artifact,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_request,
+        "target-profile",
+        types.bound_artifact,
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.verification_request,
+        "semantic-inputs",
+        Type::Id(types.semantic_input),
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.verification_request,
+        "requested-outputs",
+        Type::Id(types.verification_output_request),
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_request,
+        "target-ir",
+        types.bound_artifact,
+    );
+    assert_wit_named_field_type(
+        resolve,
+        types.verification_request,
+        "limits",
+        types.response_limits,
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.verification_success,
+        "outputs",
+        Type::Id(types.verification_output_artifact),
+    );
+    assert_wit_list_field_type(
+        resolve,
+        types.verification_success,
+        "diagnostics",
+        Type::Id(types.diagnostic),
+    );
+    assert_wit_result(
+        resolve,
+        types.verification_result,
+        types.verification_success,
+        types.refusal,
+    );
+}
+
+fn assert_provider_wit_world_imports(
+    resolve: &Resolve,
+    world: &World,
+    protocol_id: wit_parser::InterfaceId,
+    expected: &[(&str, TypeId)],
+) {
+    assert_eq!(
+        world.imports.len(),
+        expected.len() + 1,
+        "unexpected WIT world imports: {:#?}",
+        world.imports
+    );
+    let protocol_import = world
+        .imports
+        .get(&WorldKey::Interface(protocol_id))
+        .expect("WIT world missing protocol interface import");
+    let WorldItem::Interface { id, .. } = protocol_import else {
+        panic!("WIT protocol import must be an interface");
+    };
+    assert_eq!(*id, protocol_id);
+    assert!(resolve.interfaces[*id].functions.is_empty());
+    for (name, expected_type) in expected {
+        let item = world
+            .imports
+            .get(&WorldKey::Name((*name).to_owned()))
+            .unwrap_or_else(|| panic!("WIT world missing type import `{name}`"));
+        let WorldItem::Type { id, .. } = item else {
+            panic!("WIT world import `{name}` must be a type");
+        };
+        assert_eq!(
+            wit_unaliased_type(resolve, Type::Id(*id)),
+            Type::Id(*expected_type)
+        );
+    }
+}
+
+fn assert_provider_wit_worlds(resolve: &Resolve, package: &Package, types: &ProviderWitTypes) {
+    let protocol_id = *package
+        .interfaces
+        .get("protocol")
+        .expect("provider WIT protocol interface");
+    for (world_name, function_name, request_name, request_id, result_name, result_id) in [
+        (
+            "lowerer",
+            "lower",
+            "lowering-request-v1",
+            types.lowering_request,
+            "lowering-result-v1",
+            types.lowering_result,
+        ),
+        (
+            "verifier",
+            "verify",
+            "verification-request-v1",
+            types.verification_request,
+            "verification-result-v1",
+            types.verification_result,
+        ),
+    ] {
+        let world_id = *package
+            .worlds
+            .get(world_name)
+            .unwrap_or_else(|| panic!("provider WIT missing `{world_name}` world"));
+        let world = &resolve.worlds[world_id];
+        assert_provider_wit_world_imports(
+            resolve,
+            world,
+            protocol_id,
+            &[(request_name, request_id), (result_name, result_id)],
+        );
+        assert!(
+            world.includes.is_empty(),
+            "`{world_name}` includes another world"
+        );
+        assert_eq!(world.exports.len(), 1, "unexpected `{world_name}` exports");
+        let function = wit_world_function(world, function_name);
+        assert_eq!(function.kind, FunctionKind::Freestanding);
+        assert_eq!(function.params.len(), 1);
+        assert_eq!(function.params[0].name, "request");
+        assert_eq!(
+            wit_unaliased_type(resolve, function.params[0].ty),
+            Type::Id(request_id)
+        );
+        assert_eq!(
+            function
+                .result
+                .map(|result| wit_unaliased_type(resolve, result)),
+            Some(Type::Id(result_id))
+        );
+    }
+}
+
+#[test]
+fn provider_wit_declares_explicit_lowering_envelope() {
+    let root = repo_root().expect("repo root");
+    let mut resolve = Resolve::default();
+    let (package_id, _) = resolve
+        .push_path(root.join("docs/abi/edict-target-provider.wit"))
+        .expect("provider WIT must parse and resolve");
+    let package = &resolve.packages[package_id];
+
+    assert_eq!(package.name.to_string(), "edict:target-provider@1.0.0");
+    let protocol_id = *package
+        .interfaces
+        .get("protocol")
+        .expect("provider WIT protocol interface");
+    let protocol = &resolve.interfaces[protocol_id];
+    let types = ProviderWitTypes::resolve(protocol);
+
+    assert_provider_wit_package_shape(&resolve, package, protocol);
+    assert_provider_wit_artifact_shapes(&resolve, &types);
+    assert_provider_wit_invocation_shapes(&resolve, &types);
+    assert_provider_wit_resource_bindings(&resolve, &types);
+    assert_provider_wit_output_bindings(&resolve, &types);
+    assert_provider_wit_diagnostic_bindings(&resolve, &types);
+    assert_provider_wit_lowering_bindings(&resolve, &types);
+    assert_provider_wit_verification_bindings(&resolve, &types);
+    assert_provider_wit_worlds(&resolve, package, &types);
+}
+
+#[test]
+fn legacy_target_profile_wit_is_not_provider_envelope() {
+    let root = repo_root().expect("repo root");
+    let mut resolve = Resolve::default();
+    let (package_id, _) = resolve
+        .push_path(root.join("fixtures/providers/wit/legacy-target-profile.wit"))
+        .expect("legacy target-profile WIT must parse and resolve");
+    let package = &resolve.packages[package_id];
+
+    assert_eq!(resolve.packages.len(), 1);
+    assert_eq!(package.name.to_string(), "edict:target-profile@1.0.0");
+    assert_eq!(
+        package
+            .interfaces
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["artifacts"])
+    );
+    assert!(!package.interfaces.contains_key("protocol"));
+    assert_eq!(
+        package
+            .worlds
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from(["lowerer", "verifier"])
+    );
+
+    let lowerer = &resolve.worlds[package.worlds["lowerer"]];
+    assert_eq!(
+        lowerer
+            .exports
+            .keys()
+            .filter_map(|key| match key {
+                WorldKey::Name(name) => Some(name.as_str()),
+                WorldKey::Interface(_) => None,
+            })
+            .collect::<BTreeSet<_>>(),
+        BTreeSet::from([
+            "effect-signature",
+            "footprint-compare",
+            "cost-compare",
+            "attach-guard",
+            "lower",
+        ])
+    );
+    let verifier = &resolve.worlds[package.worlds["verifier"]];
+    assert!(verifier
+        .exports
+        .contains_key(&WorldKey::Name("verify".to_owned())));
 }
 
 #[test]

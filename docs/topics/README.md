@@ -61,8 +61,8 @@ cargo xtask verify
   preserved-obstruction source/Core boundary plus planned Target IR/runtime
   verification ledger.
 - [Providers](./providers/README.md): runtime-neutral provider manifest
-  validation plus explicit in-process compatibility adapters for the current
-  built-in target lowerers.
+  validation, explicit in-process compatibility adapters for the current
+  built-in target lowerers, and the external provider WIT envelope contract.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract, release runbook, and verification matrix.
 - [Review Process](./review-process/README.md): pull request review-bot fallback

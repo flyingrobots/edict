@@ -8,7 +8,7 @@ status: "draft"
 owners:
   - "@flyingrobots"
 created: "2026-06-18"
-updated: "2026-06-24"
+updated: "2026-07-12"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -31,7 +31,7 @@ split into three layers, and **all three are normative**:
 1. The canonical manifest schema, defined once in
    [`abi/edict-target-profile.cddl`](./abi/edict-target-profile.cddl).
 2. The executable plugin boundary, defined once in
-   [`abi/edict-target-lowerer.wit`](./abi/edict-target-lowerer.wit).
+   [`abi/edict-target-provider.wit`](./abi/edict-target-provider.wit).
 3. The exchange types and doctrine in this document.
 
 Every JSON block below is **generated from the CDDL schema and is illustrative
@@ -119,25 +119,50 @@ same obligations.
 ## Exchange Types And Plugin Boundary
 
 The component boundary is defined in
-[`abi/edict-target-lowerer.wit`](./abi/edict-target-lowerer.wit). It pins the
-byte-level exchange so two independent lowerers/verifiers can interoperate:
+[`abi/edict-target-provider.wit`](./abi/edict-target-provider.wit). It pins the
+byte-level exchange so independent lowerers, verifiers, and hosts can
+interoperate:
 
 ```text
-Core IR (canonical-cbor)        --> lowerer.lower             --> Target IR
-target intrinsic coordinate     --> lowerer.effect-signature  --> signature
-computed footprint + declared ceiling --> lowerer.footprint-compare --> ok | rejected
-computed cost + declared target ceiling --> lowerer.cost-compare    --> ok | rejected
-effect node + guard             --> lowerer.attach-guard      --> node'
-Target IR (canonical-cbor)      --> verifier.verify           --> verifier report
-any stage                       --> diagnostic[]              --> Watson input
+protocol version + digest-bound Core + target profile + semantic inputs
+  + requested output roles + deterministic response limits
+                                --> lowerer.lower
+                                --> declared artifact bytes | typed refusal
+
+protocol version + digest-bound Core + target profile + Target IR
+  + semantic inputs
+  + requested verifier output roles + deterministic response limits
+                                --> verifier.verify
+                                --> verifier artifact bytes | typed refusal
 ```
 
-Each artifact crossing the boundary is `{ domain, bytes }` where `bytes` is
-`edict.canonical-cbor/v1` of the named artifact, so digests remain stable across
-hosts. Diagnostics are structured (`code`, `severity`, `message`, optional
-`repair`, optional non-hash `span`); they are never hashed into semantic
-artifacts. The verifier is evidence, not authority: it never mutates runtime
-state and never overrides participant admission (I-014).
+Each input crossing the boundary is opaque `{ domain, bytes }` paired with a
+digest-locked resource reference verified by the host. The WIT transport does
+not duplicate the artifact's owning schema. Lowerer output kinds are
+structurally distinct from verifier output kinds, so a lowerer cannot claim a
+verifier report and a verifier cannot claim Target IR or generated artifacts.
+Output artifacts declare a role and domain plus an optional logical path, but
+carry no digest: the host validates canonicality and the path, then computes
+authoritative identity. Diagnostics are structured (`code`, typed `severity`,
+`message`, optional `repair`) and remain non-hash sidecars. The verifier is
+evidence, not authority: it never mutates runtime state and never overrides
+participant admission (I-014).
+
+Roles in role-keyed lists are non-empty and unique, and each list is sorted by
+ascending UTF-8 role bytes. Every success output matches one requested
+`(role, kind, domain)`, every request is satisfied exactly once, and present
+logical paths are unique by exact case-sensitive UTF-8 bytes. Diagnostics use
+the exact lexicographic order declared in WIT. The response byte limit is an
+aggregate checked sum over all provider-authored byte lists and UTF-8 strings
+in either success or refusal.
+Exceeding a count or byte limit, or overflowing the sum, is a host-owned
+response failure. Limits cannot change the canonical result; if it fits two
+limit sets, the entire result arm is byte-identical.
+
+The `edict:target-provider@1.0.0` package supersedes the earlier unhosted
+`edict:target-profile@1.0.0` WIT direction. A distinct package identity is
+required because the explicit request/result envelope is not wire-compatible
+with the old opaque two-argument context and single-artifact outcome.
 
 The lowerer compares cost and footprint against the operation's **declared**
 target ceiling only. It never receives a participant-admitted budget; admission

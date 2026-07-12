@@ -105,6 +105,10 @@ evidence references, and local links. Golden commands regenerate or check the
 reviewed byte/digest/stream fixtures. `release-prep` writes mechanical release
 scaffolding but does not decide scope or create GitHub state.
 
+The workspace also owns a parser-checked external provider WIT transport
+contract under `docs/abi/`. `xtask` verifies its resolved package and world
+graph; no crate exports or hosts that component ABI yet.
+
 The `xtask` implementation is split by responsibility:
 
 - `main.rs` owns command dispatch and the `verify` sequence;

@@ -27,7 +27,7 @@ Out of scope:
 - git-warp runtime execution, commit object creation, and CRDT reducer
   verification;
 - bundle/admission validation;
-- general plugin dispatch through `edict-target-lowerer.wit`;
+- general plugin dispatch through `edict-target-provider.wit`;
 - additional target profiles beyond Echo and git-warp;
 - canonical `ContractBundleManifest` bytes;
 - v2 adapter composition.

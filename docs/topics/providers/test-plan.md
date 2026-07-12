@@ -1,7 +1,7 @@
 # Providers Test Plan
 
-Status: current verification design for provider manifest validation and
-built-in lowerer compatibility.
+Status: current verification design for provider manifest validation,
+built-in lowerer compatibility, and the external provider WIT envelope.
 
 ## Scope
 
@@ -14,7 +14,9 @@ In scope:
 - digest-locked provider and artifact references;
 - stable provider manifest validation failures;
 - explicit in-process compatibility invocation of the existing Echo and
-  git-warp lowerers.
+  git-warp lowerers;
+- the versioned runtime-neutral WIT request, output, refusal, and response-limit
+  envelope for external lowerer and verifier components.
 
 Out of scope:
 
@@ -40,6 +42,9 @@ Out of scope:
 | PROVIDERS-REQ-007 | implemented | Each built-in lowerer is bound to its declared target-profile coordinate. A selection mismatch returns a stable lowerer-compatibility failure that implements the standard Rust error traits, while matched-profile target-lowering failures pass through without reclassification. | issue #140 |
 | PROVIDERS-REQ-008 | implemented | For identical Core and lowering facts, the built-in lowerer compatibility adapter preserves the direct target-lowering report, Target IR artifact, canonical bytes, and digest for Echo and git-warp. | issue #140 |
 | PROVIDERS-REQ-009 | implemented | A built-in-lowerer Target IR artifact preserves direct-path semantic and release bundle identity when every explicit assembly input, including lowerer identity, is unchanged; changing only lowerer identity changes release identity, not semantic identity. | issue #140, docs/topics/contract-bundles/README.md |
+| PROVIDERS-REQ-010 | implemented | The external provider ABI has the distinct package identity `edict:target-provider@1.0.0`; it supersedes rather than silently changing the previously shipped, unhosted `edict:target-profile@1.0.0` WIT direction. | issue #148, EDICT-ABI-PROVIDER-WIT-001, docs/abi/edict-target-provider.wit |
+| PROVIDERS-REQ-011 | implemented | Lowerer and verifier worlds each accept one request containing an explicit semantic protocol version, digest-bound Core, target-profile, and semantic artifacts, authority-separated requested output roles, and deterministic response limits, and each world imports no callable ambient capability. Role-keyed request and response lists use non-empty unique roles in one canonical UTF-8 byte order. | issue #148 |
+| PROVIDERS-REQ-012 | implemented | Provider responses contain world-specific role/domain/kind-tagged artifact bytes with optional collision-free logical paths and without provider-authored output digests, plus typed diagnostics or semantic refusal. Success matches every requested `(role, kind, domain)` exactly once and returns no undeclared output; host-side path validation, identity recomputation, and binding validation remain separate obligations. | issue #148, docs/design/provider-artifact-pipeline-alpha.md |
 
 ## Fixtures
 
@@ -47,6 +52,8 @@ Out of scope:
 | --- | --- | --- |
 | fixtures/providers/echo-generated/provider-manifest.json | Representative provider manifest envelope using Echo-shaped coordinates. | Deserializes as `TargetProviderManifest` and validates through `validate_target_provider_manifest` without interpreting Echo semantics. |
 | crates/edict-syntax/tests/provider_lowering.rs | In-memory Core and target-lowering facts exercised through direct and explicit built-in lowerer paths. | Reports, artifacts, canonical Target IR bytes, digests, structured failures, and bundle identities remain equal when their semantic and release inputs remain equal. |
+| docs/abi/edict-target-provider.wit | Versioned runtime-neutral component transport envelope. | Parses through `wit-parser` and resolves to the reviewed package, interface, named types, and lowerer/verifier world graph. |
+| fixtures/providers/wit/legacy-target-profile.wit | Byte-identical copy of the WIT package shipped through `v0.11.0-alpha.1`. | Parses as the superseded `edict:target-profile@1.0.0` package and exposes the incompatible fine-grained RPC surface, not the target-provider protocol. |
 
 ## Cases
 
@@ -63,12 +70,16 @@ Out of scope:
 | PROVIDERS-TP-009 | implemented | Boundary guard | PROVIDERS-REQ-007 | Cross-profile built-in lowerer selection returns `TargetProfileMismatch`; matched-profile invalid facts and target-profile digests preserve the direct structured target-lowering report exactly. | builtin_lowerers_reject_mismatched_target_profiles, builtin_lowerers_preserve_structured_lowering_failures, builtin_lowerers_preserve_target_profile_digest_failures | crates/edict-syntax/tests/provider_lowering.rs | Lowerer selection failure remains distinct from a lowerer's typed refusal, and coordinate matching does not bypass digest validation. |
 | PROVIDERS-TP-010 | implemented | Integration | PROVIDERS-REQ-009 | Direct and built-in-lowerer artifacts produce identical semantic and release bundle identities under identical explicit inputs; changing only lowerer identity preserves semantic identity and changes release identity. | builtin_lowerer_bundles_preserve_semantic_and_release_identity, changing_builtin_lowerer_identity_changes_only_release_identity | crates/edict-syntax/tests/provider_lowering.rs | Bundle assembly consumes artifacts and explicit identities; it does not invoke providers. |
 | PROVIDERS-TP-011 | implemented | API contract | PROVIDERS-REQ-007 | A target-profile compatibility failure implements `std::error::Error`; its display form identifies the structured kind, selected lowerer, expected profile, and actual profile without making diagnostic prose the stable refusal oracle. | builtin_lowerer_compatibility_failure_is_standard_error | crates/edict-syntax/tests/provider_lowering.rs | The structured failure fields remain the stable machine-readable contract. |
+| PROVIDERS-TP-012 | implemented | ABI contract | PROVIDERS-REQ-010, PROVIDERS-REQ-011, PROVIDERS-REQ-012 | The official WIT parser resolves the exact target-provider package, members, scalar/container/payload types, and named envelope graph; lowerer/verifier worlds have one authority-separated typed request/result export and no callable imports; outputs expose optional logical paths but no digest field. | provider_wit_declares_explicit_lowering_envelope | docs/abi/edict-target-provider.wit, xtask/src/tests.rs | Structural parser evidence; comments, whitespace, and source layout are not the oracle. |
+| PROVIDERS-TP-013 | implemented | Compatibility guard | PROVIDERS-REQ-010 | The official WIT parser resolves the last shipped legacy fixture as `edict:target-profile@1.0.0` with its incompatible artifacts interface and fine-grained lowerer exports, proving that the replacement requires a distinct package identity. | legacy_target_profile_wit_is_not_provider_envelope | fixtures/providers/wit/legacy-target-profile.wit, xtask/src/tests.rs | The fixture preserves tagged history as executable local evidence; it is not a supported current ABI. |
 
 ## Determinism Obligations
 
 - Provider validation tests use checked-in JSON fixtures and typed Rust values.
 - Built-in lowerer compatibility tests use in-memory Core and explicit target
   facts, then compare structured reports and canonical Target IR artifacts.
+- WIT contract evidence parses and resolves the checked-in package with the
+  official parser, then inspects named types and world function surfaces.
 - Assertions use structured status and failure kinds.
 - Tests do not inspect stdout, stderr, diagnostic prose, filesystem ordering,
   network state, wall-clock time, random values, or runtime behavior.
@@ -77,5 +88,6 @@ Out of scope:
 
 - No provider package loader exists.
 - No manifest-backed provider resolver or external provider dispatch exists.
-- No WIT provider host exists.
+- No WIT provider host or component execution exists; only the transport ABI is
+  frozen.
 - No Echo-owned provider implementation exists.

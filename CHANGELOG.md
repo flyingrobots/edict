@@ -27,6 +27,15 @@ versions still track specification maturity rather than a released product.
   bundle identities under identical explicit assembly inputs. This is an
   in-process migration adapter, not manifest-backed resolution, WIT component
   loading, or a public Rust provider plugin trait.
+- Added the parser-checked `edict:target-provider@1.0.0` WIT transport ABI for
+  external lowerer and verifier components. Explicit versioned requests carry
+  digest-bound Core, target-profile, and semantic artifacts, world-specific
+  requested output roles, and deterministic response limits. Provider outputs
+  carry role-tagged bytes and optional logical paths without authoritative
+  digests; host validation, digest recomputation, component loading, replay,
+  and execution remain follow-on work. The new package identity explicitly
+  supersedes the previously shipped but unhosted `edict:target-profile@1.0.0`
+  WIT direction rather than changing its meaning.
 
 ### Changed
 
