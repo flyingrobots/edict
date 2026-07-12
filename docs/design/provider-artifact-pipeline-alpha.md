@@ -1,14 +1,17 @@
 # Provider Artifact Pipeline Alpha
 
-Status: accepted design for issue #139 and goalpost #138.
+Status: current design and implemented boundary for issues #139 and #140 under
+goalpost #138.
 
 ## Scope
 
-This design records the first Edict provider boundary: a provider package is an
-assembled set of generated artifacts plus provider-owned executable components.
-Edict consumes that package through explicit, digest-locked references.
+This design records the intended first Edict provider boundary: a provider
+package is an assembled set of generated artifacts plus provider-owned
+executable components. The current slices validate a typed manifest envelope and
+invoke explicitly selected in-tree lowerers through a compatibility adapter.
+Manifest-backed package resolution and consumption remain follow-on work.
 
-In scope for this slice:
+The first manifest/provenance slice includes:
 
 - provider manifest vocabulary;
 - artifact roles;
@@ -17,12 +20,23 @@ In scope for this slice:
 - generic envelope validation;
 - fixture-backed validation tests.
 
+The built-in compatibility slice adds:
+
+- explicit selection of the existing in-tree Echo or git-warp lowerer;
+- a borrowed request over an already-built Core module and target-lowering
+  facts;
+- a structured target-profile compatibility failure before invocation;
+- unchanged passthrough of the existing target-lowering report; and
+- executable parity evidence for Target IR values, canonical bytes, digests,
+  and bundle identities.
+
 Out of scope:
 
 - Echo-specific lawpack semantics;
 - Wesley execution or lawpack generation inside Edict;
 - WIT component loading;
-- target lowering through providers;
+- manifest-backed provider/lowerer resolution;
+- external provider component dispatch;
 - verifier execution;
 - runtime execution;
 - admission or registration.
@@ -66,7 +80,8 @@ expressed as verifier evidence that Edict can bind without interpreting.
 runtime-owned semantic source
   -> runtime-owned generator
   -> generated lawpack/profile/facts/provider artifacts
-  -> provider package
+                                                    \
+provider-owned lowerer/verifier components --------> provider package
   -> Edict compiler consumption
 ```
 
@@ -75,16 +90,14 @@ For Echo, the intended downstream shape is:
 ```text
 Echo semantic source
   -> Echo-Wesley generator
-  -> Echo lawpack
-  -> Echo target profile
-  -> Echo authority facts
-  -> Echo provider manifest
-  -> edict-echo lowerer and verifier components
+  -> generated Echo lawpack/profile/facts/manifest
+                                                    \
+edict-echo lowerer and verifier components --------> Echo provider package
 ```
 
-Edict sees only the resulting provider package artifacts and their digest-locked
-provenance. Edict does not understand Wesley internals and does not hardcode
-Echo law.
+In the intended external-provider flow, Edict sees only the resulting package
+artifacts and their digest-locked provenance. Edict does not understand Wesley
+internals and does not hardcode Echo law.
 
 ## Manifest Shape
 
@@ -153,10 +166,29 @@ Echo-shaped coordinates to prove that lawpack, target-profile, authority-facts,
 lowerer, and verifier roles can be represented without making Edict interpret
 Echo.
 
+## Built-in Lowerer Compatibility
+
+`BuiltinTargetLowerer` and `lower_with_builtin_lowerer` route the current
+in-tree Echo and git-warp lowerers through an explicit in-process migration
+seam. The adapter validates only that the selected lowerer serves the requested
+target-profile coordinate, then delegates to `lower_to_target_ir` without
+reclassifying target failures or adding provider identity to semantic artifacts.
+
+This is not a complete target provider. It does not consume a
+`TargetProviderManifest`, resolve lawpack or target-profile bytes, select a
+manifest-declared component, load WIT/WASM, or invent a lowerer digest. The
+explicit lowerer identity supplied to contract-bundle assembly remains the
+release-identity authority.
+
+Direct and compatibility paths are required to produce byte-identical canonical
+Target IR and the same `edict.target-ir.artifact/v1` digest. With identical
+bundle inputs they produce identical semantic and release bundle digests;
+changing only lowerer identity changes the release digest only.
+
 ## Follow-On Work
 
-Issue #140 wraps current in-tree target lowerers behind provider-shaped APIs and
-must prove direct/provider Target IR parity.
+Issue #140 introduced the built-in compatibility seam described above. The
+broader manifest-backed provider resolver remains future composition work.
 
 Issue #141 adds the WIT provider host alpha.
 

@@ -43,6 +43,28 @@ fn generated_provider_manifest_fixture_validates() {
 }
 
 #[test]
+fn provider_manifest_rejects_unknown_api_version() {
+    let mut manifest = fixture_manifest();
+    manifest.api_version = "edict.provider-manifest/v2".to_owned();
+
+    assert_eq!(
+        failure_kinds(&manifest),
+        vec![ProviderManifestValidationFailureKind::InvalidApiVersion]
+    );
+}
+
+#[test]
+fn provider_manifest_rejects_unlocked_provider() {
+    let mut manifest = fixture_manifest();
+    manifest.provider.digest = None;
+
+    assert_eq!(
+        failure_kinds(&manifest),
+        vec![ProviderManifestValidationFailureKind::NonDigestLockedProvider]
+    );
+}
+
+#[test]
 fn provider_manifest_rejects_unlocked_generated_artifact() {
     let mut manifest = fixture_manifest();
     manifest.artifacts[0].resource.digest = None;
@@ -83,6 +105,20 @@ fn provider_manifest_rejects_unlocked_generator_provenance() {
     assert_eq!(
         failure_kinds(&manifest),
         vec![ProviderManifestValidationFailureKind::NonDigestLockedGenerator]
+    );
+}
+
+#[test]
+fn provider_manifest_rejects_unlocked_component() {
+    let mut manifest = fixture_manifest();
+    let ProviderArtifactSource::Component { component } = &mut manifest.artifacts[4].source else {
+        panic!("fixture lowerer artifact should be a component");
+    };
+    component.digest = None;
+
+    assert_eq!(
+        failure_kinds(&manifest),
+        vec![ProviderManifestValidationFailureKind::NonDigestLockedComponent]
     );
 }
 
@@ -133,5 +169,16 @@ fn provider_manifest_rejects_duplicate_artifact_roles() {
     assert_eq!(
         failure_kinds(&manifest),
         vec![ProviderManifestValidationFailureKind::DuplicateArtifactRole]
+    );
+}
+
+#[test]
+fn provider_manifest_rejects_empty_artifact_role() {
+    let mut manifest = fixture_manifest();
+    manifest.artifacts[0].role.clear();
+
+    assert_eq!(
+        failure_kinds(&manifest),
+        vec![ProviderManifestValidationFailureKind::MissingRole]
     );
 }

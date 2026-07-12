@@ -28,6 +28,9 @@
 //! assurance evidence manifests. Admission-boundary checks validate Edict-owned
 //! artifact and invocation evidence bindings without evaluating participant
 //! policy.
+//! Provider support validates generated/component provenance envelopes and
+//! exposes an explicit in-process compatibility seam over the current Echo and
+//! git-warp lowerers without defining external provider dispatch.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, general
 //! target lowering, and full admission execution tooling are deferred. The
@@ -73,6 +76,7 @@ pub mod highlight;
 pub mod lowerability;
 pub mod parser;
 pub mod provider;
+pub mod provider_lowering;
 pub mod semantic;
 pub mod target_ir;
 pub mod target_profile;
@@ -135,6 +139,11 @@ pub use provider::{
     ProviderArtifactSource, ProviderManifestValidationFailure,
     ProviderManifestValidationFailureKind, ProviderManifestValidationReport,
     ProviderManifestValidationStatus, TargetProviderManifest, TARGET_PROVIDER_MANIFEST_API_VERSION,
+};
+pub use provider_lowering::{
+    lower_with_builtin_lowerer, BuiltinLowererCompatibilityFailure,
+    BuiltinLowererCompatibilityFailureKind, BuiltinLowererRequest, BuiltinLoweringResult,
+    BuiltinTargetLowerer,
 };
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{
