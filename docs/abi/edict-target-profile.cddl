@@ -62,9 +62,10 @@ target-profile-manifest = {
 ; (EDICT-ABI-INTRINSICS-DOC-001).
 
 ; intrinsics is a MAP keyed by coordinate, so the schema itself enforces
-; coordinate uniqueness (the WIT boundary resolves by coordinate via
-; `effect-signature(coordinate)`). Each map key MUST equal its record's
-; `coordinate` field (EDICT-ABI-INTRINSIC-UNIQUE-001).
+; coordinate uniqueness. A provider receives the resolved corpus as a
+; digest-bound semantic input and resolves coordinates within that artifact.
+; Each map key MUST equal its record's `coordinate` field
+; (EDICT-ABI-INTRINSIC-UNIQUE-001).
 intrinsics-document = {
   apiVersion: "edict.target-profile.intrinsics/v1",
   intrinsics: { * tstr => intrinsic },

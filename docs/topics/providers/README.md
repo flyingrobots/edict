@@ -2,13 +2,14 @@
 
 Status: current HEAD contract.
 
-This shelf describes the provider manifest boundary and built-in lowerer
-compatibility seam that exist today. A target provider package is an assembled
-collection of generated artifacts plus provider-owned components. Edict can
-validate the generic provider manifest envelope and provenance locks. It can
-also invoke the existing in-tree Echo and git-warp lowerers through an explicit
-in-process migration adapter, but it cannot load manifest-declared components,
-run verifiers, or interpret runtime-specific semantics.
+This shelf describes the provider manifest boundary, built-in lowerer
+compatibility seam, and external component transport ABI that exist today. A
+target provider package is an assembled collection of generated artifacts plus
+provider-owned components. Edict can validate the generic provider manifest
+envelope and provenance locks, invoke the existing in-tree Echo and git-warp
+lowerers through an explicit migration adapter, and parse the frozen WIT
+contract. It cannot load or invoke manifest-declared components, run verifiers,
+or interpret runtime-specific semantics.
 
 ## Current Contract
 
@@ -56,6 +57,35 @@ Target IR artifacts, canonical bytes, and digests. The adapter does not consume
 or resolve a `TargetProviderManifest`, invent component identity, or define the
 external provider ABI. Its structured compatibility failure implements
 `Display` and `std::error::Error` for standard Rust error propagation.
+
+The external component contract is
+[`edict:target-provider@1.0.0`](../../abi/edict-target-provider.wit). It replaces
+the previously shipped but unhosted `edict:target-profile@1.0.0` WIT direction
+with a distinct ABI identity rather than assigning incompatible meanings to the
+old package version.
+
+The `lowerer` and `verifier` worlds each expose one function over an explicit
+versioned request. Every request carries the semantic protocol version. Inputs
+are opaque canonical artifacts wrapped in digest-locked resource references.
+Semantic inputs carry generic roles and kinds; requested outputs carry an
+expected role, kind, and domain. Lowering and verification use distinct output
+types so neither world can claim the other's evidence roles. Deterministic
+response limits cross the ABI, while memory, fuel, and interruption remain
+future host configuration. Component outputs carry role-tagged bytes and an
+optional logical path, but no digest, because the future host must validate
+canonicality and path safety and compute the authoritative identity. Typed
+provider refusal remains distinct from future host failures such as denied
+imports, traps, exhaustion, malformed envelopes, or replay mismatch.
+
+Semantic inputs, requested outputs, and returned outputs use non-empty, unique
+roles in strict ascending UTF-8 byte order. A success matches every requested
+`(role, kind, domain)` exactly once and returns no undeclared output. Present
+logical paths are unique by exact case-sensitive UTF-8 bytes. Diagnostic lists
+use the WIT-declared lexicographic order. Response limits apply to success and
+refusal: the aggregate byte cap is the checked sum of every provider-authored
+byte list and UTF-8 string in the selected result arm. Overflow or any exceeded
+cap is a host-owned limit failure. Limits cannot change the canonical result;
+when it fits two limit sets, the entire result arm is byte-identical.
 
 ## Authority Boundary
 

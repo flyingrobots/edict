@@ -14,7 +14,7 @@
     "commonSchema": "sha256:...",
     "lawpackSchema": "sha256:...",
     "targetProfileSchema": "sha256:...",
-    "targetLowererWit": "sha256:...",
+    "targetProviderWit": "sha256:...",
     "bundleSchema": "sha256:...",
     "admissionSchema": "sha256:...",
     "canonicalCborProfile": "sha256:..."

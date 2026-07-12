@@ -33,9 +33,9 @@ Milestone: `Provider Artifact Pipeline Alpha`
 
 Goalpost: #138
 
-Completed frontier issues: #139, #140
+Completed frontier issues: #139, #140, #148
 
-Current frontier issue: #141
+Current frontier issue: #146 under #141
 
 Release labels: `release:lawpacks`, `release:target-profiles`,
 `release:target-ir`, `release:bundles`
@@ -51,6 +51,10 @@ Scope:
   provider implementation.
 - Explicit in-process Echo and git-warp lowerer compatibility adapters with
   direct-path Target IR byte/digest and bundle-identity parity evidence.
+- A parser-checked `edict:target-provider@1.0.0` WIT envelope with explicit
+  protocol versions, digest-bound inputs, authority-separated lowerer/verifier
+  output roles, optional logical paths, typed refusal, deterministic response
+  limits, and host-computed output identity.
 
 Exit gates:
 

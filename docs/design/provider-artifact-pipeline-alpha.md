@@ -1,7 +1,7 @@
 # Provider Artifact Pipeline Alpha
 
-Status: current design and implemented boundary for issues #139 and #140 under
-goalpost #138.
+Status: current design and implemented boundary for issues #139, #140, and #148
+under goalpost #138.
 
 ## Scope
 
@@ -29,6 +29,16 @@ The built-in compatibility slice adds:
 - unchanged passthrough of the existing target-lowering report; and
 - executable parity evidence for Target IR values, canonical bytes, digests,
   and bundle identities.
+
+The WIT envelope slice adds:
+
+- the distinct `edict:target-provider@1.0.0` package identity;
+- explicit protocol versions and digest-bound opaque input artifacts;
+- authority-separated lowerer and verifier output requests;
+- digest-free provider outputs with optional logical paths;
+- typed provider diagnostics and refusal;
+- deterministic response limits; and
+- parser-backed structural contract evidence.
 
 Out of scope:
 
@@ -185,12 +195,56 @@ Target IR and the same `edict.target-ir.artifact/v1` digest. With identical
 bundle inputs they produce identical semantic and release bundle digests;
 changing only lowerer identity changes the release digest only.
 
+## External Provider WIT Envelope
+
+The normative component transport is
+`docs/abi/edict-target-provider.wit`. Its `lowerer` and `verifier` worlds expose
+one request/result function each. The transport composes existing canonical
+artifact domains rather than copying their semantic schemas into WIT.
+
+Each request carries an explicit `{ major, minor, patch }` protocol version.
+Inputs use `bound-artifact`, which pairs opaque `{ domain, bytes }` transport
+with a digest-locked resource reference already resolved by the host. Core and
+target profile are explicit. Additional lawpack, authority-fact,
+lowerability-fact, and auxiliary artifacts carry deterministic roles. Requested
+outputs declare the exact role, routing kind, and artifact domain. Separate
+lowering and verification output types prevent either world from claiming the
+other world's evidence roles.
+
+Every role-keyed list has one spelling: semantic inputs, requested outputs, and
+returned outputs contain non-empty unique roles sorted by ascending UTF-8
+bytes. Success returns exactly one output for every request, matching its
+`(role, kind, domain)`, and no undeclared output. Present logical paths are
+unique by exact case-sensitive UTF-8 bytes. Diagnostics use the lexicographic
+tuple fixed in WIT. Response limits constrain both success and refusal. The
+total byte limit is a checked `u64` sum over every provider-authored byte list
+and UTF-8 string in the selected result arm; overflow or any exceeded bound is a
+future host-owned failure. Limits cannot alter the canonical result. If that
+result fits two supplied limit sets, the entire selected result arm is
+byte-identical.
+
+Provider outputs deliberately omit digests. A component can return bytes and a
+declared role plus an optional logical path, but only the future host may
+validate canonicality and path safety, recompute the digest, bind the result to
+the invocation's Core and semantic inputs, and build an authoritative output
+manifest. Provider refusal is target-owned evidence; load errors, denied
+imports, traps, resource exhaustion, malformed responses, binding failures, and
+replay mismatches remain host-owned failures.
+
+The earlier `edict:target-profile@1.0.0` WIT package shipped as an unhosted alpha
+direction. This slice supersedes it with a new package identity because its
+opaque two-argument context, single-artifact result, unused digest type, and
+fine-grained RPC surface cannot satisfy the explicit provider-host boundary
+without a breaking change.
+
 ## Follow-On Work
 
 Issue #140 introduced the built-in compatibility seam described above. The
 broader manifest-backed provider resolver remains future composition work.
 
-Issue #141 adds the WIT provider host alpha.
+Issue #141 tracks four native slices: #148 freezes the WIT envelope, #146 adds
+pure envelope validation, #145 adds the capability-constrained component host,
+and #147 adds deterministic replay and negative conformance.
 
 Issue #142 creates the downstream Echo-owned provider implementation issues once
 the Edict provider ABI is concrete enough to scope them accurately.
