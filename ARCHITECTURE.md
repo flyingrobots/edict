@@ -30,12 +30,13 @@ exports:
 - compiler context facts and authority-fact loading;
 - source-to-Core compiler spine for the current supported subset;
 - Core IR data structures;
-- canonical Core, Target IR, bundle-layer encoders and digest helpers;
+- depth-bounded canonical-CBOR encoding/decoding plus canonical Core, Target IR,
+  bundle-layer encoders and digest helpers;
 - target-profile conformance checks;
 - lowerability checks;
 - Echo and git-warp Target IR artifact lowering;
-- provider manifest/provenance validation and explicit built-in lowerer
-  compatibility adapters;
+- provider manifest/provenance validation, pure invocation-envelope validation,
+  and explicit built-in lowerer compatibility adapters;
 - contract-bundle assembly and validation;
 - Gate C admission-boundary request/receipt validation;
 - editor/highlighting support.
@@ -58,10 +59,11 @@ Module map:
 | `authority_facts` | File-backed compiler context facts for profiles, budgets, write classes, and source identity. |
 | `compiler` | Resolve, type-check, and lower the supported source subset to Core IR. |
 | `core_ir` | Runtime-neutral Core module, intent, expression, budget, import, and obstruction data. |
-| `canonical` | Canonical value model, canonical CBOR encoder/decoder, digest frames, and reviewed golden digest helpers. |
+| `canonical` | Canonical value model, depth-bounded canonical CBOR encoder/decoder, digest frames, and reviewed golden digest helpers. |
 | `target_profile` | Runtime-neutral target-profile manifest conformance. |
 | `lowerability` | Checks whether Core requirements can be satisfied natively, by a direct adapter, or not at all. |
 | `provider` | Runtime-neutral provider manifest and generated/component provenance envelope validation. |
+| `provider_invocation` | Pure host-contract, explicitly injected owning-schema, WIT-shaped request/result, canonical artifact, limit, and sealed output-manifest validation. |
 | `provider_lowering` | Explicit in-process compatibility adapters over the current built-in target lowerers. |
 | `target_ir` | Current Echo and git-warp Target IR artifact construction from Core plus lowering facts. |
 | `contract_bundle` | Participant-neutral bundle assembly, bundle digest preimages, validation, and assurance evidence binding. |
@@ -107,7 +109,8 @@ scaffolding but does not decide scope or create GitHub state.
 
 The workspace also owns a parser-checked external provider WIT transport
 contract under `docs/abi/`. `xtask` verifies its resolved package and world
-graph; no crate exports or hosts that component ABI yet.
+graph. `edict-syntax` mirrors its values for pure invocation validation, but no
+component host or WIT dispatch exists yet.
 
 The `xtask` implementation is split by responsibility:
 
@@ -143,6 +146,10 @@ source text
 
 The CLI currently exercises only the front end through surface validation. Tests
 and `xtask` exercise deeper layers directly.
+
+The external-provider lane currently stops at validated in-memory request and
+result envelopes. It can compute an all-or-nothing host output manifest, but it
+does not load or invoke a provider component.
 
 ## Dependency Rules
 

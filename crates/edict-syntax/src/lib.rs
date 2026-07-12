@@ -28,9 +28,12 @@
 //! assurance evidence manifests. Admission-boundary checks validate Edict-owned
 //! artifact and invocation evidence bindings without evaluating participant
 //! policy.
-//! Provider support validates generated/component provenance envelopes and
-//! exposes an explicit in-process compatibility seam over the current Echo and
-//! git-warp lowerers without defining external provider dispatch.
+//! Provider support validates generated/component provenance plus pure,
+//! runtime-neutral invocation request and result envelopes through an explicit
+//! host-owned artifact-schema validator. Opaque validated request wrappers and
+//! sealed host-computed output manifests remain separate from external
+//! component dispatch. The crate also exposes an explicit in-process
+//! compatibility seam over the current Echo and git-warp lowerers.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, general
 //! target lowering, and full admission execution tooling are deferred. The
@@ -76,6 +79,7 @@ pub mod highlight;
 pub mod lowerability;
 pub mod parser;
 pub mod provider;
+pub mod provider_invocation;
 pub mod provider_lowering;
 pub mod semantic;
 pub mod target_ir;
@@ -103,7 +107,7 @@ pub use canonical::{
     BundlePreimageComponent, BundleSourceDescriptor, CanonicalError, CanonicalErrorKind,
     CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN, BUNDLE_SEMANTIC_DIGEST_DOMAIN,
     CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    MAX_CANONICAL_NESTING_DEPTH, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
@@ -139,6 +143,28 @@ pub use provider::{
     ProviderArtifactSource, ProviderManifestValidationFailure,
     ProviderManifestValidationFailureKind, ProviderManifestValidationReport,
     ProviderManifestValidationStatus, TargetProviderManifest, TARGET_PROVIDER_MANIFEST_API_VERSION,
+};
+pub use provider_invocation::{
+    validate_provider_lowering_limit_independence, validate_provider_lowering_request,
+    validate_provider_lowering_result, validate_provider_verification_limit_independence,
+    validate_provider_verification_request, validate_provider_verification_result,
+    ProviderArtifact, ProviderArtifactBinding, ProviderArtifactSchemaValidationErrorKind,
+    ProviderArtifactSchemaValidator, ProviderBoundArtifact, ProviderDiagnostic,
+    ProviderDiagnosticSeverity, ProviderDigest, ProviderDigestAlgorithm,
+    ProviderInvocationInputManifest, ProviderInvocationKind, ProviderInvocationValidationFailure,
+    ProviderInvocationValidationFailureKind, ProviderInvocationValidationReport,
+    ProviderInvocationValidationStatus, ProviderLoweringInvocationContract,
+    ProviderLoweringOutputArtifact, ProviderLoweringOutputKind, ProviderLoweringOutputRequest,
+    ProviderLoweringRequest, ProviderLoweringResult, ProviderLoweringSuccess,
+    ProviderOutputManifest, ProviderOutputManifestEntry, ProviderOutputRequestBinding,
+    ProviderProtocolVersion, ProviderRefusal, ProviderRefusalKind, ProviderResourceRef,
+    ProviderResponseLimits, ProviderSemanticInput, ProviderSemanticInputBinding,
+    ProviderSemanticInputKind, ProviderVerificationInvocationContract,
+    ProviderVerificationOutputArtifact, ProviderVerificationOutputKind,
+    ProviderVerificationOutputRequest, ProviderVerificationRequest, ProviderVerificationResult,
+    ProviderVerificationSuccess, ValidatedProviderLoweringRequest, ValidatedProviderOutcome,
+    ValidatedProviderVerificationRequest, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+    TARGET_PROVIDER_PROTOCOL_VERSION,
 };
 pub use provider_lowering::{
     lower_with_builtin_lowerer, BuiltinLowererCompatibilityFailure,

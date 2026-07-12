@@ -62,7 +62,8 @@ cargo xtask verify
   verification ledger.
 - [Providers](./providers/README.md): runtime-neutral provider manifest
   validation, explicit in-process compatibility adapters for the current
-  built-in target lowerers, and the external provider WIT envelope contract.
+  built-in target lowerers, the external provider WIT contract, and pure
+  invocation request/result validation with host-authored output identity.
 - [Release Process](./release-process/README.md): tag-triggered GitHub Release
   publication contract, release runbook, and verification matrix.
 - [Review Process](./review-process/README.md): pull request review-bot fallback

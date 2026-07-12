@@ -1,15 +1,17 @@
 # Provider Artifact Pipeline Alpha
 
-Status: current design and implemented boundary for issues #139, #140, and #148
-under goalpost #138.
+Status: current design and implemented boundary for issues #139, #140, #146,
+and #148 under goalpost #138.
 
 ## Scope
 
 This design records the intended first Edict provider boundary: a provider
 package is an assembled set of generated artifacts plus provider-owned
-executable components. The current slices validate a typed manifest envelope and
-invoke explicitly selected in-tree lowerers through a compatibility adapter.
-Manifest-backed package resolution and consumption remain follow-on work.
+executable components. The current slices validate a typed manifest envelope,
+invoke explicitly selected in-tree lowerers through a compatibility adapter,
+freeze the external WIT envelope, and validate invocation values without running
+a component. Manifest-backed package resolution and consumption remain
+follow-on work.
 
 The first manifest/provenance slice includes:
 
@@ -39,6 +41,15 @@ The WIT envelope slice adds:
 - typed provider diagnostics and refusal;
 - deterministic response limits; and
 - parser-backed structural contract evidence.
+
+The pure invocation-validation slice adds:
+
+- owned Rust values mirroring the lowerer and verifier WIT envelopes;
+- host-authored contracts for every input artifact and semantic-input role;
+- canonical-CBOR, domain, and digest binding before request validation succeeds;
+- exact result, path, diagnostic, and response-limit validation;
+- pairwise limit-independence checks; and
+- all-or-nothing host-authored output manifests.
 
 Out of scope:
 
@@ -70,6 +81,16 @@ Edict validates:
 - generated artifact generator provenance;
 - component provenance for component roles;
 - unique artifact role slots.
+
+At the invocation boundary, Edict also validates:
+
+- semantic protocol version `1.0.0`;
+- complete host-authored input bindings;
+- fixed and contract-supplied artifact domains;
+- canonical artifact bytes and domain-separated digests;
+- exact role, output, path, and diagnostic ordering;
+- checked response limits on success and refusal; and
+- limit-independent complete results.
 
 Edict does not validate:
 
@@ -219,17 +240,18 @@ unique by exact case-sensitive UTF-8 bytes. Diagnostics use the lexicographic
 tuple fixed in WIT. Response limits constrain both success and refusal. The
 total byte limit is a checked `u64` sum over every provider-authored byte list
 and UTF-8 string in the selected result arm; overflow or any exceeded bound is a
-future host-owned failure. Limits cannot alter the canonical result. If that
+host-owned validation failure. Limits cannot alter the canonical result. If that
 result fits two supplied limit sets, the entire selected result arm is
 byte-identical.
 
 Provider outputs deliberately omit digests. A component can return bytes and a
-declared role plus an optional logical path, but only the future host may
-validate canonicality and path safety, recompute the digest, bind the result to
-the invocation's Core and semantic inputs, and build an authoritative output
-manifest. Provider refusal is target-owned evidence; load errors, denied
-imports, traps, resource exhaustion, malformed responses, binding failures, and
-replay mismatches remain host-owned failures.
+declared role plus an optional logical path. The pure validator checks
+canonicality, domain, owning-schema compatibility through an explicitly
+injected host validator, path syntax, and request binding, then recomputes output
+digests and builds an authoritative output manifest only for a completely valid
+success. Provider refusal is target-owned evidence; load errors, denied imports,
+traps, resource exhaustion, malformed responses, binding failures, and replay
+mismatches remain host-owned failures.
 
 The earlier `edict:target-profile@1.0.0` WIT package shipped as an unhosted alpha
 direction. This slice supersedes it with a new package identity because its
@@ -237,14 +259,62 @@ opaque two-argument context, single-artifact result, unused digest type, and
 fine-grained RPC surface cannot satisfy the explicit provider-host boundary
 without a breaking change.
 
+## Pure Invocation Envelope Validation
+
+`provider_invocation` mirrors the WIT transport as owned Rust values. A lowering
+or verification caller supplies a separate invocation contract that fixes the
+expected resource reference and domain of every input plus an explicit
+`ProviderArtifactSchemaValidator`. The request validator accepts only protocol
+`1.0.0`, preflights every requested output domain, and returns an opaque wrapper
+that retains the validator, so result validation cannot be called with an
+unchecked request or a substituted schema capability.
+
+Core, target profile, lawpack, authority facts, and verifier Target IR use the
+fixed domains `edict.core.module/v1`, `edict.target-profile/v1`,
+`edict.lawpack/v1`, `edict.authority-facts/v1`, and
+`edict.target-ir.artifact/v1`. The contract supplies the lowerability-fact and
+auxiliary domains. Each artifact digest is SHA-256 over its decoded value in the
+generic canonical frame:
+
+```text
+["edict.digest/v1", "<artifact-domain>", <decoded canonical artifact>]
+```
+
+Canonical decoding rejects noncanonical bytes and values nested beyond 128
+levels. The decoded value must then validate under the immutable owning schema
+selected by its domain before digest computation. The injected validator is a
+trusted host capability whose contract requires total, deterministic,
+side-effect-free, in-memory behavior; Rust cannot enforce those effects for an
+arbitrary implementation. This slice makes that trust boundary explicit and
+never substitutes generic CBOR acceptance for the capability's decision.
+Runtime semantic correctness remains outside this envelope check.
+
+Lowerer and verifier results retain separate output kinds. Successful results
+must match every requested `(role, kind, domain)` exactly once and satisfy role,
+path, diagnostic, canonicality, owning-schema, and response-limit rules. Refusal
+is a valid target-owned result arm subject to diagnostic and limit validation.
+Pairwise validation rejects limit-dependent changes when a baseline result fits
+both otherwise-identical requests.
+
+Only a fully valid success produces `ProviderOutputManifest`. The manifest binds
+the invocation kind, protocol, validated inputs, requested outputs, and
+host-computed output digests. It excludes response limits and diagnostics, emits
+no partial identity for an invalid success, and is absent for a valid refusal.
+No function in this module loads or invokes a component, reads a filesystem,
+uses ambient services, or interprets Echo semantics.
+
 ## Follow-On Work
 
-Issue #140 introduced the built-in compatibility seam described above. The
+Issue #140 introduced the built-in compatibility seam, #148 froze the WIT
+envelope, and #146 added the pure invocation validator described above. The
 broader manifest-backed provider resolver remains future composition work.
 
-Issue #141 tracks four native slices: #148 freezes the WIT envelope, #146 adds
-pure envelope validation, #145 adds the capability-constrained component host,
-and #147 adds deterministic replay and negative conformance.
+Issue #141 tracks four native slices: #148 froze the WIT envelope, #146 added
+pure envelope validation, #145 adds the capability-constrained component host
+plus the digest-locked concrete schema registry, and #147 adds deterministic
+replay and negative conformance. The #145 contract now requires immutable
+domain-to-schema provenance and executable registry evidence rather than an
+ambient or runtime-hard-coded schema source.
 
 Issue #142 creates the downstream Echo-owned provider implementation issues once
 the Edict provider ABI is concrete enough to scope them accurately.

@@ -26,6 +26,13 @@ pub const CORE_CANONICAL_ENCODING: &str = "edict.canonical-cbor/v1";
 /// Hash frame prefix for Edict and Continuum artifact digests.
 pub const CORE_DIGEST_FRAME: &str = "edict.digest/v1";
 
+/// Maximum child nesting depth accepted by the canonical encoder and decoder.
+///
+/// The root value starts at depth zero, so a scalar wrapped in exactly this many
+/// containers is accepted. The next nested value is rejected before recursive
+/// traversal can consume additional stack.
+pub const MAX_CANONICAL_NESTING_DEPTH: usize = 128;
+
 /// Artifact domain label for Core module digests.
 pub const CORE_MODULE_DIGEST_DOMAIN: &str = "edict.core.module/v1";
 
@@ -51,6 +58,8 @@ pub enum CanonicalErrorKind {
     UnsupportedCbor,
     /// The byte stream decodes but is not in canonical form.
     NonCanonical,
+    /// A value exceeds the deterministic canonical container nesting limit.
+    NestingLimitExceeded,
     /// A decoded CBOR map contains duplicate keys.
     DuplicateMapKey,
     /// A decoded text string is not valid UTF-8.
@@ -147,6 +156,33 @@ impl fmt::Display for CoreDigest {
     }
 }
 
+/// Compute a domain-framed digest from a decoded canonical value.
+///
+/// This helper does not prove owning-schema validity. Provider invocation code
+/// calls it only after its explicit schema capability accepts the value. Crate
+/// privacy keeps the raw framing helper out of the public API.
+pub(crate) fn digest_canonical_value(
+    domain: &str,
+    value: &CanonicalValue,
+) -> Result<[u8; 32], CanonicalError> {
+    if domain.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "canonical artifact digest domain is empty",
+        ));
+    }
+    // Encode each tuple member at its own schema root. Digest framing is not
+    // part of the artifact value and must not consume its nesting budget.
+    let mut preimage = vec![0x83]; // Canonical fixed-length array of three values.
+    preimage.extend(encode_canonical_cbor(&text(CORE_DIGEST_FRAME))?);
+    preimage.extend(encode_canonical_cbor(&text(domain))?);
+    preimage.extend(encode_canonical_cbor(value)?);
+    let hash = Sha256::digest(preimage);
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(&hash);
+    Ok(bytes)
+}
+
 /// Encode a Core module as `edict.canonical-cbor/v1`.
 ///
 /// # Errors
@@ -170,16 +206,10 @@ pub fn encode_core_module(module: &CoreModule) -> Result<Vec<u8>, CanonicalError
 /// Returns an error if the Core module cannot be represented in the supported
 /// canonical form.
 pub fn digest_core_module(module: &CoreModule) -> Result<CoreDigest, CanonicalError> {
-    let framed = CanonicalValue::Array(vec![
-        text(CORE_DIGEST_FRAME),
-        text(CORE_MODULE_DIGEST_DOMAIN),
-        core_module_value(module)?,
-    ]);
-    let preimage = encode_canonical_cbor(&framed)?;
-    let hash = Sha256::digest(preimage);
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&hash);
-    Ok(CoreDigest::sha256(bytes))
+    Ok(CoreDigest::sha256(digest_canonical_value(
+        CORE_MODULE_DIGEST_DOMAIN,
+        &core_module_value(module)?,
+    )?))
 }
 
 /// Encode a Target IR artifact as `edict.canonical-cbor/v1`.
@@ -207,16 +237,10 @@ pub fn encode_target_ir_artifact(artifact: &TargetIrArtifact) -> Result<Vec<u8>,
 pub fn digest_target_ir_artifact(
     artifact: &TargetIrArtifact,
 ) -> Result<CoreDigest, CanonicalError> {
-    let framed = CanonicalValue::Array(vec![
-        text(CORE_DIGEST_FRAME),
-        text(TARGET_IR_ARTIFACT_DIGEST_DOMAIN),
-        target_ir_artifact_value(artifact)?,
-    ]);
-    let preimage = encode_canonical_cbor(&framed)?;
-    let hash = Sha256::digest(preimage);
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&hash);
-    Ok(CoreDigest::sha256(bytes))
+    Ok(CoreDigest::sha256(digest_canonical_value(
+        TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+        &target_ir_artifact_value(artifact)?,
+    )?))
 }
 
 /// Digest domain for a contract bundle's `semanticBundleDigest`.
@@ -306,7 +330,7 @@ fn bundle_component_value(
             descriptors
                 .iter()
                 .map(|descriptor| {
-                    if !is_logical_bundle_source_path(descriptor.logical_path) {
+                    if !is_logical_package_relative_path(descriptor.logical_path) {
                         return Err(CanonicalError::new(
                             CanonicalErrorKind::UnsupportedValue,
                             "bundle source artifact path must be logical and package-relative",
@@ -351,7 +375,7 @@ fn bundle_digest_value(digest: &str) -> Result<CanonicalValue, CanonicalError> {
     digest_value(digest)
 }
 
-fn is_logical_bundle_source_path(path: &str) -> bool {
+pub(crate) fn is_logical_package_relative_path(path: &str) -> bool {
     !path.is_empty()
         && !path.starts_with('/')
         && !path.contains('\\')
@@ -398,16 +422,10 @@ pub fn digest_bundle_layer(
     for component in components {
         payload.push(bundle_component_value(component)?);
     }
-    let framed = CanonicalValue::Array(vec![
-        text(CORE_DIGEST_FRAME),
-        text(domain.label()),
-        CanonicalValue::Array(payload),
-    ]);
-    let preimage = encode_canonical_cbor(&framed)?;
-    let hash = Sha256::digest(preimage);
-    let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&hash);
-    Ok(CoreDigest::sha256(bytes))
+    Ok(CoreDigest::sha256(digest_canonical_value(
+        domain.label(),
+        &CanonicalValue::Array(payload),
+    )?))
 }
 
 /// Encode a decoded canonical value to canonical CBOR bytes.
@@ -417,7 +435,7 @@ pub fn digest_bundle_layer(
 /// Returns an error if an integer is outside the supported CBOR range.
 pub fn encode_canonical_cbor(value: &CanonicalValue) -> Result<Vec<u8>, CanonicalError> {
     let mut out = Vec::new();
-    encode_value(value, &mut out)?;
+    encode_value(value, &mut out, 0)?;
     Ok(out)
 }
 
@@ -433,7 +451,7 @@ pub fn encode_canonical_cbor(value: &CanonicalValue) -> Result<Vec<u8>, Canonica
 /// non-canonical bytes.
 pub fn decode_canonical_cbor(bytes: &[u8]) -> Result<CanonicalValue, CanonicalError> {
     let mut decoder = Decoder::new(bytes);
-    let value = decoder.value()?;
+    let value = decoder.value(0)?;
     if decoder.remaining() != 0 {
         return Err(CanonicalError::new(
             CanonicalErrorKind::TrailingData,
@@ -1033,7 +1051,12 @@ const fn bool_value(value: bool) -> CanonicalValue {
     CanonicalValue::Bool(value)
 }
 
-fn encode_value(value: &CanonicalValue, out: &mut Vec<u8>) -> Result<(), CanonicalError> {
+fn encode_value(
+    value: &CanonicalValue,
+    out: &mut Vec<u8>,
+    depth: usize,
+) -> Result<(), CanonicalError> {
+    check_canonical_nesting_depth(depth)?;
     match value {
         CanonicalValue::Null => out.push(0xf6),
         CanonicalValue::Bool(false) => out.push(0xf4),
@@ -1050,14 +1073,15 @@ fn encode_value(value: &CanonicalValue, out: &mut Vec<u8>) -> Result<(), Canonic
         CanonicalValue::Array(values) => {
             encode_type_value(4, usize_to_u64(values.len())?, out);
             for value in values {
-                encode_value(value, out)?;
+                encode_value(value, out, depth + 1)?;
             }
         }
         CanonicalValue::Map(entries) => {
             let mut encoded = Vec::with_capacity(entries.len());
             let mut keys = BTreeSet::new();
             for (key, value) in entries {
-                let key_bytes = encode_canonical_cbor(key)?;
+                let mut key_bytes = Vec::new();
+                encode_value(key, &mut key_bytes, depth + 1)?;
                 if !keys.insert(key_bytes.clone()) {
                     return Err(CanonicalError::new(
                         CanonicalErrorKind::DuplicateMapKey,
@@ -1070,9 +1094,19 @@ fn encode_value(value: &CanonicalValue, out: &mut Vec<u8>) -> Result<(), Canonic
             encode_type_value(5, usize_to_u64(encoded.len())?, out);
             for (key_bytes, value) in encoded {
                 out.extend(key_bytes);
-                encode_value(value, out)?;
+                encode_value(value, out, depth + 1)?;
             }
         }
+    }
+    Ok(())
+}
+
+fn check_canonical_nesting_depth(depth: usize) -> Result<(), CanonicalError> {
+    if depth > MAX_CANONICAL_NESTING_DEPTH {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::NestingLimitExceeded,
+            format!("canonical value nesting exceeds maximum depth {MAX_CANONICAL_NESTING_DEPTH}"),
+        ));
     }
     Ok(())
 }
@@ -1158,7 +1192,8 @@ impl<'a> Decoder<'a> {
         self.bytes.len() - self.pos
     }
 
-    fn value(&mut self) -> Result<CanonicalValue, CanonicalError> {
+    fn value(&mut self, depth: usize) -> Result<CanonicalValue, CanonicalError> {
+        check_canonical_nesting_depth(depth)?;
         let initial = self.byte()?;
         let major = initial >> 5;
         let additional = initial & 0x1f;
@@ -1188,7 +1223,7 @@ impl<'a> Decoder<'a> {
                 let len = self.length(additional)?;
                 let mut values = Vec::with_capacity(len);
                 for _ in 0..len {
-                    values.push(self.value()?);
+                    values.push(self.value(depth + 1)?);
                 }
                 Ok(CanonicalValue::Array(values))
             }
@@ -1197,15 +1232,16 @@ impl<'a> Decoder<'a> {
                 let mut entries = Vec::with_capacity(len);
                 let mut keys = BTreeSet::new();
                 for _ in 0..len {
-                    let key = self.value()?;
-                    let encoded_key = encode_canonical_cbor(&key)?;
+                    let key = self.value(depth + 1)?;
+                    let mut encoded_key = Vec::new();
+                    encode_value(&key, &mut encoded_key, depth + 1)?;
                     if !keys.insert(encoded_key) {
                         return Err(CanonicalError::new(
                             CanonicalErrorKind::DuplicateMapKey,
                             "CBOR map contains duplicate keys",
                         ));
                     }
-                    let value = self.value()?;
+                    let value = self.value(depth + 1)?;
                     entries.push((key, value));
                 }
                 Ok(CanonicalValue::Map(entries))
@@ -1294,6 +1330,109 @@ impl<'a> Decoder<'a> {
         let mut out = [0u8; N];
         out.copy_from_slice(self.take(N)?);
         Ok(out)
+    }
+}
+
+#[cfg(test)]
+mod canonical_artifact_tests {
+    use sha2::{Digest, Sha256};
+
+    use super::{
+        decode_canonical_cbor, digest_canonical_value, encode_canonical_cbor,
+        is_logical_package_relative_path, text, CanonicalErrorKind, CanonicalValue,
+        CORE_DIGEST_FRAME, MAX_CANONICAL_NESTING_DEPTH,
+    };
+
+    fn nested_array(depth: usize) -> CanonicalValue {
+        (0..depth).fold(CanonicalValue::Null, |value, _| {
+            CanonicalValue::Array(vec![value])
+        })
+    }
+
+    fn nested_array_bytes(depth: usize) -> Vec<u8> {
+        let mut bytes = vec![0x81; depth];
+        bytes.push(0xf6);
+        bytes
+    }
+
+    #[test]
+    fn canonical_nesting_limit_is_enforced_on_encode_and_decode() {
+        let at_limit = nested_array(MAX_CANONICAL_NESTING_DEPTH);
+        let at_limit_bytes = nested_array_bytes(MAX_CANONICAL_NESTING_DEPTH);
+
+        assert_eq!(
+            encode_canonical_cbor(&at_limit).expect("maximum-depth value encodes"),
+            at_limit_bytes
+        );
+        assert_eq!(
+            decode_canonical_cbor(&at_limit_bytes).expect("maximum-depth bytes decode"),
+            at_limit
+        );
+
+        let encode_err = encode_canonical_cbor(&nested_array(MAX_CANONICAL_NESTING_DEPTH + 1))
+            .expect_err("over-depth value rejects");
+        let decode_err =
+            decode_canonical_cbor(&nested_array_bytes(MAX_CANONICAL_NESTING_DEPTH + 1))
+                .expect_err("over-depth bytes reject");
+
+        assert_eq!(encode_err.kind(), CanonicalErrorKind::NestingLimitExceeded);
+        assert_eq!(decode_err.kind(), CanonicalErrorKind::NestingLimitExceeded);
+    }
+
+    #[test]
+    fn canonical_artifact_digest_decodes_and_domain_frames_bytes() {
+        let value = CanonicalValue::Map(vec![(text("answer"), CanonicalValue::Integer(42))]);
+        let bytes = encode_canonical_cbor(&value).expect("artifact value encodes");
+        let domain = "test.artifact/v1";
+        let framed =
+            CanonicalValue::Array(vec![text(CORE_DIGEST_FRAME), text(domain), value.clone()]);
+        let expected =
+            Sha256::digest(encode_canonical_cbor(&framed).expect("artifact digest frame encodes"));
+        let decoded = decode_canonical_cbor(&bytes).expect("artifact bytes decode");
+
+        assert_eq!(
+            digest_canonical_value(domain, &decoded).expect("artifact value digest"),
+            expected.as_slice()
+        );
+        assert_ne!(
+            digest_canonical_value(domain, &decoded).expect("first domain digest"),
+            digest_canonical_value("test.other/v1", &decoded).expect("second domain digest")
+        );
+    }
+
+    #[test]
+    fn canonical_artifact_digest_accepts_the_public_nesting_boundary() {
+        let bytes = nested_array_bytes(MAX_CANONICAL_NESTING_DEPTH);
+        let value = decode_canonical_cbor(&bytes).expect("maximum-depth artifact decodes");
+
+        digest_canonical_value("test.maximum-depth/v1", &value)
+            .expect("digest framing must not consume the artifact nesting budget");
+    }
+
+    #[test]
+    fn canonical_artifact_decode_rejects_noncanonical_bytes() {
+        let err = decode_canonical_cbor(&[0x18, 0x00])
+            .expect_err("non-minimal canonical bytes reject before hashing");
+
+        assert_eq!(err.kind(), CanonicalErrorKind::NonCanonical);
+    }
+
+    #[test]
+    fn logical_package_relative_path_contract_is_shared() {
+        for path in ["contracts/main.edict", "generated/review/report.cbor"] {
+            assert!(is_logical_package_relative_path(path), "rejected {path:?}");
+        }
+        for path in [
+            "",
+            "/contracts/main.edict",
+            "contracts//main.edict",
+            "contracts/./main.edict",
+            "contracts/../main.edict",
+            "C:/contracts/main.edict",
+            r"contracts\main.edict",
+        ] {
+            assert!(!is_logical_package_relative_path(path), "accepted {path:?}");
+        }
     }
 }
 

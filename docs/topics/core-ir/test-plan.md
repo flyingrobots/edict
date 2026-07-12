@@ -15,7 +15,8 @@ In scope:
   module model;
 - require-failure arm encoding for terminal obstruction and preserved
   obstruction continuation;
-- canonical byte validation through decode and re-encode stability;
+- canonical byte validation through decode and re-encode stability, including a
+  deterministic nesting limit for adversarial canonical values;
 - reviewed Core golden bytes and exact digest fixtures produced from the
   executable encoder;
 - explicit non-claim that the Core module schema freezes no self-hash, target
@@ -48,6 +49,7 @@ Out of scope:
 | COREIR-REQ-014 | implemented | Reviewed Core golden byte fixtures and exact digest fixtures are produced from the executable canonical encoder and checked for stability. | issue #22, docs/SPEC_continuum-contract-bundle-v1.md |
 | COREIR-REQ-015 | implemented | The Rust Core IR model and reference canonical encoder represent the first supported semantic effect-node shape. | issue #62, docs/abi/edict-core.cddl |
 | COREIR-REQ-016 | implemented | The Rust Core IR model and reference canonical encoder represent `require` nodes with distinct terminal and preserved-obstruction failure arms. | issue #129, docs/abi/edict-core.cddl |
+| COREIR-REQ-017 | implemented | Canonical encoding and decoding accept values through the public `MAX_CANONICAL_NESTING_DEPTH` of 128 nested containers and reject the next level with stable `CanonicalErrorKind::NestingLimitExceeded`, without changing canonical Core bytes or digests below the limit. | issue #146, crates/edict-syntax/src/canonical.rs |
 
 ## Fixtures
 
@@ -92,6 +94,7 @@ Out of scope:
 | COREIR-TP-021 | implemented | Local identity | COREIR-REQ-005, COREIR-REQ-012, COREIR-REQ-014 | Changing a Core local identity changes canonical bytes and the Core module digest. | canonical_core_bytes_change_when_local_identity_changes, core_module_digest_changes_when_local_identity_changes | fixtures/lang/bounds/bounded-hello.edict, fixtures/core/canonical/bounded-hello.core.sha256 | Tests compiler-owned local `id` participates in the canonical preimage. |
 | COREIR-TP-022 | implemented | Canonical encoding | COREIR-REQ-004, COREIR-REQ-012, COREIR-REQ-015 | Changing a semantic effect node coordinate changes canonical Core bytes. | canonical_core_bytes_change_when_effect_coordinate_changes | - | Tests effect-node meaning participates in the canonical preimage without adding a reviewed golden fixture. |
 | COREIR-TP-023 | implemented | Canonical encoding | COREIR-REQ-004, COREIR-REQ-012, COREIR-REQ-016 | Terminal `require` obstruction and `continue obstructed` failure arms are distinct Core values and Core digests; reason kind and payload value mutations move the digest while payload field order and non-semantic formatting do not. | terminal_and_continue_obstructed_require_arms_are_core_distinct, obstruction_reason_mutations_move_core_digest | - | Tests require-failure arm meaning participates in the canonical preimage without adding a reviewed golden fixture. |
+| COREIR-TP-024 | implemented | Canonical validation | COREIR-REQ-012, COREIR-REQ-013, COREIR-REQ-014, COREIR-REQ-017 | Encoding and decoding accept a scalar wrapped in exactly 128 arrays, domain-framed hashing preserves that full artifact nesting budget, both codec paths reject depth 129 with `NestingLimitExceeded`, and the reviewed Core bytes and digest remain unchanged. | canonical_nesting_limit_is_enforced_on_encode_and_decode, canonical_artifact_digest_accepts_the_public_nesting_boundary, reviewed_core_golden_bytes_match_executable_encoder, reviewed_core_digest_matches_exact_fixture | fixtures/core/canonical/bounded-hello.core.cbor, fixtures/core/canonical/bounded-hello.core.sha256 | The exact-boundary unit evidence lives in `canonical::canonical_artifact_tests`; digest framing does not become part of artifact nesting, and the already-validated-value helper remains crate-private. |
 
 ## Determinism Obligations
 
