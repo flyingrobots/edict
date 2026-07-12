@@ -2741,8 +2741,8 @@ fn wit_world_function<'a>(world: &'a World, name: &str) -> &'a Function {
 
 fn wit_unaliased_type(resolve: &Resolve, mut ty: Type) -> Type {
     while let Type::Id(type_id) = ty {
-        match resolve.types[type_id].kind {
-            TypeDefKind::Type(next) => ty = next,
+        match &resolve.types[type_id].kind {
+            TypeDefKind::Type(next) => ty = *next,
             _ => return ty,
         }
     }
