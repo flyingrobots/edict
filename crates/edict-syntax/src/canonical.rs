@@ -1071,12 +1071,14 @@ fn encode_value(
             out.extend(value.as_bytes());
         }
         CanonicalValue::Array(values) => {
+            check_canonical_container_depth(depth)?;
             encode_type_value(4, usize_to_u64(values.len())?, out);
             for value in values {
                 encode_value(value, out, depth + 1)?;
             }
         }
         CanonicalValue::Map(entries) => {
+            check_canonical_container_depth(depth)?;
             let mut encoded = Vec::with_capacity(entries.len());
             let mut keys = BTreeSet::new();
             for (key, value) in entries {
@@ -1106,6 +1108,18 @@ fn check_canonical_nesting_depth(depth: usize) -> Result<(), CanonicalError> {
         return Err(CanonicalError::new(
             CanonicalErrorKind::NestingLimitExceeded,
             format!("canonical value nesting exceeds maximum depth {MAX_CANONICAL_NESTING_DEPTH}"),
+        ));
+    }
+    Ok(())
+}
+
+fn check_canonical_container_depth(depth: usize) -> Result<(), CanonicalError> {
+    if depth >= MAX_CANONICAL_NESTING_DEPTH {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::NestingLimitExceeded,
+            format!(
+                "canonical container nesting exceeds maximum depth {MAX_CANONICAL_NESTING_DEPTH}"
+            ),
         ));
     }
     Ok(())
@@ -1220,6 +1234,7 @@ impl<'a> Decoder<'a> {
                 Ok(CanonicalValue::Text(value.to_owned()))
             }
             4 => {
+                check_canonical_container_depth(depth)?;
                 let len = self.length(additional)?;
                 let mut values = Vec::with_capacity(len);
                 for _ in 0..len {
@@ -1228,6 +1243,7 @@ impl<'a> Decoder<'a> {
                 Ok(CanonicalValue::Array(values))
             }
             5 => {
+                check_canonical_container_depth(depth)?;
                 let len = self.length(additional)?;
                 let mut entries = Vec::with_capacity(len);
                 let mut keys = BTreeSet::new();
@@ -1355,6 +1371,37 @@ mod canonical_artifact_tests {
         bytes
     }
 
+    fn nested_empty_array(container_count: usize) -> CanonicalValue {
+        assert!(container_count > 0);
+        (1..container_count).fold(CanonicalValue::Array(Vec::new()), |value, _| {
+            CanonicalValue::Array(vec![value])
+        })
+    }
+
+    fn nested_empty_array_bytes(container_count: usize) -> Vec<u8> {
+        assert!(container_count > 0);
+        let mut bytes = vec![0x81; container_count - 1];
+        bytes.push(0x80);
+        bytes
+    }
+
+    fn nested_empty_map(container_count: usize) -> CanonicalValue {
+        assert!(container_count > 0);
+        (1..container_count).fold(CanonicalValue::Map(Vec::new()), |value, _| {
+            CanonicalValue::Map(vec![(text("k"), value)])
+        })
+    }
+
+    fn nested_empty_map_bytes(container_count: usize) -> Vec<u8> {
+        assert!(container_count > 0);
+        let mut bytes = Vec::with_capacity((container_count - 1) * 3 + 1);
+        for _ in 1..container_count {
+            bytes.extend([0xa1, 0x61, b'k']);
+        }
+        bytes.push(0xa0);
+        bytes
+    }
+
     #[test]
     fn canonical_nesting_limit_is_enforced_on_encode_and_decode() {
         let at_limit = nested_array(MAX_CANONICAL_NESTING_DEPTH);
@@ -1377,6 +1424,42 @@ mod canonical_artifact_tests {
 
         assert_eq!(encode_err.kind(), CanonicalErrorKind::NestingLimitExceeded);
         assert_eq!(decode_err.kind(), CanonicalErrorKind::NestingLimitExceeded);
+    }
+
+    #[test]
+    fn canonical_nesting_limit_counts_empty_terminal_containers() {
+        let cases = [
+            (
+                nested_empty_array(MAX_CANONICAL_NESTING_DEPTH),
+                nested_empty_array(MAX_CANONICAL_NESTING_DEPTH + 1),
+                nested_empty_array_bytes(MAX_CANONICAL_NESTING_DEPTH),
+                nested_empty_array_bytes(MAX_CANONICAL_NESTING_DEPTH + 1),
+            ),
+            (
+                nested_empty_map(MAX_CANONICAL_NESTING_DEPTH),
+                nested_empty_map(MAX_CANONICAL_NESTING_DEPTH + 1),
+                nested_empty_map_bytes(MAX_CANONICAL_NESTING_DEPTH),
+                nested_empty_map_bytes(MAX_CANONICAL_NESTING_DEPTH + 1),
+            ),
+        ];
+
+        for (at_limit, over_limit, at_limit_bytes, over_limit_bytes) in cases {
+            assert_eq!(
+                encode_canonical_cbor(&at_limit).expect("128 empty containers encode"),
+                at_limit_bytes
+            );
+            assert_eq!(
+                decode_canonical_cbor(&at_limit_bytes).expect("128 empty containers decode"),
+                at_limit
+            );
+
+            let encode_err = encode_canonical_cbor(&over_limit)
+                .expect_err("the 129th empty container must reject on encode");
+            let decode_err = decode_canonical_cbor(&over_limit_bytes)
+                .expect_err("the 129th empty container must reject on decode");
+            assert_eq!(encode_err.kind(), CanonicalErrorKind::NestingLimitExceeded);
+            assert_eq!(decode_err.kind(), CanonicalErrorKind::NestingLimitExceeded);
+        }
     }
 
     #[test]

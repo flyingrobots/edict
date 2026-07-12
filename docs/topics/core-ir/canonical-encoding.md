@@ -90,10 +90,11 @@ the `edict.digest/v1` tuple does not consume one level of the artifact's budget.
 
 This bound prevents adversarial canonical values from driving unbounded
 recursive traversal. It does not alter the encoding of any value within the
-limit. `canonical_nesting_limit_is_enforced_on_encode_and_decode` and
+limit. `canonical_nesting_limit_is_enforced_on_encode_and_decode`,
+`canonical_nesting_limit_counts_empty_terminal_containers`, and
 `canonical_artifact_digest_accepts_the_public_nesting_boundary` exercise the
-codec and digest boundaries, while the existing Core golden checks prove that
-the reviewed `bounded-hello` bytes and digest did not move.
+scalar, empty-container, and digest boundaries, while the existing Core golden
+checks prove that the reviewed `bounded-hello` bytes and digest did not move.
 
 ## Ordering Rules
 
