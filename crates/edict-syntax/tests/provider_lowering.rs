@@ -7,12 +7,13 @@
 use edict_syntax::{
     assemble_contract_bundle_from_target_ir, compile_to_core, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, lower_with_builtin_lowerer,
-    BuiltinLowererCompatibilityFailureKind, BuiltinLowererRequest, BuiltinTargetLowerer,
-    CompilerContext, ContractBundleAssemblyFromTargetIrInput, ContractBundleSourceArtifact,
-    CoreBudget, CoreModule, DigestLockedResource, ResourceRef, TargetEffectLowering,
-    TargetIrArtifact, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringReport,
-    TargetLoweringStatus, WriteClass, CANONICAL_CBOR_ABI, ECHO_DPO_TARGET_PROFILE,
-    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    BuiltinLowererCompatibilityFailure, BuiltinLowererCompatibilityFailureKind,
+    BuiltinLowererRequest, BuiltinTargetLowerer, CompilerContext,
+    ContractBundleAssemblyFromTargetIrInput, ContractBundleSourceArtifact, CoreBudget, CoreModule,
+    DigestLockedResource, ResourceRef, TargetEffectLowering, TargetIrArtifact,
+    TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringReport, TargetLoweringStatus,
+    WriteClass, CANONICAL_CBOR_ABI, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -301,6 +302,35 @@ fn builtin_lowerers_reject_mismatched_target_profiles() {
         assert_eq!(
             failure.actual_target_profile,
             fixture.facts.target_profile.coordinate
+        );
+    }
+}
+
+#[test]
+fn builtin_lowerer_compatibility_failure_is_standard_error() {
+    fn assert_standard_error(error: &(dyn std::error::Error + 'static)) {
+        assert!(error.source().is_none());
+    }
+
+    let failure = BuiltinLowererCompatibilityFailure {
+        kind: BuiltinLowererCompatibilityFailureKind::TargetProfileMismatch,
+        lowerer: BuiltinTargetLowerer::EchoDpo,
+        expected_target_profile: ECHO_DPO_TARGET_PROFILE.to_owned(),
+        actual_target_profile: GITWARP_REF_CRDT_TARGET_PROFILE.to_owned(),
+    };
+
+    assert_standard_error(&failure);
+
+    let rendered = failure.to_string();
+    for expected in [
+        "TargetProfileMismatch",
+        "EchoDpo",
+        ECHO_DPO_TARGET_PROFILE,
+        GITWARP_REF_CRDT_TARGET_PROFILE,
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "compatibility error display omitted {expected:?}: {rendered}"
         );
     }
 }

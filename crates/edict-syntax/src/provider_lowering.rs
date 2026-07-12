@@ -51,6 +51,21 @@ pub struct BuiltinLowererCompatibilityFailure {
     pub actual_target_profile: String,
 }
 
+impl std::fmt::Display for BuiltinLowererCompatibilityFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "built-in lowerer compatibility failure {:?} for {:?}: expected target profile `{}`, got `{}`",
+            self.kind,
+            self.lowerer,
+            self.expected_target_profile,
+            self.actual_target_profile
+        )
+    }
+}
+
+impl std::error::Error for BuiltinLowererCompatibilityFailure {}
+
 /// Result of selecting and invoking a built-in target lowerer.
 ///
 /// A successful lowerer selection still returns the complete target-lowering

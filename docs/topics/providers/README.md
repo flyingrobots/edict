@@ -54,7 +54,8 @@ matches, the adapter returns the existing `TargetLoweringReport` unchanged,
 including structured target refusal. Direct and adapter paths produce identical
 Target IR artifacts, canonical bytes, and digests. The adapter does not consume
 or resolve a `TargetProviderManifest`, invent component identity, or define the
-external provider ABI.
+external provider ABI. Its structured compatibility failure implements
+`Display` and `std::error::Error` for standard Rust error propagation.
 
 ## Authority Boundary
 
