@@ -91,6 +91,12 @@ The canonical artifact identity rules are named in
   target-IR bindings when supplied, but it is not a top-level semantic or
   release digest preimage component. Admission artifacts remain rejected and are
   not emitted by the assembler. [BUNDLE-REQ-006] [BUNDLE-REQ-008]
+- Target IR produced through the built-in lowerer compatibility seam
+  yields the same semantic and release bundle identities as direct lowering when
+  every explicit assembly input, including lowerer identity, is unchanged.
+  Changing only the explicit lowerer identity leaves semantic identity stable
+  and changes release identity. Bundle assembly still consumes an artifact; it
+  does not invoke a lowerer. [BUNDLE-REQ-009]
 - The v0.11 bundle digest golden in
   `fixtures/bundle/assembly/bounded-hello.bundle-digests.txt` freezes the
   semantic/release bundle preimage shape and resulting digest review strings.

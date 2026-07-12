@@ -1,8 +1,7 @@
 # Edict Architecture
 
-Status: current workspace map for `v0.11.0-alpha.1` plus the audit-remediation
-branch. This page describes what exists in HEAD; it is not a future package
-plan.
+Status: current workspace map for HEAD. This page describes what exists in the
+current branch; it is not a future package plan.
 
 ## Workspace Shape
 
@@ -35,6 +34,8 @@ exports:
 - target-profile conformance checks;
 - lowerability checks;
 - Echo and git-warp Target IR artifact lowering;
+- provider manifest/provenance validation and explicit built-in lowerer
+  compatibility adapters;
 - contract-bundle assembly and validation;
 - Gate C admission-boundary request/receipt validation;
 - editor/highlighting support.
@@ -60,6 +61,8 @@ Module map:
 | `canonical` | Canonical value model, canonical CBOR encoder/decoder, digest frames, and reviewed golden digest helpers. |
 | `target_profile` | Runtime-neutral target-profile manifest conformance. |
 | `lowerability` | Checks whether Core requirements can be satisfied natively, by a direct adapter, or not at all. |
+| `provider` | Runtime-neutral provider manifest and generated/component provenance envelope validation. |
+| `provider_lowering` | Explicit in-process compatibility adapters over the current built-in target lowerers. |
 | `target_ir` | Current Echo and git-warp Target IR artifact construction from Core plus lowering facts. |
 | `contract_bundle` | Participant-neutral bundle assembly, bundle digest preimages, validation, and assurance evidence binding. |
 | `admission` | Edict-owned Gate C request/receipt shape and binding validation without participant policy execution. |
@@ -127,6 +130,7 @@ source text
   -> Core IR
   -> canonical Core bytes and digest
   -> lowerability + target facts
+  -> direct lowering or built-in lowerer compatibility adapter
   -> Target IR artifact
   -> canonical Target IR bytes and digest
   -> contract-bundle assembly and validation
@@ -162,6 +166,7 @@ This workspace does not yet implement:
 - participant admission execution;
 - participant policy evaluation;
 - trusted lawpack or target-profile authorship;
+- manifest-backed provider resolution or external component loading;
 - general target plugin dispatch;
 - canonical `ContractBundleManifest` bytes;
 - crates.io publication.

@@ -33,7 +33,9 @@ Milestone: `Provider Artifact Pipeline Alpha`
 
 Goalpost: #138
 
-Primary frontier issue: #139
+Completed frontier issues: #139, #140
+
+Current frontier issue: #141
 
 Release labels: `release:lawpacks`, `release:target-profiles`,
 `release:target-ir`, `release:bundles`
@@ -47,6 +49,8 @@ Scope:
 - Digest-locked generated semantic-source and generator provenance.
 - Generic envelope validation before any WIT provider host or runtime-specific
   provider implementation.
+- Explicit in-process Echo and git-warp lowerer compatibility adapters with
+  direct-path Target IR byte/digest and bundle-identity parity evidence.
 
 Exit gates:
 

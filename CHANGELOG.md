@@ -19,6 +19,14 @@ versions still track specification maturity rather than a released product.
   provenance, while keeping lowerer/verifier entries as provider-owned
   components. It does not load providers, execute WIT components, interpret Echo
   semantics, run verifiers, or perform runtime execution/admission.
+- Added an explicit built-in lowerer compatibility seam for the current
+  Echo and git-warp lowerers. The borrowed request API distinguishes
+  target-profile selection incompatibility from the existing structured target
+  refusal report, while parity tests prove direct and compatibility paths retain
+  identical Target IR values, canonical bytes, and digests, plus identical
+  bundle identities under identical explicit assembly inputs. This is an
+  in-process migration adapter, not manifest-backed resolution, WIT component
+  loading, or a public Rust provider plugin trait.
 
 ### Changed
 

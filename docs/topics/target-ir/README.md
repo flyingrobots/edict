@@ -30,6 +30,16 @@ The `edict_syntax` crate exposes `lower_to_target_ir`,
 not read target facts from ambient environment, discover runtimes, or fetch
 registries.
 
+The crate also exposes `BuiltinTargetLowerer`, `BuiltinLowererRequest`, and
+`lower_with_builtin_lowerer` as an
+in-process migration seam for the existing Echo and git-warp lowerers. Selection
+is explicit and bound to the lowerer's target-profile coordinate. A mismatch
+rejects before invocation; once matched, the complete direct
+`TargetLoweringReport` passes through unchanged. Tests prove the direct and
+compatibility paths produce identical Target IR artifacts, canonical bytes, and
+digests. This adapter does not resolve provider manifests, load components, or
+define general target plugin dispatch. [TIR-REQ-013]
+
 `TargetIrLoweringFacts::from_lowerability_report` derives the effect-to-intrinsic
 lowering table from accepted native lowerability reports.
 The derived facts use the target-profile coordinate and operation profile from
