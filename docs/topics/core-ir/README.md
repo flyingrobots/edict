@@ -21,9 +21,11 @@ from source AST to in-memory Core.
 The `edict_syntax` crate exposes `encode_core_module` for
 `edict.canonical-cbor/v1` Core bytes, `decode_canonical_cbor` for canonical byte
 validation, `encode_canonical_cbor` for decoded canonical values, and
-`digest_core_module` for the domain-separated `edict.core.module/v1` digest.
-The human walkthrough is [canonical-encoding.md](./canonical-encoding.md).
-[COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014]
+`digest_core_module` for the domain-separated `edict.core.module/v1` digest. The
+public `MAX_CANONICAL_NESTING_DEPTH` is 128; encoding or decoding the next nested
+container rejects with stable `CanonicalErrorKind::NestingLimitExceeded`. The
+human walkthrough is [canonical-encoding.md](./canonical-encoding.md).
+[COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014] [COREIR-REQ-017]
 
 The Core module schema does not embed reviewed golden bytes, exact Core
 digests, target IR, or admission bundles. Reviewed Core artifact fixtures live
@@ -69,6 +71,11 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   from their semantic value tree. Validation decodes canonical bytes and
   requires byte-identical re-encoding, rejecting non-canonical forms such as
   non-minimal integers. [COREIR-REQ-012] [COREIR-REQ-013]
+- Canonical encoding and decoding allow at most 128 nested arrays or maps. The
+  root starts at depth zero, so a scalar wrapped in exactly 128 containers is
+  valid; depth 129 rejects with `NestingLimitExceeded` before deeper recursive
+  traversal. Existing values below the limit retain their bytes and digests.
+  [COREIR-REQ-017]
 - Core module digests use SHA-256 over the canonical digest frame
   `["edict.digest/v1", "edict.core.module/v1", <Core module value>]` and render
   for review as `sha256:<64 lowercase hex>`. The first reviewed Core golden
@@ -77,10 +84,10 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 - Canonical encoder behavior is covered for map-order independence, mutation
   sensitivity, decode/re-encode stability, primitive integer width stability,
   effect-node mutation sensitivity, require-failure arm mutation sensitivity,
-  digest stability, digest mutation sensitivity, and source alpha-renaming
-  invariance. [COREIR-REQ-005]
+  exact nesting-boundary rejection, digest stability, digest mutation
+  sensitivity, and source alpha-renaming invariance. [COREIR-REQ-005]
   [COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014] [COREIR-REQ-015]
-  [COREIR-REQ-016]
+  [COREIR-REQ-016] [COREIR-REQ-017]
 
 ## Deferred
 

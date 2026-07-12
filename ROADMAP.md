@@ -33,9 +33,9 @@ Milestone: `Provider Artifact Pipeline Alpha`
 
 Goalpost: #138
 
-Completed frontier issues: #139, #140, #148
+Completed frontier issues: #139, #140, #146, #148
 
-Current frontier issue: #146 under #141
+Current frontier issue: #145 under #141
 
 Release labels: `release:lawpacks`, `release:target-profiles`,
 `release:target-ir`, `release:bundles`
@@ -55,6 +55,11 @@ Scope:
   protocol versions, digest-bound inputs, authority-separated lowerer/verifier
   output roles, optional logical paths, typed refusal, deterministic response
   limits, and host-computed output identity.
+- Pure validation of host-authored lowerer/verifier input contracts and
+  WIT-shaped requests/results, including an explicitly injected deterministic
+  owning-schema capability, canonical domain-bound digests, exact
+  role/path/diagnostic contracts, response limits, limit independence, and
+  sealed all-or-nothing host output manifests.
 
 Exit gates:
 

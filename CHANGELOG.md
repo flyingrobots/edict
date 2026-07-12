@@ -32,13 +32,27 @@ versions still track specification maturity rather than a released product.
   digest-bound Core, target-profile, and semantic artifacts, world-specific
   requested output roles, and deterministic response limits. Provider outputs
   carry role-tagged bytes and optional logical paths without authoritative
-  digests; host validation, digest recomputation, component loading, replay,
-  and execution remain follow-on work. The new package identity explicitly
-  supersedes the previously shipped but unhosted `edict:target-profile@1.0.0`
-  WIT direction rather than changing its meaning.
+  digests; component loading, replay, and execution remain follow-on work. The
+  new package identity explicitly supersedes the previously shipped but unhosted
+  `edict:target-profile@1.0.0` WIT direction rather than changing its meaning.
+- Added pure provider invocation-envelope validation. Owned Rust values mirror
+  the WIT lowerer and verifier contracts; host-authored bindings constrain every
+  input before protocol, canonical bytes, owning-schema compatibility,
+  domain-framed digests, roles, outputs, paths, diagnostics, success/refusal
+  limits, and pairwise limit independence are checked. The required explicit
+  schema validator is a deterministic host capability retained by opaque
+  validated-request wrappers. Only a fully valid success produces a sealed
+  host-authored output manifest binding its inputs, requested outputs, and
+  recomputed output digests; limits and diagnostics stay outside the manifest,
+  and valid refusal remains distinct from host failure. This adds no component
+  instantiation, ambient I/O, verifier execution, or Echo-specific semantic
+  interpretation.
 
 ### Changed
 
+- Canonical-CBOR encoding and decoding now accept at most 128 nested values and
+  return the stable `NestingLimitExceeded` kind beyond that bound. Provider
+  artifact validation uses the same bounded decoder before digest computation.
 - The parser now accepts first-class obstruction-strand source syntax:
   `require ... else continue obstructed { reason: ... }`. The form is preserved
   as a distinct `RequireElseArm::ContinueObstructed` source AST arm, requires

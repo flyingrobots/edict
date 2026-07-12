@@ -77,6 +77,25 @@ trailing data, re-encoding the decoded value, and requiring a byte-identical
 match. That re-encode check is what rejects non-minimal integers, unsorted maps,
 and other byte-equivalent but non-canonical forms.
 
+## Nesting Limit
+
+`MAX_CANONICAL_NESTING_DEPTH` publicly fixes the maximum canonical container
+nesting depth at 128. The root value starts at depth zero. A scalar wrapped in
+exactly 128 arrays or maps is therefore valid; the next nested value rejects on
+both encode and decode with stable
+`CanonicalErrorKind::NestingLimitExceeded`. Map keys and values consume the same
+depth budget as array elements, and decode's byte-identical re-encoding uses the
+same limit. Artifact digest framing encodes outside the artifact schema root, so
+the `edict.digest/v1` tuple does not consume one level of the artifact's budget.
+
+This bound prevents adversarial canonical values from driving unbounded
+recursive traversal. It does not alter the encoding of any value within the
+limit. `canonical_nesting_limit_is_enforced_on_encode_and_decode`,
+`canonical_nesting_limit_counts_empty_terminal_containers`, and
+`canonical_artifact_digest_accepts_the_public_nesting_boundary` exercise the
+scalar, empty-container, and digest boundaries, while the existing Core golden
+checks prove that the reviewed `bounded-hello` bytes and digest did not move.
+
 ## Ordering Rules
 
 The canonicalizer preserves order only where order is semantic:
@@ -140,6 +159,15 @@ The frame has three jobs:
 This means the same semantic value under a different artifact domain gets a
 different digest. It also means digest review strings are outputs of the process,
 not inputs to the Core digest preimage.
+
+The implementation now shares this frame construction with a crate-private
+helper that hashes an already decoded canonical value under its
+caller-established domain. The helper cannot validate bytes or schemas by
+itself. Provider invocation code calls it only after the explicit schema
+capability accepts the value; crate privacy limits the framing helper's public
+surface but is not itself a schema proof. This is not a new public generic
+artifact API or a claim that Edict interprets provider-owned semantics. Core's
+public digest function and reviewed digest contract remain unchanged.
 
 ## Golden Fixtures
 
