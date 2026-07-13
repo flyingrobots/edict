@@ -3,6 +3,7 @@ name = "edict-cli"
 version = "0.11.0-alpha.1"
 description = "Edict JSONL compiler command-line interface"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false

@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use edict_syntax::parse_module;
 use regex::Regex;
@@ -1600,17 +1601,54 @@ fn rust_workspace_lints_define_safety_baseline() {
 #[test]
 fn workspace_msrv_matches_the_ci_toolchain() {
     let root = repo_root().expect("repo root");
-    let manifest = fs::read_to_string(root.join("Cargo.toml")).expect("workspace manifest");
     let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("CI workflow");
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps", "--locked"])
+        .current_dir(&root)
+        .output()
+        .expect("cargo metadata runs");
+    assert!(output.status.success(), "cargo metadata must succeed");
+    let metadata: Value = serde_json::from_slice(&output.stdout).expect("cargo metadata is JSON");
+    let workspace_members: BTreeSet<&str> = metadata["workspace_members"]
+        .as_array()
+        .expect("workspace members")
+        .iter()
+        .map(|member| member.as_str().expect("workspace member is a string"))
+        .collect();
+    let packages = metadata["packages"].as_array().expect("metadata packages");
+    let mut checked_members = 0;
 
-    assert!(
-        manifest.contains("rust-version = \"1.94\""),
-        "workspace package MSRV must be Rust 1.94"
-    );
+    for package in packages {
+        let id = package["id"].as_str().expect("package id");
+        if workspace_members.contains(id) {
+            checked_members += 1;
+            assert_eq!(
+                package["rust_version"].as_str(),
+                Some("1.94"),
+                "workspace package {} must inherit Rust 1.94",
+                package["name"].as_str().expect("package name")
+            );
+        }
+    }
+    assert_eq!(checked_members, workspace_members.len());
     assert!(
         workflow.contains("rust-version: \"1.94.0\"")
             && workflow.contains("rust-label: \"msrv 1.94.0\""),
         "CI must exercise the exact Rust 1.94.0 MSRV"
+    );
+}
+
+#[test]
+fn provider_fixture_inventory_is_an_explicit_ci_gate() {
+    let root = repo_root().expect("repo root");
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("CI workflow");
+
+    assert!(
+        workflow.contains("Provider component fixture inventory")
+            && workflow.contains(
+                "cargo +\"${{ matrix.rust-version }}\" xtask provider-component-fixtures --check"
+            ),
+        "CI must explicitly verify the checked provider component inventory"
     );
 }
 

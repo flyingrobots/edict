@@ -66,7 +66,8 @@ versions still track specification maturity rather than a released product.
   source and component digests, while fixtures cover typed success/refusal,
   infinite work, memory pressure, output and diagnostic floods, schema-invalid
   output, guest traps, instantiation failure, instantiation-time fuel exhaustion,
-  and malformed canonical-ABI lifting.
+  and malformed canonical-ABI lifting. Both Rust CI matrix jobs check the
+  inventory explicitly.
 
 ### Changed
 
@@ -138,11 +139,11 @@ versions still track specification maturity rather than a released product.
 - CI now includes a dedicated `cargo deny check` supply-chain job backed by
   `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
   duplicate-version warnings, and source restrictions.
-- Raised the Rust MSRV to 1.94 for Wasmtime 46.0.1. Wasmtime is isolated to the
-  private provider host with default features disabled, no `wasmtime-wasi`, an
-  executable direct/resolved feature ratchet, reviewed permissive license
-  additions, and cargo-deny coverage for both the root and nested fixture guest
-  lockfiles.
+- Raised the Rust MSRV to 1.94 for Wasmtime 46.0.1, with every workspace package
+  inheriting that value into Cargo metadata. Wasmtime is isolated to the private
+  provider host with default features disabled, no `wasmtime-wasi`, an executable
+  direct/resolved feature ratchet, reviewed permissive license additions, and
+  cargo-deny coverage for both the root and nested fixture guest lockfiles.
 - Directory expansion in the `edict` CLI no longer allocates a temporary dotted
   extension string per visited file; behavior and golden output are unchanged.
 - Added `cargo xtask cli-goldens --check/--write` and wired check mode into

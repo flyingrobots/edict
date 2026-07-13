@@ -40,6 +40,8 @@ jobs:
         run: cargo +"${{ matrix.rust-version }}" clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo +"${{ matrix.rust-version }}" test --workspace --all-features
+      - name: Provider component fixture inventory
+        run: cargo +"${{ matrix.rust-version }}" xtask provider-component-fixtures --check
 
   supply-chain:
     name: supply-chain (cargo-deny)

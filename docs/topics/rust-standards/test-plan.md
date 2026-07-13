@@ -54,7 +54,7 @@ Out of scope:
 | RUST-TP-006 | planned | Lint ratchet | RUST-REQ-006 | Add scoped lint allowances and then deny library-code footgun lints. | - | - | Planned cleanup slice. |
 | RUST-TP-007 | planned | Dependency gate | RUST-REQ-007 | Add cargo security/license gates before publication policy work. | - | - | Planned publication-readiness slice. |
 | RUST-TP-008 | planned | Fuzzing | RUST-REQ-008 | Add fuzz targets for parser/decoder surfaces. | - | - | Planned hardening slice. |
-| RUST-TP-009 | implemented | MSRV guard | RUST-REQ-009 | The workspace package MSRV and exact CI toolchain label agree on Rust 1.94. | workspace_msrv_matches_the_ci_toolchain | Cargo.toml, .github/workflows/ci.yml | Required by the isolated Wasmtime 46 provider host. |
+| RUST-TP-009 | implemented | MSRV guard | RUST-REQ-009 | Cargo metadata reports Rust 1.94 for every workspace package, and the exact CI toolchain label agrees. | workspace_msrv_matches_the_ci_toolchain | Cargo.toml, crates/edict-cli/Cargo.toml, crates/edict-provider-host-wasmtime/Cargo.toml, crates/edict-provider-schema/Cargo.toml, crates/edict-syntax/Cargo.toml, xtask/Cargo.toml, .github/workflows/ci.yml | Required by the isolated Wasmtime 46 provider host. |
 
 ## Determinism Obligations
 
