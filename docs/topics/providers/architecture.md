@@ -12,11 +12,11 @@ validated provider manifest
   -> Wasmtime decode plus exact import/export/type preflight
   -> prepared typed component
   -> validated request proof + identical concrete schema registry authority
-  -> fresh bounded Store
-  -> typed lower or verify call
-  -> bounded result lifting
-  -> pure canonical/schema/envelope admission
-  -> sealed provider outcome
+  -> invoke once, or replay twice through distinct fresh bounded Stores
+  -> typed lower or verify call per Store
+  -> bounded result lifting per call
+  -> pure canonical/schema/envelope admission per call
+  -> sealed provider outcome or sealed replay observation
 ```
 
 Wasmtime is an enforcement mechanism, never an Edict authority source. The
@@ -52,6 +52,30 @@ The validated request retains its schema-validator capability, and invocation
 requires that object to be the same concrete registry whose manifest equals the
 prepared component's manifest. This prevents independently valid authority
 objects from being mixed at the final call.
+
+## Replay And Isolation
+
+Replay is a host operation, not a provider assertion. `replay_lowerer` and
+`replay_verifier` call the existing invocation path twice with the same prepared
+component, opaque validated request, concrete schema authority, and limits.
+Because the invocation path creates its store internally, neither run can reuse
+guest memory, tables, resources, or instance state from the other.
+
+A completed replay observation is equal only when the complete sealed outcomes
+are equal. A rejected observation uses `ProviderHostFailureIdentity`, which
+contains the stable kind, phase, and structured validation report while
+excluding bounded engine diagnostic prose. Replay mismatch distinguishes a
+completed-versus-rejected disposition change, a changed completed outcome, and
+a changed stable host-failure identity.
+
+Executable evidence covers concurrent calls through one host and prepared
+component, recovery after trap, fuel, memory denial, malformed lifting, and
+response rejection, isolation between two prepared providers, repeated
+preparation, and equivalent completed and rejected replays. Two independent
+test processes also reproduce the reviewed Echo-shaped Target IR bytes and
+domain-framed digest through the generic fixture lowerer. The host has no
+compiled-component cache, so repeated preparation exercises the current
+cache-free path.
 
 ## Limit Units
 
@@ -93,10 +117,12 @@ source inputs and component SHA-256 digests. The `provider-runtime-dependencies`
 xtask also pins the direct and resolved Wasmtime feature closure and rejects
 `wasmtime-wasi` or a second workspace owner.
 
-## Deferred Isolation Proof
+## Residual Boundary
 
-Issue #147 owns repeated result and failure equivalence, cross-process replay,
-concurrent invocation interference, one invocation poisoning a later invocation,
-compiled-component cache behavior, process-level crash containment, and
-provider-to-provider isolation. The fresh-store boundary established here makes
-those tests possible without claiming their outcome in advance.
+The modeled guest failure classes return stable host failures and leave later
+invocations and the compiler test process usable. This is an in-process native
+Wasmtime host, not an operating-system process sandbox: it does not claim
+containment from an implementation fault in Wasmtime or trusted Edict host code.
+There is also no manifest-backed resolver, package loader, mutable component
+cache, browser component runtime, Echo-owned production provider, target runtime
+execution, or admission execution in this crate.

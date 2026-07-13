@@ -5,12 +5,13 @@ Status: current HEAD contract.
 This shelf describes the provider manifest boundary, built-in lowerer
 compatibility seam, external component transport ABI, pure invocation-envelope
 validator, concrete schema registry, and capability-denied component host that
-exist today. A target provider package is an assembled collection of generated
-artifacts plus provider-owned components. Edict can validate provider manifests
-and invocation values, invoke the existing in-tree Echo and git-warp lowerers
-through an explicit migration adapter, and execute resolver-supplied lowerer or
-verifier component bytes through the frozen WIT contract. It does not resolve
-provider packages or interpret runtime-specific semantics.
+exist today, including deterministic replay and cross-invocation isolation. A
+target provider package is an assembled collection of generated artifacts plus
+provider-owned components. Edict can validate provider manifests and invocation
+values, invoke the existing in-tree Echo and git-warp lowerers through an
+explicit migration adapter, and execute resolver-supplied lowerer or verifier
+component bytes through the frozen WIT contract. It does not resolve provider
+packages or interpret runtime-specific semantics.
 
 ## Current Contract
 
@@ -39,7 +40,7 @@ exposes:
 - `ProviderLoweringInvocationContract` and
   `ProviderVerificationInvocationContract` for host-authored input bindings;
 - `ProviderArtifactSchemaValidator` for an explicitly injected, deterministic
-  owning-schema capability;
+  owning-schema capability that is safe to share across concurrent stores;
 - `ProviderLoweringRequest` and `ProviderVerificationRequest` plus opaque
   validated request wrappers;
 - `validate_provider_lowering_request` and
@@ -86,6 +87,16 @@ schema-instance validation, exact response-envelope validation, and host digest
 construction all succeed. A typed provider refusal remains provider evidence;
 engine, transport, containment, and admission failures remain stable host-owned
 failure kinds.
+
+`replay_lowerer` and `replay_verifier` execute the identical prepared component,
+opaque validated request, concrete schema authority, and invocation limits
+twice. Each execution receives a distinct fresh store. Completed observations
+compare the complete sealed outcome, including every provider-authored artifact
+byte and diagnostic. Rejected observations compare only stable host identity:
+failure kind, phase, and any structured pure-validation report. Bounded opaque
+Wasmtime diagnostics are deliberately excluded. A completed/rejected
+disposition change, completed-outcome change, or stable-failure-identity change
+returns its own replay mismatch kind and exposes neither run as authoritative.
 
 Provider manifests use API version `edict.provider-manifest/v1`.
 This unreleased alpha contract is completed in place by the provider-host slice:
@@ -272,8 +283,11 @@ rebuilds them with Rust 1.94.0 and `--locked --offline`; check mode verifies the
 source digest and every component digest without requiring a Wasm toolchain.
 Host tests cover conforming lowerer/verifier execution, refusal, denied callable
 imports, infinite work, memory pressure, response and diagnostic flooding,
-schema-invalid output, explicit traps, instantiation failure, instantiation-time
-fuel exhaustion, and malformed canonical-ABI lifting.
+schema-invalid and noncanonical output, domain and role substitution, undeclared
+output, path traversal, explicit traps, instantiation failure,
+instantiation-time fuel exhaustion, malformed canonical-ABI lifting, replay,
+concurrency, failure recovery, and reviewed Target IR parity across independent
+processes.
 
 ## Deferred
 
@@ -283,12 +297,15 @@ The following are not implemented:
 - lawpack generation through Wesley;
 - Echo-owned provider implementation;
 - target runtime execution;
-- admission or registration.
+- admission or registration;
+- a browser-compatible component host; and
+- out-of-process containment for a native Wasmtime or host implementation fault.
 
-Repeated execution equivalence, compiled-component cache behavior, cross-process
-replay, concurrency, one-invocation state poisoning, process crash containment,
-and provider-to-provider isolation remain issue #147 rather than claims of this
-single-invocation host slice.
+The current host has no compiled-component cache. Repeated preparation proves
+the cache-free path retains the same observation. The modeled provider failure
+classes remain contained and leave the compiler test process usable, but the
+native Wasmtime host runs in-process and does not claim operating-system process
+isolation from a bug in the engine or trusted host itself.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
 The enforced component authority flow and limit units are detailed in

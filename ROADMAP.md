@@ -33,9 +33,9 @@ Milestone: `Provider Artifact Pipeline Alpha`
 
 Goalpost: #138
 
-Completed frontier issues: #139, #140, #146, #148
+Completed frontier issues: #139, #140, #145, #146, #148
 
-Current frontier issue: #145 under #141
+Current frontier issue: #147 under #141
 
 Release labels: `release:lawpacks`, `release:target-profiles`,
 `release:target-ir`, `release:bundles`
@@ -60,6 +60,9 @@ Scope:
   owning-schema capability, canonical domain-bound digests, exact
   role/path/diagnostic contracts, response limits, limit independence, and
   sealed all-or-nothing host output manifests.
+- Capability-denied component invocation with deterministic replay, stable
+  mismatch identity, failure recovery, concurrency isolation, named ambient
+  capability denial, and reviewed Target IR parity across processes.
 
 Exit gates:
 
