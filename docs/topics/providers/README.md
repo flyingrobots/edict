@@ -3,13 +3,14 @@
 Status: current HEAD contract.
 
 This shelf describes the provider manifest boundary, built-in lowerer
-compatibility seam, external component transport ABI, and pure invocation
-envelope validator that exist today. A target provider package is an assembled
-collection of generated artifacts plus provider-owned components. Edict can
-validate provider manifests and invocation values, invoke the existing in-tree
-Echo and git-warp lowerers through an explicit migration adapter, and parse the
-frozen WIT contract. It cannot load or invoke manifest-declared components, run
-verifiers, or interpret runtime-specific semantics.
+compatibility seam, external component transport ABI, pure invocation-envelope
+validator, concrete schema registry, and capability-denied component host that
+exist today. A target provider package is an assembled collection of generated
+artifacts plus provider-owned components. Edict can validate provider manifests
+and invocation values, invoke the existing in-tree Echo and git-warp lowerers
+through an explicit migration adapter, and execute resolver-supplied lowerer or
+verifier component bytes through the frozen WIT contract. It does not resolve
+provider packages or interpret runtime-specific semantics.
 
 ## Current Contract
 
@@ -19,7 +20,10 @@ The `edict_syntax` crate exposes:
 - `ProviderArtifactRef`;
 - `ProviderArtifactKind`;
 - `ProviderArtifactSource`;
+- `ProviderSchemaBinding` and `ProviderSchemaFormat`;
 - `validate_target_provider_manifest`;
+- `bind_target_provider_manifest` and its opaque validated proof;
+- `select_provider_component` and its opaque selected component identity;
 - `ProviderManifestValidationStatus`;
 - `ProviderManifestValidationFailureKind`;
 - `BuiltinTargetLowerer`;
@@ -47,20 +51,72 @@ exposes:
 - `ValidatedProviderOutcome` plus `ProviderOutputManifest` for results that have
   crossed the complete validation boundary.
 
+The private `edict-provider-schema` crate supplies the production
+`ProviderArtifactSchemaValidator`. Its constructor accepts only an opaque
+validated manifest, explicit in-memory schema bytes keyed by manifest role, and
+the host-authored required-domain closure. It verifies raw schema digests,
+rejects missing, duplicate, or manifest-unbound resolved roles, compiles all
+bound CDDL documents, rejects missing roots and unresolved external rule
+references reachable from selected roots, and returns one immutable registry
+with a sorted binding receipt.
+Selected roots use a deliberately conservative non-generic, acyclic CDDL
+subset. Structurally unusable roots reject during construction, and every
+repeated array or map member must be provably input-consuming, so schema
+validation cannot enter a zero-progress loop outside Wasmtime fuel. The
+registry performs no schema discovery or lazy loading.
+
+The private `edict-provider-host-wasmtime` crate supplies the component host.
+Its input is a selected component proof plus resolver-supplied bytes; it performs
+no discovery, fetching, mutable-name lookup, or cache lookup. Preparation
+recomputes the selected manifest digest before decoding, requires exactly one
+matching top-level digest-covered `edict:target-provider-contract` section,
+checks the exact export closure and frozen generated WIT types, and rejects every
+callable or unknown import. The generated component's exact type-only
+`edict:target-provider/protocol@1.0.0` instance import is accepted because it
+conveys types rather than a host capability. No WASI linker or callable host
+function is installed.
+
+The host owns one immutable Wasmtime engine and creates a fresh store for every
+invocation. The prepared component, opaque validated request proof, and concrete
+schema registry must share one manifest and validator authority, and a prepared
+component can be invoked only by the engine that created it. The store receives
+only explicit fuel and resource limits. A result crosses the boundary only after
+typed lifting, host diagnostic/output limits, canonical decoding,
+schema-instance validation, exact response-envelope validation, and host digest
+construction all succeed. A typed provider refusal remains provider evidence;
+engine, transport, containment, and admission failures remain stable host-owned
+failure kinds.
+
 Provider manifests use API version `edict.provider-manifest/v1`.
+This unreleased alpha contract is completed in place by the provider-host slice:
+host-ready v1 manifests require exact `providerAbi` and `schemaBindings` fields.
+There is no legacy hostable v1 shape with omitted authority bindings.
 
 The manifest validator checks that:
 
 - the manifest API version is current;
 - the provider reference is digest-locked;
+- `providerAbi` is exactly `edict:target-provider@1.0.0`;
 - at least one artifact or component is present;
 - artifact role slots are non-empty and unique;
 - every artifact resource is digest-locked;
 - generated metadata artifacts carry digest-locked semantic-source and
   generator provenance;
 - lowerer and verifier artifacts carry digest-locked component provenance;
-- generated metadata roles are not represented as executable components; and
-- component roles are not represented as generated metadata.
+- component provenance equals the artifact resource identity rather than
+  naming an independently selectable component;
+- generated metadata roles are not represented as executable components;
+- component roles are not represented as generated metadata;
+- artifact schemas are generated artifacts with digest-locked provenance; and
+- schema bindings are nonempty, sorted by exact domain bytes, unique by domain,
+  and name an existing artifact-schema role plus a nonempty CDDL root rule.
+
+After manifest validation, component selection is explicit by unique role and
+expected invocation kind. The exact provider ABI and artifact kind determine
+the frozen lowerer or verifier contract; the selected artifact resource is the
+authorized component digest. The selected identity borrows the manifest, not
+the temporary validation-proof handle. Selection performs no file, cache,
+registry, or network lookup.
 
 Digest review strings on this boundary are strict artifact references:
 `sha256:<64 lowercase hex>`.
@@ -88,13 +144,15 @@ are opaque canonical artifacts wrapped in digest-locked resource references.
 Semantic inputs carry generic roles and kinds; requested outputs carry an
 expected role, kind, and domain. Lowering and verification use distinct output
 types so neither world can claim the other's evidence roles. Deterministic
-response limits cross the ABI, while memory, fuel, and interruption remain
-future host configuration. Component outputs carry role-tagged bytes and an
-optional logical path, but no digest. The pure validator checks canonicality and
-logical-path syntax and computes authoritative output identity before a future
-host may expose it. Typed provider refusal remains distinct from future host
-failures such as denied imports, traps, exhaustion, malformed envelopes, or
-replay mismatch.
+response limits cross the ABI. The component host separately enforces
+WIT-logical input bytes, the request-authorized logical output ceiling, provider
+diagnostic bytes, Wasmtime guest-to-host lifting fuel, linear memory, tables,
+instances, memories, Wasm fuel, and bounded engine diagnostics. Component
+outputs carry role-tagged bytes and an optional logical path, but no digest. The
+pure validator checks canonicality and logical-path syntax and computes
+authoritative output identity before the host exposes it. Typed provider refusal
+remains distinct from denied imports, traps, exhaustion, malformed lifting,
+invalid envelopes, and replay mismatch.
 
 Semantic inputs, requested outputs, and returned outputs use non-empty, unique
 roles in strict ascending UTF-8 byte order. A success matches every requested
@@ -112,7 +170,8 @@ The request validators accept only semantic protocol version `1.0.0`. A caller
 must supply a complete host-authored invocation contract and a
 `ProviderArtifactSchemaValidator` separately from the WIT-shaped request. That
 trusted capability's contract requires deterministic, side-effect-free
-validation over in-memory values.
+validation over in-memory values. The concrete registry now satisfies this
+contract with compiled, construction-checked CDDL over canonical CBOR.
 Validation requires the request resource references, domains, semantic-input
 closure, canonical bytes, and decoded values under their owning schemas to
 reproduce that contract before it returns an opaque
@@ -138,9 +197,10 @@ Unsupported domains and schema mismatches remain distinct structured host
 failures. Edict does not implement Echo, lawpack, target-profile, generated
 artifact, review, or verifier-report semantics inside this generic envelope
 module; the host-supplied validator owns those schema checks. The trait contract
-requires total, deterministic, side-effect-free, in-memory behavior, but this
-generic boundary cannot enforce the effects of an arbitrary implementation.
-Issue #145 requires executable evidence from the concrete host registry.
+requires total, deterministic, side-effect-free, in-memory behavior. The
+generic boundary cannot enforce the effects of an arbitrary implementation;
+the concrete registry supplies executable construction and instance-validation
+evidence for the production path.
 
 Result validation preserves the separate lowerer and verifier output
 vocabularies. It enforces exact requested outputs, role and diagnostic order,
@@ -195,20 +255,41 @@ fixtures/target-ir/canonical/echo-effectful.target-ir.cbor
 lowering and verification requests, then exercises accepted envelopes and
 structured negative mutations without loading a component.
 
+The external host fixture corpus is checked in under:
+
+```text
+fixtures/providers/components/lowerer.component.wasm
+fixtures/providers/components/verifier.component.wasm
+fixtures/providers/components/malformed-lowerer.component.wasm
+fixtures/providers/components/instantiation-failure-lowerer.component.wasm
+fixtures/providers/components/instantiation-fuel-lowerer.component.wasm
+fixtures/providers/components/inventory.json
+```
+
+The Rust guests and hand-authored canonical-ABI WAT modules remain beside those
+artifacts as reviewed sources. `cargo xtask provider-component-fixtures --write`
+rebuilds them with Rust 1.94.0 and `--locked --offline`; check mode verifies the
+source digest and every component digest without requiring a Wasm toolchain.
+Host tests cover conforming lowerer/verifier execution, refusal, denied callable
+imports, infinite work, memory pressure, response and diagnostic flooding,
+schema-invalid output, explicit traps, instantiation failure, instantiation-time
+fuel exhaustion, and malformed canonical-ABI lifting.
+
 ## Deferred
 
 The following are not implemented:
 
 - manifest-backed provider resolution, file discovery, or package loading;
-- a concrete production artifact-schema registry (issue #145 now requires
-  digest-locked schema provenance, immutable domain bindings, and executable
-  determinism and schema-instance evidence before the host injects it);
-- WIT component loading;
-- external provider component dispatch;
-- provider verifier execution;
 - lawpack generation through Wesley;
 - Echo-owned provider implementation;
-- runtime execution;
+- target runtime execution;
 - admission or registration.
 
+Repeated execution equivalence, compiled-component cache behavior, cross-process
+replay, concurrency, one-invocation state poisoning, process crash containment,
+and provider-to-provider isolation remain issue #147 rather than claims of this
+single-invocation host slice.
+
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
+The enforced component authority flow and limit units are detailed in
+[architecture.md](./architecture.md).

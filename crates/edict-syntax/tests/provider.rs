@@ -5,9 +5,10 @@
 //! documentation prose.
 
 use edict_syntax::{
-    validate_target_provider_manifest, ProviderArtifactSource,
+    bind_target_provider_manifest, select_provider_component, validate_target_provider_manifest,
+    ProviderArtifactSource, ProviderComponentSelectionFailureKind, ProviderInvocationKind,
     ProviderManifestValidationFailureKind, ProviderManifestValidationStatus, ResourceRef,
-    TargetProviderManifest,
+    TargetProviderManifest, TARGET_PROVIDER_ABI,
 };
 
 const ECHO_PROVIDER_FIXTURE: &str =
@@ -51,6 +52,18 @@ fn provider_manifest_rejects_unknown_api_version() {
         failure_kinds(&manifest),
         vec![ProviderManifestValidationFailureKind::InvalidApiVersion]
     );
+}
+
+#[test]
+fn provider_manifest_requires_the_exact_provider_abi() {
+    let mut manifest = fixture_manifest();
+    manifest.provider_abi = "edict:target-provider@1.0.1".to_owned();
+
+    assert_eq!(
+        failure_kinds(&manifest),
+        vec![ProviderManifestValidationFailureKind::InvalidProviderAbi]
+    );
+    assert_eq!(TARGET_PROVIDER_ABI, "edict:target-provider@1.0.0");
 }
 
 #[test]
@@ -123,6 +136,20 @@ fn provider_manifest_rejects_unlocked_component() {
 }
 
 #[test]
+fn provider_manifest_rejects_component_identity_disagreement() {
+    let mut manifest = fixture_manifest();
+    let ProviderArtifactSource::Component { component } = &mut manifest.artifacts[4].source else {
+        panic!("fixture lowerer artifact should be a component");
+    };
+    *component = digest_locked("echo.other-lowerer/component@1", 'b');
+
+    assert_eq!(
+        failure_kinds(&manifest),
+        vec![ProviderManifestValidationFailureKind::ComponentResourceMismatch]
+    );
+}
+
+#[test]
 fn provider_manifest_rejects_missing_artifacts() {
     let mut manifest = fixture_manifest();
     manifest.artifacts.clear();
@@ -180,5 +207,153 @@ fn provider_manifest_rejects_empty_artifact_role() {
     assert_eq!(
         failure_kinds(&manifest),
         vec![ProviderManifestValidationFailureKind::MissingRole]
+    );
+}
+
+#[test]
+fn provider_manifest_requires_schema_bindings() {
+    let mut manifest = fixture_manifest();
+    manifest.schema_bindings.clear();
+
+    assert_eq!(
+        failure_kinds(&manifest),
+        vec![ProviderManifestValidationFailureKind::MissingSchemaBinding]
+    );
+}
+
+#[test]
+fn provider_manifest_rejects_missing_duplicate_and_out_of_order_schema_domains() {
+    let mut missing = fixture_manifest();
+    missing.schema_bindings[0].domain.clear();
+    assert_eq!(
+        failure_kinds(&missing),
+        vec![ProviderManifestValidationFailureKind::MissingSchemaDomain]
+    );
+
+    let mut duplicate = fixture_manifest();
+    duplicate.schema_bindings[1].domain = duplicate.schema_bindings[0].domain.clone();
+    assert_eq!(
+        failure_kinds(&duplicate),
+        vec![
+            ProviderManifestValidationFailureKind::DuplicateSchemaDomain,
+            ProviderManifestValidationFailureKind::OutOfOrderSchemaDomain,
+        ]
+    );
+
+    let mut out_of_order = fixture_manifest();
+    out_of_order.schema_bindings.swap(0, 1);
+    assert_eq!(
+        failure_kinds(&out_of_order),
+        vec![ProviderManifestValidationFailureKind::OutOfOrderSchemaDomain]
+    );
+}
+
+#[test]
+fn provider_manifest_rejects_missing_or_unknown_schema_roles() {
+    let mut missing = fixture_manifest();
+    missing.schema_bindings[0].schema_role.clear();
+    assert_eq!(
+        failure_kinds(&missing),
+        vec![ProviderManifestValidationFailureKind::MissingSchemaRole]
+    );
+
+    let mut unknown = fixture_manifest();
+    unknown.schema_bindings[0].schema_role = "schema.absent".to_owned();
+    assert_eq!(
+        failure_kinds(&unknown),
+        vec![ProviderManifestValidationFailureKind::UnknownSchemaRole]
+    );
+}
+
+#[test]
+fn provider_manifest_requires_schema_kind_and_root_rule() {
+    let mut wrong_kind = fixture_manifest();
+    wrong_kind.schema_bindings[0].schema_role = wrong_kind.artifacts[0].role.clone();
+    assert_eq!(
+        failure_kinds(&wrong_kind),
+        vec![ProviderManifestValidationFailureKind::SchemaRoleKindMismatch]
+    );
+
+    let mut missing_root = fixture_manifest();
+    missing_root.schema_bindings[0].root_rule.clear();
+    assert_eq!(
+        failure_kinds(&missing_root),
+        vec![ProviderManifestValidationFailureKind::MissingSchemaRootRule]
+    );
+}
+
+#[test]
+fn validated_manifest_selects_one_exact_world_contract() {
+    let manifest = fixture_manifest();
+    let validated = bind_target_provider_manifest(&manifest).expect("fixture manifest validates");
+
+    let lowerer = select_provider_component(
+        &validated,
+        "lowerer.echo-dpo",
+        ProviderInvocationKind::Lowering,
+    )
+    .expect("lowerer role selects");
+    assert_eq!(lowerer.role(), "lowerer.echo-dpo");
+    assert_eq!(lowerer.resource(), &manifest.artifacts[4].resource);
+    assert_eq!(
+        lowerer.contract_identity(),
+        "edict:target-provider/lowerer@1.0.0"
+    );
+
+    let verifier = select_provider_component(
+        &validated,
+        "verifier.echo-dpo",
+        ProviderInvocationKind::Verification,
+    )
+    .expect("verifier role selects");
+    assert_eq!(
+        verifier.contract_identity(),
+        "edict:target-provider/verifier@1.0.0"
+    );
+}
+
+#[test]
+fn selected_component_outlives_temporary_manifest_proof() {
+    let manifest = fixture_manifest();
+    let selected = {
+        let validated =
+            bind_target_provider_manifest(&manifest).expect("fixture manifest validates");
+        select_provider_component(
+            &validated,
+            "lowerer.echo-dpo",
+            ProviderInvocationKind::Lowering,
+        )
+        .expect("lowerer role selects")
+    };
+
+    assert_eq!(selected.manifest(), &manifest);
+    assert_eq!(selected.role(), "lowerer.echo-dpo");
+}
+
+#[test]
+fn component_selection_rejects_unknown_and_wrong_kind_roles() {
+    let manifest = fixture_manifest();
+    let validated = bind_target_provider_manifest(&manifest).expect("fixture manifest validates");
+
+    let missing = select_provider_component(
+        &validated,
+        "lowerer.absent",
+        ProviderInvocationKind::Lowering,
+    )
+    .expect_err("unknown role must reject");
+    assert_eq!(
+        missing.kind(),
+        ProviderComponentSelectionFailureKind::ComponentRoleNotFound
+    );
+
+    let wrong_world = select_provider_component(
+        &validated,
+        "verifier.echo-dpo",
+        ProviderInvocationKind::Lowering,
+    )
+    .expect_err("verifier cannot be selected as lowerer");
+    assert_eq!(
+        wrong_world.kind(),
+        ProviderComponentSelectionFailureKind::ComponentKindMismatch
     );
 }

@@ -139,10 +139,14 @@ pub use lowerability::{
 };
 pub use parser::{parse_module, ParseError, ParseErrorKind};
 pub use provider::{
-    validate_target_provider_manifest, ProviderArtifactKind, ProviderArtifactRef,
-    ProviderArtifactSource, ProviderManifestValidationFailure,
-    ProviderManifestValidationFailureKind, ProviderManifestValidationReport,
-    ProviderManifestValidationStatus, TargetProviderManifest, TARGET_PROVIDER_MANIFEST_API_VERSION,
+    bind_target_provider_manifest, select_provider_component, validate_target_provider_manifest,
+    ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource,
+    ProviderComponentSelectionFailure, ProviderComponentSelectionFailureKind,
+    ProviderManifestValidationFailure, ProviderManifestValidationFailureKind,
+    ProviderManifestValidationReport, ProviderManifestValidationStatus, ProviderSchemaBinding,
+    ProviderSchemaFormat, SelectedProviderComponent, TargetProviderManifest,
+    ValidatedTargetProviderManifest, TARGET_PROVIDER_ABI, TARGET_PROVIDER_LOWERER_CONTRACT,
+    TARGET_PROVIDER_MANIFEST_API_VERSION, TARGET_PROVIDER_VERIFIER_CONTRACT,
 };
 pub use provider_invocation::{
     validate_provider_lowering_limit_independence, validate_provider_lowering_request,

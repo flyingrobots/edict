@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use edict_syntax::parse_module;
 use regex::Regex;
@@ -15,6 +16,7 @@ use super::goldens::{
     bundle_goldens, cli_binary_path_from_cargo_metadata, target_ir_goldens, BundleGoldenMode,
     TargetIrGoldenMode,
 };
+use super::provider_dependencies::provider_runtime_dependencies;
 use super::release_prep::release_prep;
 use super::util::{choose_diff_check_base, repo_root};
 
@@ -1594,6 +1596,99 @@ fn rust_workspace_lints_define_safety_baseline() {
             "workspace lint baseline missing structured field: {required}"
         );
     }
+}
+
+#[test]
+fn workspace_msrv_matches_the_ci_toolchain() {
+    let root = repo_root().expect("repo root");
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("CI workflow");
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps", "--locked"])
+        .current_dir(&root)
+        .output()
+        .expect("cargo metadata runs");
+    assert!(output.status.success(), "cargo metadata must succeed");
+    let metadata: Value = serde_json::from_slice(&output.stdout).expect("cargo metadata is JSON");
+    let workspace_members: BTreeSet<&str> = metadata["workspace_members"]
+        .as_array()
+        .expect("workspace members")
+        .iter()
+        .map(|member| member.as_str().expect("workspace member is a string"))
+        .collect();
+    let packages = metadata["packages"].as_array().expect("metadata packages");
+    let mut checked_members = 0;
+
+    for package in packages {
+        let id = package["id"].as_str().expect("package id");
+        if workspace_members.contains(id) {
+            checked_members += 1;
+            assert_eq!(
+                package["rust_version"].as_str(),
+                Some("1.94"),
+                "workspace package {} must inherit Rust 1.94",
+                package["name"].as_str().expect("package name")
+            );
+        }
+    }
+    assert_eq!(checked_members, workspace_members.len());
+    assert!(
+        workflow.contains("rust-version: \"1.94.0\"")
+            && workflow.contains("rust-label: \"msrv 1.94.0\""),
+        "CI must exercise the exact Rust 1.94.0 MSRV"
+    );
+}
+
+#[test]
+fn provider_fixture_inventory_is_an_explicit_ci_gate() {
+    let root = repo_root().expect("repo root");
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("CI workflow");
+
+    assert!(
+        workflow.contains("Provider component fixture inventory")
+            && workflow.contains(
+                "cargo +\"${{ matrix.rust-version }}\" xtask provider-component-fixtures --check"
+            ),
+        "CI must explicitly verify the checked provider component inventory"
+    );
+}
+
+#[test]
+fn cargo_deny_supply_chain_gate_covers_root_and_fixture_guest() {
+    let root = repo_root().expect("repo root");
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("CI workflow");
+    let policy = fs::read_to_string(root.join("deny.toml")).expect("cargo-deny policy");
+
+    for required in [
+        "name: supply-chain (cargo-deny)",
+        "cargo +stable install cargo-deny --locked --version 0.18.9",
+        "cargo +stable deny --locked check",
+        "--manifest-path fixtures/providers/components/guests/Cargo.toml check",
+    ] {
+        assert!(
+            workflow.contains(required),
+            "cargo-deny workflow contract missing `{required}`"
+        );
+    }
+    for required in [
+        "[advisories]",
+        "yanked = \"deny\"",
+        "[licenses]",
+        "[bans]",
+        "[sources]",
+        "unknown-registry = \"deny\"",
+        "unknown-git = \"deny\"",
+    ] {
+        assert!(
+            policy.contains(required),
+            "cargo-deny policy missing `{required}`"
+        );
+    }
+}
+
+#[test]
+fn provider_runtime_dependency_boundary_is_narrow() {
+    provider_runtime_dependencies(&repo_root().expect("repo root"))
+        .expect("provider runtime dependency boundary remains narrow");
 }
 
 #[test]

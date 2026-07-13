@@ -7,6 +7,7 @@
 //! agree. Provider responses are validated before any output identity is
 //! exposed.
 
+use std::any::Any;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -86,7 +87,7 @@ pub enum ProviderArtifactSchemaValidationErrorKind {
 /// implementation; the concrete host registry must provide that evidence. The
 /// invocation validator establishes canonical CBOR before this hook and uses
 /// the accepted value for host-side digest computation.
-pub trait ProviderArtifactSchemaValidator: fmt::Debug {
+pub trait ProviderArtifactSchemaValidator: Any + fmt::Debug {
     /// Return whether an owning schema is available for `domain`.
     fn supports_domain(&self, domain: &str) -> bool;
 
@@ -534,6 +535,11 @@ pub struct ValidatedProviderLoweringRequest<'a> {
 
 impl<'a> ValidatedProviderLoweringRequest<'a> {
     #[must_use]
+    pub const fn schema_validator(&self) -> &'a dyn ProviderArtifactSchemaValidator {
+        self.schema_validator
+    }
+
+    #[must_use]
     pub const fn contract(&self) -> &'a ProviderLoweringInvocationContract {
         self.contract
     }
@@ -553,6 +559,11 @@ pub struct ValidatedProviderVerificationRequest<'a> {
 }
 
 impl<'a> ValidatedProviderVerificationRequest<'a> {
+    #[must_use]
+    pub const fn schema_validator(&self) -> &'a dyn ProviderArtifactSchemaValidator {
+        self.schema_validator
+    }
+
     #[must_use]
     pub const fn contract(&self) -> &'a ProviderVerificationInvocationContract {
         self.contract
