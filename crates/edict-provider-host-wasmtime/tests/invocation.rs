@@ -461,7 +461,7 @@ fn fuel_resource_and_guest_traps_remain_distinct() {
 }
 
 #[test]
-fn hostcall_diagnostic_and_envelope_limits_are_separate() {
+fn hostcall_and_logical_response_limits_are_separate() {
     let output_flood = lower_harness("fixture.output-flood");
     let mut limits = host_limits();
     limits.max_hostcall_bytes = 64 * 1024;
@@ -515,7 +515,10 @@ fn hostcall_diagnostic_and_envelope_limits_are_separate() {
         ProviderHostFailureKind::ResponseLimitExceeded
     );
     assert!(failure.validation_report().is_some());
+}
 
+#[test]
+fn diagnostic_and_schema_envelope_limits_are_separate() {
     let diagnostic_flood = lower_harness("fixture.diagnostic-flood");
     let mut limits = host_limits();
     limits.max_diagnostic_bytes = 64;
