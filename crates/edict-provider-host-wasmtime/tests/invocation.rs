@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::thread;
 
 use edict_provider_host_wasmtime::{
     provider_lowering_input_bytes, PreparedProviderComponent, ProviderComponentHost,
@@ -41,6 +42,12 @@ const OUTPUT_DOMAIN: &str = "runtime.output/v1";
 
 struct LowerHarness {
     host: ProviderComponentHost,
+    prepared: PreparedProviderComponent<'static>,
+    request: ValidatedProviderLoweringRequest<'static>,
+    schema: &'static ProviderArtifactSchemaRegistry,
+}
+
+struct PreparedLowerInvocation {
     prepared: PreparedProviderComponent<'static>,
     request: ValidatedProviderLoweringRequest<'static>,
     schema: &'static ProviderArtifactSchemaRegistry,
@@ -231,6 +238,21 @@ fn lower_harness(role: &str) -> LowerHarness {
 }
 
 fn lower_harness_with_component(role: &str, component: &'static [u8]) -> LowerHarness {
+    let host = ProviderComponentHost::new().expect("host configures");
+    let invocation = prepared_lowerer_invocation(&host, role, component);
+    LowerHarness {
+        host,
+        prepared: invocation.prepared,
+        request: invocation.request,
+        schema: invocation.schema,
+    }
+}
+
+fn prepared_lowerer_invocation(
+    host: &ProviderComponentHost,
+    role: &str,
+    component: &'static [u8],
+) -> PreparedLowerInvocation {
     let manifest = provider_manifest_with_lowerer(component);
     let manifest_proof = Box::leak(Box::new(
         bind_target_provider_manifest(manifest).expect("manifest validates"),
@@ -242,9 +264,27 @@ fn lower_harness_with_component(role: &str, component: &'static [u8]) -> LowerHa
     )
     .expect("lowerer selects");
     let resolved = ResolvedProviderComponent::new(selected, Arc::from(component));
-    let host = ProviderComponentHost::new().expect("host configures");
     let prepared = host.prepare(&resolved).expect("lowerer prepares");
     let schema = registry(manifest);
+    let request = validated_lowering_request(
+        schema,
+        role,
+        ProviderLoweringOutputKind::GeneratedArtifact,
+        OUTPUT_DOMAIN,
+    );
+    PreparedLowerInvocation {
+        prepared,
+        request,
+        schema,
+    }
+}
+
+fn validated_lowering_request(
+    schema: &'static ProviderArtifactSchemaRegistry,
+    role: &str,
+    kind: ProviderLoweringOutputKind,
+    domain: &str,
+) -> ValidatedProviderLoweringRequest<'static> {
     let contract = Box::leak(Box::new(ProviderLoweringInvocationContract {
         core: binding("core@1", CORE_MODULE_DIGEST_DOMAIN),
         target_profile: binding("profile@1", TARGET_PROFILE_API_VERSION),
@@ -257,19 +297,13 @@ fn lower_harness_with_component(role: &str, component: &'static [u8]) -> LowerHa
         semantic_inputs: Vec::new(),
         requested_outputs: vec![ProviderLoweringOutputRequest {
             role: role.to_owned(),
-            kind: ProviderLoweringOutputKind::GeneratedArtifact,
-            domain: OUTPUT_DOMAIN.to_owned(),
+            kind,
+            domain: domain.to_owned(),
         }],
         limits: response_limits(),
     }));
-    let request = validate_provider_lowering_request(schema, contract, request)
-        .expect("lowering request validates");
-    LowerHarness {
-        host,
-        prepared,
-        request,
-        schema,
-    }
+    validate_provider_lowering_request(schema, contract, request)
+        .expect("lowering request validates")
 }
 
 fn verify_harness() -> VerifyHarness {
@@ -762,4 +796,123 @@ fn replay_proves_equal_completed_and_rejected_observations() {
         replay.observation(),
         ProviderReplayObservation::Completed(_)
     ));
+}
+
+#[test]
+fn failed_invocations_cannot_poison_a_later_fresh_store() {
+    for (role, expected_kind) in [
+        ("fixture.trap", ProviderHostFailureKind::GuestTrap),
+        ("fixture.loop", ProviderHostFailureKind::FuelExhausted),
+        (
+            "fixture.memory",
+            ProviderHostFailureKind::ResourceLimitExceeded,
+        ),
+        (
+            "fixture.schema-invalid",
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+        ),
+        (
+            "fixture.bad-envelope",
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+        ),
+    ] {
+        let harness = lower_harness(role);
+        let failure = harness
+            .host
+            .invoke_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect_err("poisoning fixture mode must reject");
+        assert_eq!(failure.kind(), expected_kind);
+
+        let recovery = validated_lowering_request(
+            harness.schema,
+            "output.runtime",
+            ProviderLoweringOutputKind::GeneratedArtifact,
+            OUTPUT_DOMAIN,
+        );
+        let recovered = harness
+            .host
+            .invoke_lowerer(&harness.prepared, &recovery, harness.schema, host_limits())
+            .expect("later invocation receives independent fresh state");
+        assert_eq!(
+            recovered.response().expect("successful recovery").outputs[0]
+                .artifact
+                .bytes,
+            NULL_BYTES
+        );
+    }
+}
+
+#[test]
+fn concurrent_invocations_share_no_guest_store_state() {
+    let harness = lower_harness("output.runtime");
+    thread::scope(|scope| {
+        let calls = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    harness.host.invoke_lowerer(
+                        &harness.prepared,
+                        &harness.request,
+                        harness.schema,
+                        host_limits(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut outcomes = calls.into_iter().map(|call| {
+            call.join()
+                .expect("provider invocation thread does not panic")
+                .expect("concurrent provider invocation succeeds")
+        });
+        let first = outcomes.next().expect("at least one invocation");
+        assert!(outcomes.all(|outcome| outcome == first));
+    });
+}
+
+#[test]
+fn failed_provider_does_not_poison_another_prepared_provider() {
+    let host = ProviderComponentHost::new().expect("host configures");
+    let malformed = prepared_lowerer_invocation(&host, "output.runtime", MALFORMED_LOWERER_BYTES);
+    let failure = host
+        .invoke_lowerer(
+            &malformed.prepared,
+            &malformed.request,
+            malformed.schema,
+            host_limits(),
+        )
+        .expect_err("malformed provider result rejects");
+    assert_eq!(failure.kind(), ProviderHostFailureKind::MalformedResponse);
+
+    let conforming = prepared_lowerer_invocation(&host, "output.runtime", LOWERER_BYTES);
+    host.invoke_lowerer(
+        &conforming.prepared,
+        &conforming.request,
+        conforming.schema,
+        host_limits(),
+    )
+    .expect("independent provider remains usable on the same engine");
+}
+
+#[test]
+fn repeated_preparation_preserves_invocation_observation() {
+    let host = ProviderComponentHost::new().expect("host configures");
+    let first = prepared_lowerer_invocation(&host, "output.runtime", LOWERER_BYTES);
+    let second = prepared_lowerer_invocation(&host, "output.runtime", LOWERER_BYTES);
+
+    let first = host
+        .invoke_lowerer(&first.prepared, &first.request, first.schema, host_limits())
+        .expect("first preparation invokes");
+    let second = host
+        .invoke_lowerer(
+            &second.prepared,
+            &second.request,
+            second.schema,
+            host_limits(),
+        )
+        .expect("second preparation invokes");
+    assert_eq!(first, second);
 }

@@ -83,11 +83,13 @@ pub enum ProviderArtifactSchemaValidationErrorKind {
 /// Implementations are trusted host configuration, not provider callbacks.
 /// Their contract requires total, deterministic behavior over the supplied
 /// in-memory value and forbids discovery, I/O, clock, random, environment, and
-/// component operations. Rust cannot enforce those effects for an arbitrary
-/// implementation; the concrete host registry must provide that evidence. The
-/// invocation validator establishes canonical CBOR before this hook and uses
-/// the accepted value for host-side digest computation.
-pub trait ProviderArtifactSchemaValidator: Any + fmt::Debug {
+/// component operations. Implementations must also be safe to share across
+/// independent concurrent provider stores. Rust cannot enforce the effect
+/// restrictions for an arbitrary implementation; the concrete host registry
+/// must provide that evidence. The invocation validator establishes canonical
+/// CBOR before this hook and uses the accepted value for host-side digest
+/// computation.
+pub trait ProviderArtifactSchemaValidator: Any + fmt::Debug + Send + Sync {
     /// Return whether an owning schema is available for `domain`.
     fn supports_domain(&self, domain: &str) -> bool;
 
