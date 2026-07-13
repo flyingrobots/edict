@@ -81,6 +81,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- The local `cargo xtask verify` gate now schedules one default workspace test
+  pass, which already includes doctests, instead of repeating every workspace
+  doctest in a second Cargo invocation.
 - Selected provider component identities now borrow their validated manifest
   directly rather than the temporary proof handle used to authorize selection,
   so callers can discard that handle after obtaining the opaque selection.
