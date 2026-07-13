@@ -50,6 +50,15 @@ exposes:
 - `ValidatedProviderOutcome` plus `ProviderOutputManifest` for results that have
   crossed the complete validation boundary.
 
+The private `edict-provider-schema` crate supplies the production
+`ProviderArtifactSchemaValidator`. Its constructor accepts only an opaque
+validated manifest, explicit in-memory schema bytes keyed by manifest role, and
+the host-authored required-domain closure. It verifies raw schema digests,
+rejects missing or duplicate resolved roles, compiles all bound CDDL documents,
+rejects missing roots and unresolved external rule references, and returns one
+immutable registry with a sorted binding receipt. It performs no schema
+discovery or lazy loading.
+
 Provider manifests use API version `edict.provider-manifest/v1`.
 This unreleased alpha contract is completed in place by the provider-host slice:
 host-ready v1 manifests require exact `providerAbi` and `schemaBindings` fields.
@@ -68,7 +77,7 @@ The manifest validator checks that:
 - lowerer and verifier artifacts carry digest-locked component provenance;
 - component provenance equals the artifact resource identity rather than
   naming an independently selectable component;
-- generated metadata roles are not represented as executable components; and
+- generated metadata roles are not represented as executable components;
 - component roles are not represented as generated metadata;
 - artifact schemas are generated artifacts with digest-locked provenance; and
 - schema bindings are nonempty, sorted by exact domain bytes, unique by domain,
@@ -130,7 +139,8 @@ The request validators accept only semantic protocol version `1.0.0`. A caller
 must supply a complete host-authored invocation contract and a
 `ProviderArtifactSchemaValidator` separately from the WIT-shaped request. That
 trusted capability's contract requires deterministic, side-effect-free
-validation over in-memory values.
+validation over in-memory values. The concrete registry now satisfies this
+contract with compiled self-contained CDDL over canonical CBOR.
 Validation requires the request resource references, domains, semantic-input
 closure, canonical bytes, and decoded values under their owning schemas to
 reproduce that contract before it returns an opaque
@@ -156,9 +166,10 @@ Unsupported domains and schema mismatches remain distinct structured host
 failures. Edict does not implement Echo, lawpack, target-profile, generated
 artifact, review, or verifier-report semantics inside this generic envelope
 module; the host-supplied validator owns those schema checks. The trait contract
-requires total, deterministic, side-effect-free, in-memory behavior, but this
-generic boundary cannot enforce the effects of an arbitrary implementation.
-Issue #145 requires executable evidence from the concrete host registry.
+requires total, deterministic, side-effect-free, in-memory behavior. The
+generic boundary cannot enforce the effects of an arbitrary implementation;
+the concrete registry supplies executable construction and instance-validation
+evidence for the production path.
 
 Result validation preserves the separate lowerer and verifier output
 vocabularies. It enforces exact requested outputs, role and diagnostic order,
@@ -218,9 +229,6 @@ structured negative mutations without loading a component.
 The following are not implemented:
 
 - manifest-backed provider resolution, file discovery, or package loading;
-- a concrete production artifact-schema registry (issue #145 now requires
-  digest-locked schema provenance, immutable domain bindings, and executable
-  determinism and schema-instance evidence before the host injects it);
 - WIT component loading;
 - external provider component dispatch;
 - provider verifier execution;

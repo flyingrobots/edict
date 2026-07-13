@@ -5,17 +5,20 @@ current branch; it is not a future package plan.
 
 ## Workspace Shape
 
-The Rust workspace has three members:
+The Rust workspace has four members:
 
 ```text
 edict-cli  ->  edict-syntax
 xtask      ->  edict-syntax
+edict-provider-schema  ->  edict-syntax
 ```
 
 `edict-syntax` has no dependency on the CLI or `xtask`. The CLI owns the public
 JSONL process boundary and delegates language work to `edict-syntax`. `xtask`
 owns repository maintenance checks, reviewed golden regeneration, release
 process guards, and topic-shelf contract checks.
+`edict-provider-schema` owns the immutable digest-bound CDDL registry used to
+validate provider artifact instances without a component-runtime dependency.
 
 ## Crates
 
@@ -89,6 +92,16 @@ bundles, or execute runtime behavior. It should remain a stream-contract and
 local input-boundary owner unless a future topic shelf expands its public
 surface.
 
+### `edict-provider-schema`
+
+`edict-provider-schema` is the concrete, runtime-independent provider artifact
+schema authority. It consumes a validated provider manifest plus explicit
+in-memory schema bytes, verifies their raw SHA-256 identities, compiles
+self-contained CDDL, proves required-domain closure, and implements the pure
+`ProviderArtifactSchemaValidator` contract over canonical CBOR values. It has
+no provider resolver, filesystem or network loader, Wasmtime dependency, or
+mutable registry API.
+
 ### `xtask`
 
 `xtask` is the repository contract harness. Current commands include:
@@ -148,8 +161,9 @@ The CLI currently exercises only the front end through surface validation. Tests
 and `xtask` exercise deeper layers directly.
 
 The external-provider lane currently stops at validated in-memory request and
-result envelopes. It can compute an all-or-nothing host output manifest, but it
-does not load or invoke a provider component.
+result envelopes backed by an immutable concrete schema registry. It can
+compute an all-or-nothing host output manifest, but it does not load or invoke a
+provider component.
 
 ## Dependency Rules
 
@@ -163,6 +177,8 @@ Use these rules when placing new code:
 - Repository checks, golden regeneration, release scaffolding, workflow guards,
   and topic-shelf validation belong in `xtask`.
 - `edict-syntax` must not depend on `edict-cli` or `xtask`.
+- `edict-provider-schema` may depend on `edict-syntax`; `edict-syntax` must not
+  depend on the concrete registry.
 - `edict-cli` may depend on `edict-syntax`; it should not duplicate language
   semantics that the library already owns.
 - `xtask` may depend on `edict-syntax` and may inspect repository files, but its

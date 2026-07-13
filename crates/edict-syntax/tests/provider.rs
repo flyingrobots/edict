@@ -7,8 +7,8 @@
 use edict_syntax::{
     bind_target_provider_manifest, select_provider_component, validate_target_provider_manifest,
     ProviderArtifactSource, ProviderComponentSelectionFailureKind, ProviderInvocationKind,
-    ProviderManifestValidationFailureKind,
-    ProviderManifestValidationStatus, ResourceRef, TargetProviderManifest, TARGET_PROVIDER_ABI,
+    ProviderManifestValidationFailureKind, ProviderManifestValidationStatus, ResourceRef,
+    TargetProviderManifest, TARGET_PROVIDER_ABI,
 };
 
 const ECHO_PROVIDER_FIXTURE: &str =
