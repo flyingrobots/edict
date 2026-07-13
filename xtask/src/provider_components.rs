@@ -25,6 +25,7 @@ const SOURCE_INPUTS: &[&str] = &[
     "fixtures/providers/components/guests/lowerer/src/lib.rs",
     "fixtures/providers/components/guests/verifier/Cargo.toml",
     "fixtures/providers/components/guests/verifier/src/lib.rs",
+    "fixtures/target-ir/canonical/echo-effectful.target-ir.cbor",
     "xtask/Cargo.toml",
     "xtask/src/provider_components.rs",
 ];

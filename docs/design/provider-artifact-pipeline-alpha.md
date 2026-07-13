@@ -310,9 +310,9 @@ envelope, and #146 added the pure invocation validator described above. The
 broader manifest-backed provider resolver remains future composition work.
 
 Issue #141 tracks four native slices: #148 froze the WIT envelope, #146 added
-pure envelope validation, #145 adds the capability-constrained component host
-plus the digest-locked concrete schema registry, and #147 adds deterministic
-replay and negative conformance. The #145 contract now requires immutable
+pure envelope validation, #145 added the capability-constrained component host
+plus the digest-locked concrete schema registry, and #147 added deterministic
+replay and negative conformance. The #145 contract requires immutable
 domain-to-schema provenance and executable registry evidence rather than an
 ambient or runtime-hard-coded schema source.
 

@@ -32,9 +32,11 @@ versions still track specification maturity rather than a released product.
   digest-bound Core, target-profile, and semantic artifacts, world-specific
   requested output roles, and deterministic response limits. Provider outputs
   carry role-tagged bytes and optional logical paths without authoritative
-  digests; component loading, replay, and execution remain follow-on work. The
-  new package identity explicitly supersedes the previously shipped but unhosted
-  `edict:target-profile@1.0.0` WIT direction rather than changing its meaning.
+  digests. The private host described below now loads, executes, validates, and
+  replays this transport contract; target runtime execution remains separate.
+  The new package identity explicitly supersedes the previously shipped but
+  unhosted `edict:target-profile@1.0.0` WIT direction rather than changing its
+  meaning.
 - Added pure provider invocation-envelope validation. Owned Rust values mirror
   the WIT lowerer and verifier contracts; host-authored bindings constrain every
   input before protocol, canonical bytes, owning-schema compatibility,
@@ -61,6 +63,14 @@ versions still track specification maturity rather than a released product.
   store per invocation; distinguishes stable host-owned digest, decode,
   contract, instantiation, fuel, resource, lifting, trap, and admission
   failures; and exposes only pure-validator-admitted outcomes.
+- Added sealed provider replay and failure-isolation evidence. Lowerer and
+  verifier replay execute identical authority through distinct fresh stores,
+  compare complete admitted outcomes or stable failure identities, and return
+  structured mismatch categories without treating opaque Wasmtime diagnostics
+  as semantic identity. Tests cover concurrent calls, failure recovery,
+  cross-provider isolation, named filesystem/network/environment/clock/random
+  capability denial, noncanonical and unauthorized outputs, and independent
+  process parity with the reviewed Echo-shaped Target IR bytes and digest.
 - Added checked conforming and malicious provider component fixtures plus
   `cargo xtask provider-component-fixtures --check/--write`. The inventory binds
   source and component digests, while fixtures cover typed success/refusal,

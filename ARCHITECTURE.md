@@ -116,7 +116,9 @@ attestation independently from structural WIT type compatibility, rejects every
 callable or unknown import, and installs no WASI linker. One configured engine
 is reused, while every lowerer or verifier call receives a fresh bounded store.
 Only a result admitted by the pure canonical/schema/envelope validator becomes a
-sealed outcome. Wasmtime types remain private implementation details.
+sealed outcome. Replay invokes identical authority twice through distinct stores
+and compares either the complete sealed outcomes or stable host-failure
+identities. Wasmtime types remain private implementation details.
 
 ### `xtask`
 
@@ -186,8 +188,9 @@ The external-provider lane accepts an already selected manifest component and
 resolver-supplied bytes, verifies digest and exact contract identity, invokes the
 typed lowerer or verifier in a fresh capability-denied store, and stops at a
 sealed result admitted by the immutable concrete schema registry and pure
-response validator. Package resolution and target runtime execution remain
-outside this lane.
+response validator. It can replay the identical invocation through two fresh
+stores and return a sealed equal observation or structured mismatch. Package
+resolution and target runtime execution remain outside this lane.
 
 ## Dependency Rules
 
@@ -222,7 +225,8 @@ This workspace does not yet implement:
 - trusted lawpack or target-profile authorship;
 - manifest-backed provider resolution, discovery, fetching, or mutable cache
   lookup;
-- repeated provider replay and cross-invocation isolation proof;
+- an out-of-process boundary for native Wasmtime or trusted-host faults;
+- a browser-compatible provider component host;
 - general target plugin dispatch;
 - canonical `ContractBundleManifest` bytes;
 - crates.io publication.

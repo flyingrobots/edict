@@ -1,8 +1,12 @@
+use std::fmt::Write as _;
+use std::process::Command;
 use std::sync::Arc;
+use std::thread;
 
 use edict_provider_host_wasmtime::{
     provider_lowering_input_bytes, PreparedProviderComponent, ProviderComponentHost,
-    ProviderHostFailureKind, ProviderHostLimits, ResolvedProviderComponent,
+    ProviderHostFailureKind, ProviderHostLimits, ProviderReplayObservation,
+    ResolvedProviderComponent,
 };
 use edict_provider_schema::{ProviderArtifactSchemaRegistry, ResolvedProviderSchemaArtifact};
 use edict_syntax::{
@@ -11,10 +15,10 @@ use edict_syntax::{
     ProviderArtifact, ProviderArtifactBinding, ProviderArtifactKind, ProviderArtifactRef,
     ProviderArtifactSchemaValidationErrorKind, ProviderArtifactSchemaValidator,
     ProviderArtifactSource, ProviderBoundArtifact, ProviderDigest, ProviderDigestAlgorithm,
-    ProviderInvocationKind, ProviderLoweringInvocationContract, ProviderLoweringOutputKind,
-    ProviderLoweringOutputRequest, ProviderLoweringRequest, ProviderResourceRef,
-    ProviderResponseLimits, ProviderSchemaBinding, ProviderSchemaFormat,
-    ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
+    ProviderInvocationKind, ProviderInvocationValidationFailureKind,
+    ProviderLoweringInvocationContract, ProviderLoweringOutputKind, ProviderLoweringOutputRequest,
+    ProviderLoweringRequest, ProviderResourceRef, ProviderResponseLimits, ProviderSchemaBinding,
+    ProviderSchemaFormat, ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
     ProviderVerificationOutputRequest, ProviderVerificationRequest, ResourceRef,
     TargetProviderManifest, ValidatedProviderLoweringRequest, ValidatedProviderVerificationRequest,
     CORE_MODULE_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
@@ -22,7 +26,15 @@ use edict_syntax::{
 };
 use sha2::{Digest, Sha256};
 
-const SCHEMA: &[u8] = b"artifact = null\n";
+const SCHEMA: &[u8] = br#"
+artifact = null / {
+  kind: "targetIrArtifact",
+  domain: tstr,
+  intents: { * tstr => any },
+  targetProfile: { * tstr => any },
+  sourceCoreCoordinate: tstr,
+}
+"#;
 const NULL_BYTES: &[u8] = &[0xf6];
 const LOWERER_BYTES: &[u8] =
     include_bytes!("../../../fixtures/providers/components/lowerer.component.wasm");
@@ -36,10 +48,21 @@ const INSTANTIATION_FAILURE_LOWERER_BYTES: &[u8] = include_bytes!(
 const INSTANTIATION_FUEL_LOWERER_BYTES: &[u8] = include_bytes!(
     "../../../fixtures/providers/components/instantiation-fuel-lowerer.component.wasm"
 );
+const REVIEWED_TARGET_IR_BYTES: &[u8] =
+    include_bytes!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.cbor");
+const REVIEWED_TARGET_IR_DIGEST: &str =
+    include_str!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.sha256");
 const OUTPUT_DOMAIN: &str = "runtime.output/v1";
+const REPLAY_OBSERVATION_MARKER: &str = "EDICT_PROVIDER_REPLAY_TARGET_IR=";
 
 struct LowerHarness {
     host: ProviderComponentHost,
+    prepared: PreparedProviderComponent<'static>,
+    request: ValidatedProviderLoweringRequest<'static>,
+    schema: &'static ProviderArtifactSchemaRegistry,
+}
+
+struct PreparedLowerInvocation {
     prepared: PreparedProviderComponent<'static>,
     request: ValidatedProviderLoweringRequest<'static>,
     schema: &'static ProviderArtifactSchemaRegistry,
@@ -230,6 +253,21 @@ fn lower_harness(role: &str) -> LowerHarness {
 }
 
 fn lower_harness_with_component(role: &str, component: &'static [u8]) -> LowerHarness {
+    let host = ProviderComponentHost::new().expect("host configures");
+    let invocation = prepared_lowerer_invocation(&host, role, component);
+    LowerHarness {
+        host,
+        prepared: invocation.prepared,
+        request: invocation.request,
+        schema: invocation.schema,
+    }
+}
+
+fn prepared_lowerer_invocation(
+    host: &ProviderComponentHost,
+    role: &str,
+    component: &'static [u8],
+) -> PreparedLowerInvocation {
     let manifest = provider_manifest_with_lowerer(component);
     let manifest_proof = Box::leak(Box::new(
         bind_target_provider_manifest(manifest).expect("manifest validates"),
@@ -241,9 +279,27 @@ fn lower_harness_with_component(role: &str, component: &'static [u8]) -> LowerHa
     )
     .expect("lowerer selects");
     let resolved = ResolvedProviderComponent::new(selected, Arc::from(component));
-    let host = ProviderComponentHost::new().expect("host configures");
     let prepared = host.prepare(&resolved).expect("lowerer prepares");
     let schema = registry(manifest);
+    let request = validated_lowering_request(
+        schema,
+        role,
+        ProviderLoweringOutputKind::GeneratedArtifact,
+        OUTPUT_DOMAIN,
+    );
+    PreparedLowerInvocation {
+        prepared,
+        request,
+        schema,
+    }
+}
+
+fn validated_lowering_request(
+    schema: &'static ProviderArtifactSchemaRegistry,
+    role: &str,
+    kind: ProviderLoweringOutputKind,
+    domain: &str,
+) -> ValidatedProviderLoweringRequest<'static> {
     let contract = Box::leak(Box::new(ProviderLoweringInvocationContract {
         core: binding("core@1", CORE_MODULE_DIGEST_DOMAIN),
         target_profile: binding("profile@1", TARGET_PROFILE_API_VERSION),
@@ -256,19 +312,13 @@ fn lower_harness_with_component(role: &str, component: &'static [u8]) -> LowerHa
         semantic_inputs: Vec::new(),
         requested_outputs: vec![ProviderLoweringOutputRequest {
             role: role.to_owned(),
-            kind: ProviderLoweringOutputKind::GeneratedArtifact,
-            domain: OUTPUT_DOMAIN.to_owned(),
+            kind,
+            domain: domain.to_owned(),
         }],
         limits: response_limits(),
     }));
-    let request = validate_provider_lowering_request(schema, contract, request)
-        .expect("lowering request validates");
-    LowerHarness {
-        host,
-        prepared,
-        request,
-        schema,
-    }
+    validate_provider_lowering_request(schema, contract, request)
+        .expect("lowering request validates")
 }
 
 fn verify_harness() -> VerifyHarness {
@@ -652,6 +702,68 @@ fn diagnostic_and_schema_envelope_limits_are_separate() {
 }
 
 #[test]
+fn provider_output_failure_matrix_preserves_stable_validation_kinds() {
+    for (role, expected_kind) in [
+        (
+            "fixture.noncanonical",
+            ProviderInvocationValidationFailureKind::NonCanonicalArtifact,
+        ),
+        (
+            "fixture.wrong-domain",
+            ProviderInvocationValidationFailureKind::ArtifactDomainMismatch,
+        ),
+        (
+            "fixture.duplicate-role",
+            ProviderInvocationValidationFailureKind::DuplicateRole,
+        ),
+        (
+            "fixture.undeclared-output",
+            ProviderInvocationValidationFailureKind::UndeclaredOutput,
+        ),
+        (
+            "fixture.path-traversal",
+            ProviderInvocationValidationFailureKind::InvalidLogicalPath,
+        ),
+    ] {
+        let harness = lower_harness(role);
+        let failure = harness
+            .host
+            .invoke_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect_err("invalid provider output must not be admitted");
+        assert_eq!(
+            failure.kind(),
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+            "{role}: {}",
+            failure.diagnostic()
+        );
+        let kinds = failure
+            .validation_report()
+            .expect("response rejection retains its pure validation report")
+            .failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>();
+        assert!(kinds.contains(&expected_kind), "{role}: {kinds:?}");
+    }
+
+    let recovery = lower_harness("output.runtime");
+    recovery
+        .host
+        .invoke_lowerer(
+            &recovery.prepared,
+            &recovery.request,
+            recovery.schema,
+            host_limits(),
+        )
+        .expect("failure matrix leaves the compiler host usable");
+}
+
+#[test]
 fn malformed_canonical_abi_result_is_not_a_guest_trap_or_envelope_failure() {
     let harness = lower_harness_with_component("output.runtime", MALFORMED_LOWERER_BYTES);
     let failure = harness
@@ -702,4 +814,273 @@ fn instantiation_fuel_exhaustion_preserves_budget_identity() {
         edict_provider_host_wasmtime::ProviderHostPhase::Instantiate
     );
     assert!(failure.diagnostic().is_empty());
+}
+
+#[test]
+fn replay_proves_equal_completed_and_rejected_observations() {
+    for role in ["output.runtime", "fixture.refusal"] {
+        let harness = lower_harness(role);
+        let replay = harness
+            .host
+            .replay_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect("deterministic completed invocation replays");
+        assert!(matches!(
+            replay.observation(),
+            ProviderReplayObservation::Completed(_)
+        ));
+    }
+
+    for (role, expected_kind) in [
+        ("fixture.trap", ProviderHostFailureKind::GuestTrap),
+        ("fixture.loop", ProviderHostFailureKind::FuelExhausted),
+        (
+            "fixture.schema-invalid",
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+        ),
+    ] {
+        let harness = lower_harness(role);
+        let replay = harness
+            .host
+            .replay_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect("deterministic rejected invocation replays");
+        let ProviderReplayObservation::Rejected(failure) = replay.observation() else {
+            panic!("host failure must remain a rejected replay observation");
+        };
+        assert_eq!(failure.kind(), expected_kind);
+    }
+
+    let malformed = lower_harness_with_component("output.runtime", MALFORMED_LOWERER_BYTES);
+    let replay = malformed
+        .host
+        .replay_lowerer(
+            &malformed.prepared,
+            &malformed.request,
+            malformed.schema,
+            host_limits(),
+        )
+        .expect("malformed lifting failure replays");
+    let ProviderReplayObservation::Rejected(failure) = replay.observation() else {
+        panic!("malformed lifting must remain a rejected replay observation");
+    };
+    assert_eq!(failure.kind(), ProviderHostFailureKind::MalformedResponse);
+
+    let harness = verify_harness();
+    let replay = harness
+        .host
+        .replay_verifier(
+            &harness.prepared,
+            &harness.request,
+            harness.schema,
+            host_limits(),
+        )
+        .expect("deterministic verifier invocation replays");
+    assert!(matches!(
+        replay.observation(),
+        ProviderReplayObservation::Completed(_)
+    ));
+}
+
+fn reviewed_target_ir_replay_observation() -> String {
+    let harness = lower_harness("fixture.target-ir");
+    let request = validated_lowering_request(
+        harness.schema,
+        "fixture.target-ir",
+        ProviderLoweringOutputKind::TargetIr,
+        TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    );
+    let replay = harness
+        .host
+        .replay_lowerer(&harness.prepared, &request, harness.schema, host_limits())
+        .expect("reviewed Target IR invocation replays");
+    let ProviderReplayObservation::Completed(outcome) = replay.observation() else {
+        panic!("reviewed Target IR fixture must be a completed observation");
+    };
+    let response = outcome.response().expect("fixture returns Target IR");
+    assert_eq!(response.outputs.len(), 1);
+    assert_eq!(response.outputs[0].artifact.bytes, REVIEWED_TARGET_IR_BYTES);
+    let manifest = outcome.manifest().expect("fixture output is admitted");
+    assert_eq!(manifest.outputs().len(), 1);
+    let mut domain_digest = String::with_capacity("sha256:".len() + 64);
+    domain_digest.push_str("sha256:");
+    for byte in &manifest.outputs()[0].digest.bytes {
+        write!(&mut domain_digest, "{byte:02x}").expect("writing a digest to String cannot fail");
+    }
+    assert_eq!(domain_digest, REVIEWED_TARGET_IR_DIGEST.trim());
+    format!("{}:{domain_digest}", sha256(REVIEWED_TARGET_IR_BYTES))
+}
+
+#[test]
+fn generic_lowerer_matches_reviewed_target_ir_bytes_and_digest() {
+    let observation = reviewed_target_ir_replay_observation();
+    assert!(observation.ends_with(REVIEWED_TARGET_IR_DIGEST.trim()));
+}
+
+#[test]
+#[ignore = "child entrypoint exercised by the independent-process replay test"]
+fn emit_reviewed_target_ir_replay_observation() {
+    println!(
+        "{REPLAY_OBSERVATION_MARKER}{}",
+        reviewed_target_ir_replay_observation()
+    );
+}
+
+#[test]
+fn independent_processes_reproduce_reviewed_target_ir_observation() {
+    let executable = std::env::current_exe().expect("current test executable is discoverable");
+    let run_child = || {
+        let output = Command::new(&executable)
+            .arg("emit_reviewed_target_ir_replay_observation")
+            .args(["--exact", "--ignored", "--nocapture", "--test-threads=1"])
+            .output()
+            .expect("child replay process launches");
+        assert!(
+            output.status.success(),
+            "child replay failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).expect("child replay output is UTF-8");
+        stdout
+            .lines()
+            .find_map(|line| {
+                line.split_once(REPLAY_OBSERVATION_MARKER)
+                    .map(|(_, observation)| observation)
+            })
+            .unwrap_or_else(|| panic!("child replay omitted its stable observation:\n{stdout}"))
+            .to_owned()
+    };
+
+    let first = run_child();
+    let second = run_child();
+    assert_eq!(first, second);
+    assert!(first.ends_with(REVIEWED_TARGET_IR_DIGEST.trim()));
+}
+
+#[test]
+fn failed_invocations_cannot_poison_a_later_fresh_store() {
+    for (role, expected_kind) in [
+        ("fixture.trap", ProviderHostFailureKind::GuestTrap),
+        ("fixture.loop", ProviderHostFailureKind::FuelExhausted),
+        (
+            "fixture.memory",
+            ProviderHostFailureKind::ResourceLimitExceeded,
+        ),
+        (
+            "fixture.schema-invalid",
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+        ),
+        (
+            "fixture.bad-envelope",
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+        ),
+    ] {
+        let harness = lower_harness(role);
+        let failure = harness
+            .host
+            .invoke_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect_err("poisoning fixture mode must reject");
+        assert_eq!(failure.kind(), expected_kind);
+
+        let recovery = validated_lowering_request(
+            harness.schema,
+            "output.runtime",
+            ProviderLoweringOutputKind::GeneratedArtifact,
+            OUTPUT_DOMAIN,
+        );
+        let recovered = harness
+            .host
+            .invoke_lowerer(&harness.prepared, &recovery, harness.schema, host_limits())
+            .expect("later invocation receives independent fresh state");
+        assert_eq!(
+            recovered.response().expect("successful recovery").outputs[0]
+                .artifact
+                .bytes,
+            NULL_BYTES
+        );
+    }
+}
+
+#[test]
+fn concurrent_invocations_share_no_guest_store_state() {
+    let harness = lower_harness("output.runtime");
+    thread::scope(|scope| {
+        let calls = (0..8)
+            .map(|_| {
+                scope.spawn(|| {
+                    harness.host.invoke_lowerer(
+                        &harness.prepared,
+                        &harness.request,
+                        harness.schema,
+                        host_limits(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut outcomes = calls.into_iter().map(|call| {
+            call.join()
+                .expect("provider invocation thread does not panic")
+                .expect("concurrent provider invocation succeeds")
+        });
+        let first = outcomes.next().expect("at least one invocation");
+        assert!(outcomes.all(|outcome| outcome == first));
+    });
+}
+
+#[test]
+fn failed_provider_does_not_poison_another_prepared_provider() {
+    let host = ProviderComponentHost::new().expect("host configures");
+    let malformed = prepared_lowerer_invocation(&host, "output.runtime", MALFORMED_LOWERER_BYTES);
+    let failure = host
+        .invoke_lowerer(
+            &malformed.prepared,
+            &malformed.request,
+            malformed.schema,
+            host_limits(),
+        )
+        .expect_err("malformed provider result rejects");
+    assert_eq!(failure.kind(), ProviderHostFailureKind::MalformedResponse);
+
+    let conforming = prepared_lowerer_invocation(&host, "output.runtime", LOWERER_BYTES);
+    host.invoke_lowerer(
+        &conforming.prepared,
+        &conforming.request,
+        conforming.schema,
+        host_limits(),
+    )
+    .expect("independent provider remains usable on the same engine");
+}
+
+#[test]
+fn repeated_preparation_preserves_invocation_observation() {
+    let host = ProviderComponentHost::new().expect("host configures");
+    let first = prepared_lowerer_invocation(&host, "output.runtime", LOWERER_BYTES);
+    let second = prepared_lowerer_invocation(&host, "output.runtime", LOWERER_BYTES);
+
+    let first = host
+        .invoke_lowerer(&first.prepared, &first.request, first.schema, host_limits())
+        .expect("first preparation invokes");
+    let second = host
+        .invoke_lowerer(
+            &second.prepared,
+            &second.request,
+            second.schema,
+            host_limits(),
+        )
+        .expect("second preparation invokes");
+    assert_eq!(first, second);
 }

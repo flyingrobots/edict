@@ -3,7 +3,7 @@
 //! These tests exercise WIT-shaped in-memory values. They do not instantiate a
 //! component, touch the filesystem, or interpret provider-owned semantics.
 
-use std::cell::RefCell;
+use std::sync::Mutex;
 
 use edict_syntax::{
     encode_canonical_cbor, validate_provider_lowering_limit_independence,
@@ -94,12 +94,15 @@ static ARTIFACT_SCHEMAS: TestArtifactSchemas = TestArtifactSchemas;
 
 #[derive(Debug, Default)]
 struct RecordingArtifactSchemas {
-    calls: RefCell<Vec<String>>,
+    calls: Mutex<Vec<String>>,
 }
 
 impl ProviderArtifactSchemaValidator for RecordingArtifactSchemas {
     fn supports_domain(&self, domain: &str) -> bool {
-        self.calls.borrow_mut().push(format!("supports:{domain}"));
+        self.calls
+            .lock()
+            .expect("schema recorder lock remains available")
+            .push(format!("supports:{domain}"));
         ARTIFACT_SCHEMAS.supports_domain(domain)
     }
 
@@ -108,7 +111,10 @@ impl ProviderArtifactSchemaValidator for RecordingArtifactSchemas {
         domain: &str,
         value: &CanonicalValue,
     ) -> Result<(), ProviderArtifactSchemaValidationErrorKind> {
-        self.calls.borrow_mut().push(format!("validate:{domain}"));
+        self.calls
+            .lock()
+            .expect("schema recorder lock remains available")
+            .push(format!("validate:{domain}"));
         ARTIFACT_SCHEMAS.validate_canonical_value(domain, value)
     }
 }
@@ -1215,13 +1221,21 @@ fn owning_schema_validation_order_is_explicit_and_deterministic() {
     let first = validate_lowering_request_with_schemas(&first_schemas, &contract, &request)
         .expect("first request validates");
     validate_provider_lowering_result(&first, &result).expect("first result validates");
-    let first_calls = first_schemas.calls.borrow().clone();
+    let first_calls = first_schemas
+        .calls
+        .lock()
+        .expect("schema recorder lock remains available")
+        .clone();
 
     let second_schemas = RecordingArtifactSchemas::default();
     let second = validate_lowering_request_with_schemas(&second_schemas, &contract, &request)
         .expect("second request validates");
     validate_provider_lowering_result(&second, &result).expect("second result validates");
-    let second_calls = second_schemas.calls.borrow().clone();
+    let second_calls = second_schemas
+        .calls
+        .lock()
+        .expect("schema recorder lock remains available")
+        .clone();
 
     assert_eq!(first_calls, second_calls);
     for domain in [
