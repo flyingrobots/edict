@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use edict_provider_schema::ProviderArtifactSchemaRegistry;
 use edict_syntax::{
     validate_provider_lowering_result, validate_provider_verification_result,
@@ -152,10 +154,10 @@ fn verify_authority_binding(
     request_validator: &dyn ProviderArtifactSchemaValidator,
     registry: &ProviderArtifactSchemaRegistry,
 ) -> Result<(), ProviderHostFailure> {
-    let registry_validator: &dyn ProviderArtifactSchemaValidator = registry;
+    let request_registry =
+        (request_validator as &dyn Any).downcast_ref::<ProviderArtifactSchemaRegistry>();
     if prepared.selected.manifest() != registry.manifest()
-        || request_validator.type_id() != std::any::TypeId::of::<ProviderArtifactSchemaRegistry>()
-        || !std::ptr::eq(request_validator, registry_validator)
+        || request_registry.is_none_or(|request_registry| !std::ptr::eq(request_registry, registry))
     {
         return Err(ProviderHostFailure::message(
             ProviderHostFailureKind::HostInvariantViolated,
