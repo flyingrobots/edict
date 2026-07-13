@@ -61,7 +61,7 @@ impl ProviderComponentHost {
         registry: &ProviderArtifactSchemaRegistry,
         limits: ProviderHostLimits,
     ) -> Result<ValidatedProviderLoweringOutcome, ProviderHostFailure> {
-        verify_authority_binding(prepared, validated.schema_validator(), registry)?;
+        verify_authority_binding(self, prepared, validated.schema_validator(), registry)?;
         preflight_limits(
             lowering_input_bytes(validated.request()),
             validated.request().limits.max_total_response_bytes,
@@ -111,7 +111,7 @@ impl ProviderComponentHost {
         registry: &ProviderArtifactSchemaRegistry,
         limits: ProviderHostLimits,
     ) -> Result<ValidatedProviderVerificationOutcome, ProviderHostFailure> {
-        verify_authority_binding(prepared, validated.schema_validator(), registry)?;
+        verify_authority_binding(self, prepared, validated.schema_validator(), registry)?;
         preflight_limits(
             verification_input_bytes(validated.request()),
             validated.request().limits.max_total_response_bytes,
@@ -150,13 +150,15 @@ impl ProviderComponentHost {
 }
 
 fn verify_authority_binding(
+    host: &ProviderComponentHost,
     prepared: &PreparedProviderComponent<'_>,
     request_validator: &dyn ProviderArtifactSchemaValidator,
     registry: &ProviderArtifactSchemaRegistry,
 ) -> Result<(), ProviderHostFailure> {
     let request_registry =
         (request_validator as &dyn Any).downcast_ref::<ProviderArtifactSchemaRegistry>();
-    if prepared.selected.manifest() != registry.manifest()
+    if !wasmtime::Engine::same(&prepared.engine, &host.engine)
+        || prepared.selected.manifest() != registry.manifest()
         || request_registry.is_none_or(|request_registry| !std::ptr::eq(request_registry, registry))
     {
         return Err(ProviderHostFailure::message(

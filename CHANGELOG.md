@@ -57,9 +57,10 @@ versions still track specification maturity rather than a released product.
 - Added the capability-denied Wasmtime component host for the frozen lowerer and
   verifier worlds. It independently checks component digest, exact digest-covered
   contract attestation, callable-import denial, and structural WIT compatibility;
-  creates a fresh bounded store per invocation; distinguishes stable host-owned
-  digest, decode, contract, instantiation, fuel, resource, lifting, trap, and
-  admission failures; and exposes only pure-validator-admitted outcomes.
+  binds prepared components to their creating engine; creates a fresh bounded
+  store per invocation; distinguishes stable host-owned digest, decode,
+  contract, instantiation, fuel, resource, lifting, trap, and admission
+  failures; and exposes only pure-validator-admitted outcomes.
 - Added checked conforming and malicious provider component fixtures plus
   `cargo xtask provider-component-fixtures --check/--write`. The inventory binds
   source and component digests, while fixtures cover typed success/refusal,

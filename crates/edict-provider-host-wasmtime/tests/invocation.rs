@@ -421,6 +421,28 @@ fn prepared_component_request_and_registry_must_share_one_authority() {
 }
 
 #[test]
+fn prepared_component_cannot_cross_the_host_engine_boundary() {
+    let harness = lower_harness("output.runtime");
+    let other_host = ProviderComponentHost::new().expect("second host configures");
+    let failure = other_host
+        .invoke_lowerer(
+            &harness.prepared,
+            &harness.request,
+            harness.schema,
+            host_limits(),
+        )
+        .expect_err("a prepared component cannot run under another host engine");
+    assert_eq!(
+        failure.kind(),
+        ProviderHostFailureKind::HostInvariantViolated
+    );
+    assert_eq!(
+        failure.phase(),
+        edict_provider_host_wasmtime::ProviderHostPhase::Preflight
+    );
+}
+
+#[test]
 fn registry_address_alias_cannot_substitute_another_validator_type() {
     let harness = lower_harness("fixture.schema-invalid");
     let wrapper = Box::leak(Box::new(PermissiveRegistryWrapper {

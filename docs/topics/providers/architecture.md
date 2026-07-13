@@ -45,6 +45,9 @@ slice makes no wall-time or watchdog determinism claim.
 Every invocation uses `Store::try_new` to create a fresh store containing only a
 resource limiter. Generated typed bindings call exactly one `lower` or `verify`
 export. A prepared lowerer cannot be passed to the verifier path or vice versa.
+The prepared value retains its creating engine, and invocation rejects a
+different host engine during authority preflight rather than reclassifying that
+host misuse as a provider instantiation failure.
 The validated request retains its schema-validator capability, and invocation
 requires that object to be the same concrete registry whose manifest equals the
 prepared component's manifest. This prevents independently valid authority

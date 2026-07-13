@@ -78,9 +78,10 @@ function is installed.
 
 The host owns one immutable Wasmtime engine and creates a fresh store for every
 invocation. The prepared component, opaque validated request proof, and concrete
-schema registry must share one manifest and validator authority. The store
-receives only explicit fuel and resource limits. A result crosses the boundary
-only after typed lifting, host diagnostic/output limits, canonical decoding,
+schema registry must share one manifest and validator authority, and a prepared
+component can be invoked only by the engine that created it. The store receives
+only explicit fuel and resource limits. A result crosses the boundary only after
+typed lifting, host diagnostic/output limits, canonical decoding,
 schema-instance validation, exact response-envelope validation, and host digest
 construction all succeed. A typed provider refusal remains provider evidence;
 engine, transport, containment, and admission failures remain stable host-owned

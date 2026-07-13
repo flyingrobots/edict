@@ -207,6 +207,7 @@ enum PreparedWorld {
 /// Digest-verified, identity-attested, capability-denied typed component.
 pub struct PreparedProviderComponent<'a> {
     selected: SelectedProviderComponent<'a>,
+    engine: Engine,
     world: PreparedWorld,
 }
 
@@ -321,6 +322,7 @@ impl ProviderComponentHost {
         };
         Ok(PreparedProviderComponent {
             selected: resolved.selected,
+            engine: self.engine.clone(),
             world,
         })
     }
