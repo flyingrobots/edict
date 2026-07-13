@@ -255,23 +255,16 @@ fn classify_call_error(
         };
         return bounded_engine_failure(kind, phase, error, limits);
     }
-    let failure = bounded_engine_failure(
-        ProviderHostFailureKind::MalformedResponse,
-        phase,
-        error,
-        limits,
-    );
+    let mut failure =
+        ProviderHostFailure::error(ProviderHostFailureKind::MalformedResponse, phase, error);
     if failure
         .diagnostic
         .contains("fuel allocated for hostcalls has been exhausted")
     {
-        ProviderHostFailure {
-            kind: ProviderHostFailureKind::ResponseLiftLimitExceeded,
-            ..failure
-        }
-    } else {
-        failure
+        failure.kind = ProviderHostFailureKind::ResponseLiftLimitExceeded;
     }
+    truncate_engine_diagnostic(&mut failure, limits.max_host_diagnostic_bytes);
+    failure
 }
 
 fn classify_engine_error(

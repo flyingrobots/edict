@@ -481,6 +481,25 @@ fn hostcall_diagnostic_and_envelope_limits_are_separate() {
         failure.diagnostic()
     );
 
+    let output_flood = lower_harness("fixture.output-flood");
+    let mut limits = host_limits();
+    limits.max_hostcall_bytes = 64 * 1024;
+    limits.max_host_diagnostic_bytes = 0;
+    let failure = output_flood
+        .host
+        .invoke_lowerer(
+            &output_flood.prepared,
+            &output_flood.request,
+            output_flood.schema,
+            limits,
+        )
+        .expect_err("diagnostic truncation cannot change lifting failure identity");
+    assert_eq!(
+        failure.kind(),
+        ProviderHostFailureKind::ResponseLiftLimitExceeded
+    );
+    assert!(failure.diagnostic().is_empty());
+
     let output_limit = lower_harness("fixture.output-flood");
     let failure = output_limit
         .host
