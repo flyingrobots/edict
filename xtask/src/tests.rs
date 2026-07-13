@@ -1653,6 +1653,39 @@ fn provider_fixture_inventory_is_an_explicit_ci_gate() {
 }
 
 #[test]
+fn cargo_deny_supply_chain_gate_covers_root_and_fixture_guest() {
+    let root = repo_root().expect("repo root");
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("CI workflow");
+    let policy = fs::read_to_string(root.join("deny.toml")).expect("cargo-deny policy");
+
+    for required in [
+        "name: supply-chain (cargo-deny)",
+        "cargo +stable install cargo-deny --locked --version 0.18.9",
+        "cargo +stable deny --locked check",
+        "--manifest-path fixtures/providers/components/guests/Cargo.toml check",
+    ] {
+        assert!(
+            workflow.contains(required),
+            "cargo-deny workflow contract missing `{required}`"
+        );
+    }
+    for required in [
+        "[advisories]",
+        "yanked = \"deny\"",
+        "[licenses]",
+        "[bans]",
+        "[sources]",
+        "unknown-registry = \"deny\"",
+        "unknown-git = \"deny\"",
+    ] {
+        assert!(
+            policy.contains(required),
+            "cargo-deny policy missing `{required}`"
+        );
+    }
+}
+
+#[test]
 fn provider_runtime_dependency_boundary_is_narrow() {
     provider_runtime_dependencies(&repo_root().expect("repo root"))
         .expect("provider runtime dependency boundary remains narrow");

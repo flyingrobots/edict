@@ -115,8 +115,19 @@ plans, roadmap entries, design notes, or issues. [RUST-REQ-005]
 
 New dependencies require PR-body rationale. Runtime/network/plugin dependencies
 in library compiler crates require architecture review. Dependency updates must
-state contract impact. Security and license gates are planned before crates.io
-publication policy begins. [RUST-REQ-007]
+state contract impact.
+
+CI pins cargo-deny 0.18.9 and checks both the root workspace lockfile and the
+provider fixture guest lockfile. `deny.toml` rejects RustSec advisories, yanked
+crates, and unknown registry or Git sources; allowlists reviewed licenses; and
+reports duplicate versions. The equivalent local gates are:
+
+```text
+cargo +stable deny --locked check
+cargo +stable deny --locked --manifest-path fixtures/providers/components/guests/Cargo.toml check
+```
+
+[RUST-REQ-007]
 
 ## Generated Artifacts
 
