@@ -17,7 +17,8 @@ In scope:
 - fixture reuse across parser, validation, compiler-spine, canonicalization, and
   golden-artifact stages;
 - local verification through `cargo xtask contract-check` and
-  `cargo xtask verify`.
+  `cargo xtask verify`; and
+- nonduplicative scheduling of the default Cargo workspace test pass.
 
 Out of scope:
 
@@ -35,6 +36,7 @@ Out of scope:
 | TESTS-REQ-004 | policy | Tests assert software behavior and stable artifacts, not implementation details, documentation details, repository structure, diagnostic prose, or incidental output. | AGENTS.md |
 | TESTS-REQ-005 | policy | Fixtures are reused across compatible stages, while executable encoder behavior and reviewed golden bytes remain separate steps. | fixtures/README.md, ROADMAP.md |
 | TESTS-REQ-006 | policy | Local verification includes topic contract checking and the full `cargo xtask verify` gate. | AGENTS.md, xtask/src/main.rs, xtask/src/contract_check.rs, xtask/src/tests.rs |
+| TESTS-REQ-007 | implemented | The local gate schedules one default Cargo workspace test pass, which covers unit, integration, and documentation tests without repeating doctests. | xtask/src/main.rs, xtask/src/tests.rs |
 
 ## Fixtures
 
@@ -55,6 +57,7 @@ Out of scope:
 | TESTS-TP-002 | policy | Workflow policy | TESTS-REQ-002, TESTS-REQ-003, TESTS-REQ-004 | Review confirms the workflow policy requires RED/GREEN and behavior-level tests only. | - | docs/topics/tests/README.md, docs/topics/tests/test-plan.md | Policy detail; do not encode as a Rust test. |
 | TESTS-TP-003 | policy | Fixture policy | TESTS-REQ-005 | Review confirms the workflow policy keeps executable encoder behavior separate from reviewed golden bytes and exact digests. | - | docs/topics/tests/README.md, ROADMAP.md, fixtures/README.md | Policy detail; do not encode as a Rust test. |
 | TESTS-TP-004 | policy | Local gate policy | TESTS-REQ-006 | Review confirms the local gate is documented; executable tests remain focused on validator behavior. | - | xtask/src/main.rs, xtask/src/contract_check.rs, xtask/src/tests.rs | Tool behavior is covered by existing `contract_graph_*` tests. |
+| TESTS-TP-005 | implemented | Verification scheduling | TESTS-REQ-007 | An injected command recorder observes exactly one default `cargo test --workspace --all-features` invocation. | verify_rust_commands_runs_one_default_workspace_test_pass | xtask/src/main.rs, xtask/src/tests.rs | Proves workspace doctests are not scheduled a second time by xtask. |
 
 ## Determinism Obligations
 

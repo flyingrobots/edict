@@ -23,7 +23,7 @@ use goldens::{
 use provider_components::{provider_component_fixtures, ProviderComponentFixtureMode};
 use provider_dependencies::provider_runtime_dependencies;
 use release_prep::release_prep;
-use util::{diff_check_base, repo_root, run_cmd};
+use util::{diff_check_base, repo_root, run_cmd, run_cmd_slice};
 
 fn main() -> ExitCode {
     match run() {
@@ -127,26 +127,7 @@ fn run() -> Result<(), String> {
 }
 
 fn verify(root: &Path) -> Result<(), String> {
-    run_cmd(root, "cargo", ["fmt", "--all", "--check"])?;
-    run_cmd(
-        root,
-        "cargo",
-        [
-            "clippy",
-            "--workspace",
-            "--all-targets",
-            "--all-features",
-            "--",
-            "-D",
-            "warnings",
-        ],
-    )?;
-    run_cmd(root, "cargo", ["test", "--workspace", "--all-features"])?;
-    run_cmd(
-        root,
-        "cargo",
-        ["test", "--workspace", "--doc", "--all-features"],
-    )?;
+    verify_rust_commands_with(root, run_cmd_slice)?;
     core_goldens(root, CoreGoldenMode::Check)?;
     target_ir_goldens(root, TargetIrGoldenMode::Check)?;
     bundle_goldens(root, BundleGoldenMode::Check)?;
@@ -156,5 +137,27 @@ fn verify(root: &Path) -> Result<(), String> {
     contract_check(root)?;
     let base = diff_check_base(root)?;
     run_cmd(root, "git", ["diff", "--check", &format!("{base}...HEAD")])?;
+    Ok(())
+}
+
+fn verify_rust_commands_with(
+    root: &Path,
+    mut run: impl FnMut(&Path, &str, &[&str]) -> Result<(), String>,
+) -> Result<(), String> {
+    run(root, "cargo", &["fmt", "--all", "--check"])?;
+    run(
+        root,
+        "cargo",
+        &[
+            "clippy",
+            "--workspace",
+            "--all-targets",
+            "--all-features",
+            "--",
+            "-D",
+            "warnings",
+        ],
+    )?;
+    run(root, "cargo", &["test", "--workspace", "--all-features"])?;
     Ok(())
 }

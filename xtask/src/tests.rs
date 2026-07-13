@@ -1801,6 +1801,45 @@ fn cli_goldens_command_is_wired_into_verify() {
 }
 
 #[test]
+fn verify_rust_commands_runs_one_default_workspace_test_pass() {
+    let root = Path::new("/repo");
+    let mut commands = Vec::new();
+
+    super::verify_rust_commands_with(root, |actual_root, program, args| {
+        commands.push((
+            actual_root.to_owned(),
+            program.to_owned(),
+            args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+        ));
+        Ok(())
+    })
+    .expect("record Rust verification commands");
+
+    assert!(
+        commands
+            .iter()
+            .all(|(actual_root, _, _)| actual_root == root),
+        "every Rust verification command must run from the repository root"
+    );
+    let workspace_test_commands = commands
+        .iter()
+        .filter(|(_, program, args)| {
+            program == "cargo" && args.first().is_some_and(|arg| arg == "test")
+        })
+        .map(|(_, _, args)| args.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        workspace_test_commands,
+        vec![vec![
+            "test".to_owned(),
+            "--workspace".to_owned(),
+            "--all-features".to_owned(),
+        ]],
+        "the default workspace test pass already includes doctests"
+    );
+}
+
+#[test]
 fn cli_golden_binary_path_uses_cargo_metadata_target_directory() {
     let target_directory = std::env::temp_dir().join("edict-custom-target");
     let target_directory_json =

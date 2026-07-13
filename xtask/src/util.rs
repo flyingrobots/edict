@@ -9,6 +9,10 @@ pub(crate) fn run_cmd<const N: usize>(
     program: &str,
     args: [&str; N],
 ) -> Result<(), String> {
+    run_cmd_slice(root, program, &args)
+}
+
+pub(crate) fn run_cmd_slice(root: &Path, program: &str, args: &[&str]) -> Result<(), String> {
     let rendered = args.join(" ");
     println!("$ {program} {rendered}");
     let status = Command::new(program)
