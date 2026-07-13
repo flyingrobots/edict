@@ -14,12 +14,17 @@ use wasmtime::{Config, Engine};
 mod conversion;
 mod invocation;
 mod limits;
+mod replay;
 
 pub use invocation::{
     provider_lowering_input_bytes, provider_verification_input_bytes,
     ValidatedProviderLoweringOutcome, ValidatedProviderVerificationOutcome,
 };
 pub use limits::ProviderHostLimits;
+pub use replay::{
+    ProviderHostFailureIdentity, ProviderReplayFailure, ProviderReplayFailureKind,
+    ProviderReplayObservation, ValidatedProviderReplay,
+};
 
 mod lowerer_bindings {
     wasmtime::component::bindgen!({

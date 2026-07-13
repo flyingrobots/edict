@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use edict_provider_host_wasmtime::{
     provider_lowering_input_bytes, PreparedProviderComponent, ProviderComponentHost,
-    ProviderHostFailureKind, ProviderHostLimits, ResolvedProviderComponent,
+    ProviderHostFailureKind, ProviderHostLimits, ProviderReplayObservation,
+    ResolvedProviderComponent,
 };
 use edict_provider_schema::{ProviderArtifactSchemaRegistry, ResolvedProviderSchemaArtifact};
 use edict_syntax::{
@@ -702,4 +703,63 @@ fn instantiation_fuel_exhaustion_preserves_budget_identity() {
         edict_provider_host_wasmtime::ProviderHostPhase::Instantiate
     );
     assert!(failure.diagnostic().is_empty());
+}
+
+#[test]
+fn replay_proves_equal_completed_and_rejected_observations() {
+    for role in ["output.runtime", "fixture.refusal"] {
+        let harness = lower_harness(role);
+        let replay = harness
+            .host
+            .replay_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect("deterministic completed invocation replays");
+        assert!(matches!(
+            replay.observation(),
+            ProviderReplayObservation::Completed(_)
+        ));
+    }
+
+    for (role, expected_kind) in [
+        ("fixture.trap", ProviderHostFailureKind::GuestTrap),
+        ("fixture.loop", ProviderHostFailureKind::FuelExhausted),
+        (
+            "fixture.schema-invalid",
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+        ),
+    ] {
+        let harness = lower_harness(role);
+        let replay = harness
+            .host
+            .replay_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect("deterministic rejected invocation replays");
+        let ProviderReplayObservation::Rejected(failure) = replay.observation() else {
+            panic!("host failure must remain a rejected replay observation");
+        };
+        assert_eq!(failure.kind(), expected_kind);
+    }
+
+    let harness = verify_harness();
+    let replay = harness
+        .host
+        .replay_verifier(
+            &harness.prepared,
+            &harness.request,
+            harness.schema,
+            host_limits(),
+        )
+        .expect("deterministic verifier invocation replays");
+    assert!(matches!(
+        replay.observation(),
+        ProviderReplayObservation::Completed(_)
+    ));
 }
