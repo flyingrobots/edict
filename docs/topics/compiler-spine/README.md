@@ -31,7 +31,9 @@ profiles and imported effect calls before the compiler can check profile/effect
 compatibility. [CSPINE-REQ-009]
 Those first compiler context facts may be supplied with builder methods or by
 loading explicit authority-facts files through
-`load_compiler_context_from_authority_fact_files`. [CSPINE-REQ-010]
+`load_compiler_context_from_authority_fact_files`. Canonical
+`edict.authority-facts/v1` bytes decode to the same validated document model and
+enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 

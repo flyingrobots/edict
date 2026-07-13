@@ -35,8 +35,9 @@ cargo xtask verify
   for Edict-owned artifact and invocation evidence semantics.
 - [Assurance](./assurance/README.md): optional, hash-bound HOLMES, Watson, and
   Moriarty evidence references at the contract-bundle boundary.
-- [Authority Facts](./authority-facts/README.md): file-backed compiler context
-  facts with digest-bound source identity and stable load failures.
+- [Authority Facts](./authority-facts/README.md): JSON and canonical-CBOR
+  compiler context facts with digest-bound source identity, normative CDDL, and
+  stable load/decode failures.
 - [CLI](./cli/README.md): JSONL-only `edict` command-line boundary for stdin
   request records, structured stdout/stderr events, and compiler settings.
 - [Compiler Spine](./compiler-spine/README.md): executable source-AST to

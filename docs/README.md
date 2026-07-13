@@ -55,8 +55,9 @@ The current specification set is:
   for Edict-owned artifact and invocation evidence semantics.
 - [Assurance Topic](./topics/assurance/): optional, hash-bound HOLMES, Watson,
   and Moriarty evidence references at the contract-bundle boundary.
-- [Authority Facts Topic](./topics/authority-facts/): file-backed compiler
-  context facts with digest-bound source identity and stable load failures.
+- [Authority Facts Topic](./topics/authority-facts/): JSON and canonical-CBOR
+  compiler context facts with digest-bound source identity, normative CDDL, and
+  stable load/decode failures.
 - [CLI Topic](./topics/cli/): JSONL-only `edict` command-line boundary for
   stdin request records, structured stdout/stderr events, and compiler settings.
 - [Contract Bundles Topic](./topics/contract-bundles/): typed v1
@@ -96,7 +97,8 @@ The current specification set is:
 - [SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md):
   intrinsic signatures, effect signatures, target lowering, application model,
   verifier ABI, footprint algebra, and cost algebra. Canonical schemas live in
-  [`abi/`](./abi/) (`edict-target-profile.cddl`, `edict-target-provider.wit`).
+  [`abi/`](./abi/) (`edict-target-profile.cddl`,
+  `edict-authority-facts.cddl`, `edict-target-provider.wit`).
 - [SPEC - Continuum Contract Bundle v1](./SPEC_continuum-contract-bundle-v1.md):
   participant-neutral contract bundle identity, artifact graph, provenance
   references, canonical CBOR/hash framing, and attestation roles.

@@ -9,6 +9,7 @@ In scope:
 - checked-in source fixtures consumed by executable parser, validator, compiler,
   highlighter, grammar, and canonicalization behavior;
 - reviewed Core golden bytes and exact digest artifacts;
+- reviewed authority-facts canonical bytes and exact digest artifact;
 - contract-graph validation of fixture references in topic test plans.
 
 Out of scope:
@@ -25,6 +26,7 @@ Out of scope:
 | FIXTURES-REQ-002 | implemented | Reviewed Core golden artifacts are generated from the executable compiler and canonical encoder, then checked for exact bytes and digest stability. | fixtures/core/canonical/README.md, xtask/src/goldens.rs |
 | FIXTURES-REQ-003 | implemented | Topic-shelf fixture references resolve to checked-in artifacts through the local contract graph. | xtask/src/contract_check.rs |
 | FIXTURES-REQ-004 | gap | Target, lawpack, contract-bundle, admission, and conformance fixture families remain unpopulated until owning behavior lands. | fixtures/README.md, ROADMAP.md |
+| FIXTURES-REQ-005 | implemented | Reviewed authority-facts golden artifacts are generated from the validated JSON review input and executable canonical codec, then checked for exact bytes and digest stability. | fixtures/authority-facts/canonical/README.md, xtask/src/goldens.rs |
 
 ## Fixtures
 
@@ -38,6 +40,9 @@ Out of scope:
 | fixtures/lang/tooling/highlight-smoke.edict | Developer-tooling source fixture. | Emits public editor highlight roles for comments, keywords, identifiers, strings, numbers, operators, punctuation, and type identifiers. |
 | fixtures/core/canonical/bounded-hello.core.cbor | Reviewed canonical Core byte fixture. | Matches executable `edict.canonical-cbor/v1` output for `bounded-hello`. |
 | fixtures/core/canonical/bounded-hello.core.sha256 | Reviewed Core digest fixture. | Matches executable `edict.core.module/v1` digest output for `bounded-hello`. |
+| fixtures/authority-facts/canonical/example-effectful.authority-facts.json | Validated authority-facts review/input fixture. | Loads through the existing strict JSON loader before golden generation. |
+| fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor | Reviewed canonical authority-facts byte fixture. | Matches executable `edict.canonical-cbor/v1` output. |
+| fixtures/authority-facts/canonical/example-effectful.authority-facts.sha256 | Reviewed authority-facts digest fixture. | Matches the domain-framed `edict.authority-facts/v1` digest. |
 
 ## Cases
 
@@ -47,6 +52,7 @@ Out of scope:
 | FIXTURES-TP-002 | implemented | Golden artifact | FIXTURES-REQ-002 | Reviewed Core byte and digest fixtures exactly match executable compiler and encoder output. | reviewed_core_golden_bytes_match_executable_encoder, reviewed_core_digest_matches_exact_fixture | xtask/src/goldens.rs, fixtures/lang/bounds/bounded-hello.edict, fixtures/core/canonical/bounded-hello.core.cbor, fixtures/core/canonical/bounded-hello.core.sha256 | `cargo xtask core-goldens --check` covers the same artifact contract. |
 | FIXTURES-TP-003 | implemented | Contract graph | FIXTURES-REQ-003 | Topic-shelf test plans cannot cite missing fixture paths. | contract_graph_is_valid | xtask/src/contract_check.rs, xtask/src/tests.rs, fixtures/README.md | The checker validates referenced artifacts rather than prose. |
 | FIXTURES-TP-004 | gap | Future corpus | FIXTURES-REQ-004 | No target, lawpack, bundle, admission, or conformance fixture corpus is claimed before owning behavior lands. | - | - | Add these families with the implementation slice that first consumes them. |
+| FIXTURES-TP-005 | implemented | Golden artifact | FIXTURES-REQ-005 | Reviewed authority-facts byte and digest fixtures exactly match validated JSON input plus executable canonical codec output. | authority_facts_goldens_match_executable_codec | xtask/src/goldens.rs, fixtures/authority-facts/canonical/example-effectful.authority-facts.json, fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor, fixtures/authority-facts/canonical/example-effectful.authority-facts.sha256 | `cargo xtask authority-facts-goldens --check` covers the same artifact contract. |
 
 ## Determinism Obligations
 
