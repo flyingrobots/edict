@@ -164,6 +164,64 @@ fn conflicting_file_backed_authority_facts_reject_before_context() {
 }
 
 #[test]
+fn duplicate_fact_coordinates_in_one_json_document_reject_before_context() {
+    let dir = temp_case_dir("duplicate-json-facts");
+    let path = write_json(
+        &dir,
+        "duplicate-facts.json",
+        r#"{
+          "apiVersion": "edict.authority-facts/v1",
+          "source": {
+            "kind": "lawpack",
+            "coordinate": "hello.lawpack@1",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "operationProfiles": [],
+          "effectWriteClasses": [
+            { "effect": "target.replace", "writeClass": "replace" },
+            { "effect": "target.replace", "writeClass": "replace" }
+          ],
+          "budgets": []
+        }"#,
+    );
+
+    let failures = load_compiler_context_from_authority_fact_files([path.as_path()])
+        .expect_err("duplicate JSON fact coordinates reject");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::DuplicateFact]
+    );
+}
+
+#[test]
+fn duplicate_fact_coordinates_in_direct_document_reject_before_context() {
+    let duplicate = EffectWriteClassFact {
+        effect: "target.replace".to_owned(),
+        write_class: WriteClass::Replace,
+    };
+    let document = AuthorityFactsDocument {
+        api_version: "edict.authority-facts/v1".to_owned(),
+        source: AuthorityFactSource {
+            kind: AuthorityFactSourceKind::Lawpack,
+            coordinate: "hello.lawpack@1".to_owned(),
+            digest: format!("sha256:{}", "2".repeat(64)),
+        },
+        operation_profiles: Vec::new(),
+        effect_write_classes: vec![duplicate.clone(), duplicate],
+        budgets: Vec::new(),
+    };
+
+    let failures = compiler_context_from_authority_facts(&[document])
+        .expect_err("duplicate direct fact coordinates reject");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![AuthorityFactsLoadFailureKind::DuplicateFact]
+    );
+}
+
+#[test]
 fn mixed_authority_source_digests_reject_before_context() {
     let dir = temp_case_dir("mixed-source-digests");
     let first = write_json(

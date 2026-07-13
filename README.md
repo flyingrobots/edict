@@ -590,8 +590,9 @@ What exists today:
 - Typed Gate C admission-boundary checks for Edict-owned bundle-subject,
   operation-requirement, hidden execution input rejection, receipt,
   invoked-operation, and invocation capability evidence semantics
-- Deterministic file-backed authority-facts merging with stable load failure
-  kinds for conflicting, malformed, invalid, or non-digest-locked facts
+- Deterministic authority-facts merging from explicit JSON files or the
+  Edict-owned canonical-CBOR/CDDL ABI, with stable load/decode failure kinds and
+  reviewed canonical bytes plus a domain-framed digest
 - Published `v0.9.0-alpha.1` release notes for the first Target IR alpha:
   `echo.dpo@1` lowers to `echo.span-ir/v1`, and `gitwarp.ref_crdt@1` lowers to
   `gitwarp.commit-reducer-ir/v1` review artifacts without runtime execution

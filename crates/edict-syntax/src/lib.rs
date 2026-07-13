@@ -96,10 +96,12 @@ pub use admission::{
     ADMISSION_REQUEST_DIGEST_DOMAIN,
 };
 pub use authority_facts::{
-    compiler_context_from_authority_facts, load_authority_facts_file,
+    compiler_context_from_authority_facts, decode_authority_facts_cbor,
+    digest_authority_facts_document, encode_authority_facts_cbor, load_authority_facts_file,
     load_compiler_context_from_authority_fact_files, AuthorityFactSource, AuthorityFactSourceKind,
     AuthorityFactsDocument, AuthorityFactsLoadFailure, AuthorityFactsLoadFailureKind, BudgetFact,
     EffectWriteClassFact, OperationProfileFact, AUTHORITY_FACTS_API_VERSION,
+    AUTHORITY_FACTS_CDDL_ROOT,
 };
 pub use canonical::{
     decode_canonical_cbor, digest_bundle_layer, digest_core_module, digest_target_ir_artifact,

@@ -20,6 +20,9 @@ Current checked-in fixture families are:
 - reviewed Core artifacts under
   [`fixtures/core/canonical/`](../../../fixtures/core/canonical/) for exact
   canonical bytes and the `edict.core.module/v1` digest;
+- reviewed authority-facts artifacts under
+  [`fixtures/authority-facts/canonical/`](../../../fixtures/authority-facts/canonical/)
+  for exact canonical bytes and the `edict.authority-facts/v1` digest;
 - golden CLI cases under [`fixtures/cli/`](../../../fixtures/cli/) replayed
   end-to-end through the `edict` binary for byte-exact stdout, stderr, and exit
   code.
@@ -28,6 +31,11 @@ Current checked-in fixture families are:
 the executable compiler and encoder. `cargo xtask core-goldens --write`
 regenerates them after an intentional Core semantic or canonical-encoding
 change. [FIXTURES-REQ-002]
+
+`cargo xtask authority-facts-goldens --check` verifies the reviewed
+authority-facts bytes and digest against the existing JSON loader plus the
+canonical codec. `--write` regenerates them after an intentional authority-facts
+ABI change. [FIXTURES-REQ-005]
 
 ## Current Contract
 
@@ -40,6 +48,9 @@ change. [FIXTURES-REQ-002]
 - Reviewed Core golden fixtures are derived from executable behavior, then
   checked in as exact bytes and exact digest review renderings.
   [FIXTURES-REQ-002]
+- Reviewed authority-facts golden fixtures are derived from a validated JSON
+  review/input document, then checked as exact canonical bytes and a
+  domain-framed digest. [FIXTURES-REQ-005]
 - Topic-shelf test plans may cite fixtures as executable evidence inputs. The
   contract graph check rejects fixture paths that do not exist.
   [FIXTURES-REQ-003]

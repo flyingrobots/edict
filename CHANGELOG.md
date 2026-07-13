@@ -10,6 +10,13 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the Edict-owned `edict.authority-facts/v1` canonical-CBOR ABI and CDDL
+  root. Canonical fact maps use coordinate keys, source digests use typed
+  SHA-256 bytes, write-class sets normalize independent of declaration order,
+  and stable byte/shape/duplicate/semantic failures protect the existing
+  `AuthorityFactsDocument` to `CompilerContext` path. A reviewed neutral
+  byte/digest fixture is checked by `cargo xtask authority-facts-goldens` and
+  the full local verification gate.
 - Added the generic provider artifact kind `generationProvenance` for a
   generator's deterministic build-provenance document. Provider manifest
   validation treats it as generated metadata with digest-locked semantic-source

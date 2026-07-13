@@ -1,0 +1,29 @@
+{
+  "apiVersion": "edict.authority-facts/v1",
+  "source": {
+    "kind": "targetProfile",
+    "coordinate": "example.target@1",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "operationProfiles": [
+    {
+      "source": "p.effectful",
+      "core": "continuum.profile.write/v1",
+      "allowedWriteClasses": ["read", "replace"]
+    }
+  ],
+  "effectWriteClasses": [
+    {
+      "effect": "target.replace",
+      "writeClass": "replace"
+    }
+  ],
+  "budgets": [
+    {
+      "source": "p.tiny",
+      "maxSteps": 8,
+      "maxAllocatedBytes": 1024,
+      "maxOutputBytes": 256
+    }
+  ]
+}
