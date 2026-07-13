@@ -9,6 +9,7 @@ use edict_syntax::{
     bind_target_provider_manifest, encode_canonical_cbor, select_provider_component,
     validate_provider_lowering_request, validate_provider_verification_request, CanonicalValue,
     ProviderArtifact, ProviderArtifactBinding, ProviderArtifactKind, ProviderArtifactRef,
+    ProviderArtifactSchemaValidationErrorKind, ProviderArtifactSchemaValidator,
     ProviderArtifactSource, ProviderBoundArtifact, ProviderDigest, ProviderDigestAlgorithm,
     ProviderInvocationKind, ProviderLoweringInvocationContract, ProviderLoweringOutputKind,
     ProviderLoweringOutputRequest, ProviderLoweringRequest, ProviderResourceRef,
@@ -46,6 +47,26 @@ struct VerifyHarness {
     prepared: PreparedProviderComponent<'static>,
     request: ValidatedProviderVerificationRequest<'static>,
     schema: &'static ProviderArtifactSchemaRegistry,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+struct PermissiveRegistryWrapper {
+    registry: ProviderArtifactSchemaRegistry,
+}
+
+impl ProviderArtifactSchemaValidator for PermissiveRegistryWrapper {
+    fn supports_domain(&self, _domain: &str) -> bool {
+        true
+    }
+
+    fn validate_canonical_value(
+        &self,
+        _domain: &str,
+        _value: &CanonicalValue,
+    ) -> Result<(), ProviderArtifactSchemaValidationErrorKind> {
+        Ok(())
+    }
 }
 
 fn sha256(bytes: &[u8]) -> String {
@@ -120,23 +141,25 @@ fn provider_manifest_with_lowerer(lowerer_bytes: &'static [u8]) -> &'static Targ
 }
 
 fn registry(manifest: &'static TargetProviderManifest) -> &'static ProviderArtifactSchemaRegistry {
+    Box::leak(Box::new(registry_value(manifest)))
+}
+
+fn registry_value(manifest: &'static TargetProviderManifest) -> ProviderArtifactSchemaRegistry {
     let validated = bind_target_provider_manifest(manifest).expect("manifest validates");
-    Box::leak(Box::new(
-        ProviderArtifactSchemaRegistry::from_manifest(
-            &validated,
-            [ResolvedProviderSchemaArtifact {
-                role: "schema.runtime".to_owned(),
-                bytes: Arc::from(SCHEMA),
-            }],
-            [
-                CORE_MODULE_DIGEST_DOMAIN,
-                TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
-                TARGET_PROFILE_API_VERSION,
-                OUTPUT_DOMAIN,
-            ],
-        )
-        .expect("registry constructs"),
-    ))
+    ProviderArtifactSchemaRegistry::from_manifest(
+        &validated,
+        [ResolvedProviderSchemaArtifact {
+            role: "schema.runtime".to_owned(),
+            bytes: Arc::from(SCHEMA),
+        }],
+        [
+            CORE_MODULE_DIGEST_DOMAIN,
+            TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+            TARGET_PROFILE_API_VERSION,
+            OUTPUT_DOMAIN,
+        ],
+    )
+    .expect("registry constructs")
 }
 
 fn provider_digest(domain: &str) -> ProviderDigest {
@@ -391,6 +414,34 @@ fn prepared_component_request_and_registry_must_share_one_authority() {
             host_limits(),
         )
         .expect_err("a different registry instance cannot satisfy the request proof");
+    assert_eq!(
+        failure.kind(),
+        ProviderHostFailureKind::HostInvariantViolated
+    );
+}
+
+#[test]
+fn registry_address_alias_cannot_substitute_another_validator_type() {
+    let harness = lower_harness("fixture.schema-invalid");
+    let wrapper = Box::leak(Box::new(PermissiveRegistryWrapper {
+        registry: registry_value(provider_manifest()),
+    }));
+    let wrapped_request = validate_provider_lowering_request(
+        wrapper,
+        harness.request.contract(),
+        harness.request.request(),
+    )
+    .expect("permissive wrapper accepts the otherwise valid request");
+
+    let failure = harness
+        .host
+        .invoke_lowerer(
+            &harness.prepared,
+            &wrapped_request,
+            &wrapper.registry,
+            host_limits(),
+        )
+        .expect_err("same-address wrapper cannot impersonate the concrete registry");
     assert_eq!(
         failure.kind(),
         ProviderHostFailureKind::HostInvariantViolated

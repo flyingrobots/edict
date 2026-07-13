@@ -154,7 +154,8 @@ fn verify_authority_binding(
 ) -> Result<(), ProviderHostFailure> {
     let registry_validator: &dyn ProviderArtifactSchemaValidator = registry;
     if prepared.selected.manifest() != registry.manifest()
-        || !std::ptr::addr_eq(request_validator, registry_validator)
+        || request_validator.type_id() != std::any::TypeId::of::<ProviderArtifactSchemaRegistry>()
+        || !std::ptr::eq(request_validator, registry_validator)
     {
         return Err(ProviderHostFailure::message(
             ProviderHostFailureKind::HostInvariantViolated,
