@@ -114,8 +114,9 @@ The manifest validator checks that:
 After manifest validation, component selection is explicit by unique role and
 expected invocation kind. The exact provider ABI and artifact kind determine
 the frozen lowerer or verifier contract; the selected artifact resource is the
-authorized component digest. Selection performs no file, cache, registry, or
-network lookup.
+authorized component digest. The selected identity borrows the manifest, not
+the temporary validation-proof handle. Selection performs no file, cache,
+registry, or network lookup.
 
 Digest review strings on this boundary are strict artifact references:
 `sha256:<64 lowercase hex>`.

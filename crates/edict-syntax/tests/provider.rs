@@ -313,6 +313,24 @@ fn validated_manifest_selects_one_exact_world_contract() {
 }
 
 #[test]
+fn selected_component_outlives_temporary_manifest_proof() {
+    let manifest = fixture_manifest();
+    let selected = {
+        let validated =
+            bind_target_provider_manifest(&manifest).expect("fixture manifest validates");
+        select_provider_component(
+            &validated,
+            "lowerer.echo-dpo",
+            ProviderInvocationKind::Lowering,
+        )
+        .expect("lowerer role selects")
+    };
+
+    assert_eq!(selected.manifest(), &manifest);
+    assert_eq!(selected.role(), "lowerer.echo-dpo");
+}
+
+#[test]
 fn component_selection_rejects_unknown_and_wrong_kind_roles() {
     let manifest = fixture_manifest();
     let validated = bind_target_provider_manifest(&manifest).expect("fixture manifest validates");

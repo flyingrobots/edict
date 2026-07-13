@@ -524,7 +524,7 @@ impl<'a> SelectedProviderComponent<'a> {
 ///
 /// Returns a stable failure when the role is absent or has the wrong world.
 pub fn select_provider_component<'a>(
-    validated: &'a ValidatedTargetProviderManifest<'a>,
+    validated: &ValidatedTargetProviderManifest<'a>,
     role: &str,
     invocation: ProviderInvocationKind,
 ) -> Result<SelectedProviderComponent<'a>, ProviderComponentSelectionFailure> {
