@@ -71,6 +71,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Selected provider component identities now borrow their validated manifest
+  directly rather than the temporary proof handle used to authorize selection,
+  so callers can discard that handle after obtaining the opaque selection.
 - Canonical-CBOR encoding and decoding now accept at most 128 nested values and
   return the stable `NestingLimitExceeded` kind beyond that bound. Provider
   artifact validation uses the same bounded decoder before digest computation.
