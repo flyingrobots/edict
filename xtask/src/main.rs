@@ -3,6 +3,8 @@
 
 mod contract_check;
 mod goldens;
+mod provider_components;
+mod provider_dependencies;
 mod release_prep;
 mod util;
 
@@ -18,6 +20,8 @@ use goldens::{
     bundle_goldens, cli_goldens, core_goldens, target_ir_goldens, BundleGoldenMode, CliGoldenMode,
     CoreGoldenMode, TargetIrGoldenMode,
 };
+use provider_components::{provider_component_fixtures, ProviderComponentFixtureMode};
+use provider_dependencies::provider_runtime_dependencies;
 use release_prep::release_prep;
 use util::{diff_check_base, repo_root, run_cmd};
 
@@ -88,10 +92,35 @@ fn run() -> Result<(), String> {
             }
             release_prep(&repo_root()?, &version)
         }
+        Some("provider-component-fixtures") => {
+            let mode = match args.next().as_deref() {
+                Some("--write") => ProviderComponentFixtureMode::Write,
+                Some("--check") | None => ProviderComponentFixtureMode::Check,
+                Some(flag) => {
+                    return Err(format!(
+                        "unknown provider-component-fixtures flag `{flag}`"
+                    ));
+                }
+            };
+            if let Some(extra) = args.next() {
+                return Err(format!(
+                    "unexpected provider-component-fixtures argument `{extra}`"
+                ));
+            }
+            provider_component_fixtures(&repo_root()?, mode)
+        }
+        Some("provider-runtime-dependencies") => {
+            if let Some(extra) = args.next() {
+                return Err(format!(
+                    "unexpected provider-runtime-dependencies argument `{extra}`"
+                ));
+            }
+            provider_runtime_dependencies(&repo_root()?)
+        }
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
         None => Err(
-            "usage: cargo xtask <verify|contract-check|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|release-prep>"
+            "usage: cargo xtask <verify|contract-check|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|provider-component-fixtures|provider-runtime-dependencies|release-prep>"
                 .into(),
         ),
     }
@@ -122,6 +151,8 @@ fn verify(root: &Path) -> Result<(), String> {
     target_ir_goldens(root, TargetIrGoldenMode::Check)?;
     bundle_goldens(root, BundleGoldenMode::Check)?;
     cli_goldens(root, CliGoldenMode::Check)?;
+    provider_component_fixtures(root, ProviderComponentFixtureMode::Check)?;
+    provider_runtime_dependencies(root)?;
     contract_check(root)?;
     let base = diff_check_base(root)?;
     run_cmd(root, "git", ["diff", "--check", &format!("{base}...HEAD")])?;

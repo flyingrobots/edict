@@ -24,7 +24,7 @@ In scope:
 - immutable construction of a concrete CDDL artifact-schema registry from
   explicit digest-locked schema bytes;
 - Wasmtime component-model invocation through the frozen lowerer and verifier
-  worlds with no registered ambient imports; and
+  worlds with no callable or capability-bearing host imports; and
 - deterministic fuel, memory, input, output, and diagnostic containment with
   stable host-owned failure classifications.
 
@@ -32,11 +32,10 @@ Out of scope:
 
 - provider file discovery or package loading;
 - filesystem path resolution or symlink traversal checks;
-- manifest-backed provider resolution or external provider dispatch;
-- provider verifier execution;
+- manifest-backed provider resolution or package dispatch;
 - lawpack generation through Wesley;
 - Echo-specific provider semantics;
-- runtime execution;
+- target runtime execution;
 - admission or registration.
 
 ## Requirements
@@ -60,13 +59,13 @@ Out of scope:
 | PROVIDERS-REQ-015 | implemented | Response validation applies output-count, diagnostic-count, and checked aggregate response-byte limits to success and refusal. Exact boundaries and zero limits are honored, and checked-`u64` overflow is a stable host-owned validation failure. | issue #146, docs/abi/edict-target-provider.wit |
 | PROVIDERS-REQ-016 | implemented | Output identity is host-authored: returned bytes must be canonical, use the requested domain, and validate under its explicitly supplied owning schema before the host recomputes their digests and emits a manifest binding the validated invocation inputs to every output. Invalid success produces no partial manifest, while a valid typed provider refusal is preserved without an output manifest. | issue #146, docs/design/provider-artifact-pipeline-alpha.md |
 | PROVIDERS-REQ-017 | implemented | Given a schema capability that satisfies its explicit host contract, invocation-envelope validation consumes typed in-memory values deterministically without component instantiation or ambient I/O of its own. Pairwise validation of otherwise identical requests rejects any limit-dependent substitution, truncation, reordering, or success/refusal arm change in the complete provider result. | issue #146, docs/abi/edict-target-provider.wit |
-| PROVIDERS-REQ-018 | planned | Every lowerer or verifier artifact is bound by the provider manifest to its exact `edict:target-provider/{world}@1.0.0` contract identity. Before compilation, the host independently verifies both the component digest and one digest-covered Edict contract-identity attestation; structural component type compatibility alone is insufficient. | issue #145, docs/abi/edict-target-provider.wit |
-| PROVIDERS-REQ-019 | implemented | Every artifact domain admitted by one provider manifest is bound exactly once to a digest-locked generated schema artifact, schema format, and root rule. Missing, duplicate, ambiguous, unsupported, or provenance-invalid bindings reject before component invocation. | issue #145 |
-| PROVIDERS-REQ-020 | implemented | The concrete provider artifact-schema registry is constructed completely from a validated manifest plus explicit in-memory schema bytes. Construction verifies schema digests, compiles every schema before invocation, proves required-domain closure, and performs no discovery, filesystem, network, environment, clock, randomness, or mutable-global access. | issue #145 |
-| PROVIDERS-REQ-021 | implemented | Every registered domain performs real schema-instance validation over canonical CBOR. Unsupported domains and schema mismatches remain stable structured failures, and construction and validation results are independent of input insertion order. | issue #145 |
-| PROVIDERS-REQ-022 | planned | The Wasmtime host uses one explicitly configured component-model engine and a fresh store for every invocation. Its linker starts empty and registers no WASI, filesystem, network, environment, clock, randomness, registry, or other capability-bearing imports. | issue #145 |
-| PROVIDERS-REQ-023 | planned | The host accepts only opaque validated request proofs, preflights a canonical request-envelope byte bound, enforces explicit fuel and store resource limits, invokes the typed frozen lowerer or verifier export, and exposes an artifact only after the pure response validator admits the complete result. | issue #145, issue #146 |
-| PROVIDERS-REQ-024 | planned | Digest, contract, decode, instantiation, fuel, resource, input, output, diagnostic, trap, malformed-response, response-validation, and host-invariant failures use stable host-owned kinds. Wasmtime implementation details remain bounded diagnostics and never enter Edict's public failure identity. | issue #145 |
+| PROVIDERS-REQ-018 | implemented | Every lowerer or verifier artifact is bound by the provider manifest to its exact `edict:target-provider/{world}@1.0.0` contract identity. Before compilation, the host independently verifies both the component digest and one digest-covered Edict contract-identity attestation; structural component type compatibility alone is insufficient. | issue #145, EDICT-ABI-PROVIDER-HOST-001, docs/abi/edict-target-provider.wit |
+| PROVIDERS-REQ-019 | implemented | Every artifact domain admitted by one provider manifest is bound exactly once to a digest-locked generated schema artifact, schema format, and root rule. Missing, duplicate, ambiguous, unsupported, or provenance-invalid bindings reject before component invocation. | issue #145, EDICT-ABI-PROVIDER-AUTHORITY-001 |
+| PROVIDERS-REQ-020 | implemented | The concrete provider artifact-schema registry is constructed completely from a validated manifest plus explicit in-memory schema bytes. Construction verifies schema digests, compiles every schema before invocation, proves required-domain closure, and performs no discovery, filesystem, network, environment, clock, randomness, or mutable-global access. | issue #145, EDICT-ABI-PROVIDER-AUTHORITY-001 |
+| PROVIDERS-REQ-021 | implemented | Every registered domain performs real schema-instance validation over canonical CBOR. Unsupported domains and schema mismatches remain stable structured failures, and construction and validation results are independent of input insertion order. | issue #145, EDICT-ABI-PROVIDER-AUTHORITY-001 |
+| PROVIDERS-REQ-022 | implemented | The Wasmtime host uses one explicitly configured component-model engine and a fresh store for every invocation. It permits only the frozen protocol's type-only instance import and registers no callable WASI, filesystem, network, environment, clock, randomness, registry, or other capability-bearing import. | issue #145, EDICT-ABI-PROVIDER-HOST-001 |
+| PROVIDERS-REQ-023 | implemented | The host accepts only opaque validated request proofs, preflights an exact WIT-logical request byte bound and request-authorized output ceiling, enforces explicit fuel, lifting, and store resource limits, invokes the typed frozen lowerer or verifier export, and exposes an artifact only after the pure response validator admits the complete result. | issue #145, issue #146, EDICT-ABI-PROVIDER-HOST-001 |
+| PROVIDERS-REQ-024 | implemented | Digest, contract, decode, instantiation, fuel, resource, input, output, diagnostic, response-lifting, trap, malformed-response, response-validation, and host-invariant failures use stable host-owned kinds. Wasmtime implementation details remain bounded diagnostics and never enter Edict's public failure identity. | issue #145, EDICT-ABI-PROVIDER-HOST-001 |
 
 ## Fixtures
 
@@ -76,6 +75,11 @@ Out of scope:
 | crates/edict-syntax/tests/provider_lowering.rs | In-memory Core and target-lowering facts exercised through direct and explicit built-in lowerer paths. | Reports, artifacts, canonical Target IR bytes, digests, structured failures, and bundle identities remain equal when their semantic and release inputs remain equal. |
 | docs/abi/edict-target-provider.wit | Versioned runtime-neutral component transport envelope. | Parses through `wit-parser` and resolves to the reviewed package, interface, named types, and lowerer/verifier world graph. |
 | fixtures/providers/wit/legacy-target-profile.wit | Byte-identical copy of the WIT package shipped through `v0.11.0-alpha.1`. | Parses as the superseded `edict:target-profile@1.0.0` package and exposes the incompatible fine-grained RPC surface, not the target-provider protocol. |
+| fixtures/providers/components/lowerer.component.wasm | Conforming typed lowerer component plus malicious execution modes in its Rust guest. | Its exact checked digest prepares and invokes through the capability-denied host; typed results still require pure admission. |
+| fixtures/providers/components/verifier.component.wasm | Conforming typed verifier component. | Its exact checked digest prepares and invokes through the capability-denied host; typed results still require pure admission. |
+| fixtures/providers/components/malformed-lowerer.component.wasm | Hand-authored canonical-ABI lowerer returning an invalid result discriminant. | Instantiates successfully and returns `MalformedResponse` during typed lifting. |
+| fixtures/providers/components/instantiation-failure-lowerer.component.wasm | Structurally valid lowerer with an out-of-bounds active data segment. | Prepares successfully and returns `ComponentInstantiationFailed` before guest invocation. |
+| fixtures/providers/components/inventory.json | Source and generated component digest inventory. | `cargo xtask provider-component-fixtures --check` reproduces the source digest and component hashes. |
 
 ## Cases
 
@@ -107,10 +111,10 @@ Out of scope:
 | PROVIDERS-TP-024 | implemented | Manifest authority | PROVIDERS-REQ-018, PROVIDERS-REQ-019 | The exact provider ABI plus artifact kind determines each world contract; schema-domain bindings require nonempty unique ordered domains, supported formats and roots, and generated schema roles. Missing, duplicate, out-of-order, cross-kind, unknown, and component-identity-mismatched bindings reject with stable manifest failures. | provider_manifest_requires_the_exact_provider_abi, provider_manifest_rejects_component_identity_disagreement, provider_manifest_requires_schema_bindings, provider_manifest_rejects_missing_duplicate_and_out_of_order_schema_domains, provider_manifest_rejects_missing_or_unknown_schema_roles, provider_manifest_requires_schema_kind_and_root_rule, validated_manifest_selects_one_exact_world_contract, component_selection_rejects_unknown_and_wrong_kind_roles | fixtures/providers/echo-generated/provider-manifest.json, crates/edict-syntax/tests/provider.rs | Exact digest-covered component attestation remains PROVIDERS-TP-027. |
 | PROVIDERS-TP-025 | implemented | Schema construction | PROVIDERS-REQ-019, PROVIDERS-REQ-020 | Explicit schema bytes must reproduce their manifest digest; every required domain must be bound; duplicate resolved roles, missing artifacts, malformed or externally incomplete CDDL, and missing roots reject deterministically before a registry exists. | construction_rejects_missing_ambiguous_and_digest_mismatched_schema_bytes, construction_requires_complete_domain_closure_and_compilable_roots | crates/edict-provider-schema/tests/registry.rs | No schema loading or lookup occurs during validation. Generated provenance is proven by the validated manifest before this constructor is callable. |
 | PROVIDERS-TP-026 | implemented | Schema validation | PROVIDERS-REQ-021 | For every registered domain, a canonical valid instance passes and a distinct canonical schema-invalid instance returns `SchemaMismatch`; an unregistered domain returns `UnsupportedDomain`. Reordered construction inputs produce equal receipts and behavior. | every_registered_domain_performs_real_schema_instance_validation, registry_receipt_and_behavior_are_independent_of_input_order | crates/edict-provider-schema/tests/registry.rs | Uses compiled self-contained CDDL over canonical CBOR, not domain-name recognition. |
-| PROVIDERS-TP-027 | planned | Component identity | PROVIDERS-REQ-018, PROVIDERS-REQ-024 | Altered bytes reject by digest before compilation; missing, duplicate, malformed, or wrong contract attestations reject before instantiation; a structurally compatible component claiming another contract is not admitted. | - | - | Exact identity is independent of linker semver compatibility. |
-| PROVIDERS-TP-028 | planned | Capability boundary | PROVIDERS-REQ-022 | Conforming no-import components instantiate and run, while components importing an unregistered capability fail without any WASI or host capability linker registration. Every invocation receives a fresh store. | - | - | Denial is by omission. |
-| PROVIDERS-TP-029 | planned | Resource containment | PROVIDERS-REQ-023, PROVIDERS-REQ-024 | Oversized canonical input rejects before invocation; infinite computation exhausts fuel; memory growth is denied; oversized response and diagnostic payloads reject; explicit guest traps remain distinct. | - | - | Fuel is deterministic work accounting; no replay claim is made for external watchdogs. |
-| PROVIDERS-TP-030 | planned | Response admission | PROVIDERS-REQ-023, PROVIDERS-REQ-024 | Valid lowerer and verifier results pass the pure validator and expose sealed outcomes. ABI lifting failures and envelope/schema-invalid responses return stable host failures and expose no artifact manifest. | - | - | Wasmtime decoding is transport, not admission. |
+| PROVIDERS-TP-027 | implemented | Component identity | PROVIDERS-REQ-018, PROVIDERS-REQ-024 | Altered bytes reject by digest before compilation; invalid bytes with a matching digest return a decode failure; missing, nested, duplicate, or wrong contract attestations reject before instantiation; and structural compatibility is checked independently. | digest_mismatch_rejects_before_component_decoding, digest_matching_invalid_bytes_have_a_stable_decode_failure, exact_contract_attestation_precedes_structural_type_checking, exact_attestation_does_not_replace_structural_contract_validation, checked_in_lowerer_fixture_passes_complete_preflight | crates/edict-provider-host-wasmtime/tests/preflight.rs, fixtures/providers/components/lowerer.component.wasm | Exact identity is independent of linker semver compatibility. |
+| PROVIDERS-TP-028 | implemented | Capability boundary | PROVIDERS-REQ-022 | Conforming components carrying only the exact type-only protocol import instantiate and run, while a callable component import rejects before instantiation without any WASI or host capability registration. Each call constructs a fresh store. | checked_in_lowerer_fixture_passes_complete_preflight, any_callable_component_import_is_denied_before_instantiation, conforming_lowerer_and_verifier_results_cross_complete_admission | crates/edict-provider-host-wasmtime/tests/preflight.rs, crates/edict-provider-host-wasmtime/tests/invocation.rs, fixtures/providers/components/lowerer.component.wasm, fixtures/providers/components/verifier.component.wasm | Callable authority is denied by omission; repeated-state isolation remains #147. |
+| PROVIDERS-TP-029 | implemented | Resource containment | PROVIDERS-REQ-023, PROVIDERS-REQ-024 | Exact and one-byte-too-small WIT-logical input bounds are distinguished; infinite computation exhausts fuel; memory growth and instance-count exhaustion are resource failures; lifting, logical response, provider diagnostic, and engine diagnostic bounds reject independently; explicit guest traps remain distinct. | input_and_authorized_output_limits_reject_before_invocation, fuel_resource_and_guest_traps_remain_distinct, hostcall_diagnostic_and_envelope_limits_are_separate | crates/edict-provider-host-wasmtime/tests/invocation.rs, fixtures/providers/components/lowerer.component.wasm | Fuel is deterministic guest-work accounting; no watchdog is enabled. |
+| PROVIDERS-TP-030 | implemented | Response admission | PROVIDERS-REQ-023, PROVIDERS-REQ-024 | Valid lowerer and verifier results expose sealed outcomes, typed refusal remains provider evidence, authority objects cannot be mixed, and instantiation, ABI lifting, schema, and envelope failures return distinct host failures without exposing an artifact manifest. | conforming_lowerer_and_verifier_results_cross_complete_admission, typed_provider_refusal_remains_distinct_from_host_failure, prepared_component_request_and_registry_must_share_one_authority, hostcall_diagnostic_and_envelope_limits_are_separate, malformed_canonical_abi_result_is_not_a_guest_trap_or_envelope_failure, component_instantiation_failure_is_stable | crates/edict-provider-host-wasmtime/tests/invocation.rs, fixtures/providers/components/malformed-lowerer.component.wasm, fixtures/providers/components/instantiation-failure-lowerer.component.wasm | Wasmtime decoding is transport, not admission. |
 
 ## Determinism Obligations
 
@@ -119,18 +123,21 @@ Out of scope:
   facts, then compare structured reports and canonical Target IR artifacts.
 - WIT contract evidence parses and resolves the checked-in package with the
   official parser, then inspects named types and world function surfaces.
-- Invocation-envelope validation tests use typed in-memory values and existing
-  canonical artifact fixtures; they do not instantiate provider components.
+- Pure invocation-envelope tests remain in-memory. Host tests invoke reviewed,
+  digest-inventoried components through generated typed bindings.
 - Pairwise limit-independence tests compare complete structured results, not
   diagnostic renderings or lossy projections.
 - Assertions use structured status and failure kinds.
-- Tests do not inspect stdout, stderr, diagnostic prose, filesystem ordering,
-  network state, wall-clock time, random values, or runtime behavior.
+- Host assertions use stable kinds, phases, structured validation reports, and
+  sealed outcomes rather than Wasmtime prose.
+- Tests do not depend on filesystem ordering, network state, environment,
+  wall-clock time, randomness, or a watchdog.
 
 ## Open Gaps
 
 - No provider package loader exists.
-- No manifest-backed provider resolver or external provider dispatch exists.
-- No WIT provider host or component execution exists; the transport ABI and
-  pure typed request/result validation exist independently of dispatch.
+- No manifest-backed provider resolver or package dispatch exists.
+- Repeated execution equivalence, state-poisoning, cache, concurrency,
+  cross-process replay, crash containment, and cross-provider isolation proofs
+  remain issue #147.
 - No Echo-owned provider implementation exists.

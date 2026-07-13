@@ -1,0 +1,10 @@
+{
+  "apiVersion": "edict.provider-component-fixtures/v1",
+  "components": {
+    "instantiation-failure-lowerer": "sha256:4ca29c3c16f1c0c3c3d80d5fa877cd853d41b9a84d5f30dbb11e2387f81b6e7c",
+    "lowerer": "sha256:a0a46d1aca8cbad2ceb20be986cc8c5432dff706258ee935df68d0965c761198",
+    "malformed-lowerer": "sha256:dfcd171918373d18b9dff16778e98b7618eeb4ac85976dd7134b9e201562f41b",
+    "verifier": "sha256:9fa8e16ed7735075d559e3094685ce846d06425b4bb479be31f7498417bf87e4"
+  },
+  "sourceDigest": "sha256:d376f1d6e1ac95c7ef30ded530bddbd2d90b6a1a6e02666fbe4f5bb4c2a6ea94"
+}

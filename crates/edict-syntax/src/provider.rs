@@ -483,11 +483,17 @@ impl std::error::Error for ProviderComponentSelectionFailure {}
 /// One explicitly selected component identity from a validated manifest.
 #[derive(Debug, Clone, Copy)]
 pub struct SelectedProviderComponent<'a> {
+    manifest: &'a TargetProviderManifest,
     artifact: &'a ProviderArtifactRef,
     invocation: ProviderInvocationKind,
 }
 
 impl<'a> SelectedProviderComponent<'a> {
+    #[must_use]
+    pub const fn manifest(&self) -> &'a TargetProviderManifest {
+        self.manifest
+    }
+
     #[must_use]
     pub fn role(&self) -> &'a str {
         &self.artifact.role
@@ -542,6 +548,7 @@ pub fn select_provider_component<'a>(
         });
     }
     Ok(SelectedProviderComponent {
+        manifest: validated.manifest,
         artifact,
         invocation,
     })

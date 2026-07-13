@@ -3,13 +3,14 @@
 Status: current HEAD contract.
 
 This shelf describes the provider manifest boundary, built-in lowerer
-compatibility seam, external component transport ABI, and pure invocation
-envelope validator that exist today. A target provider package is an assembled
-collection of generated artifacts plus provider-owned components. Edict can
-validate provider manifests and invocation values, invoke the existing in-tree
-Echo and git-warp lowerers through an explicit migration adapter, and parse the
-frozen WIT contract. It cannot load or invoke manifest-declared components, run
-verifiers, or interpret runtime-specific semantics.
+compatibility seam, external component transport ABI, pure invocation-envelope
+validator, concrete schema registry, and capability-denied component host that
+exist today. A target provider package is an assembled collection of generated
+artifacts plus provider-owned components. Edict can validate provider manifests
+and invocation values, invoke the existing in-tree Echo and git-warp lowerers
+through an explicit migration adapter, and execute resolver-supplied lowerer or
+verifier component bytes through the frozen WIT contract. It does not resolve
+provider packages or interpret runtime-specific semantics.
 
 ## Current Contract
 
@@ -58,6 +59,27 @@ rejects missing or duplicate resolved roles, compiles all bound CDDL documents,
 rejects missing roots and unresolved external rule references, and returns one
 immutable registry with a sorted binding receipt. It performs no schema
 discovery or lazy loading.
+
+The private `edict-provider-host-wasmtime` crate supplies the component host.
+Its input is a selected component proof plus resolver-supplied bytes; it performs
+no discovery, fetching, mutable-name lookup, or cache lookup. Preparation
+recomputes the selected manifest digest before decoding, requires exactly one
+matching top-level digest-covered `edict:target-provider-contract` section,
+checks the exact export closure and frozen generated WIT types, and rejects every
+callable or unknown import. The generated component's exact type-only
+`edict:target-provider/protocol@1.0.0` instance import is accepted because it
+conveys types rather than a host capability. No WASI linker or callable host
+function is installed.
+
+The host owns one immutable Wasmtime engine and creates a fresh store for every
+invocation. The prepared component, opaque validated request proof, and concrete
+schema registry must share one manifest and validator authority. The store
+receives only explicit fuel and resource limits. A result crosses the boundary
+only after typed lifting, host diagnostic/output limits, canonical decoding,
+schema-instance validation, exact response-envelope validation, and host digest
+construction all succeed. A typed provider refusal remains provider evidence;
+engine, transport, containment, and admission failures remain stable host-owned
+failure kinds.
 
 Provider manifests use API version `edict.provider-manifest/v1`.
 This unreleased alpha contract is completed in place by the provider-host slice:
@@ -115,13 +137,15 @@ are opaque canonical artifacts wrapped in digest-locked resource references.
 Semantic inputs carry generic roles and kinds; requested outputs carry an
 expected role, kind, and domain. Lowering and verification use distinct output
 types so neither world can claim the other's evidence roles. Deterministic
-response limits cross the ABI, while memory, fuel, and interruption remain
-future host configuration. Component outputs carry role-tagged bytes and an
-optional logical path, but no digest. The pure validator checks canonicality and
-logical-path syntax and computes authoritative output identity before a future
-host may expose it. Typed provider refusal remains distinct from future host
-failures such as denied imports, traps, exhaustion, malformed envelopes, or
-replay mismatch.
+response limits cross the ABI. The component host separately enforces
+WIT-logical input bytes, the request-authorized logical output ceiling, provider
+diagnostic bytes, Wasmtime guest-to-host lifting fuel, linear memory, tables,
+instances, memories, Wasm fuel, and bounded engine diagnostics. Component
+outputs carry role-tagged bytes and an optional logical path, but no digest. The
+pure validator checks canonicality and logical-path syntax and computes
+authoritative output identity before the host exposes it. Typed provider refusal
+remains distinct from denied imports, traps, exhaustion, malformed lifting,
+invalid envelopes, and replay mismatch.
 
 Semantic inputs, requested outputs, and returned outputs use non-empty, unique
 roles in strict ascending UTF-8 byte order. A success matches every requested
@@ -224,17 +248,40 @@ fixtures/target-ir/canonical/echo-effectful.target-ir.cbor
 lowering and verification requests, then exercises accepted envelopes and
 structured negative mutations without loading a component.
 
+The external host fixture corpus is checked in under:
+
+```text
+fixtures/providers/components/lowerer.component.wasm
+fixtures/providers/components/verifier.component.wasm
+fixtures/providers/components/malformed-lowerer.component.wasm
+fixtures/providers/components/instantiation-failure-lowerer.component.wasm
+fixtures/providers/components/inventory.json
+```
+
+The Rust guests and hand-authored canonical-ABI WAT modules remain beside those
+artifacts as reviewed sources. `cargo xtask provider-component-fixtures --write`
+rebuilds them with Rust 1.94.0 and `--locked --offline`; check mode verifies the
+source digest and every component digest without requiring a Wasm toolchain.
+Host tests cover conforming lowerer/verifier execution, refusal, denied callable
+imports, infinite work, memory pressure, response and diagnostic flooding,
+schema-invalid output, explicit traps, instantiation failure, and malformed
+canonical-ABI lifting.
+
 ## Deferred
 
 The following are not implemented:
 
 - manifest-backed provider resolution, file discovery, or package loading;
-- WIT component loading;
-- external provider component dispatch;
-- provider verifier execution;
 - lawpack generation through Wesley;
 - Echo-owned provider implementation;
-- runtime execution;
+- target runtime execution;
 - admission or registration.
 
+Repeated execution equivalence, compiled-component cache behavior, cross-process
+replay, concurrency, one-invocation state poisoning, process crash containment,
+and provider-to-provider isolation remain issue #147 rather than claims of this
+single-invocation host slice.
+
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
+The enforced component authority flow and limit units are detailed in
+[architecture.md](./architecture.md).

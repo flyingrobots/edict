@@ -5,12 +5,14 @@ current branch; it is not a future package plan.
 
 ## Workspace Shape
 
-The Rust workspace has four members:
+The Rust workspace has five members:
 
 ```text
 edict-cli  ->  edict-syntax
 xtask      ->  edict-syntax
 edict-provider-schema  ->  edict-syntax
+edict-provider-host-wasmtime  ->  edict-provider-schema  ->  edict-syntax
+edict-provider-host-wasmtime  ->  edict-syntax
 ```
 
 `edict-syntax` has no dependency on the CLI or `xtask`. The CLI owns the public
@@ -19,6 +21,8 @@ owns repository maintenance checks, reviewed golden regeneration, release
 process guards, and topic-shelf contract checks.
 `edict-provider-schema` owns the immutable digest-bound CDDL registry used to
 validate provider artifact instances without a component-runtime dependency.
+`edict-provider-host-wasmtime` owns the capability-denied external component
+runtime without exposing Wasmtime types through Edict contracts.
 
 ## Crates
 
@@ -102,6 +106,18 @@ self-contained CDDL, proves required-domain closure, and implements the pure
 no provider resolver, filesystem or network loader, Wasmtime dependency, or
 mutable registry API.
 
+### `edict-provider-host-wasmtime`
+
+`edict-provider-host-wasmtime` consumes selected manifest component proofs,
+resolver-supplied bytes, opaque validated requests, the concrete schema
+registry, and explicit invocation limits. It verifies component bytes against
+the selected digest before decoding, enforces a digest-covered exact contract
+attestation independently from structural WIT type compatibility, rejects every
+callable or unknown import, and installs no WASI linker. One configured engine
+is reused, while every lowerer or verifier call receives a fresh bounded store.
+Only a result admitted by the pure canonical/schema/envelope validator becomes a
+sealed outcome. Wasmtime types remain private implementation details.
+
 ### `xtask`
 
 `xtask` is the repository contract harness. Current commands include:
@@ -112,6 +128,8 @@ mutable registry API.
 - `cargo xtask target-ir-goldens --check/--write`;
 - `cargo xtask bundle-goldens --check/--write`;
 - `cargo xtask cli-goldens --check/--write`;
+- `cargo xtask provider-component-fixtures --check/--write`;
+- `cargo xtask provider-runtime-dependencies`;
 - `cargo xtask release-prep <version>`.
 
 `verify` runs formatting, clippy, workspace tests, doctests, golden checks, topic
@@ -122,14 +140,18 @@ scaffolding but does not decide scope or create GitHub state.
 
 The workspace also owns a parser-checked external provider WIT transport
 contract under `docs/abi/`. `xtask` verifies its resolved package and world
-graph. `edict-syntax` mirrors its values for pure invocation validation, but no
-component host or WIT dispatch exists yet.
+graph. `edict-syntax` mirrors its values for pure invocation validation, while
+the private Wasmtime host performs typed external lowerer and verifier dispatch.
 
 The `xtask` implementation is split by responsibility:
 
 - `main.rs` owns command dispatch and the `verify` sequence;
 - `contract_check.rs` owns topic-shelf, evidence, and local-link validation;
 - `goldens.rs` owns Core, Target IR, bundle, and CLI golden check/write paths;
+- `provider_components.rs` owns checked component fixture generation and digest
+  inventory verification;
+- `provider_dependencies.rs` owns the pinned Wasmtime dependency and feature
+  boundary check;
 - `release_prep.rs` owns mechanical release-prep scaffolding;
 - `util.rs` owns repository walking, command execution, and git-base helpers;
 - `tests.rs` keeps the contract-harness regression tests out of dispatch code.
@@ -160,10 +182,12 @@ source text
 The CLI currently exercises only the front end through surface validation. Tests
 and `xtask` exercise deeper layers directly.
 
-The external-provider lane currently stops at validated in-memory request and
-result envelopes backed by an immutable concrete schema registry. It can
-compute an all-or-nothing host output manifest, but it does not load or invoke a
-provider component.
+The external-provider lane accepts an already selected manifest component and
+resolver-supplied bytes, verifies digest and exact contract identity, invokes the
+typed lowerer or verifier in a fresh capability-denied store, and stops at a
+sealed result admitted by the immutable concrete schema registry and pure
+response validator. Package resolution and target runtime execution remain
+outside this lane.
 
 ## Dependency Rules
 
@@ -179,6 +203,9 @@ Use these rules when placing new code:
 - `edict-syntax` must not depend on `edict-cli` or `xtask`.
 - `edict-provider-schema` may depend on `edict-syntax`; `edict-syntax` must not
   depend on the concrete registry.
+- `edict-provider-host-wasmtime` may depend on the schema registry and syntax
+  contracts. Neither dependency may depend on the host, and Wasmtime types must
+  not cross its public boundary.
 - `edict-cli` may depend on `edict-syntax`; it should not duplicate language
   semantics that the library already owns.
 - `xtask` may depend on `edict-syntax` and may inspect repository files, but its
@@ -193,7 +220,9 @@ This workspace does not yet implement:
 - participant admission execution;
 - participant policy evaluation;
 - trusted lawpack or target-profile authorship;
-- manifest-backed provider resolution or external component loading;
+- manifest-backed provider resolution, discovery, fetching, or mutable cache
+  lookup;
+- repeated provider replay and cross-invocation isolation proof;
 - general target plugin dispatch;
 - canonical `ContractBundleManifest` bytes;
 - crates.io publication.

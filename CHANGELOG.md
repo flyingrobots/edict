@@ -44,9 +44,26 @@ versions still track specification maturity rather than a released product.
   validated-request wrappers. Only a fully valid success produces a sealed
   host-authored output manifest binding its inputs, requested outputs, and
   recomputed output digests; limits and diagnostics stay outside the manifest,
-  and valid refusal remains distinct from host failure. This adds no component
-  instantiation, ambient I/O, verifier execution, or Echo-specific semantic
+  and valid refusal remains distinct from host failure. The pure validator adds
+  no component instantiation, ambient I/O, or Echo-specific semantic
   interpretation.
+- Completed the hostable provider-manifest v1 authority boundary with exact
+  `providerAbi`, domain-to-schema bindings, selected component contract identity,
+  generated schema provenance, and an immutable concrete CDDL registry built
+  only from explicit digest-locked bytes. The registry proves required-domain
+  closure and performs real canonical-CBOR schema-instance validation without
+  discovery or lazy loading.
+- Added the capability-denied Wasmtime component host for the frozen lowerer and
+  verifier worlds. It independently checks component digest, exact digest-covered
+  contract attestation, callable-import denial, and structural WIT compatibility;
+  creates a fresh bounded store per invocation; distinguishes stable host-owned
+  digest, decode, contract, instantiation, fuel, resource, lifting, trap, and
+  admission failures; and exposes only pure-validator-admitted outcomes.
+- Added checked conforming and malicious provider component fixtures plus
+  `cargo xtask provider-component-fixtures --check/--write`. The inventory binds
+  source and component digests, while fixtures cover typed success/refusal,
+  infinite work, memory pressure, output and diagnostic floods, schema-invalid
+  output, guest traps, instantiation failure, and malformed canonical-ABI lifting.
 
 ### Changed
 
@@ -118,6 +135,11 @@ versions still track specification maturity rather than a released product.
 - CI now includes a dedicated `cargo deny check` supply-chain job backed by
   `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
   duplicate-version warnings, and source restrictions.
+- Raised the Rust MSRV to 1.94 for Wasmtime 46.0.1. Wasmtime is isolated to the
+  private provider host with default features disabled, no `wasmtime-wasi`, an
+  executable direct/resolved feature ratchet, reviewed permissive license
+  additions, and cargo-deny coverage for both the root and nested fixture guest
+  lockfiles.
 - Directory expansion in the `edict` CLI no longer allocates a temporary dotted
   extension string per visited file; behavior and golden output are unchanged.
 - Added `cargo xtask cli-goldens --check/--write` and wired check mode into

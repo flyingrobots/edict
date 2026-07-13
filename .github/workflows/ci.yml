@@ -53,4 +53,8 @@ jobs:
       - name: Install cargo-deny
         run: cargo +stable install cargo-deny --locked --version 0.18.9
       - name: Check advisories, licenses, bans, and sources
-        run: cargo +stable deny check
+        run: cargo +stable deny --locked check
+      - name: Check provider fixture guest supply chain
+        run: >-
+          cargo +stable deny --locked
+          --manifest-path fixtures/providers/components/guests/Cargo.toml check

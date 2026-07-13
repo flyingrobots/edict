@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/edict-cli",
+  "crates/edict-provider-host-wasmtime",
   "crates/edict-provider-schema",
   "crates/edict-syntax",
   "xtask",

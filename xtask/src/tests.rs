@@ -15,6 +15,7 @@ use super::goldens::{
     bundle_goldens, cli_binary_path_from_cargo_metadata, target_ir_goldens, BundleGoldenMode,
     TargetIrGoldenMode,
 };
+use super::provider_dependencies::provider_runtime_dependencies;
 use super::release_prep::release_prep;
 use super::util::{choose_diff_check_base, repo_root};
 
@@ -1611,6 +1612,12 @@ fn workspace_msrv_matches_the_ci_toolchain() {
             && workflow.contains("rust-label: \"msrv 1.94.0\""),
         "CI must exercise the exact Rust 1.94.0 MSRV"
     );
+}
+
+#[test]
+fn provider_runtime_dependency_boundary_is_narrow() {
+    provider_runtime_dependencies(&repo_root().expect("repo root"))
+        .expect("provider runtime dependency boundary remains narrow");
 }
 
 #[test]

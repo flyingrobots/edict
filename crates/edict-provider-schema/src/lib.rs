@@ -125,6 +125,7 @@ struct CompiledSchema {
 
 /// Complete immutable mapping from artifact domains to compiled schemas.
 pub struct ProviderArtifactSchemaRegistry {
+    manifest: edict_syntax::TargetProviderManifest,
     schemas: BTreeMap<String, CompiledSchema>,
     bindings: Vec<ProviderSchemaRegistryBinding>,
 }
@@ -134,6 +135,7 @@ impl fmt::Debug for ProviderArtifactSchemaRegistry {
         formatter
             .debug_struct("ProviderArtifactSchemaRegistry")
             .field("bindings", &self.bindings)
+            .field("provider", &self.manifest.provider)
             .finish_non_exhaustive()
     }
 }
@@ -236,7 +238,17 @@ impl ProviderArtifactSchemaRegistry {
             }
         }
 
-        Ok(Self { schemas, bindings })
+        Ok(Self {
+            manifest: manifest.clone(),
+            schemas,
+            bindings,
+        })
+    }
+
+    /// Return the exact validated manifest that authorized this registry.
+    #[must_use]
+    pub const fn manifest(&self) -> &edict_syntax::TargetProviderManifest {
+        &self.manifest
     }
 
     /// Return the sorted immutable registry receipt.

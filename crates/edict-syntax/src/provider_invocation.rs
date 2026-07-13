@@ -534,6 +534,11 @@ pub struct ValidatedProviderLoweringRequest<'a> {
 
 impl<'a> ValidatedProviderLoweringRequest<'a> {
     #[must_use]
+    pub const fn schema_validator(&self) -> &'a dyn ProviderArtifactSchemaValidator {
+        self.schema_validator
+    }
+
+    #[must_use]
     pub const fn contract(&self) -> &'a ProviderLoweringInvocationContract {
         self.contract
     }
@@ -553,6 +558,11 @@ pub struct ValidatedProviderVerificationRequest<'a> {
 }
 
 impl<'a> ValidatedProviderVerificationRequest<'a> {
+    #[must_use]
+    pub const fn schema_validator(&self) -> &'a dyn ProviderArtifactSchemaValidator {
+        self.schema_validator
+    }
+
     #[must_use]
     pub const fn contract(&self) -> &'a ProviderVerificationInvocationContract {
         self.contract
