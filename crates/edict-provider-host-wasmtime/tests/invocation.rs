@@ -13,10 +13,10 @@ use edict_syntax::{
     ProviderArtifact, ProviderArtifactBinding, ProviderArtifactKind, ProviderArtifactRef,
     ProviderArtifactSchemaValidationErrorKind, ProviderArtifactSchemaValidator,
     ProviderArtifactSource, ProviderBoundArtifact, ProviderDigest, ProviderDigestAlgorithm,
-    ProviderInvocationKind, ProviderLoweringInvocationContract, ProviderLoweringOutputKind,
-    ProviderLoweringOutputRequest, ProviderLoweringRequest, ProviderResourceRef,
-    ProviderResponseLimits, ProviderSchemaBinding, ProviderSchemaFormat,
-    ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
+    ProviderInvocationKind, ProviderInvocationValidationFailureKind,
+    ProviderLoweringInvocationContract, ProviderLoweringOutputKind, ProviderLoweringOutputRequest,
+    ProviderLoweringRequest, ProviderResourceRef, ProviderResponseLimits, ProviderSchemaBinding,
+    ProviderSchemaFormat, ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
     ProviderVerificationOutputRequest, ProviderVerificationRequest, ResourceRef,
     TargetProviderManifest, ValidatedProviderLoweringRequest, ValidatedProviderVerificationRequest,
     CORE_MODULE_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
@@ -684,6 +684,68 @@ fn diagnostic_and_schema_envelope_limits_are_separate() {
         .iter()
         .any(|failure| failure.kind
             == edict_syntax::ProviderInvocationValidationFailureKind::ArtifactSchemaMismatch));
+}
+
+#[test]
+fn provider_output_failure_matrix_preserves_stable_validation_kinds() {
+    for (role, expected_kind) in [
+        (
+            "fixture.noncanonical",
+            ProviderInvocationValidationFailureKind::NonCanonicalArtifact,
+        ),
+        (
+            "fixture.wrong-domain",
+            ProviderInvocationValidationFailureKind::ArtifactDomainMismatch,
+        ),
+        (
+            "fixture.duplicate-role",
+            ProviderInvocationValidationFailureKind::DuplicateRole,
+        ),
+        (
+            "fixture.undeclared-output",
+            ProviderInvocationValidationFailureKind::UndeclaredOutput,
+        ),
+        (
+            "fixture.path-traversal",
+            ProviderInvocationValidationFailureKind::InvalidLogicalPath,
+        ),
+    ] {
+        let harness = lower_harness(role);
+        let failure = harness
+            .host
+            .invoke_lowerer(
+                &harness.prepared,
+                &harness.request,
+                harness.schema,
+                host_limits(),
+            )
+            .expect_err("invalid provider output must not be admitted");
+        assert_eq!(
+            failure.kind(),
+            ProviderHostFailureKind::ResponseEnvelopeInvalid,
+            "{role}: {}",
+            failure.diagnostic()
+        );
+        let kinds = failure
+            .validation_report()
+            .expect("response rejection retains its pure validation report")
+            .failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>();
+        assert!(kinds.contains(&expected_kind), "{role}: {kinds:?}");
+    }
+
+    let recovery = lower_harness("output.runtime");
+    recovery
+        .host
+        .invoke_lowerer(
+            &recovery.prepared,
+            &recovery.request,
+            recovery.schema,
+            host_limits(),
+        )
+        .expect("failure matrix leaves the compiler host usable");
 }
 
 #[test]

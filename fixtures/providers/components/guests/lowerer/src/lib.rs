@@ -31,6 +31,11 @@ impl Guest for Fixture {
             "fixture.output-flood" => output_flood(request),
             "fixture.diagnostic-flood" => diagnostic_flood(),
             "fixture.schema-invalid" => schema_invalid(request),
+            "fixture.noncanonical" => noncanonical(request),
+            "fixture.wrong-domain" => wrong_domain(request),
+            "fixture.duplicate-role" => duplicate_role(request),
+            "fixture.undeclared-output" => undeclared_output(request),
+            "fixture.path-traversal" => path_traversal(request),
             "fixture.bad-envelope" => Ok(LoweringSuccessV1 {
                 outputs: Vec::new(),
                 diagnostics: Vec::new(),
@@ -50,6 +55,57 @@ fn schema_invalid(request: LoweringRequestV1) -> LoweringResultV1 {
     if let Ok(success) = &mut result {
         for output in &mut success.outputs {
             output.artifact.bytes = vec![0xf5];
+        }
+    }
+    result
+}
+
+fn noncanonical(request: LoweringRequestV1) -> LoweringResultV1 {
+    let mut result = valid(request);
+    if let Ok(success) = &mut result {
+        for output in &mut success.outputs {
+            output.artifact.bytes = vec![0x18, 0x00];
+        }
+    }
+    result
+}
+
+fn wrong_domain(request: LoweringRequestV1) -> LoweringResultV1 {
+    let mut result = valid(request);
+    if let Ok(success) = &mut result {
+        for output in &mut success.outputs {
+            output.artifact.domain = "runtime.wrong-output/v1".to_owned();
+        }
+    }
+    result
+}
+
+fn duplicate_role(request: LoweringRequestV1) -> LoweringResultV1 {
+    let mut result = valid(request);
+    if let Ok(success) = &mut result {
+        if let Some(duplicate) = success.outputs.first().cloned() {
+            success.outputs.push(duplicate);
+        }
+    }
+    result
+}
+
+fn undeclared_output(request: LoweringRequestV1) -> LoweringResultV1 {
+    let mut result = valid(request);
+    if let Ok(success) = &mut result {
+        if let Some(mut undeclared) = success.outputs.first().cloned() {
+            undeclared.role = "zz.undeclared".to_owned();
+            success.outputs.push(undeclared);
+        }
+    }
+    result
+}
+
+fn path_traversal(request: LoweringRequestV1) -> LoweringResultV1 {
+    let mut result = valid(request);
+    if let Ok(success) = &mut result {
+        for output in &mut success.outputs {
+            output.logical_path = Some("../escape.cbor".to_owned());
         }
     }
     result

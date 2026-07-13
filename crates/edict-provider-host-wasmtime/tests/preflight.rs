@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use edict_provider_host_wasmtime::{
-    ProviderComponentHost, ProviderHostFailureKind, ResolvedProviderComponent,
+    ProviderComponentHost, ProviderHostFailureKind, ProviderHostPhase, ResolvedProviderComponent,
     PROVIDER_CONTRACT_CUSTOM_SECTION,
 };
 use edict_syntax::{
@@ -216,4 +216,50 @@ fn any_callable_component_import_is_denied_before_instantiation() {
         failure.kind(),
         ProviderHostFailureKind::ComponentContractMismatch
     );
+}
+
+#[test]
+fn concrete_ambient_capability_imports_are_denied_during_preflight() {
+    for capability in [
+        "wasi:filesystem/types@0.2.0",
+        "wasi:sockets/tcp@0.2.0",
+        "wasi:cli/environment@0.2.0",
+        "wasi:clocks/wall-clock@0.2.0",
+        "wasi:random/random@0.2.0",
+    ] {
+        let mut bytes = wat::parse_str(format!(
+            r#"(component
+                (type $capability
+                    (instance
+                        (type $operation (func))
+                        (export "operation" (func (type $operation)))
+                    )
+                )
+                (import "{capability}" (instance (type $capability)))
+            )"#
+        ))
+        .expect("named capability import parses");
+        append_contract_section(&mut bytes, TARGET_PROVIDER_LOWERER_CONTRACT.as_bytes());
+        let host = ProviderComponentHost::new().expect("host configures");
+
+        let failure = host
+            .prepare(&resolved_component(&bytes, bytes.clone()))
+            .expect_err("ambient capability import must reject");
+        assert_eq!(
+            failure.kind(),
+            ProviderHostFailureKind::ComponentContractMismatch,
+            "{capability}: {}",
+            failure.diagnostic()
+        );
+        assert_eq!(
+            failure.phase(),
+            ProviderHostPhase::Preflight,
+            "{capability}"
+        );
+        assert_eq!(
+            failure.diagnostic(),
+            "provider component imports callable or unknown host authority",
+            "{capability}"
+        );
+    }
 }
