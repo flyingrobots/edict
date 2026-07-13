@@ -7,6 +7,7 @@ Status: current verification design for Rust engineering policy.
 In scope:
 
 - workspace lint baseline;
+- workspace minimum-supported-Rust-version and CI alignment;
 - deterministic compiler/library policy;
 - structured public failure policy;
 - RED/GREEN and behavior-first testing policy;
@@ -32,6 +33,7 @@ Out of scope:
 | RUST-REQ-006 | planned | Library-code footgun lints for `unwrap`, `expect`, `panic`, `todo`, `unimplemented`, debug macros, and direct stdout/stderr should become deny-level after scoped test and `xtask` allowances exist. | docs/topics/rust-standards/README.md |
 | RUST-REQ-007 | planned | Dependency security and license gates should be added before crates.io publication policy work begins. | docs/topics/rust-standards/README.md |
 | RUST-REQ-008 | planned | Parser, lexer, decoder, and authority-facts fuzz targets should be added as the language surface grows. | docs/topics/rust-standards/README.md |
+| RUST-REQ-009 | implemented | The workspace declares Rust `1.94` as its MSRV, and CI runs the complete formatting, lint, and test matrix on exact Rust `1.94.0` plus stable. | Cargo.toml, .github/workflows/ci.yml |
 
 ## Fixtures
 
@@ -52,6 +54,7 @@ Out of scope:
 | RUST-TP-006 | planned | Lint ratchet | RUST-REQ-006 | Add scoped lint allowances and then deny library-code footgun lints. | - | - | Planned cleanup slice. |
 | RUST-TP-007 | planned | Dependency gate | RUST-REQ-007 | Add cargo security/license gates before publication policy work. | - | - | Planned publication-readiness slice. |
 | RUST-TP-008 | planned | Fuzzing | RUST-REQ-008 | Add fuzz targets for parser/decoder surfaces. | - | - | Planned hardening slice. |
+| RUST-TP-009 | implemented | MSRV guard | RUST-REQ-009 | The workspace package MSRV and exact CI toolchain label agree on Rust 1.94. | workspace_msrv_matches_the_ci_toolchain | Cargo.toml, .github/workflows/ci.yml | Required by the isolated Wasmtime 46 provider host. |
 
 ## Determinism Obligations
 

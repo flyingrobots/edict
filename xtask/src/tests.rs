@@ -1597,6 +1597,23 @@ fn rust_workspace_lints_define_safety_baseline() {
 }
 
 #[test]
+fn workspace_msrv_matches_the_ci_toolchain() {
+    let root = repo_root().expect("repo root");
+    let manifest = fs::read_to_string(root.join("Cargo.toml")).expect("workspace manifest");
+    let workflow = fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("CI workflow");
+
+    assert!(
+        manifest.contains("rust-version = \"1.94\""),
+        "workspace package MSRV must be Rust 1.94"
+    );
+    assert!(
+        workflow.contains("rust-version: \"1.94.0\"")
+            && workflow.contains("rust-label: \"msrv 1.94.0\""),
+        "CI must exercise the exact Rust 1.94.0 MSRV"
+    );
+}
+
+#[test]
 fn compiler_settings_schema_declares_jsonl_contract() {
     let root = repo_root().expect("repo root");
     let schema = read_json_file(&root.join("docs/schemas/edict.compiler-settings.v1.schema.json"));

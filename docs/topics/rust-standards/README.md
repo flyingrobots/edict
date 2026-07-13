@@ -20,6 +20,10 @@ That gate runs formatting, Clippy with warnings as errors, workspace tests,
 workspace doctests, Core golden checks, topic contract checks, and whitespace
 checks. [RUST-REQ-001]
 
+The workspace minimum supported Rust version is `1.94`. CI runs the complete
+format, Clippy, and test matrix on exact Rust `1.94.0` and on stable; an xtask
+guard keeps the manifest and CI toolchain declarations aligned. [RUST-REQ-009]
+
 ## Safety
 
 - `unsafe` is forbidden in workspace crates.
