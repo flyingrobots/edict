@@ -76,6 +76,7 @@ pub enum ProviderArtifactKind {
     ProviderManifest,
     ReviewArtifact,
     GeneratedArtifactProfile,
+    GenerationProvenance,
     ArtifactSchema,
     Lowerer,
     Verifier,
@@ -91,6 +92,7 @@ impl ProviderArtifactKind {
                 | Self::ProviderManifest
                 | Self::ReviewArtifact
                 | Self::GeneratedArtifactProfile
+                | Self::GenerationProvenance
                 | Self::ArtifactSchema
         )
     }

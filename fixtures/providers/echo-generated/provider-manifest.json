@@ -130,6 +130,25 @@
           "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
         }
       }
+    },
+    {
+      "role": "generation-provenance.echo",
+      "artifactKind": "generationProvenance",
+      "resource": {
+        "coordinate": "echo.edict-provider-generation-provenance@1",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "source": {
+        "kind": "generated",
+        "semanticSource": {
+          "coordinate": "echo.semantic-schema@1",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "generator": {
+          "coordinate": "echo-wesley.edict-provider-generator@1",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
     }
   ],
   "schemaBindings": [

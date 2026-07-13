@@ -10,6 +10,11 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the generic provider artifact kind `generationProvenance` for a
+  generator's deterministic build-provenance document. Provider manifest
+  validation treats it as generated metadata with digest-locked semantic-source
+  and generator provenance; Edict routes the envelope without interpreting the
+  provider-owned evidence schema.
 - Added the first runtime-neutral provider manifest boundary:
   `TargetProviderManifest`, provider artifact provenance types, stable
   provider-manifest validation failure kinds, a checked Echo-shaped provider
