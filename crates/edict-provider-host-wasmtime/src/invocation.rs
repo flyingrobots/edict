@@ -282,6 +282,14 @@ fn classify_engine_error(
     if store.data().limiter.denied().is_some() {
         return resource_failure(phase);
     }
+    if matches!(error.downcast_ref::<Trap>(), Some(Trap::OutOfFuel)) {
+        return bounded_engine_failure(
+            ProviderHostFailureKind::FuelExhausted,
+            phase,
+            error,
+            limits,
+        );
+    }
     let mut failure = ProviderHostFailure::error(fallback, phase, error);
     // Wasmtime exposes count-limit exhaustion only through this pinned error
     // adapter. The exact runtime version and this classification are ratcheted.

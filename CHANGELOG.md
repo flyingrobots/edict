@@ -65,7 +65,8 @@ versions still track specification maturity rather than a released product.
   `cargo xtask provider-component-fixtures --check/--write`. The inventory binds
   source and component digests, while fixtures cover typed success/refusal,
   infinite work, memory pressure, output and diagnostic floods, schema-invalid
-  output, guest traps, instantiation failure, and malformed canonical-ABI lifting.
+  output, guest traps, instantiation failure, instantiation-time fuel exhaustion,
+  and malformed canonical-ABI lifting.
 
 ### Changed
 

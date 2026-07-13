@@ -17,6 +17,7 @@ const SOURCE_INPUTS: &[&str] = &[
     "Cargo.lock",
     "docs/abi/edict-target-provider.wit",
     "fixtures/providers/components/instantiation-failure-lowerer.wat",
+    "fixtures/providers/components/instantiation-fuel-lowerer.wat",
     "fixtures/providers/components/malformed-lowerer.wat",
     "fixtures/providers/components/guests/Cargo.lock",
     "fixtures/providers/components/guests/Cargo.toml",
@@ -65,6 +66,14 @@ const FIXTURES: &[FixtureSpec] = &[
         name: "instantiation-failure-lowerer",
         source: FixtureSource::Wat {
             path: "fixtures/providers/components/instantiation-failure-lowerer.wat",
+            world: "lowerer",
+        },
+        contract: "edict:target-provider/lowerer@1.0.0",
+    },
+    FixtureSpec {
+        name: "instantiation-fuel-lowerer",
+        source: FixtureSource::Wat {
+            path: "fixtures/providers/components/instantiation-fuel-lowerer.wat",
             world: "lowerer",
         },
         contract: "edict:target-provider/lowerer@1.0.0",

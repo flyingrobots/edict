@@ -33,6 +33,9 @@ const MALFORMED_LOWERER_BYTES: &[u8] =
 const INSTANTIATION_FAILURE_LOWERER_BYTES: &[u8] = include_bytes!(
     "../../../fixtures/providers/components/instantiation-failure-lowerer.component.wasm"
 );
+const INSTANTIATION_FUEL_LOWERER_BYTES: &[u8] = include_bytes!(
+    "../../../fixtures/providers/components/instantiation-fuel-lowerer.component.wasm"
+);
 const OUTPUT_DOMAIN: &str = "runtime.output/v1";
 
 struct LowerHarness {
@@ -681,4 +684,22 @@ fn component_instantiation_failure_is_stable() {
         failure.kind(),
         ProviderHostFailureKind::ComponentInstantiationFailed
     );
+}
+
+#[test]
+fn instantiation_fuel_exhaustion_preserves_budget_identity() {
+    let harness = lower_harness_with_component("output.runtime", INSTANTIATION_FUEL_LOWERER_BYTES);
+    let mut limits = host_limits();
+    limits.max_wasm_fuel = 10_000;
+    limits.max_host_diagnostic_bytes = 0;
+    let failure = harness
+        .host
+        .invoke_lowerer(&harness.prepared, &harness.request, harness.schema, limits)
+        .expect_err("start work must exhaust deterministic fuel during instantiation");
+    assert_eq!(failure.kind(), ProviderHostFailureKind::FuelExhausted);
+    assert_eq!(
+        failure.phase(),
+        edict_provider_host_wasmtime::ProviderHostPhase::Instantiate
+    );
+    assert!(failure.diagnostic().is_empty());
 }

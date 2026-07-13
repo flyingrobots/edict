@@ -261,6 +261,7 @@ fixtures/providers/components/lowerer.component.wasm
 fixtures/providers/components/verifier.component.wasm
 fixtures/providers/components/malformed-lowerer.component.wasm
 fixtures/providers/components/instantiation-failure-lowerer.component.wasm
+fixtures/providers/components/instantiation-fuel-lowerer.component.wasm
 fixtures/providers/components/inventory.json
 ```
 
@@ -270,8 +271,8 @@ rebuilds them with Rust 1.94.0 and `--locked --offline`; check mode verifies the
 source digest and every component digest without requiring a Wasm toolchain.
 Host tests cover conforming lowerer/verifier execution, refusal, denied callable
 imports, infinite work, memory pressure, response and diagnostic flooding,
-schema-invalid output, explicit traps, instantiation failure, and malformed
-canonical-ABI lifting.
+schema-invalid output, explicit traps, instantiation failure, instantiation-time
+fuel exhaustion, and malformed canonical-ABI lifting.
 
 ## Deferred
 

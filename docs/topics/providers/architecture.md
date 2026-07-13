@@ -87,10 +87,11 @@ adapter rather than a public typed error; the exact runtime version and a zero
 instance-budget regression test ratchet that mapping.
 
 Checked malicious fixtures witness each execution boundary, including an invalid
-canonical-ABI result discriminant and an instantiation-only data-segment failure.
-The fixture inventory binds source inputs and component SHA-256 digests. The
-`provider-runtime-dependencies` xtask also pins the direct and resolved Wasmtime
-feature closure and rejects `wasmtime-wasi` or a second workspace owner.
+canonical-ABI result discriminant, an instantiation-only data-segment failure,
+and fuel exhaustion from a core start function. The fixture inventory binds
+source inputs and component SHA-256 digests. The `provider-runtime-dependencies`
+xtask also pins the direct and resolved Wasmtime feature closure and rejects
+`wasmtime-wasi` or a second workspace owner.
 
 ## Deferred Isolation Proof
 
