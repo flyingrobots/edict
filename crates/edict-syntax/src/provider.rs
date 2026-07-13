@@ -6,22 +6,53 @@
 //! provenance envelope. It does not load provider files, execute WIT
 //! components, run target verifiers, or interpret runtime-specific semantics.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
 use crate::core_ir::ResourceRef;
+use crate::provider_invocation::ProviderInvocationKind;
 
 /// Target-provider manifest ABI supported by this crate.
 pub const TARGET_PROVIDER_MANIFEST_API_VERSION: &str = "edict.provider-manifest/v1";
+
+/// Exact WIT package ABI authorized by a provider manifest.
+pub const TARGET_PROVIDER_ABI: &str = "edict:target-provider@1.0.0";
+
+/// Digest-covered identity attestation required from lowerer components.
+pub const TARGET_PROVIDER_LOWERER_CONTRACT: &str = "edict:target-provider/lowerer@1.0.0";
+
+/// Digest-covered identity attestation required from verifier components.
+pub const TARGET_PROVIDER_VERIFIER_CONTRACT: &str = "edict:target-provider/verifier@1.0.0";
 
 /// Typed provider manifest value for `edict.provider-manifest/v1`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TargetProviderManifest {
     pub api_version: String,
+    pub provider_abi: String,
     pub provider: ResourceRef,
     pub artifacts: Vec<ProviderArtifactRef>,
+    pub schema_bindings: Vec<ProviderSchemaBinding>,
+}
+
+/// Immutable binding from one artifact domain to a generated schema role.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderSchemaBinding {
+    pub domain: String,
+    pub schema_role: String,
+    pub format: ProviderSchemaFormat,
+    pub root_rule: String,
+}
+
+/// Schema formats accepted by the provider host alpha.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProviderSchemaFormat {
+    /// A complete CDDL v1 document requiring no external rule resolution.
+    SelfContainedCddlV1,
 }
 
 /// One artifact or component exposed by a target-provider package.
@@ -45,6 +76,7 @@ pub enum ProviderArtifactKind {
     ProviderManifest,
     ReviewArtifact,
     GeneratedArtifactProfile,
+    ArtifactSchema,
     Lowerer,
     Verifier,
 }
@@ -59,6 +91,7 @@ impl ProviderArtifactKind {
                 | Self::ProviderManifest
                 | Self::ReviewArtifact
                 | Self::GeneratedArtifactProfile
+                | Self::ArtifactSchema
         )
     }
 
@@ -92,6 +125,7 @@ pub enum ProviderManifestValidationStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderManifestValidationFailureKind {
     InvalidApiVersion,
+    InvalidProviderAbi,
     NonDigestLockedProvider,
     MissingArtifact,
     MissingRole,
@@ -102,6 +136,15 @@ pub enum ProviderManifestValidationFailureKind {
     NonDigestLockedComponent,
     GeneratedRoleRequiresGeneratedSource,
     ComponentRoleRequiresComponentSource,
+    ComponentResourceMismatch,
+    MissingSchemaBinding,
+    MissingSchemaDomain,
+    DuplicateSchemaDomain,
+    OutOfOrderSchemaDomain,
+    MissingSchemaRole,
+    UnknownSchemaRole,
+    SchemaRoleKindMismatch,
+    MissingSchemaRootRule,
 }
 
 /// One failed provider-manifest validation obligation.
@@ -141,6 +184,15 @@ pub fn validate_target_provider_manifest(
         );
     }
 
+    if manifest.provider_abi != TARGET_PROVIDER_ABI {
+        push_failure(
+            &mut failures,
+            ProviderManifestValidationFailureKind::InvalidProviderAbi,
+            "provider_abi",
+            TARGET_PROVIDER_ABI,
+        );
+    }
+
     if !is_digest_locked_resource(&manifest.provider) {
         push_failure(
             &mut failures,
@@ -160,6 +212,13 @@ pub fn validate_target_provider_manifest(
     }
 
     check_artifacts(&manifest.artifacts, &mut failures);
+    if !manifest.artifacts.is_empty() {
+        check_schema_bindings(
+            &manifest.artifacts,
+            &manifest.schema_bindings,
+            &mut failures,
+        );
+    }
 
     let status = if failures.is_empty() {
         ProviderManifestValidationStatus::Valid
@@ -253,9 +312,239 @@ fn check_artifacts(
                         "non-empty coordinate and lowercase sha256 digest",
                     );
                 }
+                if artifact.artifact_kind.requires_component_source()
+                    && is_digest_locked_resource(component)
+                    && is_digest_locked_resource(&artifact.resource)
+                    && component != &artifact.resource
+                {
+                    push_failure(
+                        failures,
+                        ProviderManifestValidationFailureKind::ComponentResourceMismatch,
+                        "artifacts.source.component",
+                        "component provenance must equal the artifact resource identity",
+                    );
+                }
             }
         }
     }
+}
+
+fn check_schema_bindings(
+    artifacts: &[ProviderArtifactRef],
+    bindings: &[ProviderSchemaBinding],
+    failures: &mut Vec<ProviderManifestValidationFailure>,
+) {
+    if bindings.is_empty() {
+        push_failure(
+            failures,
+            ProviderManifestValidationFailureKind::MissingSchemaBinding,
+            "schema_bindings",
+            "at least one explicit artifact-domain schema binding",
+        );
+        return;
+    }
+
+    let artifacts_by_role: BTreeMap<&str, &ProviderArtifactRef> = artifacts
+        .iter()
+        .filter(|artifact| !artifact.role.is_empty())
+        .map(|artifact| (artifact.role.as_str(), artifact))
+        .collect();
+    let mut domains = BTreeSet::new();
+    let mut previous_domain: Option<&str> = None;
+
+    for binding in bindings {
+        if binding.domain.is_empty() {
+            push_failure(
+                failures,
+                ProviderManifestValidationFailureKind::MissingSchemaDomain,
+                "schema_bindings.domain",
+                "non-empty unique artifact domain",
+            );
+        } else {
+            if !domains.insert(binding.domain.as_str()) {
+                push_failure(
+                    failures,
+                    ProviderManifestValidationFailureKind::DuplicateSchemaDomain,
+                    "schema_bindings.domain",
+                    "unique artifact domain",
+                );
+            }
+            if previous_domain.is_some_and(|previous| previous >= binding.domain.as_str()) {
+                push_failure(
+                    failures,
+                    ProviderManifestValidationFailureKind::OutOfOrderSchemaDomain,
+                    "schema_bindings.domain",
+                    "strict ascending order by exact UTF-8 domain bytes",
+                );
+            }
+            previous_domain = Some(binding.domain.as_str());
+        }
+
+        if binding.schema_role.is_empty() {
+            push_failure(
+                failures,
+                ProviderManifestValidationFailureKind::MissingSchemaRole,
+                "schema_bindings.schema_role",
+                "non-empty artifact-schema role",
+            );
+        } else if let Some(artifact) = artifacts_by_role.get(binding.schema_role.as_str()) {
+            if artifact.artifact_kind != ProviderArtifactKind::ArtifactSchema {
+                push_failure(
+                    failures,
+                    ProviderManifestValidationFailureKind::SchemaRoleKindMismatch,
+                    "schema_bindings.schema_role",
+                    "role naming an artifactSchema entry",
+                );
+            }
+        } else {
+            push_failure(
+                failures,
+                ProviderManifestValidationFailureKind::UnknownSchemaRole,
+                "schema_bindings.schema_role",
+                "role naming an artifactSchema entry",
+            );
+        }
+
+        if binding.root_rule.is_empty() {
+            push_failure(
+                failures,
+                ProviderManifestValidationFailureKind::MissingSchemaRootRule,
+                "schema_bindings.root_rule",
+                "non-empty CDDL root rule",
+            );
+        }
+    }
+}
+
+/// Opaque proof that a target-provider manifest passed all envelope checks.
+#[derive(Debug, Clone, Copy)]
+pub struct ValidatedTargetProviderManifest<'a> {
+    manifest: &'a TargetProviderManifest,
+}
+
+impl<'a> ValidatedTargetProviderManifest<'a> {
+    /// Return the validated manifest value.
+    #[must_use]
+    pub const fn manifest(&self) -> &'a TargetProviderManifest {
+        self.manifest
+    }
+}
+
+/// Validate a manifest and return an opaque proof on complete success.
+///
+/// # Errors
+///
+/// Returns the complete structured manifest report when any obligation fails.
+pub fn bind_target_provider_manifest(
+    manifest: &TargetProviderManifest,
+) -> Result<ValidatedTargetProviderManifest<'_>, ProviderManifestValidationReport> {
+    let report = validate_target_provider_manifest(manifest);
+    if report.status == ProviderManifestValidationStatus::Valid {
+        Ok(ValidatedTargetProviderManifest { manifest })
+    } else {
+        Err(report)
+    }
+}
+
+/// Stable explicit component-selection failure kinds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderComponentSelectionFailureKind {
+    ComponentRoleNotFound,
+    ComponentKindMismatch,
+}
+
+/// Failure to select one manifest-authorized provider component role.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProviderComponentSelectionFailure {
+    kind: ProviderComponentSelectionFailureKind,
+    role: String,
+}
+
+impl ProviderComponentSelectionFailure {
+    #[must_use]
+    pub const fn kind(&self) -> ProviderComponentSelectionFailureKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub fn role(&self) -> &str {
+        &self.role
+    }
+}
+
+impl fmt::Display for ProviderComponentSelectionFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{:?}: {}", self.kind, self.role)
+    }
+}
+
+impl std::error::Error for ProviderComponentSelectionFailure {}
+
+/// One explicitly selected component identity from a validated manifest.
+#[derive(Debug, Clone, Copy)]
+pub struct SelectedProviderComponent<'a> {
+    artifact: &'a ProviderArtifactRef,
+    invocation: ProviderInvocationKind,
+}
+
+impl<'a> SelectedProviderComponent<'a> {
+    #[must_use]
+    pub fn role(&self) -> &'a str {
+        &self.artifact.role
+    }
+
+    #[must_use]
+    pub const fn resource(&self) -> &'a ResourceRef {
+        &self.artifact.resource
+    }
+
+    #[must_use]
+    pub const fn invocation(&self) -> ProviderInvocationKind {
+        self.invocation
+    }
+
+    #[must_use]
+    pub const fn contract_identity(&self) -> &'static str {
+        match self.invocation {
+            ProviderInvocationKind::Lowering => TARGET_PROVIDER_LOWERER_CONTRACT,
+            ProviderInvocationKind::Verification => TARGET_PROVIDER_VERIFIER_CONTRACT,
+        }
+    }
+}
+
+/// Select one lowerer or verifier role from a validated manifest.
+///
+/// # Errors
+///
+/// Returns a stable failure when the role is absent or has the wrong world.
+pub fn select_provider_component<'a>(
+    validated: &'a ValidatedTargetProviderManifest<'a>,
+    role: &str,
+    invocation: ProviderInvocationKind,
+) -> Result<SelectedProviderComponent<'a>, ProviderComponentSelectionFailure> {
+    let artifact = validated
+        .manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.role == role)
+        .ok_or_else(|| ProviderComponentSelectionFailure {
+            kind: ProviderComponentSelectionFailureKind::ComponentRoleNotFound,
+            role: role.to_owned(),
+        })?;
+    let expected_kind = match invocation {
+        ProviderInvocationKind::Lowering => ProviderArtifactKind::Lowerer,
+        ProviderInvocationKind::Verification => ProviderArtifactKind::Verifier,
+    };
+    if artifact.artifact_kind != expected_kind {
+        return Err(ProviderComponentSelectionFailure {
+            kind: ProviderComponentSelectionFailureKind::ComponentKindMismatch,
+            role: role.to_owned(),
+        });
+    }
+    Ok(SelectedProviderComponent {
+        artifact,
+        invocation,
+    })
 }
 
 fn is_digest_locked_resource(resource: &ResourceRef) -> bool {

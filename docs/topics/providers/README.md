@@ -19,7 +19,10 @@ The `edict_syntax` crate exposes:
 - `ProviderArtifactRef`;
 - `ProviderArtifactKind`;
 - `ProviderArtifactSource`;
+- `ProviderSchemaBinding` and `ProviderSchemaFormat`;
 - `validate_target_provider_manifest`;
+- `bind_target_provider_manifest` and its opaque validated proof;
+- `select_provider_component` and its opaque selected component identity;
 - `ProviderManifestValidationStatus`;
 - `ProviderManifestValidationFailureKind`;
 - `BuiltinTargetLowerer`;
@@ -48,19 +51,34 @@ exposes:
   crossed the complete validation boundary.
 
 Provider manifests use API version `edict.provider-manifest/v1`.
+This unreleased alpha contract is completed in place by the provider-host slice:
+host-ready v1 manifests require exact `providerAbi` and `schemaBindings` fields.
+There is no legacy hostable v1 shape with omitted authority bindings.
 
 The manifest validator checks that:
 
 - the manifest API version is current;
 - the provider reference is digest-locked;
+- `providerAbi` is exactly `edict:target-provider@1.0.0`;
 - at least one artifact or component is present;
 - artifact role slots are non-empty and unique;
 - every artifact resource is digest-locked;
 - generated metadata artifacts carry digest-locked semantic-source and
   generator provenance;
 - lowerer and verifier artifacts carry digest-locked component provenance;
+- component provenance equals the artifact resource identity rather than
+  naming an independently selectable component;
 - generated metadata roles are not represented as executable components; and
-- component roles are not represented as generated metadata.
+- component roles are not represented as generated metadata;
+- artifact schemas are generated artifacts with digest-locked provenance; and
+- schema bindings are nonempty, sorted by exact domain bytes, unique by domain,
+  and name an existing artifact-schema role plus a nonempty CDDL root rule.
+
+After manifest validation, component selection is explicit by unique role and
+expected invocation kind. The exact provider ABI and artifact kind determine
+the frozen lowerer or verifier contract; the selected artifact resource is the
+authorized component digest. Selection performs no file, cache, registry, or
+network lookup.
 
 Digest review strings on this boundary are strict artifact references:
 `sha256:<64 lowercase hex>`.
