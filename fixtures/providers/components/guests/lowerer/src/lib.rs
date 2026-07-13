@@ -8,6 +8,9 @@ use edict::target_provider::protocol::{
     ProviderRefusalKind, ProviderRefusalV1,
 };
 
+const REVIEWED_TARGET_IR: &[u8] =
+    include_bytes!("../../../../../target-ir/canonical/echo-effectful.target-ir.cbor");
+
 struct Fixture;
 
 impl Guest for Fixture {
@@ -36,6 +39,7 @@ impl Guest for Fixture {
             "fixture.duplicate-role" => duplicate_role(request),
             "fixture.undeclared-output" => undeclared_output(request),
             "fixture.path-traversal" => path_traversal(request),
+            "fixture.target-ir" => target_ir(request),
             "fixture.bad-envelope" => Ok(LoweringSuccessV1 {
                 outputs: Vec::new(),
                 diagnostics: Vec::new(),
@@ -106,6 +110,16 @@ fn path_traversal(request: LoweringRequestV1) -> LoweringResultV1 {
     if let Ok(success) = &mut result {
         for output in &mut success.outputs {
             output.logical_path = Some("../escape.cbor".to_owned());
+        }
+    }
+    result
+}
+
+fn target_ir(request: LoweringRequestV1) -> LoweringResultV1 {
+    let mut result = valid(request);
+    if let Ok(success) = &mut result {
+        for output in &mut success.outputs {
+            output.artifact.bytes = REVIEWED_TARGET_IR.to_vec();
         }
     }
     result

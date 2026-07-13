@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+use std::process::Command;
 use std::sync::Arc;
 use std::thread;
 
@@ -24,7 +26,15 @@ use edict_syntax::{
 };
 use sha2::{Digest, Sha256};
 
-const SCHEMA: &[u8] = b"artifact = null\n";
+const SCHEMA: &[u8] = br#"
+artifact = null / {
+  kind: "targetIrArtifact",
+  domain: tstr,
+  intents: { * tstr => any },
+  targetProfile: { * tstr => any },
+  sourceCoreCoordinate: tstr,
+}
+"#;
 const NULL_BYTES: &[u8] = &[0xf6];
 const LOWERER_BYTES: &[u8] =
     include_bytes!("../../../fixtures/providers/components/lowerer.component.wasm");
@@ -38,7 +48,13 @@ const INSTANTIATION_FAILURE_LOWERER_BYTES: &[u8] = include_bytes!(
 const INSTANTIATION_FUEL_LOWERER_BYTES: &[u8] = include_bytes!(
     "../../../fixtures/providers/components/instantiation-fuel-lowerer.component.wasm"
 );
+const REVIEWED_TARGET_IR_BYTES: &[u8] =
+    include_bytes!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.cbor");
+const REVIEWED_TARGET_IR_DIGEST: &str =
+    include_str!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.sha256");
 const OUTPUT_DOMAIN: &str = "runtime.output/v1";
+const REPLAY_CHILD_ENV: &str = "EDICT_PROVIDER_REPLAY_TARGET_IR_CHILD";
+const REPLAY_OBSERVATION_MARKER: &str = "EDICT_PROVIDER_REPLAY_TARGET_IR=";
 
 struct LowerHarness {
     host: ProviderComponentHost,
@@ -844,6 +860,21 @@ fn replay_proves_equal_completed_and_rejected_observations() {
         assert_eq!(failure.kind(), expected_kind);
     }
 
+    let malformed = lower_harness_with_component("output.runtime", MALFORMED_LOWERER_BYTES);
+    let replay = malformed
+        .host
+        .replay_lowerer(
+            &malformed.prepared,
+            &malformed.request,
+            malformed.schema,
+            host_limits(),
+        )
+        .expect("malformed lifting failure replays");
+    let ProviderReplayObservation::Rejected(failure) = replay.observation() else {
+        panic!("malformed lifting must remain a rejected replay observation");
+    };
+    assert_eq!(failure.kind(), ProviderHostFailureKind::MalformedResponse);
+
     let harness = verify_harness();
     let replay = harness
         .host
@@ -858,6 +889,82 @@ fn replay_proves_equal_completed_and_rejected_observations() {
         replay.observation(),
         ProviderReplayObservation::Completed(_)
     ));
+}
+
+fn reviewed_target_ir_replay_observation() -> String {
+    let harness = lower_harness("fixture.target-ir");
+    let request = validated_lowering_request(
+        harness.schema,
+        "fixture.target-ir",
+        ProviderLoweringOutputKind::TargetIr,
+        TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    );
+    let replay = harness
+        .host
+        .replay_lowerer(&harness.prepared, &request, harness.schema, host_limits())
+        .expect("reviewed Target IR invocation replays");
+    let ProviderReplayObservation::Completed(outcome) = replay.observation() else {
+        panic!("reviewed Target IR fixture must be a completed observation");
+    };
+    let response = outcome.response().expect("fixture returns Target IR");
+    assert_eq!(response.outputs.len(), 1);
+    assert_eq!(response.outputs[0].artifact.bytes, REVIEWED_TARGET_IR_BYTES);
+    let manifest = outcome.manifest().expect("fixture output is admitted");
+    assert_eq!(manifest.outputs().len(), 1);
+    let mut domain_digest = String::with_capacity("sha256:".len() + 64);
+    domain_digest.push_str("sha256:");
+    for byte in &manifest.outputs()[0].digest.bytes {
+        write!(&mut domain_digest, "{byte:02x}").expect("writing a digest to String cannot fail");
+    }
+    assert_eq!(domain_digest, REVIEWED_TARGET_IR_DIGEST.trim());
+    format!("{}:{domain_digest}", sha256(REVIEWED_TARGET_IR_BYTES))
+}
+
+#[test]
+fn generic_lowerer_matches_reviewed_target_ir_bytes_and_digest() {
+    let observation = reviewed_target_ir_replay_observation();
+    assert!(observation.ends_with(REVIEWED_TARGET_IR_DIGEST.trim()));
+}
+
+#[test]
+fn independent_processes_reproduce_reviewed_target_ir_observation() {
+    if std::env::var_os(REPLAY_CHILD_ENV).is_some() {
+        println!(
+            "{REPLAY_OBSERVATION_MARKER}{}",
+            reviewed_target_ir_replay_observation()
+        );
+        return;
+    }
+
+    let executable = std::env::current_exe().expect("current test executable is discoverable");
+    let run_child = || {
+        let output = Command::new(&executable)
+            .arg("independent_processes_reproduce_reviewed_target_ir_observation")
+            .args(["--exact", "--nocapture", "--test-threads=1"])
+            .env(REPLAY_CHILD_ENV, "1")
+            .output()
+            .expect("child replay process launches");
+        assert!(
+            output.status.success(),
+            "child replay failed:\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8(output.stdout).expect("child replay output is UTF-8");
+        stdout
+            .lines()
+            .find_map(|line| {
+                line.split_once(REPLAY_OBSERVATION_MARKER)
+                    .map(|(_, observation)| observation)
+            })
+            .unwrap_or_else(|| panic!("child replay omitted its stable observation:\n{stdout}"))
+            .to_owned()
+    };
+
+    let first = run_child();
+    let second = run_child();
+    assert_eq!(first, second);
+    assert!(first.ends_with(REVIEWED_TARGET_IR_DIGEST.trim()));
 }
 
 #[test]
