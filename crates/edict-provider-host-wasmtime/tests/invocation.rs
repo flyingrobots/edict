@@ -53,7 +53,6 @@ const REVIEWED_TARGET_IR_BYTES: &[u8] =
 const REVIEWED_TARGET_IR_DIGEST: &str =
     include_str!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.sha256");
 const OUTPUT_DOMAIN: &str = "runtime.output/v1";
-const REPLAY_CHILD_ENV: &str = "EDICT_PROVIDER_REPLAY_TARGET_IR_CHILD";
 const REPLAY_OBSERVATION_MARKER: &str = "EDICT_PROVIDER_REPLAY_TARGET_IR=";
 
 struct LowerHarness {
@@ -927,21 +926,21 @@ fn generic_lowerer_matches_reviewed_target_ir_bytes_and_digest() {
 }
 
 #[test]
-fn independent_processes_reproduce_reviewed_target_ir_observation() {
-    if std::env::var_os(REPLAY_CHILD_ENV).is_some() {
-        println!(
-            "{REPLAY_OBSERVATION_MARKER}{}",
-            reviewed_target_ir_replay_observation()
-        );
-        return;
-    }
+#[ignore = "child entrypoint exercised by the independent-process replay test"]
+fn emit_reviewed_target_ir_replay_observation() {
+    println!(
+        "{REPLAY_OBSERVATION_MARKER}{}",
+        reviewed_target_ir_replay_observation()
+    );
+}
 
+#[test]
+fn independent_processes_reproduce_reviewed_target_ir_observation() {
     let executable = std::env::current_exe().expect("current test executable is discoverable");
     let run_child = || {
         let output = Command::new(&executable)
-            .arg("independent_processes_reproduce_reviewed_target_ir_observation")
-            .args(["--exact", "--nocapture", "--test-threads=1"])
-            .env(REPLAY_CHILD_ENV, "1")
+            .arg("emit_reviewed_target_ir_replay_observation")
+            .args(["--exact", "--ignored", "--nocapture", "--test-threads=1"])
             .output()
             .expect("child replay process launches");
         assert!(

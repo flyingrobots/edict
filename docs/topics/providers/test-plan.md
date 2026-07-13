@@ -149,9 +149,9 @@ Out of scope:
 ## Open Gaps
 
 - No provider package loader exists.
-- No manifest-backed provider resolver or package dispatch exists.
 - No Echo-owned provider implementation exists.
-- No manifest-backed provider resolver or component cache exists.
+- No manifest-backed provider resolver, package dispatch, or component cache
+  exists.
 - The native in-process host does not provide operating-system process
   containment for a Wasmtime or trusted-host implementation fault.
 - No browser-compatible component host exists.
