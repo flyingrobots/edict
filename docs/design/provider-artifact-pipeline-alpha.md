@@ -165,10 +165,13 @@ meaning.
 - `providerManifest`;
 - `reviewArtifact`;
 - `generatedArtifactProfile`;
+- `generationProvenance`;
+- `artifactSchema`;
 - `lowerer`;
 - `verifier`.
 
-Generated metadata roles must use generated provenance:
+Generated metadata roles, including `generationProvenance`, must use generated
+provenance:
 
 ```text
 Generated {

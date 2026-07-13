@@ -6,9 +6,9 @@
 
 use edict_syntax::{
     bind_target_provider_manifest, select_provider_component, validate_target_provider_manifest,
-    ProviderArtifactSource, ProviderComponentSelectionFailureKind, ProviderInvocationKind,
-    ProviderManifestValidationFailureKind, ProviderManifestValidationStatus, ResourceRef,
-    TargetProviderManifest, TARGET_PROVIDER_ABI,
+    ProviderArtifactKind, ProviderArtifactSource, ProviderComponentSelectionFailureKind,
+    ProviderInvocationKind, ProviderManifestValidationFailureKind,
+    ProviderManifestValidationStatus, ResourceRef, TargetProviderManifest, TARGET_PROVIDER_ABI,
 };
 
 const ECHO_PROVIDER_FIXTURE: &str =
@@ -41,6 +41,46 @@ fn generated_provider_manifest_fixture_validates() {
 
     assert_eq!(report.status, ProviderManifestValidationStatus::Valid);
     assert!(report.failures.is_empty());
+}
+
+#[test]
+fn generation_provenance_is_generated_provider_metadata() {
+    let manifest = fixture_manifest();
+    let generation_provenance = manifest
+        .artifacts
+        .iter()
+        .find(|artifact| artifact.role == "generation-provenance.echo")
+        .expect("fixture should declare generation provenance");
+
+    assert_eq!(
+        generation_provenance.artifact_kind,
+        ProviderArtifactKind::GenerationProvenance
+    );
+    assert!(matches!(
+        generation_provenance.source,
+        ProviderArtifactSource::Generated { .. }
+    ));
+    let encoded = serde_json::to_value(generation_provenance)
+        .expect("generation provenance artifact should serialize");
+    assert_eq!(encoded["artifactKind"], "generationProvenance");
+    let decoded =
+        serde_json::from_value(encoded).expect("generation provenance artifact should deserialize");
+    assert_eq!(generation_provenance, &decoded);
+
+    let mut component_sourced = manifest;
+    let generation_provenance = component_sourced
+        .artifacts
+        .iter_mut()
+        .find(|artifact| artifact.role == "generation-provenance.echo")
+        .expect("fixture should declare generation provenance");
+    generation_provenance.source = ProviderArtifactSource::Component {
+        component: generation_provenance.resource.clone(),
+    };
+
+    assert_eq!(
+        failure_kinds(&component_sourced),
+        vec![ProviderManifestValidationFailureKind::GeneratedRoleRequiresGeneratedSource]
+    );
 }
 
 #[test]

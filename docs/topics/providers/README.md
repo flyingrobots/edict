@@ -113,6 +113,9 @@ The manifest validator checks that:
 - every artifact resource is digest-locked;
 - generated metadata artifacts carry digest-locked semantic-source and
   generator provenance;
+- generation-provenance documents use the generic `generationProvenance`
+  artifact kind and remain generated metadata rather than executable
+  components;
 - lowerer and verifier artifacts carry digest-locked component provenance;
 - component provenance equals the artifact resource identity rather than
   naming an independently selectable component;
