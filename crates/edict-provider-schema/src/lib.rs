@@ -2,8 +2,9 @@
 //!
 //! Registry construction consumes only a validated provider manifest and
 //! explicit in-memory schema bytes. It verifies each raw schema digest and
-//! compiles every self-contained CDDL document before an external component can
-//! run. Validation performs no discovery, file access, network access, clock,
+//! compiles every CDDL document before an external component can run. Selected
+//! roots must belong to the host's total, non-generic validation subset.
+//! Validation performs no discovery, file access, network access, clock,
 //! randomness, environment inspection, or mutable-global lookup.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,13 +14,14 @@ use std::sync::Arc;
 use cddl_cat::cbor::validate_cbor;
 use cddl_cat::context::BasicContext;
 use cddl_cat::flatten::flatten_from_str;
-use cddl_cat::ivt::{Control, Node, RuleDef};
 use edict_syntax::{
     encode_canonical_cbor, CanonicalValue, ProviderArtifactSchemaValidationErrorKind,
     ProviderArtifactSchemaValidator, ProviderArtifactSource, ProviderSchemaBinding,
     ProviderSchemaFormat, ResourceRef, ValidatedTargetProviderManifest,
 };
 use sha2::{Digest, Sha256};
+
+mod schema_safety;
 
 /// Explicit bytes alleged to implement one manifest schema role.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -33,6 +35,7 @@ pub struct ResolvedProviderSchemaArtifact {
 pub enum ProviderSchemaRegistryFailureKind {
     SchemaArtifactMissing,
     SchemaArtifactAmbiguous,
+    SchemaArtifactUnsupported,
     SchemaArtifactDigestMismatch,
     SchemaCompileFailed,
     SchemaRootRuleMissing,
@@ -149,26 +152,17 @@ impl ProviderArtifactSchemaRegistry {
     ///
     /// # Errors
     ///
-    /// Returns a stable failure for missing or ambiguous bytes, digest
-    /// disagreement, invalid or incomplete CDDL, a missing root, or an unbound
-    /// required domain.
+    /// Returns a stable failure for missing, ambiguous, or unsupported bytes,
+    /// digest disagreement, invalid, incomplete, or non-total CDDL, a missing
+    /// root, or an unbound required domain.
     pub fn from_manifest<'a>(
         validated: &ValidatedTargetProviderManifest<'_>,
         resolved: impl IntoIterator<Item = ResolvedProviderSchemaArtifact>,
         required_domains: impl IntoIterator<Item = &'a str>,
     ) -> Result<Self, ProviderSchemaRegistryFailure> {
-        let mut resolved_by_role = BTreeMap::new();
-        for artifact in resolved {
-            let role = artifact.role.clone();
-            if resolved_by_role.insert(role.clone(), artifact).is_some() {
-                return Err(ProviderSchemaRegistryFailure::for_role(
-                    ProviderSchemaRegistryFailureKind::SchemaArtifactAmbiguous,
-                    &role,
-                ));
-            }
-        }
-
+        let resolved_by_role = collect_resolved_by_role(resolved)?;
         let manifest = validated.manifest();
+        reject_unsupported_roles(manifest, &resolved_by_role)?;
         let artifacts_by_role: BTreeMap<&str, _> = manifest
             .artifacts
             .iter()
@@ -206,6 +200,13 @@ impl ProviderArtifactSchemaRegistry {
             if !context.rules.contains_key(&binding.root_rule) {
                 return Err(ProviderSchemaRegistryFailure::for_binding(
                     ProviderSchemaRegistryFailureKind::SchemaRootRuleMissing,
+                    &binding.domain,
+                    &binding.schema_role,
+                ));
+            }
+            if !schema_safety::root_supports_total_validation(&context.rules, &binding.root_rule) {
+                return Err(ProviderSchemaRegistryFailure::for_binding(
+                    ProviderSchemaRegistryFailureKind::SchemaCompileFailed,
                     &binding.domain,
                     &binding.schema_role,
                 ));
@@ -258,6 +259,43 @@ impl ProviderArtifactSchemaRegistry {
     }
 }
 
+fn collect_resolved_by_role(
+    resolved: impl IntoIterator<Item = ResolvedProviderSchemaArtifact>,
+) -> Result<BTreeMap<String, ResolvedProviderSchemaArtifact>, ProviderSchemaRegistryFailure> {
+    let mut resolved_by_role = BTreeMap::new();
+    for artifact in resolved {
+        let role = artifact.role.clone();
+        if resolved_by_role.insert(role.clone(), artifact).is_some() {
+            return Err(ProviderSchemaRegistryFailure::for_role(
+                ProviderSchemaRegistryFailureKind::SchemaArtifactAmbiguous,
+                &role,
+            ));
+        }
+    }
+    Ok(resolved_by_role)
+}
+
+fn reject_unsupported_roles(
+    manifest: &edict_syntax::TargetProviderManifest,
+    resolved_by_role: &BTreeMap<String, ResolvedProviderSchemaArtifact>,
+) -> Result<(), ProviderSchemaRegistryFailure> {
+    let bound_schema_roles: BTreeSet<&str> = manifest
+        .schema_bindings
+        .iter()
+        .map(|binding| binding.schema_role.as_str())
+        .collect();
+    if let Some(role) = resolved_by_role
+        .keys()
+        .find(|role| !bound_schema_roles.contains(role.as_str()))
+    {
+        return Err(ProviderSchemaRegistryFailure::for_role(
+            ProviderSchemaRegistryFailureKind::SchemaArtifactUnsupported,
+            role,
+        ));
+    }
+    Ok(())
+}
+
 impl ProviderArtifactSchemaValidator for ProviderArtifactSchemaRegistry {
     fn supports_domain(&self, domain: &str) -> bool {
         self.schemas.contains_key(domain)
@@ -307,79 +345,7 @@ fn compiled_context_for(
     };
     let source = std::str::from_utf8(&resolved.bytes).map_err(|_| failure())?;
     let rules = flatten_from_str(source).map_err(|_| failure())?;
-    if !rules_are_self_contained(&rules) {
-        return Err(failure());
-    }
     let context = Arc::new(BasicContext::new(rules));
     compiled_by_role.insert(binding.schema_role.clone(), Arc::clone(&context));
     Ok(context)
-}
-
-fn rules_are_self_contained(rules: &BTreeMap<String, RuleDef>) -> bool {
-    rules
-        .iter()
-        .all(|(_, rule)| node_is_self_contained(&rule.node, rules, &rule.generic_parms))
-}
-
-fn node_is_self_contained(
-    node: &Node,
-    rules: &BTreeMap<String, RuleDef>,
-    generic_parameters: &[String],
-) -> bool {
-    match node {
-        Node::Literal(_) | Node::PreludeType(_) => true,
-        Node::Rule(rule) | Node::Unwrap(rule) | Node::Choiceify(rule) => {
-            (rules.contains_key(&rule.name) || generic_parameters.contains(&rule.name))
-                && rule
-                    .generic_args
-                    .iter()
-                    .all(|argument| node_is_self_contained(argument, rules, generic_parameters))
-        }
-        Node::Choice(choice) => choice
-            .options
-            .iter()
-            .all(|option| node_is_self_contained(option, rules, generic_parameters)),
-        Node::Map(map) => map
-            .members
-            .iter()
-            .all(|member| node_is_self_contained(member, rules, generic_parameters)),
-        Node::Array(array) | Node::ChoiceifyInline(array) => array
-            .members
-            .iter()
-            .all(|member| node_is_self_contained(member, rules, generic_parameters)),
-        Node::Group(group) => group
-            .members
-            .iter()
-            .all(|member| node_is_self_contained(member, rules, generic_parameters)),
-        Node::KeyValue(pair) => {
-            node_is_self_contained(&pair.key, rules, generic_parameters)
-                && node_is_self_contained(&pair.value, rules, generic_parameters)
-        }
-        Node::Occur(occur) => node_is_self_contained(&occur.node, rules, generic_parameters),
-        Node::Range(range) => {
-            node_is_self_contained(&range.start, rules, generic_parameters)
-                && node_is_self_contained(&range.end, rules, generic_parameters)
-        }
-        Node::Control(control) => control_is_self_contained(control, rules, generic_parameters),
-    }
-}
-
-fn control_is_self_contained(
-    control: &Control,
-    rules: &BTreeMap<String, RuleDef>,
-    generic_parameters: &[String],
-) -> bool {
-    let both = |left: &Node, right: &Node| {
-        node_is_self_contained(left, rules, generic_parameters)
-            && node_is_self_contained(right, rules, generic_parameters)
-    };
-    match control {
-        Control::Size(value) => both(&value.target, &value.size),
-        Control::Lt(value) => both(&value.target, &value.lt),
-        Control::Le(value) => both(&value.target, &value.le),
-        Control::Gt(value) => both(&value.target, &value.gt),
-        Control::Ge(value) => both(&value.target, &value.ge),
-        Control::Regexp(_) => true,
-        _ => false,
-    }
 }

@@ -50,9 +50,10 @@ versions still track specification maturity rather than a released product.
 - Completed the hostable provider-manifest v1 authority boundary with exact
   `providerAbi`, domain-to-schema bindings, selected component contract identity,
   generated schema provenance, and an immutable concrete CDDL registry built
-  only from explicit digest-locked bytes. The registry proves required-domain
-  closure and performs real canonical-CBOR schema-instance validation without
-  discovery or lazy loading.
+  only from the exact manifest-bound closure of explicit digest-locked bytes.
+  The registry proves required-domain closure, rejects structurally unusable or
+  non-progressing schema roots before invocation, and performs real
+  canonical-CBOR schema-instance validation without discovery or lazy loading.
 - Added the capability-denied Wasmtime component host for the frozen lowerer and
   verifier worlds. It independently checks component digest, exact digest-covered
   contract attestation, callable-import denial, and structural WIT compatibility;

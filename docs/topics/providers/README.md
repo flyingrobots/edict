@@ -55,10 +55,15 @@ The private `edict-provider-schema` crate supplies the production
 `ProviderArtifactSchemaValidator`. Its constructor accepts only an opaque
 validated manifest, explicit in-memory schema bytes keyed by manifest role, and
 the host-authored required-domain closure. It verifies raw schema digests,
-rejects missing or duplicate resolved roles, compiles all bound CDDL documents,
-rejects missing roots and unresolved external rule references, and returns one
-immutable registry with a sorted binding receipt. It performs no schema
-discovery or lazy loading.
+rejects missing, duplicate, or manifest-unbound resolved roles, compiles all
+bound CDDL documents, rejects missing roots and unresolved external rule
+references reachable from selected roots, and returns one immutable registry
+with a sorted binding receipt.
+Selected roots use a deliberately conservative non-generic, acyclic CDDL
+subset. Structurally unusable roots reject during construction, and every
+repeated array or map member must be provably input-consuming, so schema
+validation cannot enter a zero-progress loop outside Wasmtime fuel. The
+registry performs no schema discovery or lazy loading.
 
 The private `edict-provider-host-wasmtime` crate supplies the component host.
 Its input is a selected component proof plus resolver-supplied bytes; it performs
@@ -164,7 +169,7 @@ must supply a complete host-authored invocation contract and a
 `ProviderArtifactSchemaValidator` separately from the WIT-shaped request. That
 trusted capability's contract requires deterministic, side-effect-free
 validation over in-memory values. The concrete registry now satisfies this
-contract with compiled self-contained CDDL over canonical CBOR.
+contract with compiled, construction-checked CDDL over canonical CBOR.
 Validation requires the request resource references, domains, semantic-input
 closure, canonical bytes, and decoded values under their owning schemas to
 reproduce that contract before it returns an opaque

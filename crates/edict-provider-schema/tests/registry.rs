@@ -130,6 +130,24 @@ fn registry() -> ProviderArtifactSchemaRegistry {
     .expect("registry constructs")
 }
 
+fn registry_with_generated_schema(
+    schema: &'static [u8],
+) -> Result<ProviderArtifactSchemaRegistry, edict_provider_schema::ProviderSchemaRegistryFailure> {
+    let manifest = Box::leak(Box::new(manifest(schema, REVIEW_SCHEMA)));
+    let validated = bind_target_provider_manifest(manifest).expect("manifest validates");
+    ProviderArtifactSchemaRegistry::from_manifest(
+        &validated,
+        vec![
+            ResolvedProviderSchemaArtifact {
+                role: "schema.generated".to_owned(),
+                bytes: Arc::from(schema),
+            },
+            resolved().remove(1),
+        ],
+        ["runtime.generated-artifact/v1"],
+    )
+}
+
 #[test]
 fn every_registered_domain_performs_real_schema_instance_validation() {
     let registry = registry();
@@ -215,6 +233,22 @@ fn construction_rejects_missing_ambiguous_and_digest_mismatched_schema_bytes() {
         mismatch.kind(),
         ProviderSchemaRegistryFailureKind::SchemaArtifactDigestMismatch
     );
+
+    let mut unsupported_artifacts = resolved();
+    unsupported_artifacts.push(ResolvedProviderSchemaArtifact {
+        role: "schema.unbound".to_owned(),
+        bytes: Arc::from(b"unbound = null".as_slice()),
+    });
+    let unsupported = ProviderArtifactSchemaRegistry::from_manifest(
+        &validated,
+        unsupported_artifacts,
+        ["runtime.generated-artifact/v1"],
+    )
+    .expect_err("resolver roles outside the manifest schema closure reject");
+    assert_eq!(
+        unsupported.kind(),
+        ProviderSchemaRegistryFailureKind::SchemaArtifactUnsupported
+    );
 }
 
 #[test]
@@ -288,6 +322,85 @@ fn construction_requires_complete_domain_closure_and_compilable_roots() {
         missing_root.kind(),
         ProviderSchemaRegistryFailureKind::SchemaRootRuleMissing
     );
+}
+
+#[test]
+fn construction_rejects_latent_or_non_progressing_validator_shapes() {
+    let cases: &[(&str, &[u8])] = &[
+        ("generic root", b"generated-artifact<T> = T"),
+        (
+            "wrong generic arity",
+            b"generated-artifact = pair<uint>\npair<A, B> = [A, B]",
+        ),
+        (
+            "standalone group",
+            b"generated-artifact = (one: int, two: int)",
+        ),
+        ("direct cycle", b"generated-artifact = generated-artifact"),
+        (
+            "zero-progress array repetition",
+            b"generated-artifact = [* ()]",
+        ),
+        (
+            "zero-progress map repetition",
+            b"generated-artifact = {* ()}",
+        ),
+        (
+            "nested zero-progress repetition",
+            b"empty = ()\ngenerated-artifact = [* empty]",
+        ),
+        (
+            "context-invalid unwrap",
+            b"generated-artifact = ~array-type\narray-type = [uint]",
+        ),
+        (
+            "context-invalid choiceify",
+            b"generated-artifact = &scalar\nscalar = uint",
+        ),
+        (
+            "structurally invalid control",
+            b"generated-artifact = int .size 2",
+        ),
+    ];
+
+    for (name, schema) in cases {
+        cddl_cat::flatten::flatten_from_str(
+            std::str::from_utf8(schema).expect("schema case is UTF-8"),
+        )
+        .unwrap_or_else(|_| panic!("{name} must be syntactically valid CDDL"));
+        let Err(failure) = registry_with_generated_schema(schema) else {
+            panic!("{name} must reject during registry construction");
+        };
+        assert_eq!(
+            failure.kind(),
+            ProviderSchemaRegistryFailureKind::SchemaCompileFailed,
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn construction_accepts_unbounded_occurrences_that_must_consume_input() {
+    let cases: &[(&str, &[u8], CanonicalValue)] = &[
+        (
+            "array",
+            b"generated-artifact = [* uint]",
+            CanonicalValue::Array(vec![CanonicalValue::Integer(1), CanonicalValue::Integer(2)]),
+        ),
+        (
+            "map",
+            b"generated-artifact = {* tstr => uint}",
+            map(&[("one", CanonicalValue::Integer(1))]),
+        ),
+    ];
+
+    for (name, schema, value) in cases {
+        let registry = registry_with_generated_schema(schema)
+            .unwrap_or_else(|_| panic!("progressing {name} occurrence must construct"));
+        registry
+            .validate_canonical_value("runtime.generated-artifact/v1", value)
+            .unwrap_or_else(|_| panic!("progressing {name} occurrence must validate"));
+    }
 }
 
 #[test]
