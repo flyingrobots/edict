@@ -23,6 +23,10 @@ Current checked-in fixture families are:
 - reviewed authority-facts artifacts under
   [`fixtures/authority-facts/canonical/`](../../../fixtures/authority-facts/canonical/)
   for exact canonical bytes and the `edict.authority-facts/v1` digest;
+- reviewed target-profile contract resources under
+  [`fixtures/target-profile/contract-resources/`](../../../fixtures/target-profile/contract-resources/)
+  for the five Edict-owned resource coordinates and their coordinate-framed
+  digests;
 - golden CLI cases under [`fixtures/cli/`](../../../fixtures/cli/) replayed
   end-to-end through the `edict` binary for byte-exact stdout, stderr, and exit
   code.
@@ -36,6 +40,11 @@ change. [FIXTURES-REQ-002]
 authority-facts bytes and digest against the existing JSON loader plus the
 canonical codec. `--write` regenerates them after an intentional authority-facts
 ABI change. [FIXTURES-REQ-005]
+
+`cargo xtask target-profile-resource-goldens --check` regenerates all five
+contract resources from their executable semantic model and compares exact
+bytes and digests. `--write` updates them after intentional contract review.
+[FIXTURES-REQ-006]
 
 ## Current Contract
 
@@ -51,15 +60,20 @@ ABI change. [FIXTURES-REQ-005]
 - Reviewed authority-facts golden fixtures are derived from a validated JSON
   review/input document, then checked as exact canonical bytes and a
   domain-framed digest. [FIXTURES-REQ-005]
+- Reviewed target-profile contract-resource fixtures are derived from one
+  executable runtime-neutral model and checked as exact canonical bytes plus
+  coordinate-framed digests. [FIXTURES-REQ-006]
 - Topic-shelf test plans may cite fixtures as executable evidence inputs. The
   contract graph check rejects fixture paths that do not exist.
   [FIXTURES-REQ-003]
 
 ## Deferred
 
-The fixture constitution names future families for target profiles, lawpacks,
-bundles, admission, and conformance. Those directories are not populated yet.
-They should be added only when the owning implementation slice has executable
-behavior to verify. [FIXTURES-REQ-004]
+The fixture constitution names future families for runtime-owned target
+profiles, lawpacks, bundles, admission, and conformance. Those directories are
+not populated yet; the present target-profile contract resources are
+Edict-owned inputs, not a generated runtime target profile. They should be added
+only when the owning implementation slice has executable behavior to verify.
+[FIXTURES-REQ-004]
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).

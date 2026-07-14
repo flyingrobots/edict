@@ -10,6 +10,14 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added canonical, content-addressed contract resources for all five
+  Edict-owned target-profile slots: encoding, component sandbox, fuel,
+  diagnostics, and deterministic execution. Runtime-owned generators pass the
+  exact bytes, digest, coordinate, and review provenance explicitly through an
+  all-or-nothing validator before a sealed resource set can bind a target
+  profile. Reviewed byte/digest fixtures are checked by
+  `cargo xtask target-profile-resource-goldens` and the full local gate.
+
 - Added the Edict-owned `edict.authority-facts/v1` canonical-CBOR ABI and CDDL
   root. Canonical fact maps use coordinate keys, source digests use typed
   SHA-256 bytes, write-class sets normalize independent of declaration order,

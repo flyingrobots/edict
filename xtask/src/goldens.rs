@@ -5,13 +5,14 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use edict_syntax::{
-    assemble_contract_bundle, compile_to_core, digest_authority_facts_document, digest_core_module,
-    digest_target_ir_artifact, encode_authority_facts_cbor, encode_core_module,
-    encode_target_ir_artifact, load_authority_facts_file, lower_to_target_ir, parse_module,
-    CompilerContext, ContractBundleAssemblyInput, ContractBundleSourceArtifact, CoreBudget,
-    DigestLockedResource, ResourceRef, SuppliedTargetIrResource, TargetEffectLowering,
-    TargetIrArtifact, TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
-    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    assemble_contract_bundle, canonical_target_profile_contract_resources, compile_to_core,
+    digest_authority_facts_document, digest_core_module, digest_target_ir_artifact,
+    encode_authority_facts_cbor, encode_core_module, encode_target_ir_artifact,
+    load_authority_facts_file, lower_to_target_ir, parse_module, CompilerContext,
+    ContractBundleAssemblyInput, ContractBundleSourceArtifact, CoreBudget, DigestLockedResource,
+    ResourceRef, SuppliedTargetIrResource, TargetEffectLowering, TargetIrArtifact,
+    TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 
 use crate::util::{dirs, read_to_string, run_cmd};
@@ -68,6 +69,48 @@ pub(crate) fn authority_facts_goldens(
         match mode {
             AuthorityFactsGoldenMode::Check => "checked",
             AuthorityFactsGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TargetProfileResourceGoldenMode {
+    Check,
+    Write,
+}
+
+pub(crate) fn target_profile_resource_goldens(
+    root: &Path,
+    mode: TargetProfileResourceGoldenMode,
+) -> Result<(), String> {
+    let resources = canonical_target_profile_contract_resources();
+    for resource in &resources {
+        let bytes_path = resource.provenance.source_path.as_str();
+        let digest_path = bytes_path
+            .strip_suffix(".cbor")
+            .map(|stem| format!("{stem}.sha256"))
+            .ok_or_else(|| format!("contract resource path is not canonical CBOR: {bytes_path}"))?;
+        let digest = format!("{}\n", resource.digest);
+
+        match mode {
+            TargetProfileResourceGoldenMode::Check => {
+                check_golden_file(root, bytes_path, &resource.canonical_bytes)?;
+                check_golden_file(root, &digest_path, digest.as_bytes())?;
+            }
+            TargetProfileResourceGoldenMode::Write => {
+                write_golden_file(&root.join(bytes_path), &resource.canonical_bytes)?;
+                write_golden_file(&root.join(digest_path), digest.as_bytes())?;
+            }
+        }
+    }
+
+    println!(
+        "target-profile-resource-goldens: {} resource(s) {}",
+        resources.len(),
+        match mode {
+            TargetProfileResourceGoldenMode::Check => "checked",
+            TargetProfileResourceGoldenMode::Write => "written",
         }
     );
     Ok(())

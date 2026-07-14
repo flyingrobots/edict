@@ -18,7 +18,8 @@ use std::process::ExitCode;
 use contract_check::contract_check;
 use goldens::{
     authority_facts_goldens, bundle_goldens, cli_goldens, core_goldens, target_ir_goldens,
-    AuthorityFactsGoldenMode, BundleGoldenMode, CliGoldenMode, CoreGoldenMode, TargetIrGoldenMode,
+    target_profile_resource_goldens, AuthorityFactsGoldenMode, BundleGoldenMode, CliGoldenMode,
+    CoreGoldenMode, TargetIrGoldenMode, TargetProfileResourceGoldenMode,
 };
 use provider_components::{provider_component_fixtures, ProviderComponentFixtureMode};
 use provider_dependencies::provider_runtime_dependencies;
@@ -51,6 +52,23 @@ fn run() -> Result<(), String> {
             core_goldens(&repo_root()?, mode)
         }
         Some("authority-facts-goldens") => run_authority_facts_goldens(&mut args),
+        Some("target-profile-resource-goldens") => {
+            let mode = match args.next().as_deref() {
+                Some("--write") => TargetProfileResourceGoldenMode::Write,
+                Some("--check") | None => TargetProfileResourceGoldenMode::Check,
+                Some(flag) => {
+                    return Err(format!(
+                        "unknown target-profile-resource-goldens flag `{flag}`"
+                    ));
+                }
+            };
+            if let Some(extra) = args.next() {
+                return Err(format!(
+                    "unexpected target-profile-resource-goldens argument `{extra}`"
+                ));
+            }
+            target_profile_resource_goldens(&repo_root()?, mode)
+        }
         Some("bundle-goldens") => {
             let mode = match args.next().as_deref() {
                 Some("--write") => BundleGoldenMode::Write,
@@ -121,7 +139,7 @@ fn run() -> Result<(), String> {
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
         None => Err(
-            "usage: cargo xtask <verify|contract-check|authority-facts-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|provider-component-fixtures|provider-runtime-dependencies|release-prep>"
+            "usage: cargo xtask <verify|contract-check|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|provider-component-fixtures|provider-runtime-dependencies|release-prep>"
                 .into(),
         ),
     }
@@ -144,6 +162,7 @@ fn run_authority_facts_goldens(args: &mut impl Iterator<Item = String>) -> Resul
 fn verify(root: &Path) -> Result<(), String> {
     verify_rust_commands_with(root, run_cmd_slice)?;
     authority_facts_goldens(root, AuthorityFactsGoldenMode::Check)?;
+    target_profile_resource_goldens(root, TargetProfileResourceGoldenMode::Check)?;
     core_goldens(root, CoreGoldenMode::Check)?;
     target_ir_goldens(root, TargetIrGoldenMode::Check)?;
     bundle_goldens(root, BundleGoldenMode::Check)?;
