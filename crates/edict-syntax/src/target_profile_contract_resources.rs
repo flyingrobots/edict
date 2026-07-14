@@ -128,6 +128,12 @@ impl ValidatedTargetProfileContractResources {
 /// The returned values are explicit inputs suitable for passing to a
 /// runtime-owned generator. Callers should still validate the values at their
 /// trust boundary before binding them to a profile.
+///
+/// # Panics
+///
+/// Panics only if Edict's compiled built-in semantic model violates the
+/// canonical value or non-empty digest-domain invariants. That is a source-code
+/// defect, not a caller-controlled input failure.
 #[must_use]
 pub fn canonical_target_profile_contract_resources() -> Vec<TargetProfileContractResource> {
     resource_specs()
