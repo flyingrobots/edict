@@ -201,9 +201,9 @@ pub fn digest_target_profile_contract_resource(
 ///
 /// # Errors
 ///
-/// Returns coordinate-ordered structured failures for incomplete, unknown,
-/// repeated, non-canonical, byte-mismatched, digest-mismatched, or
-/// provenance-mismatched inputs.
+/// Returns structured failures in stable failure-kind-then-coordinate order for
+/// incomplete, unknown, repeated, non-canonical, byte-mismatched,
+/// digest-mismatched, or provenance-mismatched inputs.
 pub fn validate_target_profile_contract_resources(
     resources: impl IntoIterator<Item = TargetProfileContractResource>,
 ) -> Result<ValidatedTargetProfileContractResources, Vec<TargetProfileContractResourceFailure>> {
