@@ -17,7 +17,8 @@ versions still track specification maturity rather than a released product.
   target-profile resources. The new `target-ir-artifact` root is checked
   against both reviewed canonical Target IR fixtures, and
   `cargo xtask provider-contract-pack --check` detects schema or manifest drift
-  without rewriting either artifact.
+  without rewriting either artifact. Schema controls whose nested rule graph
+  cannot be inspected reject with a distinct stable failure.
 
 - Added canonical, content-addressed contract resources for all five
   Edict-owned target-profile slots: encoding, component sandbox, fuel,

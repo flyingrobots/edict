@@ -72,6 +72,9 @@ target-profile, authority-facts, and Target IR CDDL fragments plus all five
 validated target-profile contract resources as explicit bytes. Assembly checks
 UTF-8, CDDL compilation, complete root closure, exact resource bytes, raw and
 domain-framed digests, and reviewed provenance before returning any authority.
+Controls whose nested rule graph is opaque through the schema dependency, such
+as `.cbor`, reject with a stable unsupported-control failure rather than being
+accepted without a complete closure proof.
 The checked Rust-neutral artifacts live under
 [`fixtures/provider-contracts/v1/`](../../../fixtures/provider-contracts/v1/):
 one self-contained Apache-2.0 CDDL file and one deterministic manifest mapping

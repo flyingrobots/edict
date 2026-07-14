@@ -122,6 +122,7 @@ pub enum ProviderContractPackFailureKind {
     SchemaFragmentInvalidUtf8,
     SchemaCompileFailed,
     SchemaExternalRuleUnresolved,
+    SchemaControlUnsupported,
     SchemaRootMissing,
     ContractResourceMissing,
     ContractResourceUnknown,
@@ -346,11 +347,18 @@ pub fn assemble_provider_contract_pack(
         }
     };
     if let Some(context) = &context {
-        if let Some(reference) = unresolved_schema_reference(&context.rules) {
-            failures.push(failure(
-                ProviderContractPackFailureKind::SchemaExternalRuleUnresolved,
-                reference,
-            ));
+        if let Some(closure_failure) = unresolved_schema_reference(&context.rules) {
+            let (kind, subject) = match closure_failure {
+                SchemaClosureFailure::ExternalRule(reference) => (
+                    ProviderContractPackFailureKind::SchemaExternalRuleUnresolved,
+                    reference,
+                ),
+                SchemaClosureFailure::UnsupportedControl(control) => (
+                    ProviderContractPackFailureKind::SchemaControlUnsupported,
+                    control.to_owned(),
+                ),
+            };
+            failures.push(failure(kind, subject));
         }
         for root in all_roots() {
             if !context.rules.contains_key(root) {
@@ -561,7 +569,12 @@ fn all_roots() -> impl Iterator<Item = &'static str> {
     CONTRACT_BINDINGS.into_iter().map(|(_contract, root)| root)
 }
 
-fn unresolved_schema_reference(rules: &RulesByName) -> Option<String> {
+enum SchemaClosureFailure {
+    ExternalRule(String),
+    UnsupportedControl(&'static str),
+}
+
+fn unresolved_schema_reference(rules: &RulesByName) -> Option<SchemaClosureFailure> {
     rules.values().find_map(|definition| {
         unresolved_node_reference(&definition.node, rules, &definition.generic_parms)
     })
@@ -571,7 +584,7 @@ fn unresolved_node_reference(
     node: &Node,
     rules: &RulesByName,
     generic_parameters: &[String],
-) -> Option<String> {
+) -> Option<SchemaClosureFailure> {
     match node {
         Node::Literal(_) | Node::PreludeType(_) => None,
         Node::Rule(rule) | Node::Unwrap(rule) | Node::Choiceify(rule) => {
@@ -606,13 +619,13 @@ fn unresolved_rule_reference(
     rule: &Rule,
     rules: &RulesByName,
     generic_parameters: &[String],
-) -> Option<String> {
+) -> Option<SchemaClosureFailure> {
     rule.generic_args
         .iter()
         .find_map(|argument| unresolved_node_reference(argument, rules, generic_parameters))
         .or_else(|| {
             (!rules.contains_key(&rule.name) && !generic_parameters.contains(&rule.name))
-                .then(|| rule.name.clone())
+                .then(|| SchemaClosureFailure::ExternalRule(rule.name.clone()))
         })
 }
 
@@ -620,7 +633,7 @@ fn unresolved_control_reference(
     control: &Control,
     rules: &RulesByName,
     generic_parameters: &[String],
-) -> Option<String> {
+) -> Option<SchemaClosureFailure> {
     let pair = match control {
         Control::Size(value) => Some((&*value.target, &*value.size)),
         Control::Lt(value) => Some((&*value.target, &*value.lt)),
@@ -628,7 +641,8 @@ fn unresolved_control_reference(
         Control::Gt(value) => Some((&*value.target, &*value.gt)),
         Control::Ge(value) => Some((&*value.target, &*value.ge)),
         Control::Regexp(_) => None,
-        _ => return Some("unsupported-control-reference".to_owned()),
+        Control::Cbor(_) => return Some(SchemaClosureFailure::UnsupportedControl(".cbor")),
+        _ => return Some(SchemaClosureFailure::UnsupportedControl("unknown")),
     };
     pair.and_then(|(left, right)| {
         unresolved_node_reference(left, rules, generic_parameters)

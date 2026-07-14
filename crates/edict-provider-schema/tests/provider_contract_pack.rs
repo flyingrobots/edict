@@ -435,6 +435,22 @@ fn assembly_rejects_missing_invalid_uncompilable_and_incomplete_schema_fragments
     assert_eq!(missing_root[0].subject(), TARGET_IR_ARTIFACT_CDDL_ROOT);
 }
 
+#[test]
+fn assembly_rejects_uninspectable_schema_controls_explicitly() {
+    let failures = assemble_provider_contract_pack(input_with(
+        CORE_CDDL,
+        b"target-ir-artifact = bstr .cbor externally-owned-rule\n",
+        canonical_target_profile_contract_resources(),
+    ))
+    .expect_err("an uninspectable nested rule graph rejects");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![ProviderContractPackFailureKind::SchemaControlUnsupported]
+    );
+    assert_eq!(failures[0].subject(), ".cbor");
+}
+
 fn assemble(resources: Vec<TargetProfileContractResource>) -> ProviderContractPack {
     assemble_provider_contract_pack(input(resources)).expect("authoritative pack assembles")
 }
