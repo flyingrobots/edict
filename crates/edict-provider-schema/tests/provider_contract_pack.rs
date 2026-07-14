@@ -250,6 +250,15 @@ fn target_ir_root_matches_reference_encoder() {
 }
 
 #[test]
+fn target_ir_root_accepts_encoder_valid_line_feed_coordinate() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    let line_feed_coordinate = encoded_target_ir_with_coordinate("\n");
+
+    pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &line_feed_coordinate)
+        .expect("schema accepts the encoder-valid LF-only coordinate");
+}
+
+#[test]
 fn contract_pack_rejects_missing_duplicate_and_tampered_members() {
     assert_assembly_failure(
         |resources| {
@@ -507,6 +516,10 @@ fn representative_contract_instances() -> Vec<(&'static str, CanonicalValue)> {
 }
 
 fn encoded_target_ir_with_requirements() -> CanonicalValue {
+    encoded_target_ir_with_coordinate("example.target-profile@1")
+}
+
+fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
     let terminal_reason = CoreObstructionReason {
         kind: "example.Terminal".to_owned(),
         payload: BTreeMap::from([(
@@ -524,7 +537,7 @@ fn encoded_target_ir_with_requirements() -> CanonicalValue {
     let artifact = TargetIrArtifact {
         domain: "example.target-ir/v1".to_owned(),
         target_profile: ResourceRef {
-            coordinate: "example.target-profile@1".to_owned(),
+            coordinate: coordinate.to_owned(),
             digest: Some(format!("sha256:{}", "1".repeat(64))),
         },
         source_core_coordinate: "example.core@1".to_owned(),

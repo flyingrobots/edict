@@ -14,7 +14,7 @@
 ; Target IR encoding rejects an empty target-profile coordinate before bytes
 ; exist, so this root tightens the shared structural resource-ref accordingly.
 target-ir-resource-ref = {
-  id: tstr .regexp ".+",
+  id: tstr .regexp "(?s).+",
   digest: sha256-digest,
 }
 
