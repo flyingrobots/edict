@@ -4,6 +4,7 @@
 mod contract_check;
 mod goldens;
 mod provider_components;
+mod provider_contract_pack;
 mod provider_dependencies;
 mod release_prep;
 mod util;
@@ -22,6 +23,7 @@ use goldens::{
     CoreGoldenMode, TargetIrGoldenMode, TargetProfileResourceGoldenMode,
 };
 use provider_components::{provider_component_fixtures, ProviderComponentFixtureMode};
+use provider_contract_pack::{provider_contract_pack, ProviderContractPackMode};
 use provider_dependencies::provider_runtime_dependencies;
 use release_prep::release_prep;
 use util::{diff_check_base, repo_root, run_cmd, run_cmd_slice};
@@ -114,6 +116,7 @@ fn run() -> Result<(), String> {
             }
             provider_component_fixtures(&repo_root()?, mode)
         }
+        Some("provider-contract-pack") => run_provider_contract_pack(&mut args),
         Some("provider-runtime-dependencies") => {
             if let Some(extra) = args.next() {
                 return Err(format!(
@@ -125,7 +128,7 @@ fn run() -> Result<(), String> {
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
         None => Err(
-            "usage: cargo xtask <verify|contract-check|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|provider-component-fixtures|provider-runtime-dependencies|release-prep>"
+            "usage: cargo xtask <verify|contract-check|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|provider-component-fixtures|provider-contract-pack|provider-runtime-dependencies|release-prep>"
                 .into(),
         ),
     }
@@ -165,6 +168,20 @@ fn run_target_profile_resource_goldens(
     target_profile_resource_goldens(&repo_root()?, mode)
 }
 
+fn run_provider_contract_pack(args: &mut impl Iterator<Item = String>) -> Result<(), String> {
+    let mode = match args.next().as_deref() {
+        Some("--write") => ProviderContractPackMode::Write,
+        Some("--check") | None => ProviderContractPackMode::Check,
+        Some(flag) => return Err(format!("unknown provider-contract-pack flag `{flag}`")),
+    };
+    if let Some(extra) = args.next() {
+        return Err(format!(
+            "unexpected provider-contract-pack argument `{extra}`"
+        ));
+    }
+    provider_contract_pack(&repo_root()?, mode)
+}
+
 fn verify(root: &Path) -> Result<(), String> {
     verify_rust_commands_with(root, run_cmd_slice)?;
     authority_facts_goldens(root, AuthorityFactsGoldenMode::Check)?;
@@ -174,6 +191,7 @@ fn verify(root: &Path) -> Result<(), String> {
     bundle_goldens(root, BundleGoldenMode::Check)?;
     cli_goldens(root, CliGoldenMode::Check)?;
     provider_component_fixtures(root, ProviderComponentFixtureMode::Check)?;
+    provider_contract_pack(root, ProviderContractPackMode::Check)?;
     provider_runtime_dependencies(root)?;
     contract_check(root)?;
     let base = diff_check_base(root)?;

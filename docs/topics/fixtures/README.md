@@ -27,6 +27,10 @@ Current checked-in fixture families are:
   [`fixtures/target-profile/contract-resources/`](../../../fixtures/target-profile/contract-resources/)
   for the five Edict-owned resource coordinates and their coordinate-framed
   digests;
+- the provider contract pack under
+  [`fixtures/provider-contracts/v1/`](../../../fixtures/provider-contracts/v1/)
+  for self-contained CDDL, root bindings, exact schema/resource bytes, raw and
+  domain-framed digests, and reviewed provenance;
 - golden CLI cases under [`fixtures/cli/`](../../../fixtures/cli/) replayed
   end-to-end through the `edict` binary for byte-exact stdout, stderr, and exit
   code.
@@ -46,6 +50,11 @@ contract resources from their executable semantic model and compares exact
 bytes and digests. `--write` updates them after intentional contract review.
 [FIXTURES-REQ-006]
 
+`cargo xtask provider-contract-pack --check` assembles the complete CDDL pack
+and manifest from explicit Edict-owned inputs, compares both exact files, and
+never rewrites drift. `--write` is reserved for intentional ABI review.
+[FIXTURES-REQ-007]
+
 ## Current Contract
 
 - Source fixtures are executable behavior inputs. Tests consume them through
@@ -63,6 +72,10 @@ bytes and digests. `--write` updates them after intentional contract review.
 - Reviewed target-profile contract-resource fixtures are derived from one
   executable runtime-neutral model and checked as exact canonical bytes plus
   coordinate-framed digests. [FIXTURES-REQ-006]
+- The provider contract pack is generated from reviewed ABI fragments and the
+  five validated contract resources. Its checked manifest binds exact bytes,
+  root mappings, digests, provenance, and Apache-2.0 licensing.
+  [FIXTURES-REQ-007]
 - Topic-shelf test plans may cite fixtures as executable evidence inputs. The
   contract graph check rejects fixture paths that do not exist.
   [FIXTURES-REQ-003]

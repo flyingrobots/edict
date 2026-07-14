@@ -21,7 +21,18 @@ use edict_syntax::{
 };
 use sha2::{Digest, Sha256};
 
+mod contract_pack;
 mod schema_safety;
+
+pub use contract_pack::{
+    assemble_provider_contract_pack, validate_provider_contract_pack_manifest,
+    ProviderContractDomainBinding, ProviderContractInstanceValidationErrorKind,
+    ProviderContractPack, ProviderContractPackFailure, ProviderContractPackFailureKind,
+    ProviderContractPackInput, ProviderContractPackManifest, ProviderContractPackResource,
+    ProviderContractRootBinding, PROVIDER_CONTRACT_PACK_API_VERSION,
+    PROVIDER_CONTRACT_PACK_COORDINATE, PROVIDER_CONTRACT_PACK_LICENSE,
+    TARGET_IR_ARTIFACT_CDDL_ROOT,
+};
 
 /// Explicit bytes alleged to implement one manifest schema role.
 #[derive(Debug, Clone, PartialEq, Eq)]

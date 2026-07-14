@@ -3,9 +3,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use edict_syntax::parse_module;
+use edict_provider_schema::{
+    PROVIDER_CONTRACT_PACK_API_VERSION, PROVIDER_CONTRACT_PACK_COORDINATE,
+    PROVIDER_CONTRACT_PACK_LICENSE,
+};
+use edict_syntax::{
+    canonical_target_profile_contract_resources, parse_module, AUTHORITY_FACTS_API_VERSION,
+    CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    TARGET_PROFILE_API_VERSION,
+};
 use regex::Regex;
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use wit_parser::{
     Function, FunctionKind, Interface, Package, Record, Resolve, Type, TypeDefKind, TypeId, World,
     WorldItem, WorldKey,
@@ -16,6 +25,9 @@ use super::goldens::{
     authority_facts_goldens, bundle_goldens, cli_binary_path_from_cargo_metadata,
     target_ir_goldens, target_profile_resource_goldens, AuthorityFactsGoldenMode, BundleGoldenMode,
     TargetIrGoldenMode, TargetProfileResourceGoldenMode,
+};
+use super::provider_contract_pack::{
+    provider_contract_pack, ProviderContractPackMode, CONTRACT_PACK_CDDL, CONTRACT_PACK_MANIFEST,
 };
 use super::provider_dependencies::provider_runtime_dependencies;
 use super::release_prep::release_prep;
@@ -66,6 +78,256 @@ fn target_profile_resource_goldens_match_executable_contract() {
         TargetProfileResourceGoldenMode::Check,
     )
     .expect("target-profile resource goldens match executable contract");
+}
+
+#[test]
+fn provider_contract_pack_goldens_match_executable_contract() {
+    let root = repo_root().expect("repo root");
+    provider_contract_pack(&root, ProviderContractPackMode::Check)
+        .expect("provider contract-pack goldens match executable contract");
+
+    let cddl = fs::read(root.join(CONTRACT_PACK_CDDL)).expect("generated CDDL");
+    let manifest_bytes = fs::read(root.join(CONTRACT_PACK_MANIFEST)).expect("generated manifest");
+    let manifest: Value =
+        serde_json::from_slice(&manifest_bytes).expect("manifest is independently valid JSON");
+
+    assert_provider_contract_manifest_metadata(&manifest);
+    assert_provider_contract_schema(&manifest, &cddl);
+    assert_provider_contract_resources(&manifest);
+}
+
+fn assert_provider_contract_manifest_metadata(manifest: &Value) {
+    assert_eq!(
+        manifest["apiVersion"].as_str(),
+        Some(PROVIDER_CONTRACT_PACK_API_VERSION)
+    );
+    assert_eq!(
+        manifest["coordinate"].as_str(),
+        Some(PROVIDER_CONTRACT_PACK_COORDINATE)
+    );
+    assert_eq!(
+        manifest["license"].as_str(),
+        Some(PROVIDER_CONTRACT_PACK_LICENSE)
+    );
+
+    let contracts = manifest["contracts"]
+        .as_array()
+        .expect("manifest contracts are an array")
+        .iter()
+        .map(|binding| {
+            (
+                binding["contract"]
+                    .as_str()
+                    .expect("contract name is a string"),
+                binding["rootRule"]
+                    .as_str()
+                    .expect("contract root is a string"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        contracts,
+        [
+            ("authority-facts", "authority-facts"),
+            ("core-module", "core-module"),
+            ("lawpack-exports", "lawpack-exports"),
+            ("lawpack-manifest", "lawpack-manifest"),
+            ("lowering-requirements", "lowering-requirements"),
+            ("target-ir-artifact", "target-ir-artifact"),
+            ("target-profile-intrinsics", "intrinsics-document"),
+            ("target-profile-manifest", "target-profile-manifest"),
+            (
+                "target-profile-operation-profiles",
+                "operation-profiles-document"
+            ),
+        ]
+    );
+
+    let domains = manifest["domains"]
+        .as_array()
+        .expect("manifest domains are an array")
+        .iter()
+        .map(|binding| {
+            (
+                binding["domain"]
+                    .as_str()
+                    .expect("artifact domain is a string"),
+                binding["rootRule"]
+                    .as_str()
+                    .expect("domain root is a string"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        domains,
+        [
+            (AUTHORITY_FACTS_API_VERSION, "authority-facts"),
+            (CORE_MODULE_DIGEST_DOMAIN, "core-module"),
+            (PROVIDER_LAWPACK_ARTIFACT_DOMAIN, "lawpack-manifest"),
+            ("edict.lowering-requirements/v1", "lowering-requirements"),
+            (TARGET_IR_ARTIFACT_DIGEST_DOMAIN, "target-ir-artifact"),
+            (TARGET_PROFILE_API_VERSION, "target-profile-manifest"),
+        ]
+    );
+}
+
+fn assert_provider_contract_schema(manifest: &Value, cddl: &[u8]) {
+    let schema = json_object(manifest, "schema");
+    assert_eq!(
+        decode_lower_hex(
+            schema["bytesHex"]
+                .as_str()
+                .expect("schema bytesHex is a string")
+        ),
+        cddl,
+        "manifest embeds the exact generated CDDL bytes"
+    );
+    assert_eq!(
+        schema["rawSha256"]
+            .as_str()
+            .expect("schema rawSha256 is a string"),
+        raw_sha256_hex(cddl)
+    );
+}
+
+fn assert_provider_contract_resources(manifest: &Value) {
+    let resources = manifest["resources"]
+        .as_array()
+        .expect("manifest resources are an array");
+    let expected = canonical_target_profile_contract_resources();
+    assert_eq!(resources.len(), expected.len());
+    for (resource, expected) in resources.iter().zip(expected) {
+        let resource = resource.as_object().expect("resource is an object");
+        assert_eq!(
+            resource["coordinate"].as_str(),
+            Some(expected.coordinate.as_str())
+        );
+        assert_eq!(
+            decode_lower_hex(
+                resource["canonicalBytesHex"]
+                    .as_str()
+                    .expect("resource canonicalBytesHex is a string")
+            ),
+            expected.canonical_bytes
+        );
+        assert_eq!(
+            resource["rawSha256"]
+                .as_str()
+                .expect("resource rawSha256 is a string"),
+            raw_sha256_hex(&expected.canonical_bytes)
+        );
+        assert_eq!(
+            resource["domainFramedDigest"].as_str(),
+            Some(expected.digest.as_str())
+        );
+        let provenance = resource["provenance"]
+            .as_object()
+            .expect("resource provenance is an object");
+        assert_eq!(
+            provenance["repository"].as_str(),
+            Some(expected.provenance.repository.as_str())
+        );
+        assert_eq!(
+            provenance["sourcePath"].as_str(),
+            Some(expected.provenance.source_path.as_str())
+        );
+    }
+}
+
+fn decode_lower_hex(value: &str) -> Vec<u8> {
+    assert!(value.len().is_multiple_of(2), "hex has complete bytes");
+    assert!(
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        "hex is lowercase ASCII"
+    );
+    value
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let pair = std::str::from_utf8(pair).expect("hex pair is UTF-8");
+            u8::from_str_radix(pair, 16).expect("hex pair decodes")
+        })
+        .collect()
+}
+
+fn raw_sha256_hex(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+#[test]
+fn provider_contract_pack_check_rejects_drift_without_rewriting() {
+    let source_root = repo_root().expect("repo root");
+    let root = temp_root("provider-contract-pack-drift");
+    for relative in [
+        "docs/abi/edict-common.cddl",
+        "docs/abi/edict-core.cddl",
+        "docs/abi/edict-lawpack.cddl",
+        "docs/abi/edict-target-profile.cddl",
+        "docs/abi/edict-authority-facts.cddl",
+        "docs/abi/edict-target-ir.cddl",
+    ] {
+        let destination = root.join(relative);
+        fs::create_dir_all(destination.parent().expect("contract source parent"))
+            .expect("create contract source parent");
+        fs::copy(source_root.join(relative), &destination).expect("copy contract source");
+    }
+
+    provider_contract_pack(&root, ProviderContractPackMode::Write)
+        .expect("write isolated provider contract pack");
+    let cddl = fs::read(root.join(CONTRACT_PACK_CDDL)).expect("generated CDDL");
+    let manifest = fs::read(root.join(CONTRACT_PACK_MANIFEST)).expect("generated manifest");
+
+    let mut drifted_cddl = cddl.clone();
+    drifted_cddl.extend_from_slice(b"\n");
+    fs::write(root.join(CONTRACT_PACK_CDDL), &drifted_cddl).expect("introduce CDDL drift");
+
+    let error = provider_contract_pack(&root, ProviderContractPackMode::Check)
+        .expect_err("check mode rejects CDDL drift");
+    assert!(
+        error.contains("does not match generated golden"),
+        "unexpected CDDL drift error: {error}"
+    );
+    assert!(
+        error.contains("cargo xtask provider-contract-pack --write"),
+        "drift error must identify the exact regeneration command: {error}"
+    );
+    assert_eq!(
+        fs::read(root.join(CONTRACT_PACK_CDDL)).expect("CDDL remains readable"),
+        drifted_cddl,
+        "check mode must not rewrite the drifted CDDL fixture"
+    );
+    assert_eq!(
+        fs::read(root.join(CONTRACT_PACK_MANIFEST)).expect("manifest remains readable"),
+        manifest,
+        "check mode must not rewrite the matching manifest fixture"
+    );
+
+    fs::write(root.join(CONTRACT_PACK_CDDL), &cddl).expect("restore generated CDDL");
+    let mut drifted_manifest = manifest;
+    drifted_manifest.extend_from_slice(b"\n");
+    fs::write(root.join(CONTRACT_PACK_MANIFEST), &drifted_manifest)
+        .expect("introduce manifest drift");
+
+    let error = provider_contract_pack(&root, ProviderContractPackMode::Check)
+        .expect_err("check mode rejects manifest drift");
+    assert!(
+        error.contains("does not match generated golden"),
+        "unexpected drift error: {error}"
+    );
+    assert_eq!(
+        fs::read(root.join(CONTRACT_PACK_CDDL)).expect("CDDL remains readable"),
+        cddl,
+        "check mode must not rewrite the matching CDDL fixture"
+    );
+    assert_eq!(
+        fs::read(root.join(CONTRACT_PACK_MANIFEST)).expect("manifest remains readable"),
+        drifted_manifest,
+        "check mode must not rewrite the drifted manifest"
+    );
+
+    fs::remove_dir_all(root).ok();
 }
 
 #[test]
