@@ -14,7 +14,8 @@ use wit_parser::{
 use super::contract_check::{check_links, check_topic, contract_check};
 use super::goldens::{
     authority_facts_goldens, bundle_goldens, cli_binary_path_from_cargo_metadata,
-    target_ir_goldens, AuthorityFactsGoldenMode, BundleGoldenMode, TargetIrGoldenMode,
+    target_ir_goldens, target_profile_resource_goldens, AuthorityFactsGoldenMode, BundleGoldenMode,
+    TargetIrGoldenMode, TargetProfileResourceGoldenMode,
 };
 use super::provider_dependencies::provider_runtime_dependencies;
 use super::release_prep::release_prep;
@@ -56,6 +57,15 @@ fn authority_facts_goldens_match_executable_codec() {
         AuthorityFactsGoldenMode::Check,
     )
     .expect("authority-facts goldens match executable codec output");
+}
+
+#[test]
+fn target_profile_resource_goldens_match_executable_contract() {
+    target_profile_resource_goldens(
+        &repo_root().expect("repo root"),
+        TargetProfileResourceGoldenMode::Check,
+    )
+    .expect("target-profile resource goldens match executable contract");
 }
 
 #[test]

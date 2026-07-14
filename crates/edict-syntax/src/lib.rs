@@ -84,6 +84,7 @@ pub mod provider_lowering;
 pub mod semantic;
 pub mod target_ir;
 pub mod target_profile;
+pub mod target_profile_contract_resources;
 pub mod token;
 
 pub use admission::{
@@ -190,6 +191,16 @@ pub use target_profile::{
     TargetProfileConformanceFailureKind, TargetProfileConformanceReport,
     TargetProfileConformanceStatus, TargetProfileManifest, CANONICAL_CBOR_ABI,
     TARGET_PROFILE_API_VERSION,
+};
+pub use target_profile_contract_resources::{
+    canonical_target_profile_contract_resources, digest_target_profile_contract_resource,
+    validate_target_profile_contract_resources, TargetProfileContractResource,
+    TargetProfileContractResourceFailure, TargetProfileContractResourceFailureKind,
+    TargetProfileContractResourceProvenance, ValidatedTargetProfileContractResources,
+    CANONICAL_CBOR_CONTRACT_COORDINATE, DETERMINISM_CONTRACT_COORDINATE,
+    DIAGNOSTICS_CONTRACT_COORDINATE, FUEL_CONTRACT_COORDINATE,
+    TARGET_PROFILE_CONTRACT_RESOURCE_API_VERSION, TARGET_PROFILE_CONTRACT_RESOURCE_REPOSITORY,
+    WASM_COMPONENT_CONTRACT_COORDINATE,
 };
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
 

@@ -10,12 +10,13 @@ In scope:
   highlighter, grammar, and canonicalization behavior;
 - reviewed Core golden bytes and exact digest artifacts;
 - reviewed authority-facts canonical bytes and exact digest artifact;
+- reviewed Edict-owned target-profile contract-resource bytes and digests;
 - contract-graph validation of fixture references in topic test plans.
 
 Out of scope:
 
-- lawpack, target-profile, contract-bundle, admission, and conformance fixture
-  families that do not have executable owning behavior yet;
+- lawpack, runtime-owned target-profile, contract-bundle, admission, and
+  conformance fixture families that do not have executable owning behavior yet;
 - tests that assert documentation prose about fixtures.
 
 ## Requirements
@@ -27,6 +28,7 @@ Out of scope:
 | FIXTURES-REQ-003 | implemented | Topic-shelf fixture references resolve to checked-in artifacts through the local contract graph. | xtask/src/contract_check.rs |
 | FIXTURES-REQ-004 | gap | Target, lawpack, contract-bundle, admission, and conformance fixture families remain unpopulated until owning behavior lands. | fixtures/README.md, ROADMAP.md |
 | FIXTURES-REQ-005 | implemented | Reviewed authority-facts golden artifacts are generated from the validated JSON review input and executable canonical codec, then checked for exact bytes and digest stability. | fixtures/authority-facts/canonical/README.md, xtask/src/goldens.rs |
+| FIXTURES-REQ-006 | implemented | Reviewed Edict-owned target-profile contract resources are generated from the executable semantic model, then checked for exact canonical bytes and coordinate-framed digest stability. | fixtures/target-profile/contract-resources/README.md, xtask/src/goldens.rs |
 
 ## Fixtures
 
@@ -43,6 +45,7 @@ Out of scope:
 | fixtures/authority-facts/canonical/example-effectful.authority-facts.json | Validated authority-facts review/input fixture. | Loads through the existing strict JSON loader before golden generation. |
 | fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor | Reviewed canonical authority-facts byte fixture. | Matches executable `edict.canonical-cbor/v1` output. |
 | fixtures/authority-facts/canonical/example-effectful.authority-facts.sha256 | Reviewed authority-facts digest fixture. | Matches the domain-framed `edict.authority-facts/v1` digest. |
+| fixtures/target-profile/contract-resources/README.md | Five reviewed Edict-owned target-profile contract resources and digest fixtures. | Every file matches the executable model and its coordinate-framed identity. |
 
 ## Cases
 
@@ -53,6 +56,7 @@ Out of scope:
 | FIXTURES-TP-003 | implemented | Contract graph | FIXTURES-REQ-003 | Topic-shelf test plans cannot cite missing fixture paths. | contract_graph_is_valid | xtask/src/contract_check.rs, xtask/src/tests.rs, fixtures/README.md | The checker validates referenced artifacts rather than prose. |
 | FIXTURES-TP-004 | gap | Future corpus | FIXTURES-REQ-004 | No target, lawpack, bundle, admission, or conformance fixture corpus is claimed before owning behavior lands. | - | - | Add these families with the implementation slice that first consumes them. |
 | FIXTURES-TP-005 | implemented | Golden artifact | FIXTURES-REQ-005 | Reviewed authority-facts byte and digest fixtures exactly match validated JSON input plus executable canonical codec output. | authority_facts_goldens_match_executable_codec | xtask/src/goldens.rs, fixtures/authority-facts/canonical/example-effectful.authority-facts.json, fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor, fixtures/authority-facts/canonical/example-effectful.authority-facts.sha256 | `cargo xtask authority-facts-goldens --check` covers the same artifact contract. |
+| FIXTURES-TP-006 | implemented | Golden artifact | FIXTURES-REQ-006 | All five reviewed target-profile contract-resource bytes and digests exactly match the executable semantic model. | target_profile_resource_goldens_match_executable_contract | xtask/src/goldens.rs, fixtures/target-profile/contract-resources/README.md | `cargo xtask target-profile-resource-goldens --check` covers the same artifact contract. |
 
 ## Determinism Obligations
 
@@ -66,7 +70,7 @@ Out of scope:
 
 ## Open Gaps
 
-- Target, lawpack, bundle, admission, and conformance fixture families remain
-  future work.
+- Runtime-owned target-profile, lawpack, bundle, admission, and conformance
+  fixture families remain future work.
 - Additional reviewed Core golden fixtures should be added as lowerable Core
   language coverage expands.

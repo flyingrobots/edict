@@ -15,6 +15,7 @@ fixtures/
   lang/        # EDICT-LANG-*  source that parses, typechecks, or is rejected
   core/        # EDICT-CORE-*  golden Core IR canonicalization + hash cases
   authority-facts/ # EDICT-ABI-AUTHORITY-FACTS-* canonical facts + digest
+  target-profile/ # EDICT-ABI-TARGET-PROFILE-* Edict contract resources
   optic/       # EDICT-OPTIC-* optic-contract preservation cases
   target/      # EDICT-TARGET-* target profile ABI cases
   lawpack/     # EDICT-LAWPACK-* lawpack ABI cases
@@ -40,8 +41,11 @@ The first Core canonical fixture lives in
 digest golden lives in [`bundle/assembly/`](./bundle/assembly/). The first
 authority-facts canonical fixture lives in
 [`authority-facts/canonical/`](./authority-facts/canonical/). Additional
-source coverage, relapse-zoo cases, target fixtures, and admission fixtures
-remain planned as their owning implementation slices land.
+Edict-owned target-profile contract resources live in
+[`target-profile/contract-resources/`](./target-profile/contract-resources/).
+Additional source coverage, relapse-zoo cases, runtime-owned target fixtures,
+and admission fixtures remain planned as their owning implementation slices
+land.
 
 **Placeholder digests:** prose in the README/specs writes `sha256:...` as a
 human ellipsis, which is **not lexable** — the grammar's `digest-lit` requires
