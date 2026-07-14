@@ -53,21 +53,7 @@ fn run() -> Result<(), String> {
         }
         Some("authority-facts-goldens") => run_authority_facts_goldens(&mut args),
         Some("target-profile-resource-goldens") => {
-            let mode = match args.next().as_deref() {
-                Some("--write") => TargetProfileResourceGoldenMode::Write,
-                Some("--check") | None => TargetProfileResourceGoldenMode::Check,
-                Some(flag) => {
-                    return Err(format!(
-                        "unknown target-profile-resource-goldens flag `{flag}`"
-                    ));
-                }
-            };
-            if let Some(extra) = args.next() {
-                return Err(format!(
-                    "unexpected target-profile-resource-goldens argument `{extra}`"
-                ));
-            }
-            target_profile_resource_goldens(&repo_root()?, mode)
+            run_target_profile_resource_goldens(&mut args)
         }
         Some("bundle-goldens") => {
             let mode = match args.next().as_deref() {
@@ -157,6 +143,26 @@ fn run_authority_facts_goldens(args: &mut impl Iterator<Item = String>) -> Resul
         ));
     }
     authority_facts_goldens(&repo_root()?, mode)
+}
+
+fn run_target_profile_resource_goldens(
+    args: &mut impl Iterator<Item = String>,
+) -> Result<(), String> {
+    let mode = match args.next().as_deref() {
+        Some("--write") => TargetProfileResourceGoldenMode::Write,
+        Some("--check") | None => TargetProfileResourceGoldenMode::Check,
+        Some(flag) => {
+            return Err(format!(
+                "unknown target-profile-resource-goldens flag `{flag}`"
+            ));
+        }
+    };
+    if let Some(extra) = args.next() {
+        return Err(format!(
+            "unexpected target-profile-resource-goldens argument `{extra}`"
+        ));
+    }
+    target_profile_resource_goldens(&repo_root()?, mode)
 }
 
 fn verify(root: &Path) -> Result<(), String> {
