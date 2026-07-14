@@ -289,6 +289,10 @@ fn provider_contract_pack_check_rejects_drift_without_rewriting() {
         error.contains("does not match generated golden"),
         "unexpected CDDL drift error: {error}"
     );
+    assert!(
+        error.contains("cargo xtask provider-contract-pack --write"),
+        "drift error must identify the exact regeneration command: {error}"
+    );
     assert_eq!(
         fs::read(root.join(CONTRACT_PACK_CDDL)).expect("CDDL remains readable"),
         drifted_cddl,

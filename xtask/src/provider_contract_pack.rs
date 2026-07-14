@@ -4,7 +4,7 @@ use std::path::Path;
 use edict_provider_schema::{assemble_provider_contract_pack, ProviderContractPackInput};
 use edict_syntax::canonical_target_profile_contract_resources;
 
-use crate::goldens::{check_golden_file, write_golden_file};
+use crate::goldens::{check_golden_file_with_command, write_golden_file};
 
 const COMMON_CDDL: &str = "docs/abi/edict-common.cddl";
 const CORE_CDDL: &str = "docs/abi/edict-core.cddl";
@@ -49,8 +49,18 @@ pub(crate) fn provider_contract_pack(
 
     match mode {
         ProviderContractPackMode::Check => {
-            check_golden_file(root, CONTRACT_PACK_CDDL, pack.cddl_bytes())?;
-            check_golden_file(root, CONTRACT_PACK_MANIFEST, &manifest)?;
+            check_golden_file_with_command(
+                root,
+                CONTRACT_PACK_CDDL,
+                pack.cddl_bytes(),
+                "cargo xtask provider-contract-pack --write",
+            )?;
+            check_golden_file_with_command(
+                root,
+                CONTRACT_PACK_MANIFEST,
+                &manifest,
+                "cargo xtask provider-contract-pack --write",
+            )?;
         }
         ProviderContractPackMode::Write => {
             write_golden_file(&root.join(CONTRACT_PACK_CDDL), pack.cddl_bytes())?;

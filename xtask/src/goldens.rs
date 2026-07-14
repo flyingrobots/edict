@@ -624,14 +624,37 @@ pub(crate) fn check_golden_file(
     relative: &str,
     expected: &[u8],
 ) -> Result<(), String> {
+    check_golden_file_with_instruction(
+        root,
+        relative,
+        expected,
+        "run the matching `cargo xtask *-goldens --write` command",
+    )
+}
+
+pub(crate) fn check_golden_file_with_command(
+    root: &Path,
+    relative: &str,
+    expected: &[u8],
+    write_command: &str,
+) -> Result<(), String> {
+    check_golden_file_with_instruction(root, relative, expected, &format!("run `{write_command}`"))
+}
+
+fn check_golden_file_with_instruction(
+    root: &Path,
+    relative: &str,
+    expected: &[u8],
+    instruction: &str,
+) -> Result<(), String> {
     let path = root.join(relative);
     let actual = fs::read(&path).map_err(|err| format!("read {}: {err}", path.display()))?;
     if actual == expected {
         Ok(())
     } else {
         Err(format!(
-            "{} does not match generated golden; run the matching `cargo xtask *-goldens --write` command",
-            path.display()
+            "{} does not match generated golden; {instruction}",
+            path.display(),
         ))
     }
 }
