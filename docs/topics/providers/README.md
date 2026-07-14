@@ -66,6 +66,24 @@ repeated array or map member must be provably input-consuming, so schema
 validation cannot enter a zero-progress loop outside Wasmtime fuel. The
 registry performs no schema discovery or lazy loading.
 
+The same crate exposes deterministic `ProviderContractPack` assembly for
+runtime-owned generators. Callers supply the common, Core, lawpack,
+target-profile, authority-facts, and Target IR CDDL fragments plus all five
+validated target-profile contract resources as explicit bytes. Assembly checks
+UTF-8, CDDL compilation, complete root closure, exact resource bytes, raw and
+domain-framed digests, and reviewed provenance before returning any authority.
+The checked Rust-neutral artifacts live under
+[`fixtures/provider-contracts/v1/`](../../../fixtures/provider-contracts/v1/):
+one self-contained Apache-2.0 CDDL file and one deterministic manifest mapping
+logical contracts and provider artifact domains to exact roots. Neither
+assembly nor validation discovers repository files, registries, or networks;
+the `xtask` command is the explicit repository adapter that reads source files
+and writes or checks the reviewed artifacts. Pack instance validation is
+generation-time conformance evidence, not a substitute for the production
+manifest-bound schema registry. The trusted Edict pack contains productive
+recursive Core rules; untrusted provider schemas remain subject to the host
+registry's stricter acyclic structural-safety policy. [PROVIDERS-REQ-030]
+
 The private `edict-provider-host-wasmtime` crate supplies the component host.
 Its input is a selected component proof plus resolver-supplied bytes; it performs
 no discovery, fetching, mutable-name lookup, or cache lookup. Preparation

@@ -16,6 +16,7 @@ fixtures/
   core/        # EDICT-CORE-*  golden Core IR canonicalization + hash cases
   authority-facts/ # EDICT-ABI-AUTHORITY-FACTS-* canonical facts + digest
   target-profile/ # EDICT-ABI-TARGET-PROFILE-* Edict contract resources
+  provider-contracts/ # EDICT-ABI-PROVIDER-* portable schema authority
   optic/       # EDICT-OPTIC-* optic-contract preservation cases
   target/      # EDICT-TARGET-* target profile ABI cases
   lawpack/     # EDICT-LAWPACK-* lawpack ABI cases
@@ -43,6 +44,8 @@ authority-facts canonical fixture lives in
 [`authority-facts/canonical/`](./authority-facts/canonical/). Additional
 Edict-owned target-profile contract resources live in
 [`target-profile/contract-resources/`](./target-profile/contract-resources/).
+The Rust-neutral provider contract pack and its exact manifest live in
+[`provider-contracts/v1/`](./provider-contracts/v1/).
 Additional source coverage, relapse-zoo cases, runtime-owned target fixtures,
 and admission fixtures remain planned as their owning implementation slices
 land.

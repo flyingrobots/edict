@@ -113,6 +113,15 @@ Reviewed Echo and git-warp Target IR byte/digest goldens live under
 regenerates them from executable lowering and canonical encoding, and
 `cargo xtask verify` includes that check.
 
+[`edict-target-ir.cddl`](../../abi/edict-target-ir.cddl) defines the
+`target-ir-artifact` root from that canonical value shape. The provider contract
+pack assembles it with the common and Core rules it references, verifies the
+complete rule closure, and checks both reviewed Target IR artifacts through the
+compiled root. This is structural wire-schema evidence for valid
+lowering-produced artifacts; the lowerer and encoder continue to own semantic
+identifier validity and canonical ordering or deduplication of set-like
+fields. [TIR-REQ-014]
+
 Bundle assembly can now consume a real `TargetIrArtifact` through
 `assemble_contract_bundle_from_target_ir`. That path computes
 `targetIrDigest` from canonical Target IR bytes and writes the same digest into

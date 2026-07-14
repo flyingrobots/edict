@@ -619,7 +619,11 @@ fn digest_text(hex: char) -> String {
     format!("sha256:{}", hex.to_string().repeat(64))
 }
 
-fn check_golden_file(root: &Path, relative: &str, expected: &[u8]) -> Result<(), String> {
+pub(crate) fn check_golden_file(
+    root: &Path,
+    relative: &str,
+    expected: &[u8],
+) -> Result<(), String> {
     let path = root.join(relative);
     let actual = fs::read(&path).map_err(|err| format!("read {}: {err}", path.display()))?;
     if actual == expected {
@@ -632,7 +636,7 @@ fn check_golden_file(root: &Path, relative: &str, expected: &[u8]) -> Result<(),
     }
 }
 
-fn write_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;
     }

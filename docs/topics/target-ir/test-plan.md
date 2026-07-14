@@ -14,6 +14,7 @@ In scope:
   `gitwarp.ref_crdt@1`;
 - canonical Target IR artifact bytes and digests for the current Echo and
   git-warp review artifacts;
+- an Edict-owned CDDL root for the canonical Target IR artifact envelope;
 - in-process built-in lowerer compatibility wrappers that preserve direct
   Target IR output;
 - stable target-lowering failure kinds for unsupported target obligations;
@@ -49,6 +50,7 @@ Out of scope:
 | TIR-REQ-011 | implemented | Echo Target IR exposes `require` guards as explicit target-owned requirements with terminal and preserved-obstruction failure dispositions. | issue #131, docs/design/obstruction-strands-v0.md |
 | TIR-REQ-012 | implemented | Target IR canonical bytes and digests bind requirement predicate, failure disposition, reason kind, and reason payload values without collapsing terminal obstruction into preserved obstruction. | issue #131, docs/design/obstruction-strands-v0.md |
 | TIR-REQ-013 | implemented | Explicit built-in Echo and git-warp lowerer adapters preserve direct Target IR reports, artifacts, canonical bytes, digests, and structured target-lowering failures. | issue #140, docs/design/provider-artifact-pipeline-alpha.md |
+| TIR-REQ-014 | implemented | `edict-target-ir.cddl` defines `target-ir-artifact` from the executable canonical value shape and is published in the self-contained provider contract pack. | issue #161, EDICT-ABI-PROVIDER-CONTRACT-PACK-001 |
 
 ## Fixtures
 
@@ -60,6 +62,7 @@ Out of scope:
 | fixtures/target-ir/canonical/echo-effectful.target-ir.sha256 | Reviewed Echo Target IR digest golden. | `cargo xtask target-ir-goldens --check` compares the checked-in review digest to executable regeneration. |
 | fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor | Reviewed git-warp Target IR canonical byte golden. | `cargo xtask target-ir-goldens --check` compares the checked-in bytes to executable regeneration. |
 | fixtures/target-ir/canonical/gitwarp-append.target-ir.sha256 | Reviewed git-warp Target IR digest golden. | `cargo xtask target-ir-goldens --check` compares the checked-in review digest to executable regeneration. |
+| docs/abi/edict-target-ir.cddl | Edict-owned canonical Target IR artifact schema. | The self-contained provider contract pack compiles the root and validates both reviewed Target IR artifacts. |
 
 ## Test Cases
 
@@ -93,6 +96,7 @@ Out of scope:
 | TIR-TP-026 | implemented | Boundary guard | TIR-REQ-011, TIR-REQ-012 | A Target IR requirement after an emitted target step rejects with a stable target-feature failure kind and no artifact, with a more specific detail when it reads an earlier step output. | requirement_after_target_step_rejects_with_stable_feature_kind, requirement_that_reads_step_output_rejects_with_stable_feature_kind | crates/edict-syntax/tests/target_ir.rs | Intent-level requirements are pre-step guards until the artifact model owns ordered or step-attached guards. |
 | TIR-TP-027 | implemented | Integration | TIR-REQ-013 | Built-in Echo and git-warp lowerer adapters return the same artifacts, canonical bytes, and digests as direct lowering for identical Core and facts. | builtin_echo_lowerer_matches_direct_target_ir, builtin_gitwarp_lowerer_matches_direct_target_ir | crates/edict-syntax/tests/provider_lowering.rs | No Target IR golden moves when the invocation path changes. |
 | TIR-TP-028 | implemented | Boundary guard | TIR-REQ-013 | Matched-profile target and target-profile-digest failures pass through unchanged, while cross-profile lowerer selection rejects with a stable compatibility failure before invocation. | builtin_lowerers_preserve_structured_lowering_failures, builtin_lowerers_preserve_target_profile_digest_failures, builtin_lowerers_reject_mismatched_target_profiles | crates/edict-syntax/tests/provider_lowering.rs | Lowerer selection compatibility remains distinct from target semantic refusal; coordinate matching does not bypass target artifact validation. |
+| TIR-TP-029 | implemented | Schema fidelity | TIR-REQ-014 | Canonical Echo and git-warp Target IR bytes plus encoder output containing both requirement dispositions satisfy `target-ir-artifact`; null, missing envelope fields, and malformed nested Target IR values reject through the same compiled root. | target_ir_root_matches_reference_encoder, every_published_root_validates_reference_and_rejects_mutation, target_ir_goldens_match_executable_encoder | docs/abi/edict-target-ir.cddl, fixtures/target-ir/canonical/echo-effectful.target-ir.cbor, fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor, crates/edict-provider-schema/tests/provider_contract_pack.rs, xtask/src/tests.rs | The schema is derived from the canonical encoder contract, not target-specific runtime semantics. |
 
 ## Determinism Obligations
 

@@ -1,0 +1,52 @@
+; SPDX-License-Identifier: Apache-2.0
+; edict-target-ir.cddl
+; Canonical schema for the Edict-owned Target IR artifact envelope.
+; Authoritative byte encoding: edict.canonical-cbor/v1.
+;
+; This schema is assembled with edict-common.cddl and edict-core.cddl. It
+; deliberately reuses Core expressions, predicates, budgets, local references,
+; obstruction reasons, and obstruction arms so the schema matches the value
+; emitted by the canonical Target IR encoder rather than restating those types.
+; It describes the structural shape of valid lowering-produced artifacts. The
+; lowering and encoder contracts separately enforce semantic identifier rules
+; and canonical ordering/deduplication for set-like values.
+
+; Target IR encoding rejects an empty target-profile coordinate before bytes
+; exist, so this root tightens the shared structural resource-ref accordingly.
+target-ir-resource-ref = {
+  id: tstr .regexp ".+",
+  digest: sha256-digest,
+}
+
+target-ir-artifact = {
+  kind: "targetIrArtifact",
+  domain: tstr,
+  targetProfile: target-ir-resource-ref,
+  sourceCoreCoordinate: tstr,
+  intents: { * tstr => target-ir-intent },
+}
+
+target-ir-intent = {
+  operationProfile: tstr,
+  inputConstraints: [* input-constraint],
+  coreEvaluationBudget: core-budget,
+  requirements: [* target-ir-requirement],
+  steps: [* target-ir-step],
+  result: core-expr,
+}
+
+target-ir-requirement = {
+  id: tstr,
+  predicate: core-predicate,
+  onFailure: require-failure-arm,
+}
+
+target-ir-step = {
+  id: tstr,
+  binding: local-ref,
+  effect: tstr,
+  targetIntrinsic: tstr,
+  input: core-expr,
+  obstructionFailures: [* failure-ident],
+  obstructionArms: { * failure-ident => obstruction-arm },
+}

@@ -10,6 +10,15 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added a deterministic Apache-2.0 provider contract pack for runtime-owned
+  generators. The checked manifest binds one self-contained CDDL document,
+  every logical and artifact-domain root, and the exact bytes, raw and
+  coordinate-framed digests, and provenance of all five Edict-owned
+  target-profile resources. The new `target-ir-artifact` root is checked
+  against both reviewed canonical Target IR fixtures, and
+  `cargo xtask provider-contract-pack --check` detects schema or manifest drift
+  without rewriting either artifact.
+
 - Added canonical, content-addressed contract resources for all five
   Edict-owned target-profile slots: encoding, component sandbox, fuel,
   diagnostics, and deterministic execution. Runtime-owned generators pass the

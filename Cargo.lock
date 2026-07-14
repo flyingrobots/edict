@@ -1413,6 +1413,7 @@ dependencies = [
 name = "xtask"
 version = "0.0.0"
 dependencies = [
+ "edict-provider-schema",
  "edict-syntax",
  "regex",
  "serde_json",

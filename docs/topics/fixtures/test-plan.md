@@ -29,6 +29,7 @@ Out of scope:
 | FIXTURES-REQ-004 | gap | Target, lawpack, contract-bundle, admission, and conformance fixture families remain unpopulated until owning behavior lands. | fixtures/README.md, ROADMAP.md |
 | FIXTURES-REQ-005 | implemented | Reviewed authority-facts golden artifacts are generated from the validated JSON review input and executable canonical codec, then checked for exact bytes and digest stability. | fixtures/authority-facts/canonical/README.md, xtask/src/goldens.rs |
 | FIXTURES-REQ-006 | implemented | Reviewed Edict-owned target-profile contract resources are generated from the executable semantic model, then checked for exact canonical bytes and coordinate-framed digest stability. | fixtures/target-profile/contract-resources/README.md, xtask/src/goldens.rs |
+| FIXTURES-REQ-007 | implemented | The reviewed provider contract pack and manifest are generated from Edict-owned ABI schemas and canonical target-profile resources, then checked for exact bytes, root closure, and raw digest stability. | issue #161, docs/topics/providers/test-plan.md |
 
 ## Fixtures
 
@@ -46,6 +47,8 @@ Out of scope:
 | fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor | Reviewed canonical authority-facts byte fixture. | Matches executable `edict.canonical-cbor/v1` output. |
 | fixtures/authority-facts/canonical/example-effectful.authority-facts.sha256 | Reviewed authority-facts digest fixture. | Matches the domain-framed `edict.authority-facts/v1` digest. |
 | fixtures/target-profile/contract-resources/README.md | Five reviewed Edict-owned target-profile contract resources and digest fixtures. | Every file matches the executable model and its coordinate-framed identity. |
+| fixtures/provider-contracts/v1/edict-provider-contracts.cddl | Reviewed self-contained provider CDDL pack. | Exact bytes match deterministic assembly from authoritative ABI sources. |
+| fixtures/provider-contracts/v1/manifest.json | Reviewed provider contract-pack manifest. | Exact bytes and all embedded schema/resource identities match deterministic assembly. |
 
 ## Cases
 
@@ -57,6 +60,7 @@ Out of scope:
 | FIXTURES-TP-004 | gap | Future corpus | FIXTURES-REQ-004 | No target, lawpack, bundle, admission, or conformance fixture corpus is claimed before owning behavior lands. | - | - | Add these families with the implementation slice that first consumes them. |
 | FIXTURES-TP-005 | implemented | Golden artifact | FIXTURES-REQ-005 | Reviewed authority-facts byte and digest fixtures exactly match validated JSON input plus executable canonical codec output. | authority_facts_goldens_match_executable_codec | xtask/src/goldens.rs, fixtures/authority-facts/canonical/example-effectful.authority-facts.json, fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor, fixtures/authority-facts/canonical/example-effectful.authority-facts.sha256 | `cargo xtask authority-facts-goldens --check` covers the same artifact contract. |
 | FIXTURES-TP-006 | implemented | Golden artifact | FIXTURES-REQ-006 | All five reviewed target-profile contract-resource bytes and digests exactly match the executable semantic model. | target_profile_resource_goldens_match_executable_contract | xtask/src/goldens.rs, fixtures/target-profile/contract-resources/README.md | `cargo xtask target-profile-resource-goldens --check` covers the same artifact contract. |
+| FIXTURES-TP-007 | implemented | Golden artifact | FIXTURES-REQ-007 | Provider contract-pack CDDL and manifest fixtures exactly match executable assembly, while check mode detects drift without modifying either file. | provider_contract_pack_goldens_match_executable_contract, provider_contract_pack_check_rejects_drift_without_rewriting | xtask/src/provider_contract_pack.rs, xtask/src/tests.rs, fixtures/provider-contracts/v1/edict-provider-contracts.cddl, fixtures/provider-contracts/v1/manifest.json | `cargo xtask provider-contract-pack --check` is the focused drift gate. |
 
 ## Determinism Obligations
 
