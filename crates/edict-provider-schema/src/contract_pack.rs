@@ -391,6 +391,14 @@ fn build_manifest(
     schema_bytes: Vec<u8>,
     resources: Vec<TargetProfileContractResource>,
 ) -> ProviderContractPackManifest {
+    assert!(
+        bindings_are_strictly_sorted_by_key(&CONTRACT_BINDINGS),
+        "CONTRACT_BINDINGS must stay sorted and unique by contract name",
+    );
+    assert!(
+        bindings_are_strictly_sorted_by_key(&DOMAIN_BINDINGS),
+        "DOMAIN_BINDINGS must stay sorted and unique by domain",
+    );
     ProviderContractPackManifest {
         api_version: PROVIDER_CONTRACT_PACK_API_VERSION.to_owned(),
         coordinate: PROVIDER_CONTRACT_PACK_COORDINATE.to_owned(),
@@ -413,6 +421,10 @@ fn build_manifest(
             .collect(),
         resources: resources.into_iter().map(pack_resource).collect(),
     }
+}
+
+fn bindings_are_strictly_sorted_by_key(bindings: &[(&str, &str)]) -> bool {
+    bindings.windows(2).all(|pair| pair[0].0 < pair[1].0)
 }
 
 /// Validate an untrusted manifest against one already assembled authority pack.
@@ -830,4 +842,25 @@ fn hex_bytes(bytes: &[u8]) -> String {
         write!(output, "{byte:02x}").expect("writing to a String cannot fail");
     }
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bindings_are_strictly_sorted_by_key;
+
+    #[test]
+    fn static_binding_guard_rejects_unsorted_and_duplicate_keys() {
+        assert!(bindings_are_strictly_sorted_by_key(&[
+            ("alpha", "root-a"),
+            ("beta", "root-b"),
+        ]));
+        assert!(!bindings_are_strictly_sorted_by_key(&[
+            ("beta", "root-b"),
+            ("alpha", "root-a"),
+        ]));
+        assert!(!bindings_are_strictly_sorted_by_key(&[
+            ("alpha", "root-a"),
+            ("alpha", "root-b"),
+        ]));
+    }
 }
