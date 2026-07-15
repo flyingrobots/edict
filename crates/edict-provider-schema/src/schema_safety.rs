@@ -23,48 +23,53 @@ pub(crate) fn root_supports_total_validation(
     if !rule.generic_parms.is_empty() {
         return false;
     }
-    let mut visiting = BTreeSet::from([(root.to_owned(), Position::Value)]);
-    node_is_supported(&rule.node, Position::Value, rules, &mut visiting)
+    // A recursive back-edge is safe only after validation has moved from the
+    // current value into a proper CBOR child value.
+    let mut visiting = BTreeMap::from([((root.to_owned(), Position::Value), 0)]);
+    node_is_supported(&rule.node, Position::Value, rules, &mut visiting, 0)
 }
 
 fn node_is_supported(
     node: &Node,
     position: Position,
     rules: &BTreeMap<String, RuleDef>,
-    visiting: &mut BTreeSet<(String, Position)>,
+    visiting: &mut BTreeMap<(String, Position), usize>,
+    input_depth: usize,
 ) -> bool {
     match position {
-        Position::Value => value_is_supported(node, rules, visiting),
-        Position::ArrayMember => array_member_is_supported(node, rules, visiting),
-        Position::MapMember => map_member_is_supported(node, rules, visiting),
+        Position::Value => value_is_supported(node, rules, visiting, input_depth),
+        Position::ArrayMember => array_member_is_supported(node, rules, visiting, input_depth),
+        Position::MapMember => map_member_is_supported(node, rules, visiting, input_depth),
     }
 }
 
 fn value_is_supported(
     node: &Node,
     rules: &BTreeMap<String, RuleDef>,
-    visiting: &mut BTreeSet<(String, Position)>,
+    visiting: &mut BTreeMap<(String, Position), usize>,
+    input_depth: usize,
 ) -> bool {
     match node {
         Node::Literal(_) | Node::PreludeType(_) => true,
-        Node::Rule(rule) => rule_is_supported(rule, Position::Value, rules, visiting),
+        Node::Rule(rule) => rule_is_supported(rule, Position::Value, rules, visiting, input_depth),
         Node::Choice(choice) => {
             !choice.options.is_empty()
                 && choice
                     .options
                     .iter()
-                    .all(|node| value_is_supported(node, rules, visiting))
+                    .all(|node| value_is_supported(node, rules, visiting, input_depth))
         }
         Node::Map(map) => map
             .members
             .iter()
-            .all(|node| map_member_is_supported(node, rules, visiting)),
+            .all(|node| map_member_is_supported(node, rules, visiting, input_depth)),
         Node::Array(array) => array
             .members
             .iter()
-            .all(|node| array_member_is_supported(node, rules, visiting)),
+            .all(|node| array_member_is_supported(node, rules, visiting, input_depth)),
         Node::Group(group) => {
-            group.members.len() == 1 && value_is_supported(&group.members[0], rules, visiting)
+            group.members.len() == 1
+                && value_is_supported(&group.members[0], rules, visiting, input_depth)
         }
         Node::Range(range) => range_is_supported(range, rules),
         Node::Control(control) => control_is_supported(control, rules),
@@ -79,62 +84,69 @@ fn value_is_supported(
 fn array_member_is_supported(
     node: &Node,
     rules: &BTreeMap<String, RuleDef>,
-    visiting: &mut BTreeSet<(String, Position)>,
+    visiting: &mut BTreeMap<(String, Position), usize>,
+    input_depth: usize,
 ) -> bool {
     match node {
         Node::Occur(occur) => {
-            array_member_is_supported(&occur.node, rules, visiting)
+            array_member_is_supported(&occur.node, rules, visiting, input_depth)
                 && (occur.limits().1 <= 1
                     || guarantees_progress(&occur.node, Position::ArrayMember, rules))
         }
         Node::KeyValue(pair) => {
-            value_is_supported(&pair.key, rules, visiting)
-                && value_is_supported(&pair.value, rules, visiting)
+            value_is_supported(&pair.key, rules, visiting, input_depth)
+                && value_is_supported(&pair.value, rules, visiting, input_depth.saturating_add(1))
         }
-        Node::Rule(rule) => rule_is_supported(rule, Position::ArrayMember, rules, visiting),
+        Node::Rule(rule) => {
+            rule_is_supported(rule, Position::ArrayMember, rules, visiting, input_depth)
+        }
         Node::Choice(choice) => {
             !choice.options.is_empty()
                 && choice
                     .options
                     .iter()
-                    .all(|node| array_member_is_supported(node, rules, visiting))
+                    .all(|node| array_member_is_supported(node, rules, visiting, input_depth))
         }
         Node::Group(group) => group
             .members
             .iter()
-            .all(|node| array_member_is_supported(node, rules, visiting)),
+            .all(|node| array_member_is_supported(node, rules, visiting, input_depth)),
         Node::Unwrap(_) | Node::Choiceify(_) | Node::ChoiceifyInline(_) => false,
-        _ => value_is_supported(node, rules, visiting),
+        _ => value_is_supported(node, rules, visiting, input_depth.saturating_add(1)),
     }
 }
 
 fn map_member_is_supported(
     node: &Node,
     rules: &BTreeMap<String, RuleDef>,
-    visiting: &mut BTreeSet<(String, Position)>,
+    visiting: &mut BTreeMap<(String, Position), usize>,
+    input_depth: usize,
 ) -> bool {
     match node {
         Node::Occur(occur) => {
-            map_member_is_supported(&occur.node, rules, visiting)
+            map_member_is_supported(&occur.node, rules, visiting, input_depth)
                 && (occur.limits().1 <= 1
                     || guarantees_progress(&occur.node, Position::MapMember, rules))
         }
         Node::KeyValue(pair) => {
-            value_is_supported(&pair.key, rules, visiting)
-                && value_is_supported(&pair.value, rules, visiting)
+            let child_depth = input_depth.saturating_add(1);
+            value_is_supported(&pair.key, rules, visiting, child_depth)
+                && value_is_supported(&pair.value, rules, visiting, child_depth)
         }
-        Node::Rule(rule) => rule_is_supported(rule, Position::MapMember, rules, visiting),
+        Node::Rule(rule) => {
+            rule_is_supported(rule, Position::MapMember, rules, visiting, input_depth)
+        }
         Node::Choice(choice) => {
             !choice.options.is_empty()
                 && choice
                     .options
                     .iter()
-                    .all(|node| map_member_is_supported(node, rules, visiting))
+                    .all(|node| map_member_is_supported(node, rules, visiting, input_depth))
         }
         Node::Group(group) => group
             .members
             .iter()
-            .all(|node| map_member_is_supported(node, rules, visiting)),
+            .all(|node| map_member_is_supported(node, rules, visiting, input_depth)),
         Node::Unwrap(_)
         | Node::Choiceify(_)
         | Node::ChoiceifyInline(_)
@@ -151,7 +163,8 @@ fn rule_is_supported(
     rule: &Rule,
     position: Position,
     rules: &BTreeMap<String, RuleDef>,
-    visiting: &mut BTreeSet<(String, Position)>,
+    visiting: &mut BTreeMap<(String, Position), usize>,
+    input_depth: usize,
 ) -> bool {
     if !rule.generic_args.is_empty() {
         return false;
@@ -163,10 +176,13 @@ fn rule_is_supported(
         return false;
     }
     let key = (rule.name.clone(), position);
-    if !visiting.insert(key.clone()) {
-        return false;
+    if let Some(active_depth) = visiting.get(&key) {
+        // Strictly greater depth witnesses structural descent; equal depth is
+        // an alias/combinator cycle that could revisit the same input forever.
+        return input_depth > *active_depth;
     }
-    let supported = node_is_supported(&definition.node, position, rules, visiting);
+    visiting.insert(key.clone(), input_depth);
+    let supported = node_is_supported(&definition.node, position, rules, visiting, input_depth);
     visiting.remove(&key);
     supported
 }

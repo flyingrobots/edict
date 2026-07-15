@@ -60,11 +60,14 @@ rejects missing, duplicate, or manifest-unbound resolved roles, compiles all
 bound CDDL documents, rejects missing roots and unresolved external rule
 references reachable from selected roots, and returns one immutable registry
 with a sorted binding receipt.
-Selected roots use a deliberately conservative non-generic, acyclic CDDL
-subset. Structurally unusable roots reject during construction, and every
-repeated array or map member must be provably input-consuming, so schema
-validation cannot enter a zero-progress loop outside Wasmtime fuel. The
-registry performs no schema discovery or lazy loading.
+Selected roots use a deliberately conservative non-generic, structurally
+guarded CDDL subset. A recursive rule back-edge is accepted only after schema
+evaluation has descended into a proper map key/value or array element; direct
+or mutual aliases and choice-only cycles therefore remain invalid. Structurally
+unusable roots reject during construction, and every repeated array or map
+member must still be provably input-consuming, so schema validation cannot
+enter a zero-progress loop outside Wasmtime fuel. The registry performs no
+schema discovery or lazy loading.
 
 The same crate exposes deterministic `ProviderContractPack` assembly for
 runtime-owned generators. Callers supply the common, Core, lawpack,
@@ -83,9 +86,9 @@ assembly nor validation discovers repository files, registries, or networks;
 the `xtask` command is the explicit repository adapter that reads source files
 and writes or checks the reviewed artifacts. Pack instance validation is
 generation-time conformance evidence, not a substitute for the production
-manifest-bound schema registry. The trusted Edict pack contains productive
-recursive Core rules; untrusted provider schemas remain subject to the host
-registry's stricter acyclic structural-safety policy. [PROVIDERS-REQ-030]
+manifest-bound schema registry. The trusted Edict pack's productive recursive
+Core rules satisfy the same guarded structural-descent policy applied to every
+provider schema. [PROVIDERS-REQ-030, PROVIDERS-REQ-031]
 
 The private `edict-provider-host-wasmtime` crate supplies the component host.
 Its input is a selected component proof plus resolver-supplied bytes; it performs

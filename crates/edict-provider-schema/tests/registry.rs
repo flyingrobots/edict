@@ -5,10 +5,11 @@ use edict_provider_schema::{
     ResolvedProviderSchemaArtifact,
 };
 use edict_syntax::{
-    bind_target_provider_manifest, CanonicalValue, ProviderArtifactKind, ProviderArtifactRef,
-    ProviderArtifactSchemaValidationErrorKind, ProviderArtifactSchemaValidator,
-    ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
-    TargetProviderManifest, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+    bind_target_provider_manifest, decode_canonical_cbor, CanonicalValue, ProviderArtifactKind,
+    ProviderArtifactRef, ProviderArtifactSchemaValidationErrorKind,
+    ProviderArtifactSchemaValidator, ProviderArtifactSource, ProviderSchemaBinding,
+    ProviderSchemaFormat, ResourceRef, TargetProviderManifest, TARGET_PROVIDER_ABI,
+    TARGET_PROVIDER_MANIFEST_API_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -23,6 +24,11 @@ const REVIEW_SCHEMA: &[u8] = br#"
 review-payload = { approved: bool }
 verifier-report = { status: "valid" / "invalid" }
 "#;
+
+const PROVIDER_CONTRACT_SCHEMA: &[u8] =
+    include_bytes!("../../../fixtures/provider-contracts/v1/edict-provider-contracts.cddl");
+const CORE_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/core/canonical/bounded-hello.core.cbor");
 
 fn digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
@@ -133,7 +139,16 @@ fn registry() -> ProviderArtifactSchemaRegistry {
 fn registry_with_generated_schema(
     schema: &'static [u8],
 ) -> Result<ProviderArtifactSchemaRegistry, edict_provider_schema::ProviderSchemaRegistryFailure> {
-    let manifest = Box::leak(Box::new(manifest(schema, REVIEW_SCHEMA)));
+    registry_with_generated_schema_root(schema, "generated-artifact")
+}
+
+fn registry_with_generated_schema_root(
+    schema: &'static [u8],
+    root: &str,
+) -> Result<ProviderArtifactSchemaRegistry, edict_provider_schema::ProviderSchemaRegistryFailure> {
+    let mut manifest = manifest(schema, REVIEW_SCHEMA);
+    root.clone_into(&mut manifest.schema_bindings[0].root_rule);
+    let manifest = Box::leak(Box::new(manifest));
     let validated = bind_target_provider_manifest(manifest).expect("manifest validates");
     ProviderArtifactSchemaRegistry::from_manifest(
         &validated,
@@ -338,6 +353,14 @@ fn construction_rejects_latent_or_non_progressing_validator_shapes() {
         ),
         ("direct cycle", b"generated-artifact = generated-artifact"),
         (
+            "mutual alias cycle",
+            b"generated-artifact = alias\nalias = generated-artifact",
+        ),
+        (
+            "choice-only cycle",
+            b"generated-artifact = generated-artifact / uint",
+        ),
+        (
             "zero-progress array repetition",
             b"generated-artifact = [* ()]",
         ),
@@ -377,6 +400,54 @@ fn construction_rejects_latent_or_non_progressing_validator_shapes() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn construction_accepts_guarded_recursive_roots() {
+    let cases: &[(&str, &[u8], CanonicalValue)] = &[
+        (
+            "map child",
+            b"generated-artifact = leaf / branch\nleaf = { kind: \"leaf\", value: uint }\nbranch = { kind: \"branch\", child: generated-artifact }",
+            map(&[
+                ("kind", CanonicalValue::Text("branch".to_owned())),
+                (
+                    "child",
+                    map(&[
+                        ("kind", CanonicalValue::Text("leaf".to_owned())),
+                        ("value", CanonicalValue::Integer(1)),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "array element",
+            b"generated-artifact = uint / [* generated-artifact]",
+            CanonicalValue::Array(vec![
+                CanonicalValue::Integer(1),
+                CanonicalValue::Array(vec![CanonicalValue::Integer(2)]),
+            ]),
+        ),
+        (
+            "mutual map child",
+            b"generated-artifact = left\nleft = { ? right: right }\nright = { ? left: left }",
+            map(&[("right", map(&[("left", map(&[]))]))]),
+        ),
+    ];
+
+    for (name, schema, value) in cases {
+        let registry = registry_with_generated_schema(schema)
+            .unwrap_or_else(|_| panic!("guarded recursive {name} schema must construct"));
+        registry
+            .validate_canonical_value("runtime.generated-artifact/v1", value)
+            .unwrap_or_else(|_| panic!("finite guarded recursive {name} value must validate"));
+    }
+
+    let registry = registry_with_generated_schema_root(PROVIDER_CONTRACT_SCHEMA, "core-module")
+        .expect("published recursive Core schema root must construct");
+    let core = decode_canonical_cbor(CORE_FIXTURE).expect("reviewed Core fixture is canonical");
+    registry
+        .validate_canonical_value("runtime.generated-artifact/v1", &core)
+        .expect("reviewed Core fixture validates through the published recursive root");
 }
 
 #[test]

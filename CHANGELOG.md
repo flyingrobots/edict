@@ -10,6 +10,12 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added guarded recursive CDDL admission to the manifest-bound provider schema
+  registry. Productive recursion through map key/value and array-element child
+  values now admits the published Core schema, while alias-only cycles,
+  choice-only cycles, and non-progressing repetitions still fail before a
+  registry exists.
+
 - Added a deterministic Apache-2.0 provider contract pack for runtime-owned
   generators. The checked manifest binds one self-contained CDDL document,
   every logical and artifact-domain root, and the exact bytes, raw and
