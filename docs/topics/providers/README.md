@@ -65,9 +65,12 @@ guarded CDDL subset. A recursive rule back-edge is accepted only after schema
 evaluation has descended into a proper map key/value or array element; direct
 or mutual aliases and choice-only cycles therefore remain invalid. Structurally
 unusable roots reject during construction, and every repeated array or map
-member must still be provably input-consuming, so schema validation cannot
-enter a zero-progress loop outside Wasmtime fuel. When competing alternatives
-can re-enter recursive validation, every alternative must expose one common,
+member must still be provably input-consuming. Before component execution,
+`edict-provider-schema` audits recursive roots for structural progress and
+validates canonical values under the exact nesting gate, preventing
+zero-progress validation independently of any external execution budget. When
+competing alternatives can re-enter recursive validation, every alternative
+must expose one common,
 required, singleton text discriminator with pairwise-distinct values. Same-shape
 recursive arrays, missing or non-singleton discriminators, and overlapping
 discriminator values reject before a registry exists. Recursive optional or
