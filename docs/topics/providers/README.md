@@ -67,7 +67,12 @@ or mutual aliases and choice-only cycles therefore remain invalid. Structurally
 unusable roots reject during construction, and every repeated array or map
 member must still be provably input-consuming, so schema validation cannot
 enter a zero-progress loop outside Wasmtime fuel. The registry performs no
-schema discovery or lazy loading.
+schema discovery or lazy loading. Before native CDDL evaluation, every value is
+checked against Edict's exact 50-container provider-schema nesting gate,
+including values constructed directly by a caller; one-over-limit values reject
+as `SchemaMismatch`. The native validator retains its own recursion ceiling, so
+neither guarded schema recursion nor a finite adversarial value runs outside a
+deterministic depth boundary.
 
 The same crate exposes deterministic `ProviderContractPack` assembly for
 runtime-owned generators. Callers supply the common, Core, lawpack,

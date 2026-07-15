@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use edict_provider_schema::{
     ProviderArtifactSchemaRegistry, ProviderSchemaRegistryFailureKind,
-    ResolvedProviderSchemaArtifact,
+    ResolvedProviderSchemaArtifact, PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH,
 };
 use edict_syntax::{
     bind_target_provider_manifest, decode_canonical_cbor, CanonicalValue, ProviderArtifactKind,
@@ -119,6 +119,10 @@ fn map(entries: &[(&str, CanonicalValue)]) -> CanonicalValue {
             .map(|(key, value)| (CanonicalValue::Text((*key).to_owned()), value.clone()))
             .collect(),
     )
+}
+
+fn nested_array(depth: usize, leaf: CanonicalValue) -> CanonicalValue {
+    (0..depth).fold(leaf, |value, _| CanonicalValue::Array(vec![value]))
 }
 
 fn registry() -> ProviderArtifactSchemaRegistry {
@@ -361,6 +365,10 @@ fn construction_rejects_latent_or_non_progressing_validator_shapes() {
             b"generated-artifact = generated-artifact / uint",
         ),
         (
+            "guarded branch cannot launder direct cycle",
+            b"generated-artifact = uint / [generated-artifact] / generated-artifact",
+        ),
+        (
             "zero-progress array repetition",
             b"generated-artifact = [* ()]",
         ),
@@ -459,6 +467,46 @@ fn construction_accepts_guarded_recursive_roots() {
     registry
         .validate_canonical_value("runtime.generated-artifact/v1", &core)
         .expect("reviewed Core fixture validates through the published recursive root");
+}
+
+#[test]
+fn guarded_recursive_validation_is_bounded_and_rejects_invalid_descendants() {
+    let registry =
+        registry_with_generated_schema(b"generated-artifact = uint / [generated-artifact]")
+            .expect("guarded recursive array schema constructs");
+
+    registry
+        .validate_canonical_value(
+            "runtime.generated-artifact/v1",
+            &nested_array(
+                PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH,
+                CanonicalValue::Integer(1),
+            ),
+        )
+        .expect("maximum-depth guarded recursive value validates");
+
+    assert_eq!(
+        registry.validate_canonical_value(
+            "runtime.generated-artifact/v1",
+            &nested_array(
+                PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH + 1,
+                CanonicalValue::Integer(1),
+            ),
+        ),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "one-over-depth value must reject before native CDDL validation",
+    );
+
+    assert_eq!(
+        registry.validate_canonical_value(
+            "runtime.generated-artifact/v1",
+            &CanonicalValue::Array(vec![CanonicalValue::Array(vec![CanonicalValue::Text(
+                "invalid".to_owned()
+            ),])]),
+        ),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "invalid nested recursive child must retain the stable schema failure",
+    );
 }
 
 #[test]

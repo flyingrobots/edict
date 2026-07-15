@@ -14,7 +14,9 @@ versions still track specification maturity rather than a released product.
   registry. Productive recursion through map key/value and array-element child
   values now admits the published Core schema, while alias-only cycles,
   choice-only cycles, and non-progressing repetitions still fail before a
-  registry exists.
+  registry exists. Every caller-constructed value crosses an Edict-owned exact
+  50-container nesting limit before native CDDL evaluation; one-over-limit
+  values return the stable schema-mismatch failure.
 
 - Added a deterministic Apache-2.0 provider contract pack for runtime-owned
   generators. The checked manifest binds one self-contained CDDL document,
