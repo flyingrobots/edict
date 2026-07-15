@@ -60,11 +60,41 @@ rejects missing, duplicate, or manifest-unbound resolved roles, compiles all
 bound CDDL documents, rejects missing roots and unresolved external rule
 references reachable from selected roots, and returns one immutable registry
 with a sorted binding receipt.
-Selected roots use a deliberately conservative non-generic, acyclic CDDL
-subset. Structurally unusable roots reject during construction, and every
-repeated array or map member must be provably input-consuming, so schema
-validation cannot enter a zero-progress loop outside Wasmtime fuel. The
-registry performs no schema discovery or lazy loading.
+Selected roots use a deliberately conservative non-generic, structurally
+guarded CDDL subset. A recursive rule back-edge is accepted only after schema
+evaluation has descended into a proper map key/value or array element; direct
+or mutual aliases and choice-only cycles therefore remain invalid. Structurally
+unusable roots reject during construction, and every repeated array or map
+member must still be provably input-consuming. Before component execution,
+`edict-provider-schema` audits recursive roots for structural progress and
+validates canonical values under the exact nesting gate, preventing
+zero-progress validation independently of any external execution budget. When
+competing alternatives can re-enter recursive validation, every alternative
+must expose one common,
+required, singleton text discriminator with pairwise-distinct values. Same-shape
+recursive arrays, missing or non-singleton discriminators, and overlapping
+discriminator values reject before a registry exists. Recursive optional or
+repeated members also route through specialization so the native validator
+cannot retry one recursive child through multiple cardinality assignments.
+Construction admits a specialized root only when every reachable shape is in
+the specializer's exact subset: maps have either pairwise-distinct literal keys
+or one bounded scalar key predicate, and arrays have only fixed members or one
+final variable member. Unsupported assignment shapes reject at construction
+rather than silently narrowing the admitted CDDL language.
+
+For a specialized root, Edict looks up each required discriminator directly in
+the current map before any whole-value walk, without depending on CDDL
+declaration order or encoded map-entry order. Missing, duplicate, unknown, or
+mismatching dispatch therefore rejects without recursively visiting an
+unselected child. Map-key predicates are checked as finite scalar rules by the
+exact pinned native validator, preserving controls such as `.regexp`; only an
+admitted key is literalized into the ephemeral rule. The specialized rule must
+contain no remaining rule reference. The selected path and then the complete
+value cross Edict's exact 50-container nesting gate, canonical encoding rejects
+duplicate keys, and only then does exact `cddl-cat 0.7.1` validation begin.
+For a fixed admitted schema, specialization is input-linear over the explicit
+value and has no private content-dependent validity cutoff. The registry
+performs no schema discovery or lazy loading.
 
 The same crate exposes deterministic `ProviderContractPack` assembly for
 runtime-owned generators. Callers supply the common, Core, lawpack,
@@ -83,9 +113,9 @@ assembly nor validation discovers repository files, registries, or networks;
 the `xtask` command is the explicit repository adapter that reads source files
 and writes or checks the reviewed artifacts. Pack instance validation is
 generation-time conformance evidence, not a substitute for the production
-manifest-bound schema registry. The trusted Edict pack contains productive
-recursive Core rules; untrusted provider schemas remain subject to the host
-registry's stricter acyclic structural-safety policy. [PROVIDERS-REQ-030]
+manifest-bound schema registry. The trusted Edict pack's productive recursive
+Core rules satisfy the same guarded structural-descent policy applied to every
+provider schema. [PROVIDERS-REQ-030, PROVIDERS-REQ-031]
 
 The private `edict-provider-host-wasmtime` crate supplies the component host.
 Its input is a selected component proof plus resolver-supplied bytes; it performs

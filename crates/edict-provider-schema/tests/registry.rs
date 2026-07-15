@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use edict_provider_schema::{
     ProviderArtifactSchemaRegistry, ProviderSchemaRegistryFailureKind,
-    ResolvedProviderSchemaArtifact,
+    ResolvedProviderSchemaArtifact, PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH,
 };
 use edict_syntax::{
-    bind_target_provider_manifest, CanonicalValue, ProviderArtifactKind, ProviderArtifactRef,
-    ProviderArtifactSchemaValidationErrorKind, ProviderArtifactSchemaValidator,
-    ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
-    TargetProviderManifest, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+    bind_target_provider_manifest, decode_canonical_cbor, CanonicalValue, ProviderArtifactKind,
+    ProviderArtifactRef, ProviderArtifactSchemaValidationErrorKind,
+    ProviderArtifactSchemaValidator, ProviderArtifactSource, ProviderSchemaBinding,
+    ProviderSchemaFormat, ResourceRef, TargetProviderManifest, TARGET_PROVIDER_ABI,
+    TARGET_PROVIDER_MANIFEST_API_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -23,6 +24,18 @@ const REVIEW_SCHEMA: &[u8] = br#"
 review-payload = { approved: bool }
 verifier-report = { status: "valid" / "invalid" }
 "#;
+
+const DISCRIMINATED_RECURSIVE_SCHEMA: &[u8] = br#"
+generated-artifact = leaf / short-child / long-child
+leaf = { kind: "leaf", value: uint }
+short-child = { a: generated-artifact, kind: "short" }
+long-child = { kind: "long", payload: generated-artifact }
+"#;
+
+const PROVIDER_CONTRACT_SCHEMA: &[u8] =
+    include_bytes!("../../../fixtures/provider-contracts/v1/edict-provider-contracts.cddl");
+const CORE_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/core/canonical/bounded-hello.core.cbor");
 
 fn digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
@@ -115,6 +128,81 @@ fn map(entries: &[(&str, CanonicalValue)]) -> CanonicalValue {
     )
 }
 
+fn nested_array(depth: usize, leaf: CanonicalValue) -> CanonicalValue {
+    (0..depth).fold(leaf, |value, _| CanonicalValue::Array(vec![value]))
+}
+
+fn effectful_core_with_obstruction_map() -> CanonicalValue {
+    let local = map(&[
+        ("id", CanonicalValue::Text("local@0".to_owned())),
+        ("alphaName", CanonicalValue::Text("value".to_owned())),
+        ("type", CanonicalValue::Text("Unit".to_owned())),
+    ]);
+    let null = map(&[("kind", CanonicalValue::Text("null".to_owned()))]);
+    let expression = map(&[
+        ("kind", CanonicalValue::Text("const".to_owned())),
+        ("value", null),
+    ]);
+    let effect = map(&[
+        ("kind", CanonicalValue::Text("effect".to_owned())),
+        ("binding", local.clone()),
+        (
+            "effect",
+            CanonicalValue::Text("echo.test@1.apply".to_owned()),
+        ),
+        ("input", expression.clone()),
+        (
+            "obstructionMap",
+            map(&[(
+                "Okay_1",
+                map(&[("binder", local), ("value", expression.clone())]),
+            )]),
+        ),
+    ]);
+    let intent = map(&[
+        ("input", CanonicalValue::Text("Unit".to_owned())),
+        ("output", CanonicalValue::Text("Unit".to_owned())),
+        (
+            "requiredOperationProfile",
+            CanonicalValue::Text("echo.test@1.profile".to_owned()),
+        ),
+        ("inputConstraints", CanonicalValue::Array(Vec::new())),
+        (
+            "coreEvaluationBudget",
+            map(&[
+                ("maxSteps", CanonicalValue::Integer(100)),
+                ("maxAllocatedBytes", CanonicalValue::Integer(1_024)),
+                ("maxOutputBytes", CanonicalValue::Integer(1_024)),
+            ]),
+        ),
+        (
+            "body",
+            map(&[
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("nodes", CanonicalValue::Array(vec![effect])),
+                ("result", expression),
+            ]),
+        ),
+    ]);
+    map(&[
+        (
+            "apiVersion",
+            CanonicalValue::Text("edict.core/v1".to_owned()),
+        ),
+        (
+            "coordinate",
+            CanonicalValue::Text("test.effectful-core@1".to_owned()),
+        ),
+        ("imports", CanonicalValue::Array(Vec::new())),
+        ("types", map(&[])),
+        ("intents", map(&[("apply", intent)])),
+        (
+            "requiredCoreCapabilities",
+            CanonicalValue::Array(Vec::new()),
+        ),
+    ])
+}
+
 fn registry() -> ProviderArtifactSchemaRegistry {
     let manifest = Box::leak(Box::new(manifest(GENERATED_SCHEMA, REVIEW_SCHEMA)));
     let validated = bind_target_provider_manifest(manifest).expect("manifest validates");
@@ -131,9 +219,18 @@ fn registry() -> ProviderArtifactSchemaRegistry {
 }
 
 fn registry_with_generated_schema(
-    schema: &'static [u8],
+    schema: &[u8],
 ) -> Result<ProviderArtifactSchemaRegistry, edict_provider_schema::ProviderSchemaRegistryFailure> {
-    let manifest = Box::leak(Box::new(manifest(schema, REVIEW_SCHEMA)));
+    registry_with_generated_schema_root(schema, "generated-artifact")
+}
+
+fn registry_with_generated_schema_root(
+    schema: &[u8],
+    root: &str,
+) -> Result<ProviderArtifactSchemaRegistry, edict_provider_schema::ProviderSchemaRegistryFailure> {
+    let mut manifest = manifest(schema, REVIEW_SCHEMA);
+    root.clone_into(&mut manifest.schema_bindings[0].root_rule);
+    let manifest = Box::leak(Box::new(manifest));
     let validated = bind_target_provider_manifest(manifest).expect("manifest validates");
     ProviderArtifactSchemaRegistry::from_manifest(
         &validated,
@@ -146,6 +243,25 @@ fn registry_with_generated_schema(
         ],
         ["runtime.generated-artifact/v1"],
     )
+}
+
+fn assert_generated_schema_compile_failure(name: &str, schema: &[u8]) {
+    cddl_cat::flatten::flatten_from_str(std::str::from_utf8(schema).expect("schema case is UTF-8"))
+        .unwrap_or_else(|_| panic!("{name} must be syntactically valid CDDL"));
+    let Err(failure) = registry_with_generated_schema(schema) else {
+        panic!("{name} must reject during registry construction");
+    };
+    assert_eq!(
+        failure.kind(),
+        ProviderSchemaRegistryFailureKind::SchemaCompileFailed,
+        "{name}"
+    );
+    assert_eq!(
+        failure.domain(),
+        Some("runtime.generated-artifact/v1"),
+        "{name}"
+    );
+    assert_eq!(failure.schema_role(), Some("schema.generated"), "{name}");
 }
 
 #[test]
@@ -338,6 +454,18 @@ fn construction_rejects_latent_or_non_progressing_validator_shapes() {
         ),
         ("direct cycle", b"generated-artifact = generated-artifact"),
         (
+            "mutual alias cycle",
+            b"generated-artifact = alias\nalias = generated-artifact",
+        ),
+        (
+            "choice-only cycle",
+            b"generated-artifact = generated-artifact / uint",
+        ),
+        (
+            "guarded branch cannot launder direct cycle",
+            b"generated-artifact = uint / [generated-artifact] / generated-artifact",
+        ),
+        (
             "zero-progress array repetition",
             b"generated-artifact = [* ()]",
         ),
@@ -377,6 +505,321 @@ fn construction_rejects_latent_or_non_progressing_validator_shapes() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn construction_rejects_ambiguous_recursive_choice_shapes() {
+    let cases: &[(&str, &[u8])] = &[
+        (
+            "duplicate recursive arrays",
+            b"generated-artifact = [generated-artifact] / [generated-artifact] / tstr",
+        ),
+        (
+            "overlapping recursive arrays",
+            b"generated-artifact = [generated-artifact] / [generated-artifact, * uint] / tstr",
+        ),
+        (
+            "same-tag recursive maps",
+            b"generated-artifact = branch-a / branch-b / tstr\nbranch-a = { kind: \"branch\", child: generated-artifact }\nbranch-b = { kind: \"branch\", child: generated-artifact, ? extra: uint }",
+        ),
+        (
+            "overlapping discriminator value sets",
+            b"generated-artifact = branch-a / branch-b / tstr\nbranch-a = { kind: \"branch-a\" / \"shared\", child: generated-artifact }\nbranch-b = { kind: \"branch-b\" / \"shared\", child: generated-artifact }",
+        ),
+        (
+            "multiple optional recursive array members",
+            b"generated-artifact = tstr / [? generated-artifact, ? generated-artifact]",
+        ),
+        (
+            "multiple optional recursive map fallbacks",
+            b"generated-artifact = tstr / { ? tstr => generated-artifact, ? uint => generated-artifact }",
+        ),
+        (
+            "multiple variable array members under recursive dispatch",
+            b"generated-artifact = leaf / left / right\nleaf = { kind: \"leaf\", value: uint }\nleft = { kind: \"left\", child: generated-artifact, items: [* uint, * tstr] }\nright = { kind: \"right\", child: generated-artifact }",
+        ),
+        (
+            "non-final variable array member under recursive dispatch",
+            b"generated-artifact = leaf / left / right\nleaf = { kind: \"leaf\", value: uint }\nleft = { kind: \"left\", child: generated-artifact, items: [* uint, uint] }\nright = { kind: \"right\", child: generated-artifact }",
+        ),
+        (
+            "mixed literal and flexible map keys under recursive dispatch",
+            b"generated-artifact = leaf / left / right\nleaf = { kind: \"leaf\", value: uint }\nleft = { kind: \"left\", child: generated-artifact, items: { fixed: uint, * tstr => uint } }\nright = { kind: \"right\", child: generated-artifact }",
+        ),
+    ];
+
+    for (name, schema) in cases {
+        assert_generated_schema_compile_failure(name, schema);
+    }
+
+    let overflow = format!(
+        "generated-artifact = leaf / left / right\nleaf = {{ kind: \"leaf\", value: uint }}\nleft = {{ kind: \"left\", child: generated-artifact, items: [{0}*{0} uint, uint] }}\nright = {{ kind: \"right\", child: generated-artifact }}",
+        usize::MAX
+    );
+    assert_generated_schema_compile_failure(
+        "overflowing fixed array cardinality total",
+        overflow.as_bytes(),
+    );
+}
+
+#[test]
+fn recursive_map_discriminator_dispatch_is_independent_of_encoded_key_order() {
+    let registry = registry_with_generated_schema(DISCRIMINATED_RECURSIVE_SCHEMA)
+        .expect("distinct singleton map discriminators must admit bounded dispatch");
+    let leaf = map(&[
+        ("kind", CanonicalValue::Text("leaf".to_owned())),
+        ("value", CanonicalValue::Integer(1)),
+    ]);
+
+    // Canonical CBOR orders the one-byte key `a` before `kind`, so this value
+    // encodes its recursive child before its discriminator.
+    let discriminator_after_child = map(&[
+        ("a", leaf.clone()),
+        ("kind", CanonicalValue::Text("short".to_owned())),
+    ]);
+    registry
+        .validate_canonical_value("runtime.generated-artifact/v1", &discriminator_after_child)
+        .expect("dispatch must find a discriminator encoded after the recursive child");
+
+    // Canonical CBOR orders `kind` before the longer key `payload`, so this
+    // value encodes its discriminator before its recursive child.
+    let discriminator_before_child = map(&[
+        ("kind", CanonicalValue::Text("long".to_owned())),
+        ("payload", leaf.clone()),
+    ]);
+    registry
+        .validate_canonical_value("runtime.generated-artifact/v1", &discriminator_before_child)
+        .expect("dispatch must find a discriminator encoded before the recursive child");
+
+    let alternating_arms = map(&[
+        (
+            "a",
+            map(&[
+                ("kind", CanonicalValue::Text("long".to_owned())),
+                (
+                    "payload",
+                    map(&[
+                        ("a", leaf),
+                        ("kind", CanonicalValue::Text("short".to_owned())),
+                    ]),
+                ),
+            ]),
+        ),
+        ("kind", CanonicalValue::Text("short".to_owned())),
+    ]);
+    registry
+        .validate_canonical_value("runtime.generated-artifact/v1", &alternating_arms)
+        .expect("nested occurrences may select different recursive alternatives");
+}
+
+#[test]
+fn recursive_map_discriminator_dispatch_rejects_invalid_discriminators() {
+    let registry = registry_with_generated_schema(DISCRIMINATED_RECURSIVE_SCHEMA)
+        .expect("distinct singleton map discriminators must admit bounded dispatch");
+    let leaf = map(&[
+        ("kind", CanonicalValue::Text("leaf".to_owned())),
+        ("value", CanonicalValue::Integer(1)),
+    ]);
+
+    let cases = [
+        ("missing", map(&[("payload", leaf.clone())])),
+        (
+            "unknown",
+            map(&[
+                (
+                    "a",
+                    nested_array(
+                        PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH - 2,
+                        CanonicalValue::Text("malicious".to_owned()),
+                    ),
+                ),
+                ("kind", CanonicalValue::Text("unknown".to_owned())),
+            ]),
+        ),
+        (
+            "mismatching",
+            map(&[
+                (
+                    "a",
+                    nested_array(
+                        PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH - 2,
+                        CanonicalValue::Text("malicious".to_owned()),
+                    ),
+                ),
+                ("kind", CanonicalValue::Text("long".to_owned())),
+            ]),
+        ),
+    ];
+
+    for (name, value) in cases {
+        assert_eq!(
+            registry.validate_canonical_value("runtime.generated-artifact/v1", &value),
+            Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+            "{name} discriminator must reject with the stable schema failure",
+        );
+    }
+
+    let duplicate = CanonicalValue::Map(vec![
+        (
+            CanonicalValue::Text("kind".to_owned()),
+            CanonicalValue::Text("short".to_owned()),
+        ),
+        (
+            CanonicalValue::Text("kind".to_owned()),
+            CanonicalValue::Text("long".to_owned()),
+        ),
+        (CanonicalValue::Text("a".to_owned()), leaf),
+    ]);
+    assert_eq!(
+        registry.validate_canonical_value("runtime.generated-artifact/v1", &duplicate),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "duplicate discriminator keys must reject with the stable schema failure",
+    );
+}
+
+#[test]
+fn recursive_dispatch_preserves_native_regexp_map_key_semantics() {
+    let schema = br#"
+generated-artifact = leaf / branch
+leaf = { kind: "leaf", value: uint }
+branch = {
+  kind: "branch",
+  child: generated-artifact,
+  obstructionMap: { * failure-ident => generated-artifact },
+}
+failure-ident = tstr .regexp "[A-Za-z_][A-Za-z0-9_]*"
+"#;
+    let registry = registry_with_generated_schema(schema)
+        .expect("recursive regexp-key maps belong to the bounded dispatch subset");
+    let leaf = map(&[
+        ("kind", CanonicalValue::Text("leaf".to_owned())),
+        ("value", CanonicalValue::Integer(1)),
+    ]);
+    let valid = map(&[
+        ("kind", CanonicalValue::Text("branch".to_owned())),
+        ("child", leaf.clone()),
+        ("obstructionMap", map(&[("Okay_1", leaf.clone())])),
+    ]);
+    registry
+        .validate_canonical_value("runtime.generated-artifact/v1", &valid)
+        .expect("the pinned native regexp must admit a matching map key");
+
+    let invalid = map(&[
+        ("kind", CanonicalValue::Text("branch".to_owned())),
+        ("child", leaf.clone()),
+        ("obstructionMap", map(&[("---", leaf)])),
+    ]);
+    assert_eq!(
+        registry.validate_canonical_value("runtime.generated-artifact/v1", &invalid),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "specialization must not erase the pinned native regexp predicate",
+    );
+}
+
+#[test]
+fn construction_accepts_guarded_recursive_roots() {
+    let cases: &[(&str, &[u8], CanonicalValue)] = &[
+        (
+            "map child",
+            b"generated-artifact = leaf / branch\nleaf = { kind: \"leaf\", value: uint }\nbranch = { kind: \"branch\", child: generated-artifact }",
+            map(&[
+                ("kind", CanonicalValue::Text("branch".to_owned())),
+                (
+                    "child",
+                    map(&[
+                        ("kind", CanonicalValue::Text("leaf".to_owned())),
+                        ("value", CanonicalValue::Integer(1)),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "array element",
+            b"generated-artifact = uint / [* generated-artifact]",
+            CanonicalValue::Array(vec![
+                CanonicalValue::Integer(1),
+                CanonicalValue::Array(vec![CanonicalValue::Integer(2)]),
+            ]),
+        ),
+        (
+            "map key",
+            b"generated-artifact = tstr / { generated-artifact => uint }",
+            CanonicalValue::Map(vec![(
+                CanonicalValue::Map(vec![(
+                    CanonicalValue::Text("leaf".to_owned()),
+                    CanonicalValue::Integer(1),
+                )]),
+                CanonicalValue::Integer(2),
+            )]),
+        ),
+        (
+            "mutual map child",
+            b"generated-artifact = left\nleft = { ? right: right }\nright = { ? left: left }",
+            map(&[("right", map(&[("left", map(&[]))]))]),
+        ),
+    ];
+
+    for (name, schema, value) in cases {
+        let registry = registry_with_generated_schema(schema)
+            .unwrap_or_else(|_| panic!("guarded recursive {name} schema must construct"));
+        registry
+            .validate_canonical_value("runtime.generated-artifact/v1", value)
+            .unwrap_or_else(|_| panic!("finite guarded recursive {name} value must validate"));
+    }
+
+    let registry = registry_with_generated_schema_root(PROVIDER_CONTRACT_SCHEMA, "core-module")
+        .expect("published recursive Core schema root must construct");
+    let core = decode_canonical_cbor(CORE_FIXTURE).expect("reviewed Core fixture is canonical");
+    registry
+        .validate_canonical_value("runtime.generated-artifact/v1", &core)
+        .expect("reviewed Core fixture validates through the published recursive root");
+
+    registry
+        .validate_canonical_value(
+            "runtime.generated-artifact/v1",
+            &effectful_core_with_obstruction_map(),
+        )
+        .expect("published Core root must admit a nonempty regexp-keyed effect obstruction map");
+}
+
+#[test]
+fn guarded_recursive_validation_is_bounded_and_rejects_invalid_descendants() {
+    let registry =
+        registry_with_generated_schema(b"generated-artifact = uint / [generated-artifact]")
+            .expect("guarded recursive array schema constructs");
+
+    registry
+        .validate_canonical_value(
+            "runtime.generated-artifact/v1",
+            &nested_array(
+                PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH,
+                CanonicalValue::Integer(1),
+            ),
+        )
+        .expect("maximum-depth guarded recursive value validates");
+
+    assert_eq!(
+        registry.validate_canonical_value(
+            "runtime.generated-artifact/v1",
+            &nested_array(
+                PROVIDER_SCHEMA_VALIDATION_MAX_NESTING_DEPTH + 1,
+                CanonicalValue::Integer(1),
+            ),
+        ),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "one-over-depth value must reject before native CDDL validation",
+    );
+
+    assert_eq!(
+        registry.validate_canonical_value(
+            "runtime.generated-artifact/v1",
+            &CanonicalValue::Array(vec![CanonicalValue::Array(vec![CanonicalValue::Text(
+                "invalid".to_owned()
+            ),])]),
+        ),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "invalid nested recursive child must retain the stable schema failure",
+    );
 }
 
 #[test]
