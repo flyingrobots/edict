@@ -13,10 +13,17 @@ versions still track specification maturity rather than a released product.
 - Added guarded recursive CDDL admission to the manifest-bound provider schema
   registry. Productive recursion through map key/value and array-element child
   values now admits the published Core schema, while alias-only cycles,
-  choice-only cycles, and non-progressing repetitions still fail before a
-  registry exists. Every caller-constructed value crosses an Edict-owned exact
-  50-container nesting limit before native CDDL evaluation; one-over-limit
-  values return the stable schema-mismatch failure.
+  choice-only cycles, ambiguous recursive alternatives, and non-progressing
+  repetitions still fail before a registry exists. Recursive variable
+  occurrences and tagged choices use an Edict-owned specialization pass;
+  tagged choices dispatch by a required literal map key without depending on
+  declaration or encoded-entry order. Construction rejects any recursive shape
+  the finite specializer cannot preserve exactly, including ambiguous map-key
+  assignment and multiple or non-final variable array members. Scalar map-key
+  predicates retain exact pinned-validator semantics, including `.regexp`.
+  Specialized values select an arm before child traversal, then cross canonical
+  encoding and the exact 50-container limit before `cddl-cat 0.7.1` validation;
+  duplicate keys and one-over-limit values return the stable schema mismatch.
 
 - Added a deterministic Apache-2.0 provider contract pack for runtime-owned
   generators. The checked manifest binds one self-contained CDDL document,

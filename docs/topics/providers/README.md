@@ -66,13 +66,32 @@ evaluation has descended into a proper map key/value or array element; direct
 or mutual aliases and choice-only cycles therefore remain invalid. Structurally
 unusable roots reject during construction, and every repeated array or map
 member must still be provably input-consuming, so schema validation cannot
-enter a zero-progress loop outside Wasmtime fuel. The registry performs no
-schema discovery or lazy loading. Before native CDDL evaluation, every value is
-checked against Edict's exact 50-container provider-schema nesting gate,
-including values constructed directly by a caller; one-over-limit values reject
-as `SchemaMismatch`. The native validator retains its own recursion ceiling, so
-neither guarded schema recursion nor a finite adversarial value runs outside a
-deterministic depth boundary.
+enter a zero-progress loop outside Wasmtime fuel. When competing alternatives
+can re-enter recursive validation, every alternative must expose one common,
+required, singleton text discriminator with pairwise-distinct values. Same-shape
+recursive arrays, missing or non-singleton discriminators, and overlapping
+discriminator values reject before a registry exists. Recursive optional or
+repeated members also route through specialization so the native validator
+cannot retry one recursive child through multiple cardinality assignments.
+Construction admits a specialized root only when every reachable shape is in
+the specializer's exact subset: maps have either pairwise-distinct literal keys
+or one bounded scalar key predicate, and arrays have only fixed members or one
+final variable member. Unsupported assignment shapes reject at construction
+rather than silently narrowing the admitted CDDL language.
+
+For a specialized root, Edict looks up each required discriminator directly in
+the current map before any whole-value walk, without depending on CDDL
+declaration order or encoded map-entry order. Missing, duplicate, unknown, or
+mismatching dispatch therefore rejects without recursively visiting an
+unselected child. Map-key predicates are checked as finite scalar rules by the
+exact pinned native validator, preserving controls such as `.regexp`; only an
+admitted key is literalized into the ephemeral rule. The specialized rule must
+contain no remaining rule reference. The selected path and then the complete
+value cross Edict's exact 50-container nesting gate, canonical encoding rejects
+duplicate keys, and only then does exact `cddl-cat 0.7.1` validation begin.
+For a fixed admitted schema, specialization is input-linear over the explicit
+value and has no private content-dependent validity cutoff. The registry
+performs no schema discovery or lazy loading.
 
 The same crate exposes deterministic `ProviderContractPack` assembly for
 runtime-owned generators. Callers supply the common, Core, lawpack,

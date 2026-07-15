@@ -4,6 +4,11 @@
 //! explicit in-memory schema bytes. It verifies each raw schema digest and
 //! compiles every CDDL document before an external component can run. Selected
 //! roots must belong to the host's total, non-generic validation subset.
+//! Recursive variable occurrences use finite specialization, while competing
+//! recursive alternatives additionally require an Edict-owned discriminator.
+//! Construction proves the specializer total for the admitted shape, and
+//! validation selects only the finite arm graph before invoking the exact
+//! native validator.
 //! Validation performs no discovery, file access, network access, clock,
 //! randomness, environment inspection, or mutable-global lookup.
 
@@ -22,6 +27,7 @@ use edict_syntax::{
 use sha2::{Digest, Sha256};
 
 mod contract_pack;
+mod recursive_dispatch;
 mod schema_safety;
 
 pub use contract_pack::{
@@ -138,6 +144,7 @@ pub struct ProviderSchemaRegistryBinding {
 struct CompiledSchema {
     context: Arc<BasicContext>,
     root_rule: String,
+    recursive_dispatch: recursive_dispatch::RecursiveDispatchRequirement,
 }
 
 /// Complete immutable mapping from artifact domains to compiled schemas.
@@ -225,12 +232,22 @@ impl ProviderArtifactSchemaRegistry {
                     &binding.schema_role,
                 ));
             }
+            let recursive_dispatch =
+                recursive_dispatch::root_dispatch_requirement(&context.rules, &binding.root_rule)
+                    .ok_or_else(|| {
+                    ProviderSchemaRegistryFailure::for_binding(
+                        ProviderSchemaRegistryFailureKind::SchemaCompileFailed,
+                        &binding.domain,
+                        &binding.schema_role,
+                    )
+                })?;
 
             schemas.insert(
                 binding.domain.clone(),
                 CompiledSchema {
                     context,
                     root_rule: binding.root_rule.clone(),
+                    recursive_dispatch,
                 },
             );
             bindings.push(ProviderSchemaRegistryBinding {
@@ -324,6 +341,24 @@ impl ProviderArtifactSchemaValidator for ProviderArtifactSchemaRegistry {
             .schemas
             .get(domain)
             .ok_or(ProviderArtifactSchemaValidationErrorKind::UnsupportedDomain)?;
+        let native_rule = schema
+            .context
+            .rules
+            .get(&schema.root_rule)
+            .ok_or(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)?;
+        let specialized;
+        let rule = match schema.recursive_dispatch {
+            recursive_dispatch::RecursiveDispatchRequirement::Native => native_rule,
+            recursive_dispatch::RecursiveDispatchRequirement::Specialized => {
+                specialized = recursive_dispatch::specialize_root_for_value(
+                    schema.context.as_ref(),
+                    &schema.root_rule,
+                    value,
+                )
+                .ok_or(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)?;
+                &specialized
+            }
+        };
         if !value_within_provider_schema_nesting_limit(value, 0) {
             return Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch);
         }
@@ -331,11 +366,6 @@ impl ProviderArtifactSchemaValidator for ProviderArtifactSchemaRegistry {
             .map_err(|_| ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)?;
         let cbor_value: ciborium::Value = ciborium::from_reader(bytes.as_slice())
             .map_err(|_| ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)?;
-        let rule = schema
-            .context
-            .rules
-            .get(&schema.root_rule)
-            .ok_or(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)?;
         validate_cbor(rule, &cbor_value, schema.context.as_ref())
             .map_err(|_| ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
     }
