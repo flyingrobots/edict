@@ -428,6 +428,17 @@ fn construction_accepts_guarded_recursive_roots() {
             ]),
         ),
         (
+            "map key",
+            b"generated-artifact = tstr / { generated-artifact => uint }",
+            CanonicalValue::Map(vec![(
+                CanonicalValue::Map(vec![(
+                    CanonicalValue::Text("leaf".to_owned()),
+                    CanonicalValue::Integer(1),
+                )]),
+                CanonicalValue::Integer(2),
+            )]),
+        ),
+        (
             "mutual map child",
             b"generated-artifact = left\nleft = { ? right: right }\nright = { ? left: left }",
             map(&[("right", map(&[("left", map(&[]))]))]),
