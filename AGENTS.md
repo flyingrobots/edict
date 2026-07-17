@@ -146,6 +146,134 @@ For Rust changes:
 - Treat planned lint, dependency, and fuzzing ratchets as planned until their
   executable checks land.
 
+## Pull Request Writing
+
+Every pull request body MUST contain a `## Plain-English Walkthrough` section.
+Its depth should match the change: a narrow mechanical PR may need only a few
+paragraphs, while a behavioral or architectural PR needs enough detail for a
+reviewer to reconstruct the important flow, invariants, and risks without
+reverse-engineering the diff.
+
+The walkthrough supplements, rather than replaces, the repository's other PR
+requirements: issue-closing directives, RED/GREEN evidence, dependency
+rationale, documentation impact, and release or compatibility notes still
+apply when relevant.
+
+### Required Structure
+
+Use these subsections inside `## Plain-English Walkthrough`:
+
+1. `### TL;DR`: state what changed, why it changed, and the user-visible or
+   contract-visible result. Keep it short and avoid implementation trivia.
+2. `### Walkthrough`: explain the change through progressive disclosure. Start
+   with the previous behavior or problem, introduce the new model and dataflow,
+   then cover authority boundaries, invariants, failure modes, compatibility,
+   and verification as the change requires.
+
+Use additional `###` through `#####` headings only when they make a substantial
+walkthrough easier to navigate. Do not copy a design document or topic shelf
+into the PR body; summarize the review-critical facts and link to the durable
+document.
+
+### Diagrams
+
+Use Mermaid when a diagram communicates a nontrivial relationship more clearly
+than prose. Select the diagram type that matches the claim: flowcharts for
+decision or data flow, sequence diagrams for interactions, state diagrams for
+lifecycle rules, and class or entity-relationship diagrams for structure. Do
+not add decorative diagrams or attempt to use every diagram type. A nontrivial
+PR that changes multi-stage flow, lifecycle, ownership, or component
+interaction SHOULD include at least one useful diagram; a narrow change may
+omit diagrams when prose is clearer.
+
+A section MUST NOT begin with, end with, or consist only of a diagram. Every
+diagram needs all four elements:
+
+1. An introductory paragraph that states the point the diagram demonstrates.
+2. The Mermaid diagram.
+3. A collapsed caption that explains how to read the diagram.
+4. A concluding paragraph that interprets the diagram and ties it back to the
+   PR's behavior, risk, or contract.
+
+Use this caption shape exactly; the blank lines are required for GitHub
+rendering:
+
+````markdown
+```mermaid
+flowchart LR
+    A[Validated input] --> B[Deterministic transform]
+    B --> C[Validated output]
+```
+
+<details>
+<summary>Caption: Deterministic transformation boundary</summary>
+
+1. The caller supplies already validated input.
+2. The transform performs no discovery or ambient I/O.
+3. The output crosses the boundary only after validation.
+
+</details>
+````
+
+For ordered transitions, interactions, or states, prefer a numbered caption.
+For ownership maps, compatibility matrices, or field relationships, prefer a
+small table. Captions must explain meaningful nodes and edges, not merely
+repeat their labels.
+
+### Prose, Tables, And Code
+
+- Use tables for comparisons, ownership maps, compatibility matrices, and
+  evidence where rows have a consistent shape.
+- Use bullets for genuinely unordered sets and numbered lists for ordered
+  procedures, states, or sequences. Do not force prose into a table merely to
+  avoid bullets.
+- Include focused code, schema, command, or payload snippets when exact syntax
+  is part of the review. Snippets must match the branch and omit unrelated
+  boilerplate.
+- Describe current branch behavior as current behavior. Label planned or
+  downstream work explicitly; do not present it as landed.
+
+### Claims And Citations
+
+Tag each material technical claim at its first occurrence using
+`[claim:<claim-id>, confidence:<value>]`. Use stable, descriptive claim IDs and
+a confidence value from `0.00` through `1.00` that reflects evidence strength,
+not rhetorical certainty.
+
+- `1.00`: directly established by deterministic executable evidence or a
+  canonical checked artifact at the cited commit.
+- `0.90` through `0.99`: directly established by source, schema, or workflow
+  inspection, but without an independent executable witness.
+- `0.60` through `0.89`: an inference supported by multiple cited facts.
+- Below `0.60`: an unresolved assumption or hypothesis. Label it as such and do
+  not use it to justify merge readiness.
+
+Source citations MUST use `<repo-relative-path>#<line-number>@<git-sha>`. Cite
+tests by test name and source path, commands by exact command plus observed
+result, and issues or pull requests with direct links. Prefer committed,
+reviewable evidence over transient terminal output. Refresh source and test
+citations after follow-up commits so their lines and SHAs still identify the
+reviewed evidence. If evidence cannot be found, write `Evidence not found`,
+recast the statement as an assumption or open question, and identify the
+evidence needed to resolve it.
+
+End the explanatory body with a collapsed citations appendix. GitHub issue
+closing directives may follow it.
+
+```markdown
+<details>
+<summary>Appendix: Citations</summary>
+
+| Claim | Evidence | Confidence | Notes |
+| --- | --- | ---: | --- |
+| `claim:validated-transform` | `crates/example/src/lib.rs#42@abc1234`; `transform_rejects_invalid_input` in `crates/example/tests/transform.rs` | 1.00 | Source and executable rejection witness agree. |
+
+</details>
+```
+
+For a truly mechanical PR with no material technical claim, keep the appendix
+and state that no separate claim citation is required, with a brief rationale.
+
 ## Pull Request Review Policy
 
 Review policy lives in
