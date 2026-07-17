@@ -10,6 +10,20 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added `EDICT.md`, a comprehensive cited introduction and deep-dive report:
+  hello-world walkthrough, feature deep dive, plain-English walkthrough with
+  glossary and diagrams, unique technical details, roadmap discussion, and a
+  claims-to-citations appendix pinned to commit `56f82ec`. It is a
+  reader-facing report, not a normative spec or topic shelf. Revision 2 adds
+  a theory-grounding walkthrough level (AION / Observer Geometry / Continuum:
+  the WARP optic five-tuple, footprint lineage, the four-outcome law,
+  support ledgers and witness debt), sixteen cited theory claims, a corrected
+  "pluralize" evidence-gap entry, and a personal reflections appendix.
+  Revision 3 adds a hands-on lab of six transcripts captured live from the
+  built CLI (including a digest invariance/sensitivity experiment over the
+  `project` operation), a quick-reference appendix (syntax skeleton,
+  wire-stable diagnostic code inventory, digest domains, xtask verbs), and a
+  wider-world positioning appendix with a suggested reading order.
 - Added guarded recursive CDDL admission to the manifest-bound provider schema
   registry. Productive recursion through map key/value and array-element child
   values now admits the published Core schema, while alias-only cycles,
