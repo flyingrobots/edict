@@ -13,6 +13,8 @@ In scope:
   participant-neutral resources.
 - authority-facts documents whose source kind is `lawpack` for first compiler
   budget and effect write-class facts.
+- provider manifests that describe lawpacks as generated, digest-locked
+  provider artifacts with explicit provenance.
 
 Out of scope:
 
@@ -21,6 +23,7 @@ Out of scope:
 - lawpack dependency DAG validation;
 - target adapter ABI validation;
 - lawpack conformance fixtures and differential lowerer trials.
+- generating lawpacks from Wesley or runtime-owned semantic sources.
 
 ## Requirements
 
@@ -32,6 +35,7 @@ Out of scope:
 | LAWPACKS-REQ-004 | implemented | Contract-bundle validation treats lawpacks as external participant-neutral artifact references, not loaded or executed manifests. | crates/edict-syntax/src/contract_bundle.rs |
 | LAWPACKS-REQ-005 | gap | The `edict.lawpack/v1` CDDL manifest and export surface have no executable instance validator yet. | docs/abi/edict-lawpack.cddl, docs/SPEC_edict-lawpack-abi-v1.md |
 | LAWPACKS-REQ-006 | implemented | Authority-facts loading accepts digest-locked `lawpack` source identity for first compiler budget and effect write-class facts without claiming full manifest validation. | docs/topics/authority-facts/test-plan.md |
+| LAWPACKS-REQ-007 | implemented | Provider manifests model lawpacks as generated provider artifacts with digest-locked semantic source and generator provenance; Edict validates the reference/provenance envelope without owning runtime lawpack semantics. | issue #139, docs/topics/providers/test-plan.md |
 
 ## Fixtures
 
@@ -50,6 +54,7 @@ Out of scope:
 | LAWPACKS-TP-004 | implemented | Contract bundle | LAWPACKS-REQ-004 | Runtime-neutral bundles can carry lawpack artifact references, and lawpacks remain optional artifact-list entries. | echo_and_kv_bundles_validate_with_the_same_runtime_neutral_contract, optional_artifact_lists_may_be_empty | - | Contract-bundle validation does not load lawpack manifests. |
 | LAWPACKS-TP-005 | gap | Manifest validation | LAWPACKS-REQ-005 | No executable lawpack manifest instance validator is claimed. | - | - | Add with lawpack loading or schema-validation work. |
 | LAWPACKS-TP-006 | implemented | Authority facts | LAWPACKS-REQ-006 | A lawpack-sourced authority-facts file can provide budget and effect write-class facts consumed by the compiler. | file_backed_authority_facts_compile_bounded_hello, file_backed_authority_facts_reject_write_effect_profile_mismatch | crates/edict-syntax/tests/authority_facts.rs | Asserts compiler behavior, not manifest prose. |
+| LAWPACKS-TP-007 | implemented | Provider provenance | LAWPACKS-REQ-007 | A provider manifest fixture can carry a generated lawpack artifact with digest-locked semantic source and generator provenance, while unlocked artifact/provenance references reject with stable provider validation failures. | generated_provider_manifest_fixture_validates, provider_manifest_rejects_unlocked_generated_artifact, provider_manifest_rejects_unlocked_generated_provenance, provider_manifest_rejects_unlocked_generator_provenance | fixtures/providers/echo-generated/provider-manifest.json, crates/edict-syntax/tests/provider.rs | Provider validation is envelope/provenance validation only; no Echo semantics are interpreted. |
 
 ## Determinism Obligations
 

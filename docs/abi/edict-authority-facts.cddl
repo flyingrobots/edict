@@ -1,0 +1,46 @@
+; edict-authority-facts.cddl
+; Canonical schema for the first compiler-context authority-facts document.
+; Authoritative byte encoding: edict.canonical-cbor/v1.
+;
+; This schema is assembled with edict-common.cddl so source.digest uses the
+; shared sha256-digest typed value. JSON is a review/input rendering: its
+; `sha256:<64 hex>` source digest is projected to [`sha256`, 32 raw bytes] on
+; the wire, and its fact arrays project to the coordinate-keyed maps below.
+
+authority-facts = {
+  apiVersion: "edict.authority-facts/v1",
+  source: authority-fact-source,
+  operationProfiles: { * tstr => authority-operation-profile-fact },
+  effectWriteClasses: { * tstr => authority-write-class },
+  budgets: { * tstr => authority-budget-fact },
+}
+
+authority-fact-source = {
+  kind: "lawpack" / "targetProfile",
+  coordinate: tstr,
+  digest: sha256-digest,
+}
+
+; The map key is the source operation-profile coordinate. It is not repeated in
+; the value, so a key and embedded coordinate cannot disagree. Allowed write
+; classes are a canonical map-set: the class is the unique key and null is the
+; unit marker. Canonical CBOR fixes key order without a second ordering rule.
+authority-operation-profile-fact = {
+  core: tstr,
+  allowedWriteClasses: { * authority-write-class => null },
+}
+
+; The effectWriteClasses map key is the semantic effect coordinate. The budgets
+; map key is the source budget coordinate. Canonical CBOR map-key uniqueness
+; makes duplicate fact coordinates structurally unrepresentable.
+authority-budget-fact = {
+  maxSteps: uint,
+  maxAllocatedBytes: uint,
+  maxOutputBytes: uint,
+}
+
+; AuthorityFactsDocument v1 intentionally accepts only the write classes the
+; current compiler model can consume. `custom` is the sole v1 custom spelling;
+; arbitrary target-profile extension strings do not enter this compiler path.
+authority-write-class = "none" / "read" / "create" / "ensure" / "append" /
+                        "replace" / "delete" / "custom"

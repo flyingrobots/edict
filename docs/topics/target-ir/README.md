@@ -30,6 +30,16 @@ The `edict_syntax` crate exposes `lower_to_target_ir`,
 not read target facts from ambient environment, discover runtimes, or fetch
 registries.
 
+The crate also exposes `BuiltinTargetLowerer`, `BuiltinLowererRequest`, and
+`lower_with_builtin_lowerer` as an
+in-process migration seam for the existing Echo and git-warp lowerers. Selection
+is explicit and bound to the lowerer's target-profile coordinate. A mismatch
+rejects before invocation; once matched, the complete direct
+`TargetLoweringReport` passes through unchanged. Tests prove the direct and
+compatibility paths produce identical Target IR artifacts, canonical bytes, and
+digests. This adapter does not resolve provider manifests, load components, or
+define general target plugin dispatch. [TIR-REQ-013]
+
 `TargetIrLoweringFacts::from_lowerability_report` derives the effect-to-intrinsic
 lowering table from accepted native lowerability reports.
 The derived facts use the target-profile coordinate and operation profile from
@@ -102,6 +112,15 @@ Reviewed Echo and git-warp Target IR byte/digest goldens live under
 `fixtures/target-ir/canonical/`. `cargo xtask target-ir-goldens --check`
 regenerates them from executable lowering and canonical encoding, and
 `cargo xtask verify` includes that check.
+
+[`edict-target-ir.cddl`](../../abi/edict-target-ir.cddl) defines the
+`target-ir-artifact` root from that canonical value shape. The provider contract
+pack assembles it with the common and Core rules it references, verifies the
+complete rule closure, and checks both reviewed Target IR artifacts through the
+compiled root. This is structural wire-schema evidence for valid
+lowering-produced artifacts; the lowerer and encoder continue to own semantic
+identifier validity and canonical ordering or deduplication of set-like
+fields. [TIR-REQ-014]
 
 Bundle assembly can now consume a real `TargetIrArtifact` through
 `assemble_contract_bundle_from_target_ir`. That path computes

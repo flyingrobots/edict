@@ -24,9 +24,131 @@ versions still track specification maturity rather than a released product.
   `project` operation), a quick-reference appendix (syntax skeleton,
   wire-stable diagnostic code inventory, digest domains, xtask verbs), and a
   wider-world positioning appendix with a suggested reading order.
+- Added guarded recursive CDDL admission to the manifest-bound provider schema
+  registry. Productive recursion through map key/value and array-element child
+  values now admits the published Core schema, while alias-only cycles,
+  choice-only cycles, ambiguous recursive alternatives, and non-progressing
+  repetitions still fail before a registry exists. Recursive variable
+  occurrences and tagged choices use an Edict-owned specialization pass;
+  tagged choices dispatch by a required literal map key without depending on
+  declaration or encoded-entry order. Construction rejects any recursive shape
+  the finite specializer cannot preserve exactly, including ambiguous map-key
+  assignment and multiple or non-final variable array members. Scalar map-key
+  predicates retain exact pinned-validator semantics, including `.regexp`.
+  Specialized values select an arm before child traversal, then cross canonical
+  encoding and the exact 50-container limit before `cddl-cat 0.7.1` validation;
+  duplicate keys and one-over-limit values return the stable schema mismatch.
+
+- Added a deterministic Apache-2.0 provider contract pack for runtime-owned
+  generators. The checked manifest binds one self-contained CDDL document,
+  every logical and artifact-domain root, and the exact bytes, raw and
+  coordinate-framed digests, and provenance of all five Edict-owned
+  target-profile resources. The new `target-ir-artifact` root is checked
+  against both reviewed canonical Target IR fixtures, and
+  `cargo xtask provider-contract-pack --check` detects schema or manifest drift
+  without rewriting either artifact. Schema controls whose nested rule graph
+  cannot be inspected reject with a distinct stable failure.
+
+- Added canonical, content-addressed contract resources for all five
+  Edict-owned target-profile slots: encoding, component sandbox, fuel,
+  diagnostics, and deterministic execution. Runtime-owned generators pass the
+  exact bytes, digest, coordinate, and review provenance explicitly through an
+  all-or-nothing validator before a sealed resource set can bind a target
+  profile. Reviewed byte/digest fixtures are checked by
+  `cargo xtask target-profile-resource-goldens` and the full local gate.
+
+- Added the Edict-owned `edict.authority-facts/v1` canonical-CBOR ABI and CDDL
+  root. Canonical fact maps use coordinate keys, source digests use typed
+  SHA-256 bytes, write-class sets normalize independent of declaration order,
+  and stable byte/shape/duplicate/semantic failures protect the existing
+  `AuthorityFactsDocument` to `CompilerContext` path. A reviewed neutral
+  byte/digest fixture is checked by `cargo xtask authority-facts-goldens` and
+  the full local verification gate.
+- Added the generic provider artifact kind `generationProvenance` for a
+  generator's deterministic build-provenance document. Provider manifest
+  validation treats it as generated metadata with digest-locked semantic-source
+  and generator provenance; Edict routes the envelope without interpreting the
+  provider-owned evidence schema.
+- Added the first runtime-neutral provider manifest boundary:
+  `TargetProviderManifest`, provider artifact provenance types, stable
+  provider-manifest validation failure kinds, a checked Echo-shaped provider
+  manifest fixture, and provider topic/design documentation. This models
+  lawpacks, target profiles, authority facts, and provider manifests as
+  generated provider artifacts with digest-locked semantic-source and generator
+  provenance, while keeping lowerer/verifier entries as provider-owned
+  components. It does not load providers, execute WIT components, interpret Echo
+  semantics, run verifiers, or perform runtime execution/admission.
+- Added an explicit built-in lowerer compatibility seam for the current
+  Echo and git-warp lowerers. The borrowed request API distinguishes
+  target-profile selection incompatibility from the existing structured target
+  refusal report, while parity tests prove direct and compatibility paths retain
+  identical Target IR values, canonical bytes, and digests, plus identical
+  bundle identities under identical explicit assembly inputs. This is an
+  in-process migration adapter, not manifest-backed resolution, WIT component
+  loading, or a public Rust provider plugin trait.
+- Added the parser-checked `edict:target-provider@1.0.0` WIT transport ABI for
+  external lowerer and verifier components. Explicit versioned requests carry
+  digest-bound Core, target-profile, and semantic artifacts, world-specific
+  requested output roles, and deterministic response limits. Provider outputs
+  carry role-tagged bytes and optional logical paths without authoritative
+  digests. The private host described below now loads, executes, validates, and
+  replays this transport contract; target runtime execution remains separate.
+  The new package identity explicitly supersedes the previously shipped but
+  unhosted `edict:target-profile@1.0.0` WIT direction rather than changing its
+  meaning.
+- Added pure provider invocation-envelope validation. Owned Rust values mirror
+  the WIT lowerer and verifier contracts; host-authored bindings constrain every
+  input before protocol, canonical bytes, owning-schema compatibility,
+  domain-framed digests, roles, outputs, paths, diagnostics, success/refusal
+  limits, and pairwise limit independence are checked. The required explicit
+  schema validator is a deterministic host capability retained by opaque
+  validated-request wrappers. Only a fully valid success produces a sealed
+  host-authored output manifest binding its inputs, requested outputs, and
+  recomputed output digests; limits and diagnostics stay outside the manifest,
+  and valid refusal remains distinct from host failure. The pure validator adds
+  no component instantiation, ambient I/O, or Echo-specific semantic
+  interpretation.
+- Completed the hostable provider-manifest v1 authority boundary with exact
+  `providerAbi`, domain-to-schema bindings, selected component contract identity,
+  generated schema provenance, and an immutable concrete CDDL registry built
+  only from the exact manifest-bound closure of explicit digest-locked bytes.
+  The registry proves required-domain closure, rejects structurally unusable or
+  non-progressing schema roots before invocation, and performs real
+  canonical-CBOR schema-instance validation without discovery or lazy loading.
+- Added the capability-denied Wasmtime component host for the frozen lowerer and
+  verifier worlds. It independently checks component digest, exact digest-covered
+  contract attestation, callable-import denial, and structural WIT compatibility;
+  binds prepared components to their creating engine; creates a fresh bounded
+  store per invocation; distinguishes stable host-owned digest, decode,
+  contract, instantiation, fuel, resource, lifting, trap, and admission
+  failures; and exposes only pure-validator-admitted outcomes.
+- Added sealed provider replay and failure-isolation evidence. Lowerer and
+  verifier replay execute identical authority through distinct fresh stores,
+  compare complete admitted outcomes or stable failure identities, and return
+  structured mismatch categories without treating opaque Wasmtime diagnostics
+  as semantic identity. Tests cover concurrent calls, failure recovery,
+  cross-provider isolation, named filesystem/network/environment/clock/random
+  capability denial, noncanonical and unauthorized outputs, and independent
+  process parity with the reviewed Echo-shaped Target IR bytes and digest.
+- Added checked conforming and malicious provider component fixtures plus
+  `cargo xtask provider-component-fixtures --check/--write`. The inventory binds
+  source and component digests, while fixtures cover typed success/refusal,
+  infinite work, memory pressure, output and diagnostic floods, schema-invalid
+  output, guest traps, instantiation failure, instantiation-time fuel exhaustion,
+  and malformed canonical-ABI lifting. Both Rust CI matrix jobs check the
+  inventory explicitly.
 
 ### Changed
 
+- The local `cargo xtask verify` gate now schedules one default workspace test
+  pass, which already includes doctests, instead of repeating every workspace
+  doctest in a second Cargo invocation.
+- Selected provider component identities now borrow their validated manifest
+  directly rather than the temporary proof handle used to authorize selection,
+  so callers can discard that handle after obtaining the opaque selection.
+- Canonical-CBOR encoding and decoding now accept at most 128 nested values and
+  return the stable `NestingLimitExceeded` kind beyond that bound. Provider
+  artifact validation uses the same bounded decoder before digest computation.
 - The parser now accepts first-class obstruction-strand source syntax:
   `require ... else continue obstructed { reason: ... }`. The form is preserved
   as a distinct `RequireElseArm::ContinueObstructed` source AST arm, requires
@@ -92,6 +214,11 @@ versions still track specification maturity rather than a released product.
 - CI now includes a dedicated `cargo deny check` supply-chain job backed by
   `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
   duplicate-version warnings, and source restrictions.
+- Raised the Rust MSRV to 1.94 for Wasmtime 46.0.1, with every workspace package
+  inheriting that value into Cargo metadata. Wasmtime is isolated to the private
+  provider host with default features disabled, no `wasmtime-wasi`, an executable
+  direct/resolved feature ratchet, reviewed permissive license additions, and
+  cargo-deny coverage for both the root and nested fixture guest lockfiles.
 - Directory expansion in the `edict` CLI no longer allocates a temporary dotted
   extension string per visited file; behavior and golden output are unchanged.
 - Added `cargo xtask cli-goldens --check/--write` and wired check mode into

@@ -10,8 +10,9 @@ use std::fmt;
 
 use crate::{
     canonical::{
-        digest_bundle_layer, digest_core_module, digest_target_ir_artifact, BundleDigestDomain,
-        BundlePreimageComponent, BundleSourceDescriptor, CanonicalError,
+        digest_bundle_layer, digest_core_module, digest_target_ir_artifact,
+        is_logical_package_relative_path, BundleDigestDomain, BundlePreimageComponent,
+        BundleSourceDescriptor, CanonicalError,
     },
     core_ir::{CoreModule, ResourceRef},
     target_ir::TargetIrArtifact,
@@ -271,7 +272,7 @@ impl ContractBundleSourceArtifact {
         digest: impl Into<String>,
     ) -> Result<Self, ContractBundleAssemblyError> {
         let logical_path = logical_path.into();
-        if !is_logical_source_path(&logical_path) {
+        if !is_logical_package_relative_path(&logical_path) {
             return Err(ContractBundleAssemblyError::new(
                 ContractBundleAssemblyErrorKind::InvalidSourcePath,
                 "source_artifacts.logical_path",
@@ -904,7 +905,7 @@ fn check_source_artifacts(
     failures: &mut Vec<ContractBundleValidationFailure>,
 ) {
     for source in &manifest.source_artifacts {
-        if !is_logical_source_path(&source.logical_path) {
+        if !is_logical_package_relative_path(&source.logical_path) {
             push_failure(
                 failures,
                 ContractBundleValidationFailureKind::InvalidSourcePath,
@@ -1104,16 +1105,6 @@ fn assurance_role_field(role: AssuranceRole) -> &'static str {
         AssuranceRole::Watson => "assurance_evidence.watson",
         AssuranceRole::Moriarty => "assurance_evidence.moriarty",
     }
-}
-
-fn is_logical_source_path(path: &str) -> bool {
-    !path.is_empty()
-        && !path.starts_with('/')
-        && !path.contains('\\')
-        && !path.contains(':')
-        && path
-            .split('/')
-            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
 
 fn push_failure(

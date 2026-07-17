@@ -80,4 +80,8 @@ For v0.3, the expected sequence is:
 local links, implemented evidence names, and fixture paths. `cargo xtask verify`
 runs the full local gate. [TESTS-REQ-006]
 
+The local gate schedules one default Cargo workspace test pass. Cargo's default
+test selection covers unit, integration, and documentation tests, so the gate
+does not repeat workspace doctests as a second pass. [TESTS-REQ-007]
+
 The verification matrix is tracked in [test-plan.md](./test-plan.md).

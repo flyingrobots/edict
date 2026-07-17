@@ -10,6 +10,11 @@ facts from authority-facts documents whose source kind is `lawpack`. It does not
 yet validate full lawpack manifest instances or load complete lawpack export
 surfaces.
 
+Provider manifests can describe lawpacks as generated provider artifacts with
+digest-locked semantic-source and generator provenance. This validates only the
+provider envelope and provenance lock; it does not load or interpret the
+lawpack manifest. [LAWPACKS-REQ-007]
+
 ## Public Surface
 
 The source syntax accepts lawpack imports of the form:
@@ -38,6 +43,8 @@ The current executable Rust surfaces touching lawpacks are:
 - lowerability checks for digest-locked, one-hop direct adapter support;
 - contract-bundle manifest validation that can carry lawpack artifact
   references as participant-neutral resources.
+- provider manifest validation that can carry a generated lawpack artifact
+  reference and provenance without interpreting lawpack semantics.
 
 ## Current Contract
 
@@ -58,6 +65,10 @@ The current executable Rust surfaces touching lawpacks are:
   first compiler facts consumed by `CompilerContext`, such as budgets and effect
   write classes. This is not full lawpack manifest validation.
   [LAWPACKS-REQ-006]
+- Provider manifests may identify lawpacks as generated artifacts. The provider
+  validator checks lowercase digest locks for the artifact, semantic source, and
+  generator, and rejects component provenance for lawpack metadata roles.
+  [LAWPACKS-REQ-007]
 
 ## Deferred
 

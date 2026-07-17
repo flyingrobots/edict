@@ -1,0 +1,174 @@
+{
+  "apiVersion": "edict.provider-manifest/v1",
+  "providerAbi": "edict:target-provider@1.0.0",
+  "provider": {
+    "coordinate": "echo.edict-provider@1",
+    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+  },
+  "artifacts": [
+    {
+      "role": "lawpack.echo-dpo",
+      "artifactKind": "lawpack",
+      "resource": {
+        "coordinate": "echo.dpo-lawpack@1",
+        "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "source": {
+        "kind": "generated",
+        "semanticSource": {
+          "coordinate": "echo.semantic-schema@1",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "generator": {
+          "coordinate": "echo-wesley.edict-provider-generator@1",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "role": "target-profile.echo-dpo",
+      "artifactKind": "targetProfile",
+      "resource": {
+        "coordinate": "echo.dpo@1",
+        "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+      },
+      "source": {
+        "kind": "generated",
+        "semanticSource": {
+          "coordinate": "echo.semantic-schema@1",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "generator": {
+          "coordinate": "echo-wesley.edict-provider-generator@1",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "role": "authority-facts.echo-dpo",
+      "artifactKind": "authorityFacts",
+      "resource": {
+        "coordinate": "echo.dpo-authority-facts@1",
+        "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      "source": {
+        "kind": "generated",
+        "semanticSource": {
+          "coordinate": "echo.semantic-schema@1",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "generator": {
+          "coordinate": "echo-wesley.edict-provider-generator@1",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "role": "provider-manifest.echo",
+      "artifactKind": "providerManifest",
+      "resource": {
+        "coordinate": "echo.edict-provider-manifest@1",
+        "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      },
+      "source": {
+        "kind": "generated",
+        "semanticSource": {
+          "coordinate": "echo.semantic-schema@1",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "generator": {
+          "coordinate": "echo-wesley.edict-provider-generator@1",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "role": "lowerer.echo-dpo",
+      "artifactKind": "lowerer",
+      "resource": {
+        "coordinate": "echo.dpo-lowerer/component@1",
+        "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      },
+      "source": {
+        "kind": "component",
+        "component": {
+          "coordinate": "echo.dpo-lowerer/component@1",
+          "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+        }
+      }
+    },
+    {
+      "role": "verifier.echo-dpo",
+      "artifactKind": "verifier",
+      "resource": {
+        "coordinate": "echo.dpo-verifier/component@1",
+        "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      },
+      "source": {
+        "kind": "component",
+        "component": {
+          "coordinate": "echo.dpo-verifier/component@1",
+          "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      }
+    },
+    {
+      "role": "schema.echo-provider-artifacts",
+      "artifactKind": "artifactSchema",
+      "resource": {
+        "coordinate": "echo.provider-artifacts.cddl@1",
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "source": {
+        "kind": "generated",
+        "semanticSource": {
+          "coordinate": "echo.semantic-schema@1",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "generator": {
+          "coordinate": "echo-wesley.edict-provider-generator@1",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    },
+    {
+      "role": "generation-provenance.echo",
+      "artifactKind": "generationProvenance",
+      "resource": {
+        "coordinate": "echo.edict-provider-generation-provenance@1",
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "source": {
+        "kind": "generated",
+        "semanticSource": {
+          "coordinate": "echo.semantic-schema@1",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+        },
+        "generator": {
+          "coordinate": "echo-wesley.edict-provider-generator@1",
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+        }
+      }
+    }
+  ],
+  "schemaBindings": [
+    {
+      "domain": "echo.generated-artifact/v1",
+      "schemaRole": "schema.echo-provider-artifacts",
+      "format": "selfContainedCddlV1",
+      "rootRule": "generated-artifact"
+    },
+    {
+      "domain": "echo.review-payload/v1",
+      "schemaRole": "schema.echo-provider-artifacts",
+      "format": "selfContainedCddlV1",
+      "rootRule": "review-payload"
+    },
+    {
+      "domain": "echo.verifier-report/v1",
+      "schemaRole": "schema.echo-provider-artifacts",
+      "format": "selfContainedCddlV1",
+      "rootRule": "verifier-report"
+    }
+  ]
+}

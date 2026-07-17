@@ -5,17 +5,116 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 use edict_syntax::{
-    assemble_contract_bundle, compile_to_core, digest_core_module, digest_target_ir_artifact,
-    encode_core_module, encode_target_ir_artifact, lower_to_target_ir, parse_module,
-    CompilerContext, ContractBundleAssemblyInput, ContractBundleSourceArtifact, CoreBudget,
-    DigestLockedResource, ResourceRef, SuppliedTargetIrResource, TargetEffectLowering,
-    TargetIrArtifact, TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
-    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    assemble_contract_bundle, canonical_target_profile_contract_resources, compile_to_core,
+    digest_authority_facts_document, digest_core_module, digest_target_ir_artifact,
+    encode_authority_facts_cbor, encode_core_module, encode_target_ir_artifact,
+    load_authority_facts_file, lower_to_target_ir, parse_module, CompilerContext,
+    ContractBundleAssemblyInput, ContractBundleSourceArtifact, CoreBudget, DigestLockedResource,
+    ResourceRef, SuppliedTargetIrResource, TargetEffectLowering, TargetIrArtifact,
+    TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 
 use crate::util::{dirs, read_to_string, run_cmd};
 
 const CLI_MAX_STDIN_BYTES_ENV: &str = "EDICT_CLI_MAX_STDIN_BYTES";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AuthorityFactsGoldenMode {
+    Check,
+    Write,
+}
+
+#[derive(Debug)]
+struct AuthorityFactsGoldenCase {
+    review: &'static str,
+    bytes: &'static str,
+    digest: &'static str,
+}
+
+const AUTHORITY_FACTS_GOLDEN_CASES: &[AuthorityFactsGoldenCase] = &[AuthorityFactsGoldenCase {
+    review: "fixtures/authority-facts/canonical/example-effectful.authority-facts.json",
+    bytes: "fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor",
+    digest: "fixtures/authority-facts/canonical/example-effectful.authority-facts.sha256",
+}];
+
+pub(crate) fn authority_facts_goldens(
+    root: &Path,
+    mode: AuthorityFactsGoldenMode,
+) -> Result<(), String> {
+    for case in AUTHORITY_FACTS_GOLDEN_CASES {
+        let document = load_authority_facts_file(root.join(case.review))
+            .map_err(|failures| format!("load {}: {failures:?}", case.review))?;
+        let bytes = encode_authority_facts_cbor(&document)
+            .map_err(|failures| format!("encode {}: {failures:?}", case.review))?;
+        let digest = digest_authority_facts_document(&document)
+            .map_err(|failures| format!("digest {}: {failures:?}", case.review))?;
+        let digest = format!("{digest}\n");
+
+        match mode {
+            AuthorityFactsGoldenMode::Check => {
+                check_golden_file(root, case.bytes, &bytes)?;
+                check_golden_file(root, case.digest, digest.as_bytes())?;
+            }
+            AuthorityFactsGoldenMode::Write => {
+                write_golden_file(&root.join(case.bytes), &bytes)?;
+                write_golden_file(&root.join(case.digest), digest.as_bytes())?;
+            }
+        }
+    }
+
+    println!(
+        "authority-facts-goldens: {} case(s) {}",
+        AUTHORITY_FACTS_GOLDEN_CASES.len(),
+        match mode {
+            AuthorityFactsGoldenMode::Check => "checked",
+            AuthorityFactsGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TargetProfileResourceGoldenMode {
+    Check,
+    Write,
+}
+
+pub(crate) fn target_profile_resource_goldens(
+    root: &Path,
+    mode: TargetProfileResourceGoldenMode,
+) -> Result<(), String> {
+    let resources = canonical_target_profile_contract_resources();
+    for resource in &resources {
+        let bytes_path = resource.provenance.source_path.as_str();
+        let digest_path = bytes_path
+            .strip_suffix(".cbor")
+            .map(|stem| format!("{stem}.sha256"))
+            .ok_or_else(|| format!("contract resource path is not canonical CBOR: {bytes_path}"))?;
+        let digest = format!("{}\n", resource.digest);
+
+        match mode {
+            TargetProfileResourceGoldenMode::Check => {
+                check_golden_file(root, bytes_path, &resource.canonical_bytes)?;
+                check_golden_file(root, &digest_path, digest.as_bytes())?;
+            }
+            TargetProfileResourceGoldenMode::Write => {
+                write_golden_file(&root.join(bytes_path), &resource.canonical_bytes)?;
+                write_golden_file(&root.join(digest_path), digest.as_bytes())?;
+            }
+        }
+    }
+
+    println!(
+        "target-profile-resource-goldens: {} resource(s) {}",
+        resources.len(),
+        match mode {
+            TargetProfileResourceGoldenMode::Check => "checked",
+            TargetProfileResourceGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CoreGoldenMode {
@@ -520,20 +619,47 @@ fn digest_text(hex: char) -> String {
     format!("sha256:{}", hex.to_string().repeat(64))
 }
 
-fn check_golden_file(root: &Path, relative: &str, expected: &[u8]) -> Result<(), String> {
+pub(crate) fn check_golden_file(
+    root: &Path,
+    relative: &str,
+    expected: &[u8],
+) -> Result<(), String> {
+    check_golden_file_with_instruction(
+        root,
+        relative,
+        expected,
+        "run the matching `cargo xtask *-goldens --write` command",
+    )
+}
+
+pub(crate) fn check_golden_file_with_command(
+    root: &Path,
+    relative: &str,
+    expected: &[u8],
+    write_command: &str,
+) -> Result<(), String> {
+    check_golden_file_with_instruction(root, relative, expected, &format!("run `{write_command}`"))
+}
+
+fn check_golden_file_with_instruction(
+    root: &Path,
+    relative: &str,
+    expected: &[u8],
+    instruction: &str,
+) -> Result<(), String> {
     let path = root.join(relative);
     let actual = fs::read(&path).map_err(|err| format!("read {}: {err}", path.display()))?;
     if actual == expected {
         Ok(())
     } else {
         Err(format!(
-            "{} does not match generated golden; run the matching `cargo xtask *-goldens --write` command",
-            path.display()
+            "{} does not match generated golden; {instruction}",
+            path.display(),
         ))
     }
 }
 
-fn write_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn write_golden_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|err| format!("create {}: {err}", parent.display()))?;
     }

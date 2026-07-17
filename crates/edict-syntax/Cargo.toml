@@ -3,6 +3,7 @@ name = "edict-syntax"
 version = "0.11.0-alpha.1"
 description = "Edict language syntax, authority facts, compiler spine, Core canonical encoding, admission, target-profile, lowerability, bundle, and developer tooling checks"
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false

@@ -28,6 +28,12 @@
 //! assurance evidence manifests. Admission-boundary checks validate Edict-owned
 //! artifact and invocation evidence bindings without evaluating participant
 //! policy.
+//! Provider support validates generated/component provenance plus pure,
+//! runtime-neutral invocation request and result envelopes through an explicit
+//! host-owned artifact-schema validator. Opaque validated request wrappers and
+//! sealed host-computed output manifests remain separate from external
+//! component dispatch. The crate also exposes an explicit in-process
+//! compatibility seam over the current Echo and git-warp lowerers.
 //! Pure `fn`/`const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, general
 //! target lowering, and full admission execution tooling are deferred. The
@@ -72,9 +78,13 @@ pub mod core_ir;
 pub mod highlight;
 pub mod lowerability;
 pub mod parser;
+pub mod provider;
+pub mod provider_invocation;
+pub mod provider_lowering;
 pub mod semantic;
 pub mod target_ir;
 pub mod target_profile;
+pub mod target_profile_contract_resources;
 pub mod token;
 
 pub use admission::{
@@ -87,10 +97,12 @@ pub use admission::{
     ADMISSION_REQUEST_DIGEST_DOMAIN,
 };
 pub use authority_facts::{
-    compiler_context_from_authority_facts, load_authority_facts_file,
+    compiler_context_from_authority_facts, decode_authority_facts_cbor,
+    digest_authority_facts_document, encode_authority_facts_cbor, load_authority_facts_file,
     load_compiler_context_from_authority_fact_files, AuthorityFactSource, AuthorityFactSourceKind,
     AuthorityFactsDocument, AuthorityFactsLoadFailure, AuthorityFactsLoadFailureKind, BudgetFact,
     EffectWriteClassFact, OperationProfileFact, AUTHORITY_FACTS_API_VERSION,
+    AUTHORITY_FACTS_CDDL_ROOT,
 };
 pub use canonical::{
     decode_canonical_cbor, digest_bundle_layer, digest_core_module, digest_target_ir_artifact,
@@ -98,7 +110,7 @@ pub use canonical::{
     BundlePreimageComponent, BundleSourceDescriptor, CanonicalError, CanonicalErrorKind,
     CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN, BUNDLE_SEMANTIC_DIGEST_DOMAIN,
     CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    MAX_CANONICAL_NESTING_DEPTH, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
@@ -129,6 +141,43 @@ pub use lowerability::{
     NativeEffectSupport, SemanticEffectRequirement, TargetProfileFacts, WriteClass,
 };
 pub use parser::{parse_module, ParseError, ParseErrorKind};
+pub use provider::{
+    bind_target_provider_manifest, select_provider_component, validate_target_provider_manifest,
+    ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource,
+    ProviderComponentSelectionFailure, ProviderComponentSelectionFailureKind,
+    ProviderManifestValidationFailure, ProviderManifestValidationFailureKind,
+    ProviderManifestValidationReport, ProviderManifestValidationStatus, ProviderSchemaBinding,
+    ProviderSchemaFormat, SelectedProviderComponent, TargetProviderManifest,
+    ValidatedTargetProviderManifest, TARGET_PROVIDER_ABI, TARGET_PROVIDER_LOWERER_CONTRACT,
+    TARGET_PROVIDER_MANIFEST_API_VERSION, TARGET_PROVIDER_VERIFIER_CONTRACT,
+};
+pub use provider_invocation::{
+    validate_provider_lowering_limit_independence, validate_provider_lowering_request,
+    validate_provider_lowering_result, validate_provider_verification_limit_independence,
+    validate_provider_verification_request, validate_provider_verification_result,
+    ProviderArtifact, ProviderArtifactBinding, ProviderArtifactSchemaValidationErrorKind,
+    ProviderArtifactSchemaValidator, ProviderBoundArtifact, ProviderDiagnostic,
+    ProviderDiagnosticSeverity, ProviderDigest, ProviderDigestAlgorithm,
+    ProviderInvocationInputManifest, ProviderInvocationKind, ProviderInvocationValidationFailure,
+    ProviderInvocationValidationFailureKind, ProviderInvocationValidationReport,
+    ProviderInvocationValidationStatus, ProviderLoweringInvocationContract,
+    ProviderLoweringOutputArtifact, ProviderLoweringOutputKind, ProviderLoweringOutputRequest,
+    ProviderLoweringRequest, ProviderLoweringResult, ProviderLoweringSuccess,
+    ProviderOutputManifest, ProviderOutputManifestEntry, ProviderOutputRequestBinding,
+    ProviderProtocolVersion, ProviderRefusal, ProviderRefusalKind, ProviderResourceRef,
+    ProviderResponseLimits, ProviderSemanticInput, ProviderSemanticInputBinding,
+    ProviderSemanticInputKind, ProviderVerificationInvocationContract,
+    ProviderVerificationOutputArtifact, ProviderVerificationOutputKind,
+    ProviderVerificationOutputRequest, ProviderVerificationRequest, ProviderVerificationResult,
+    ProviderVerificationSuccess, ValidatedProviderLoweringRequest, ValidatedProviderOutcome,
+    ValidatedProviderVerificationRequest, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+    TARGET_PROVIDER_PROTOCOL_VERSION,
+};
+pub use provider_lowering::{
+    lower_with_builtin_lowerer, BuiltinLowererCompatibilityFailure,
+    BuiltinLowererCompatibilityFailureKind, BuiltinLowererRequest, BuiltinLoweringResult,
+    BuiltinTargetLowerer,
+};
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{
     lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
@@ -142,6 +191,16 @@ pub use target_profile::{
     TargetProfileConformanceFailureKind, TargetProfileConformanceReport,
     TargetProfileConformanceStatus, TargetProfileManifest, CANONICAL_CBOR_ABI,
     TARGET_PROFILE_API_VERSION,
+};
+pub use target_profile_contract_resources::{
+    canonical_target_profile_contract_resources, digest_target_profile_contract_resource,
+    validate_target_profile_contract_resources, TargetProfileContractResource,
+    TargetProfileContractResourceFailure, TargetProfileContractResourceFailureKind,
+    TargetProfileContractResourceProvenance, ValidatedTargetProfileContractResources,
+    CANONICAL_CBOR_CONTRACT_COORDINATE, DETERMINISM_CONTRACT_COORDINATE,
+    DIAGNOSTICS_CONTRACT_COORDINATE, FUEL_CONTRACT_COORDINATE,
+    TARGET_PROFILE_CONTRACT_RESOURCE_API_VERSION, TARGET_PROFILE_CONTRACT_RESOURCE_REPOSITORY,
+    WASM_COMPONENT_CONTRACT_COORDINATE,
 };
 pub use token::{lex, IntSuffix, LexError, Span, Token, TokenKind};
 

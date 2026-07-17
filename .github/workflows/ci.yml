@@ -20,8 +20,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - rust-version: "1.85.0"
-            rust-label: "msrv 1.85.0"
+          - rust-version: "1.94.0"
+            rust-label: "msrv 1.94.0"
           - rust-version: stable
             rust-label: "stable"
     steps:
@@ -40,6 +40,8 @@ jobs:
         run: cargo +"${{ matrix.rust-version }}" clippy --workspace --all-targets --all-features -- -D warnings
       - name: Test
         run: cargo +"${{ matrix.rust-version }}" test --workspace --all-features
+      - name: Provider component fixture inventory
+        run: cargo +"${{ matrix.rust-version }}" xtask provider-component-fixtures --check
 
   supply-chain:
     name: supply-chain (cargo-deny)
@@ -53,4 +55,8 @@ jobs:
       - name: Install cargo-deny
         run: cargo +stable install cargo-deny --locked --version 0.18.9
       - name: Check advisories, licenses, bans, and sources
-        run: cargo +stable deny check
+        run: cargo +stable deny --locked check
+      - name: Check provider fixture guest supply chain
+        run: >-
+          cargo +stable deny --locked
+          --manifest-path fixtures/providers/components/guests/Cargo.toml check

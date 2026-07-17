@@ -52,7 +52,7 @@ the boundaries that must not leak back into language meaning:
 - [SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md):
   intrinsic signatures (pure vs effect), effect signatures, target lowering,
   application model, verifier ABI, footprint algebra, and cost algebra. Canonical
-  schemas: `abi/edict-target-profile.cddl`, `abi/edict-target-lowerer.wit`.
+  schemas: `abi/edict-target-profile.cddl`, `abi/edict-target-provider.wit`.
 - [SPEC - Continuum Contract Bundle v1](./SPEC_continuum-contract-bundle-v1.md):
   participant-neutral contract bundle identity, artifact graph, provenance
   references, canonical CBOR/hash framing, and attestation roles.
@@ -2063,7 +2063,7 @@ The canonical target profile manifest, its full field set, and the executable
 lowerer/verifier plugin boundary are defined **once** in
 [SPEC - Edict Target Profile ABI v1](./SPEC_edict-target-profile-abi-v1.md)
 and its machine schemas (`abi/edict-target-profile.cddl`,
-`abi/edict-target-lowerer.wit`). This document intentionally does not duplicate
+`abi/edict-target-provider.wit`). This document intentionally does not duplicate
 the manifest JSON; duplicate normative manifests are forbidden
 (`EDICT-ABI-NODUP-001`).
 
