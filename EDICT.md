@@ -565,7 +565,7 @@ classDiagram
     }
     class LocalRef {
       id: "arg.0" | "local.n" | "obstruction.n"
-      alpha_name: "$arg0" | "$local n"
+      alpha_name: "$arg0" | "$local{n}"
       ty
     }
 
@@ -1059,7 +1059,7 @@ Citations prefixed `agy:` refer to files in the `agy-readings` corpus at commit 
 | T11 | Computational holography (bulk reconstructible from initial state + tick patches) holds only when patches are sufficient and stable — every choice pinned, nothing outside the declared boundary ("the anti-tautology") — which is the formal justification for Edict's digest pinning; Paper III also predicts "what happened" and "why" become *intent* and *witness* in separate envelopes | `agy:onramp-aion-03-holography.md#53-75@25ff542`, `agy:paper-3-summary.md#20-21@25ff542` | 0.8 | |
 | T12 | Agents interacting through Continuum receive machine-readable "obstruction witnesses" as "causal teaching artifacts" to refine behavior | `agy:paper-8-summary.md#37@25ff542` | 0.8 | Reframes Edict obstructions as the feedback channel of the lawful-autonomous loop |
 | T13 | OG-II proves silent last-write-wins merges create a permanent "intent-recovery insufficiency floor"; only preserving conflict/authored acts as first-class objects avoids it | `agy:og-2-summary.md#29@25ff542`, `agy:observer-geometry-overview.md#38@25ff542` | 0.8 | The theoretical case for Edict's obstruction strands |
-| T14 | Real Edict source exists in cross-project design docs: a `task.edit_document@1` intent with pinned digests, `budget <=`, a `require jim.basisFresh(input.basis) else ... StaleBase` guard, effect-level `else` obstructions, and a typed `EditReceipt \| EditObstruction` return union | `agy:agy/continuum-receipts.md#12-46@25ff542` | 0.8 | Matches the README's aspirational `createEntry` syntax family |
+| T14 | Real Edict source exists in cross-project design docs: a `task.edit_document@1` intent with pinned digests, `budget <=`, a `require jim.basisFresh(input.basis) else ... StaleBase` guard, effect-level `else` obstructions, and a typed `EditReceipt` &#124; `EditObstruction` return union | `agy:agy/continuum-receipts.md#12-46@25ff542` | 0.8 | Matches the README's aspirational `createEntry` syntax family |
 | T15 | The PROVE-IT evidence ladder runs L0 (agent assertion) → L1 (signed receipt) → L2 (history inclusion proof, "minimum serious alpha requirement") → L3 (holographic witness capsule) → L4 (challenge replay) → L5 (proof-carrying transition); the "buildable Continuum" rests on L2+L3+signature | `agy:agy/continuum-receipts.md#57-84@25ff542` | 0.8 | |
 | T16 | The evidence posture lattice spans origin, proof strength, access, and completeness dimensions; Paper VI defines FULL/ZK/OPAQUE provenance tiers; Paper VII's commitment/folding/revelation split enables "perfect provenance and real privacy at the same time" | `agy:paper-8-summary.md#32@25ff542`, `agy:paper-6-summary.md#28@25ff542`, `agy:onramp-aion-07-its-all-optics.md#94-96@25ff542` | 0.75 | Speculative as an *Edict roadmap* claim; well-attested as theory |
 
@@ -1159,6 +1159,11 @@ All three violations are reported in one pass, on stderr, with byte spans:
 {"command":"check","input":{"kind":"source","name":"inline.edict"},"kind":"MissingBasis","schema":"edict.cli.diagnostic/v1","severity":"error","span":{"end":168,"start":64},"stage":"semantic","type":"diagnostic"}
 {"checked":0,"command":"check","errors":3,"exitCode":1,"schema":"edict.cli.event/v1","status":"error","type":"status"}
 ```
+
+The spans are structured but not yet surgical insertion points. In this
+transcript, both missing-clause diagnostics share the broad intent-body span
+`64..168`; consumers should not assume that every missing clause receives a
+distinct, exact source location.
 
 There is no "warning" escape hatch: an unbounded scalar is an error, full stop.
 
