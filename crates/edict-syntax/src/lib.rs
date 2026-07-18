@@ -72,6 +72,7 @@ pub mod core_ir;
 pub mod highlight;
 pub mod lowerability;
 pub mod parser;
+pub mod proof_plan;
 pub mod semantic;
 pub mod target_ir;
 pub mod target_profile;
@@ -130,6 +131,7 @@ pub use lowerability::{
 };
 pub use parser::{parse_module, ParseError, ParseErrorKind};
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
+pub use proof_plan::{build_echo_proof_plan, EchoIntentPlan, EchoProofPlan, ProofPlanFailure, TraceLayout};
 pub use target_ir::{
     lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
     TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrRequirement, TargetIrStep,
