@@ -240,7 +240,7 @@ pub struct CoreIntent {
     pub input: String,
     pub output: String,
     pub required_operation_profile: String,
-    /// Author-authored basis expression. Runtime basis resolution and
+    /// Authored basis expression. Runtime basis resolution and
     /// admission remain target/runtime responsibilities.
     pub basis: Option<CoreExpr>,
     pub input_constraints: Vec<InputConstraint>,
