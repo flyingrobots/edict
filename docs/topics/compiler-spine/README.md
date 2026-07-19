@@ -46,9 +46,11 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017]
 - The fixed-width source scalar set is `I32`, `I64`, `U32`, and `U64`.
   Explicitly suffixed literals retain their exact width and signedness;
-  signed minima are accepted through unary-negative literal folding, while
-  overflow, negative unsigned values, and cross-width assignments reject in
-  type checking. Statically bounded `Bytes<max=N>` lowers with its exact bound.
+  bare literals inherit an unambiguous expected width from supported comparison,
+  annotation, and record-return contexts. Unconstrained bare literals, overflow,
+  negative unsigned values, and cross-width assignments reject in type checking;
+  signed minima are accepted through unary-negative literal folding. Statically
+  bounded `Bytes<max=N>` lowers with its exact bound.
   [CSPINE-REQ-019] [CSPINE-REQ-021]
 - An explicit basis expression is checked in the pure pre-body environment
   containing the intent parameter, before body locals exist. The typed

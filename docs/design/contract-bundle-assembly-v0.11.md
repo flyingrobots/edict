@@ -34,9 +34,10 @@ This slice implements **bundle digest derivation and assembly**:
   digest-locked references**.
 - After the Target IR canonical-byte freeze, the computed-artifact assembler can
   instead compute `targetIrDigest` from a real `TargetIrArtifact` and derive the
-  target-profile reference from that artifact. The artifact's
-  `source_core_coordinate` must match the supplied `CoreModule.coordinate`
-  before the computed digest enters the bundle preimage.
+  target-profile reference from that artifact. Before the computed digest enters
+  the bundle preimage, the assembler recomputes the semantic closure from the
+  supplied `CoreModule`, requires the artifact's Core identity and lawpack set to
+  match it, and requires the bundle lawpack set to equal that closure.
 - The assembled manifest is consumed by the existing
   `validate_contract_bundle_manifest` (exit gate: validation consumes the
   assembled artifact, not a hand-written fixture).
@@ -99,7 +100,10 @@ The bundle assembly slice deliberately does **not**:
 The original supplied-reference path detects target-IR **digest-reference**
 changes in the bundle graph: if the supplied `targetIrDigest` reference changes,
 the bundle digests change. The computed Target IR path additionally rehashes
-canonical Target IR artifact bytes before the digest enters the bundle preimage.
+canonical Target IR artifact bytes and corroborates its semantic closure against
+the exact supplied Core and lawpacks before the digest enters the bundle
+preimage. Standalone Target IR canonical encoding remains deterministic
+self-validation; it cannot reconstruct dependencies erased by a caller.
 
 ## 3. Target IR freeze
 

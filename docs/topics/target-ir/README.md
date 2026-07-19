@@ -139,9 +139,14 @@ closure is removed. [TIR-REQ-014] [TIR-REQ-015]
 Bundle assembly can now consume a real `TargetIrArtifact` through
 `assemble_contract_bundle_from_target_ir`. That path computes
 `targetIrDigest` from canonical Target IR bytes and writes the same digest into
-the manifest. The supplied-reference assembly path remains available for
-already-digested external artifact graphs, but the computed Target IR path has
-no caller-supplied target IR digest field.
+the manifest, recomputes the expected semantic closure from the exact supplied
+Core, and requires both the artifact closure and bundle lawpack set to match.
+Standalone canonical Target IR encoding provides deterministic structural
+self-validation; it cannot reconstruct dependencies that a caller erased from
+an in-memory artifact. The computed assembly path is the separate
+cross-artifact corroboration boundary. The supplied-reference assembly path
+remains available for already-digested external artifact graphs, but the
+computed Target IR path has no caller-supplied target IR digest field.
 
 Selecting a target profile outside the explicit supported set rejects with
 `TargetLoweringFailureKind::UnsupportedTargetProfile`. Selecting an unsupported

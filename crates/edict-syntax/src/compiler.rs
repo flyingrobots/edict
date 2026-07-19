@@ -781,7 +781,8 @@ impl<'a> TypeChecker<'a> {
                 state,
             ),
             Stmt::Return { value, .. } => {
-                let Some(value) = self.check_expr(value, env) else {
+                let Some(value) = self.check_expr_with_expected(value, env, Some(output_shape))
+                else {
                     return;
                 };
                 if compatible(output_shape, &value.ty) {
@@ -1010,10 +1011,19 @@ impl<'a> TypeChecker<'a> {
         if !self.check_known_effect_profiles(intent, stmt.value) {
             return;
         }
-        let Some(value) = self.check_expr(stmt.value, env) else {
+        let annotation_shape = match stmt.ty {
+            Some(annotation) => match self.type_ref_shape(annotation, stmt.span, None) {
+                Some(shape) => Some(shape),
+                None => return,
+            },
+            None => None,
+        };
+        let Some(value) = self.check_expr_with_expected(stmt.value, env, annotation_shape.as_ref())
+        else {
             return;
         };
-        let Some(binding_shape) = self.pure_let_binding_shape(&stmt, &value) else {
+        let Some(binding_shape) = self.pure_let_binding_shape(&stmt, &value, annotation_shape)
+        else {
             return;
         };
         let local = next_local(&mut state.local_index, binding_shape.coord.clone());
@@ -1029,11 +1039,11 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         stmt: &LetStatement<'_>,
         value: &TypedValue,
+        annotation_shape: Option<TypeShape>,
     ) -> Option<TypeShape> {
-        let Some(annotation) = stmt.ty else {
+        let Some(annotation_shape) = annotation_shape else {
             return Some(value.ty.clone());
         };
-        let annotation_shape = self.type_ref_shape(annotation, stmt.span, None)?;
         if compatible(&annotation_shape, &value.ty) {
             Some(annotation_shape)
         } else {
@@ -1490,8 +1500,19 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         span: Span,
     ) -> Option<CorePredicate> {
-        let left = self.check_expr(lhs, env)?;
-        let right = self.check_expr(rhs, env)?;
+        let (left, right) = match (is_bare_integer_literal(lhs), is_bare_integer_literal(rhs)) {
+            (true, false) => {
+                let right = self.check_expr(rhs, env)?;
+                let left = self.check_expr_with_expected(lhs, env, Some(&right.ty))?;
+                (left, right)
+            }
+            (false, true) => {
+                let left = self.check_expr(lhs, env)?;
+                let right = self.check_expr_with_expected(rhs, env, Some(&left.ty))?;
+                (left, right)
+            }
+            _ => (self.check_expr(lhs, env)?, self.check_expr(rhs, env)?),
+        };
         if comparable(&left.ty, &right.ty) {
             Some(CorePredicate::Compare {
                 op,
@@ -1514,6 +1535,15 @@ impl<'a> TypeChecker<'a> {
         expr: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
     ) -> Option<TypedValue> {
+        self.check_expr_with_expected(expr, env, None)
+    }
+
+    fn check_expr_with_expected(
+        &mut self,
+        expr: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
+    ) -> Option<TypedValue> {
         match expr {
             Expr::Ident { name, span } => self.check_ident(name, *span, env),
             Expr::Str { value, .. } => Some(string_value(value)),
@@ -1528,7 +1558,7 @@ impl<'a> TypeChecker<'a> {
                 value,
                 suffix,
                 span,
-            } => self.check_integer_literal(value, *suffix, *span),
+            } => self.check_integer_literal(value, *suffix, expected, *span),
             Expr::Unary {
                 op: UnOp::Neg,
                 operand,
@@ -1543,7 +1573,7 @@ impl<'a> TypeChecker<'a> {
                     ));
                     return None;
                 };
-                self.check_integer_literal(&format!("-{value}"), *suffix, *span)
+                self.check_integer_literal(&format!("-{value}"), *suffix, expected, *span)
             }
             Expr::Field { base, field, span } => self.check_field(base, field, *span, env),
             Expr::Binary {
@@ -1552,7 +1582,7 @@ impl<'a> TypeChecker<'a> {
                 rhs,
                 span,
             } => self.check_string_concat(lhs, rhs, env, *span),
-            Expr::Record { entries, span } => self.check_record(entries, env, *span),
+            Expr::Record { entries, span } => self.check_record(entries, env, expected, *span),
             Expr::Binary { .. }
             | Expr::Digest { .. }
             | Expr::Call { .. }
@@ -1576,9 +1606,27 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         value: &str,
         suffix: Option<IntSuffix>,
+        expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
-        let width = suffix.map_or("I64", integer_suffix_width);
+        let width = if let Some(suffix) = suffix {
+            integer_suffix_width(suffix)
+        } else {
+            let Some(TypeShape {
+                kind: TypeKind::Int { width },
+                ..
+            }) = expected
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "bare integer literal has no unambiguous expected width",
+                    span,
+                ));
+                return None;
+            };
+            width
+        };
         if parse_core_integer(width, value).is_none() {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -1696,14 +1744,20 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         entries: &[RecordEntry],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
+        let expected_fields = expected.and_then(|shape| match &shape.kind {
+            TypeKind::Record(fields) => Some(fields),
+            _ => None,
+        });
         let mut fields = BTreeMap::new();
         let mut field_types = BTreeMap::new();
         for entry in entries {
             match entry {
                 RecordEntry::Field { name, value } => {
-                    let value = self.check_expr(value, env)?;
+                    let field_expected = expected_fields.and_then(|fields| fields.get(name));
+                    let value = self.check_expr_with_expected(value, env, field_expected)?;
                     fields.insert(name.clone(), value.expr);
                     field_types.insert(name.clone(), value.ty);
                 }
@@ -1742,6 +1796,18 @@ impl<'a> TypeChecker<'a> {
                 kind: TypeKind::Record(field_types),
             },
         })
+    }
+}
+
+fn is_bare_integer_literal(expr: &Expr) -> bool {
+    match expr {
+        Expr::Int { suffix: None, .. } => true,
+        Expr::Unary {
+            op: UnOp::Neg,
+            operand,
+            ..
+        } => matches!(operand.as_ref(), Expr::Int { suffix: None, .. }),
+        _ => false,
     }
 }
 

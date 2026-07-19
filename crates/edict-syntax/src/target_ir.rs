@@ -239,7 +239,7 @@ pub fn lower_to_target_ir(
     if !core_failures.is_empty() {
         return unsupported(core_failures);
     }
-    let semantic_closure = match semantic_closure(core) {
+    let semantic_closure = match semantic_closure_for_core(core) {
         Ok(semantic_closure) => semantic_closure,
         Err(failure) => return unsupported(vec![failure]),
     };
@@ -291,7 +291,7 @@ pub fn lower_to_target_ir(
     }
 }
 
-fn semantic_closure(
+pub(crate) fn semantic_closure_for_core(
     core: &CoreModule,
 ) -> Result<Option<TargetIrSemanticClosure>, TargetLoweringFailure> {
     let mut lawpacks = BTreeMap::<String, ResourceRef>::new();
