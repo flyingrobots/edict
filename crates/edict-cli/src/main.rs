@@ -12,12 +12,12 @@ use edict_cli::{
 };
 use edict_syntax::{
     CheckOutcome, CompilerContext, CompilerError, CompilerErrorKind, CompilerStage, CoreBlock,
-    CoreBudget, CoreExpr, CoreImport, CoreNode, CoreObstructionArm, CoreObstructionReason,
-    CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, HighlightRole, InputConstraint,
-    InputConstraintSource, ParseError, ResourceRef, SemanticError, Span, TargetEffectLowering,
-    TargetIrArtifact, TargetIrIntent, TargetIrLoweringFacts, TargetIrRequireFailure,
-    TargetIrRequirement, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
-    WriteClass,
+    CoreBudget, CoreExpr, CoreImport, CoreIntent, CoreNode, CoreObstructionArm,
+    CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, CoreValue,
+    HighlightRole, InputConstraint, InputConstraintSource, ParseError, ResourceRef, SemanticError,
+    Span, TargetEffectLowering, TargetIrArtifact, TargetIrIntent, TargetIrLoweringFacts,
+    TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
+    TargetLoweringFailure, TargetLoweringFailureKind, WriteClass,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1104,27 +1104,35 @@ fn core_review(core: &edict_syntax::CoreModule) -> Value {
             .collect::<BTreeMap<_, _>>(),
         "intents": core.intents
             .iter()
-            .map(|(name, intent)| {
-                (name.clone(), json!({
-                    "input": intent.input,
-                    "output": intent.output,
-                    "requiredOperationProfile": intent.required_operation_profile,
-                    "inputConstraints": intent
-                        .input_constraints
-                        .iter()
-                        .map(input_constraint_review)
-                        .collect::<Vec<_>>(),
-                    "coreEvaluationBudget": core_budget_review(&intent.core_evaluation_budget),
-                    "body": core_block_review(&intent.body),
-                }))
-            })
+            .map(|(name, intent)| (name.clone(), core_intent_review(intent)))
             .collect::<BTreeMap<_, _>>(),
         "requiredCoreCapabilities": core.required_core_capabilities,
     })
 }
 
+fn core_intent_review(intent: &CoreIntent) -> Value {
+    let mut review = json!({
+        "input": intent.input,
+        "output": intent.output,
+        "requiredOperationProfile": intent.required_operation_profile,
+        "inputConstraints": intent
+            .input_constraints
+            .iter()
+            .map(input_constraint_review)
+            .collect::<Vec<_>>(),
+        "coreEvaluationBudget": core_budget_review(&intent.core_evaluation_budget),
+        "body": core_block_review(&intent.body),
+    });
+    insert_optional_review_field(
+        &mut review,
+        "basis",
+        intent.basis.as_ref().map(core_expr_review),
+    );
+    review
+}
+
 fn target_ir_review(artifact: &TargetIrArtifact) -> Value {
-    json!({
+    let mut review = json!({
         "domain": artifact.domain,
         "targetProfile": resource_ref_review(&artifact.target_profile),
         "sourceCoreCoordinate": artifact.source_core_coordinate,
@@ -1132,11 +1140,31 @@ fn target_ir_review(artifact: &TargetIrArtifact) -> Value {
             .iter()
             .map(|(name, intent)| (name.clone(), target_ir_intent_review(intent)))
             .collect::<BTreeMap<_, _>>(),
+    });
+    insert_optional_review_field(
+        &mut review,
+        "semanticClosure",
+        artifact
+            .semantic_closure
+            .as_ref()
+            .map(target_ir_semantic_closure_review),
+    );
+    review
+}
+
+fn target_ir_semantic_closure_review(closure: &TargetIrSemanticClosure) -> Value {
+    json!({
+        "sourceCore": resource_ref_review(&closure.source_core),
+        "lawpacks": closure
+            .lawpacks
+            .iter()
+            .map(resource_ref_review)
+            .collect::<Vec<_>>(),
     })
 }
 
 fn target_ir_intent_review(intent: &TargetIrIntent) -> Value {
-    json!({
+    let mut review = json!({
         "operationProfile": intent.operation_profile,
         "inputConstraints": intent
             .input_constraints
@@ -1151,7 +1179,19 @@ fn target_ir_intent_review(intent: &TargetIrIntent) -> Value {
             .collect::<Vec<_>>(),
         "steps": intent.steps.iter().map(target_ir_step_review).collect::<Vec<_>>(),
         "result": core_expr_review(&intent.result),
-    })
+    });
+    insert_optional_review_field(
+        &mut review,
+        "basis",
+        intent.basis.as_ref().map(core_expr_review),
+    );
+    review
+}
+
+fn insert_optional_review_field(review: &mut Value, key: &str, value: Option<Value>) {
+    if let (Value::Object(fields), Some(value)) = (review, value) {
+        fields.insert(key.to_owned(), value);
+    }
 }
 
 fn target_ir_requirement_review(requirement: &TargetIrRequirement) -> Value {

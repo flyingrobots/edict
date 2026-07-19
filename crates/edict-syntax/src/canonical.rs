@@ -460,6 +460,17 @@ pub fn decode_canonical_cbor(bytes: &[u8]) -> Result<CanonicalValue, CanonicalEr
 }
 
 fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValue, CanonicalError> {
+    if artifact.semantic_closure.is_none()
+        && artifact
+            .intents
+            .values()
+            .any(|intent| intent.basis.is_some())
+    {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "basis-bearing Target IR requires a semantic closure",
+        ));
+    }
     let mut entries = vec![
         ("kind", text("targetIrArtifact")),
         ("domain", text(&artifact.domain)),

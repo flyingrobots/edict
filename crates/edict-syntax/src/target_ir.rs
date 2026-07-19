@@ -393,6 +393,14 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
             detail: core.api_version.clone(),
         }];
     }
+    if core.coordinate.is_empty() {
+        return vec![TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+            intent: None,
+            node_index: None,
+            detail: "source Core coordinate is empty".to_owned(),
+        }];
+    }
     if core.intents.is_empty() {
         return vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::NoTargetSteps,

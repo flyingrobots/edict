@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::ast::{
     BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldDecl, Import, ImportKind, IntentClause,
     IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, RecordEntry,
-    RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
+    RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
     parse_core_integer, CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind,
@@ -1519,6 +1519,22 @@ impl<'a> TypeChecker<'a> {
                 suffix,
                 span,
             } => self.check_integer_literal(value, *suffix, *span),
+            Expr::Unary {
+                op: UnOp::Neg,
+                operand,
+                span,
+            } => {
+                let Expr::Int { value, suffix, .. } = operand.as_ref() else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "negated expression is outside the initial lowerable subset",
+                        *span,
+                    ));
+                    return None;
+                };
+                self.check_integer_literal(&format!("-{value}"), *suffix, *span)
+            }
             Expr::Field { base, field, span } => self.check_field(base, field, *span, env),
             Expr::Binary {
                 op: BinOp::Add,
