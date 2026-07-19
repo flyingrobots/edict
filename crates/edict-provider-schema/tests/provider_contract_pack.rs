@@ -188,6 +188,14 @@ fn target_ir_root_matches_reference_encoder() {
     pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &encoded_requirements)
         .expect("encoder output with both requirement dispositions satisfies the root");
 
+    let mut missing_semantic_closure = encoded_target_ir_with_coordinate("example.target@1");
+    remove_map_field(&mut missing_semantic_closure, "semanticClosure");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &missing_semantic_closure),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "basis-bearing external Target IR must carry its semantic closure"
+    );
+
     let mut invalid = decode_canonical_cbor(TARGET_IR_FIXTURE).expect("fixture is canonical");
     *map_value_mut(&mut invalid, "kind") = CanonicalValue::Text("targetIrDraft".to_owned());
     assert_eq!(

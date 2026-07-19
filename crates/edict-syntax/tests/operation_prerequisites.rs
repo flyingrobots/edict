@@ -158,7 +158,7 @@ fn operation_prerequisite_fixture_preserves_fixed_width_basis_and_lawpack_closur
 
 #[test]
 fn out_of_range_u64_and_cross_width_values_reject_before_core() {
-    for replacement in ["18446744073709551616u64", "1i64"] {
+    for replacement in ["18446744073709551616u64", "-1u64", "1i64"] {
         let source = OPERATION_SOURCE.replace("18446744073709551615u64", replacement);
         let module = parse_module(&source).expect("mutated source parses");
         let errors = compile_to_core(&module, &operation_context())
@@ -205,6 +205,35 @@ fn fixed_width_integer_types_and_suffixes_preserve_exact_domains() {
             &CoreExpr::Const(CoreValue::Int {
                 width: width.to_owned(),
                 value: maximum.to_owned(),
+            })
+        );
+    }
+}
+
+#[test]
+fn signed_fixed_width_minima_preserve_exact_domains() {
+    for (width, suffix, minimum) in [
+        ("I32", "i32", "-2147483648"),
+        ("I64", "i64", "-9223372036854775808"),
+    ] {
+        let source = OPERATION_SOURCE
+            .replace("U64", width)
+            .replace("18446744073709551615u64", &format!("{minimum}{suffix}"));
+        let core = compile_operation(&source);
+        let CorePredicate::Compare { right, .. } = &core
+            .intents
+            .get("splice")
+            .expect("splice intent")
+            .input_constraints[0]
+            .predicate
+        else {
+            panic!("first input constraint is not a comparison");
+        };
+        assert_eq!(
+            right,
+            &CoreExpr::Const(CoreValue::Int {
+                width: width.to_owned(),
+                value: minimum.to_owned(),
             })
         );
     }
@@ -312,6 +341,24 @@ fn target_lowering_refuses_an_unidentifiable_semantic_closure() {
         width: "U32".to_owned(),
         value: "4294967296".to_owned(),
     });
+
+    let report = lower_to_target_ir(&core, &target_facts());
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        report
+            .failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>(),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+}
+
+#[test]
+fn target_lowering_refuses_an_empty_source_core_coordinate() {
+    let mut core = compile_operation(OPERATION_SOURCE);
+    core.coordinate.clear();
 
     let report = lower_to_target_ir(&core, &target_facts());
     assert_eq!(report.status, TargetLoweringStatus::Unsupported);
@@ -446,6 +493,19 @@ fn semantic_closure_cannot_substitute_a_different_source_core_coordinate() {
     assert_eq!(
         digest_target_ir_artifact(&artifact)
             .expect_err("contradictory source Core coordinates must not gain identity")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+}
+
+#[test]
+fn explicit_basis_target_ir_cannot_drop_its_semantic_closure() {
+    let (_, mut artifact) = lower_operation(OPERATION_SOURCE);
+    artifact.semantic_closure = None;
+
+    assert_eq!(
+        digest_target_ir_artifact(&artifact)
+            .expect_err("basis-bearing Target IR without a closure must not gain identity")
             .kind(),
         CanonicalErrorKind::UnsupportedValue
     );

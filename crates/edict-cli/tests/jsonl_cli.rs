@@ -29,23 +29,25 @@ intent sayHello(input: HelloInput)
 }
 "#;
 
-const ECHO_SOURCE: &str = r"package demo.echo@1;
+const ECHO_SOURCE: &str = r#"package demo.echo@1;
 
-type Input = { id: String<max=16>, };
+use lawpack demo.write@1 digest "sha256:2222222222222222222222222222222222222222222222222222222222222222" as target;
+
+type Input = { id: String<max=16>, basis: String<max=128>, };
 type Receipt = { id: String<max=16>, };
 type Output = { id: String<max=16>, };
 
 intent replaceThing(input: Input)
   returns Output
   profile p.effectful
-  basis none
+  basis input.basis
   budget <= p.tiny
 {
   let receipt: Receipt = target.replace(input.id)
     else { rejected(reason) => domain.WriteRejected };
   return { id: input.id };
 }
-";
+"#;
 
 const ECHO_TARGET_PROFILE_DIGEST: &str =
     "sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -1090,6 +1092,12 @@ fn assert_available_core_projection(stdout: &[Value], expected_core_digest: &str
         core.pointer("/review/intents/replaceThing").is_some(),
         "Core review must include the lowered intent"
     );
+    assert_eq!(
+        core.pointer("/review/intents/replaceThing/basis/field")
+            .and_then(Value::as_str),
+        Some("basis"),
+        "Core review must expose the hash-significant explicit basis"
+    );
 }
 
 fn assert_available_target_ir_projection(stdout: &[Value], expected_target_digest: &str) {
@@ -1121,6 +1129,25 @@ fn assert_available_target_ir_projection(stdout: &[Value], expected_target_diges
             .pointer("/review/intents/replaceThing/steps/0/targetIntrinsic")
             .and_then(Value::as_str),
         Some("echo.dpo@1.replace")
+    );
+    assert_eq!(
+        target_ir
+            .pointer("/review/intents/replaceThing/basis/field")
+            .and_then(Value::as_str),
+        Some("basis"),
+        "Target IR review must expose the hash-significant explicit basis"
+    );
+    assert_eq!(
+        target_ir
+            .pointer("/review/semanticClosure/sourceCore/coordinate")
+            .and_then(Value::as_str),
+        Some("demo.echo@1")
+    );
+    assert_eq!(
+        target_ir
+            .pointer("/review/semanticClosure/lawpacks/0/coordinate")
+            .and_then(Value::as_str),
+        Some("demo.write@1")
     );
 }
 
