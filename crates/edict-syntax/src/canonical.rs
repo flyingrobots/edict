@@ -5,19 +5,20 @@
 //! and can validate those bytes by decoding to a canonical value and
 //! re-encoding. It also computes reviewed SHA-256 digest frames.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::str;
 
 use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreIntent, CoreModule, CoreNode,
-    CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource,
-    LocalRef, ResourceRef,
+    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBudget,
+    CoreExpr, CoreImport, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CorePredicate,
+    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
 };
 use crate::target_ir::{
-    TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement, TargetIrStep,
+    TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement,
+    TargetIrSemanticClosure, TargetIrStep,
 };
 
 /// Canonical encoding profile for Core artifacts.
@@ -385,16 +386,6 @@ pub(crate) fn is_logical_package_relative_path(path: &str) -> bool {
             .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
 
-fn is_lowercase_sha256_review_digest(digest: &str) -> bool {
-    let Some(hex) = digest.strip_prefix("sha256:") else {
-        return false;
-    };
-    hex.len() == 64
-        && hex
-            .bytes()
-            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-}
-
 /// Compute a contract-bundle layer digest over its ordered preimage components.
 ///
 /// The digest is SHA-256 over the canonical CBOR encoding of:
@@ -469,7 +460,24 @@ pub fn decode_canonical_cbor(bytes: &[u8]) -> Result<CanonicalValue, CanonicalEr
 }
 
 fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValue, CanonicalError> {
-    Ok(map([
+    if artifact.source_core_coordinate.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "Target IR source Core coordinate is empty",
+        ));
+    }
+    if artifact.semantic_closure.is_none()
+        && artifact
+            .intents
+            .values()
+            .any(|intent| intent.basis.is_some())
+    {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "basis-bearing Target IR requires a semantic closure",
+        ));
+    }
+    let mut entries = vec![
         ("kind", text("targetIrArtifact")),
         ("domain", text(&artifact.domain)),
         (
@@ -488,6 +496,50 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
                     .iter()
                     .map(|(name, intent)| Ok((name.as_str(), target_ir_intent_value(intent)?))),
             )?,
+        ),
+    ];
+    if let Some(closure) = &artifact.semantic_closure {
+        if closure.source_core.coordinate != artifact.source_core_coordinate {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                "Target IR semantic closure source Core coordinate does not match the artifact source Core coordinate",
+            ));
+        }
+        entries.push((
+            "semanticClosure",
+            target_ir_semantic_closure_value(closure)?,
+        ));
+    }
+    Ok(map(entries))
+}
+
+fn target_ir_semantic_closure_value(
+    closure: &TargetIrSemanticClosure,
+) -> Result<CanonicalValue, CanonicalError> {
+    let mut lawpacks = BTreeMap::<&str, &ResourceRef>::new();
+    for resource in &closure.lawpacks {
+        if let Some(prior) = lawpacks.get(resource.coordinate.as_str()) {
+            if *prior != resource {
+                return Err(CanonicalError::new(
+                    CanonicalErrorKind::UnsupportedValue,
+                    format!(
+                        "Target IR lawpack coordinate `{}` is bound to conflicting resources",
+                        resource.coordinate
+                    ),
+                ));
+            }
+        } else {
+            lawpacks.insert(resource.coordinate.as_str(), resource);
+        }
+    }
+    Ok(map([
+        (
+            "sourceCore",
+            target_ir_resource_ref_value(&closure.source_core)?,
+        ),
+        (
+            "lawpacks",
+            sorted_array_results(lawpacks.into_values().map(target_ir_resource_ref_value))?,
         ),
     ]))
 }
@@ -518,7 +570,7 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
 }
 
 fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
-    Ok(map([
+    let mut entries = vec![
         ("operationProfile", text(&intent.operation_profile)),
         (
             "inputConstraints",
@@ -537,7 +589,11 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
             array_results(intent.steps.iter().map(target_ir_step_value))?,
         ),
         ("result", core_expr_value(&intent.result)?),
-    ]))
+    ];
+    if let Some(basis) = &intent.basis {
+        entries.push(("basis", core_expr_value(basis)?));
+    }
+    Ok(map(entries))
 }
 
 fn target_ir_requirement_value(
@@ -729,7 +785,7 @@ fn core_type_value(ty: &CoreType) -> CanonicalValue {
 }
 
 fn core_intent_value(intent: &CoreIntent) -> Result<CanonicalValue, CanonicalError> {
-    Ok(map([
+    let mut entries = vec![
         ("input", text(&intent.input)),
         ("output", text(&intent.output)),
         (
@@ -745,7 +801,11 @@ fn core_intent_value(intent: &CoreIntent) -> Result<CanonicalValue, CanonicalErr
             core_budget_value(&intent.core_evaluation_budget),
         ),
         ("body", core_block_value(&intent.body)?),
-    ]))
+    ];
+    if let Some(basis) = &intent.basis {
+        entries.push(("basis", core_expr_value(basis)?));
+    }
+    Ok(map(entries))
 }
 
 fn input_constraint_value(constraint: &InputConstraint) -> Result<CanonicalValue, CanonicalError> {
@@ -901,7 +961,7 @@ fn core_value(value: &CoreValue) -> Result<CanonicalValue, CanonicalError> {
         CoreValue::Int { width, value } => map([
             ("kind", text("int")),
             ("width", text(width)),
-            ("value", int_text_value(value)?),
+            ("value", int_text_value(width, value)?),
         ]),
         CoreValue::String(value) => map([("kind", text("string")), ("value", text(value))]),
         CoreValue::Bytes(value) => map([
@@ -911,11 +971,11 @@ fn core_value(value: &CoreValue) -> Result<CanonicalValue, CanonicalError> {
     })
 }
 
-fn int_text_value(value: &str) -> Result<CanonicalValue, CanonicalError> {
-    let value = value.parse::<i128>().map_err(|_| {
+fn int_text_value(width: &str, value: &str) -> Result<CanonicalValue, CanonicalError> {
+    let value = parse_core_integer(width, value).ok_or_else(|| {
         CanonicalError::new(
             CanonicalErrorKind::InvalidInteger,
-            "Core integer value is not a base-10 integer",
+            format!("Core integer value is outside the declared `{width}` domain"),
         )
     })?;
     Ok(CanonicalValue::Integer(value))

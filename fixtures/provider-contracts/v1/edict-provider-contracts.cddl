@@ -297,6 +297,7 @@ core-intent = {
   input: core-type-ref,
   output: core-type-ref,
   requiredOperationProfile: tstr,
+  ? basis: core-expr,
   inputConstraints: [* input-constraint],
   coreEvaluationBudget: core-budget,
   body: core-block,
@@ -759,22 +760,48 @@ target-ir-resource-ref = {
   digest: sha256-digest,
 }
 
-target-ir-artifact = {
+target-ir-artifact = target-ir-closed-artifact / target-ir-legacy-artifact
+
+target-ir-artifact-common = (
   kind: "targetIrArtifact",
   domain: tstr,
   targetProfile: target-ir-resource-ref,
-  sourceCoreCoordinate: tstr,
+  sourceCoreCoordinate: tstr .regexp "(?s).+",
+)
+
+target-ir-closed-artifact = {
+  target-ir-artifact-common,
+  semanticClosure: target-ir-semantic-closure,
   intents: { * tstr => target-ir-intent },
 }
 
+target-ir-legacy-artifact = {
+  target-ir-artifact-common,
+  intents: { * tstr => target-ir-legacy-intent },
+}
+
+target-ir-semantic-closure = {
+  sourceCore: target-ir-resource-ref,
+  lawpacks: [* target-ir-resource-ref],
+}
+
 target-ir-intent = {
+  target-ir-intent-common,
+  ? basis: core-expr,
+}
+
+target-ir-legacy-intent = {
+  target-ir-intent-common,
+}
+
+target-ir-intent-common = (
   operationProfile: tstr,
   inputConstraints: [* input-constraint],
   coreEvaluationBudget: core-budget,
   requirements: [* target-ir-requirement],
   steps: [* target-ir-step],
   result: core-expr,
-}
+)
 
 target-ir-requirement = {
   id: tstr,

@@ -40,7 +40,9 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   [COREIR-REQ-007]
 - Core types cover bounded scalars, records, variants, options, lists, maps, and
   capability references. Runtime-sized collections remain explicitly bounded at
-  the Core schema boundary. [COREIR-REQ-002]
+  the Core schema boundary. Integer type and value identity retains exact width
+  and signedness, and byte payloads carry an explicit maximum. [COREIR-REQ-002]
+  [COREIR-REQ-019]
 - Core expressions and predicates are separate schema families. Expressions
   compute values; predicates express boolean obligations and input constraints.
   [COREIR-REQ-003]
@@ -59,8 +61,11 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   coordinate, origin class, and predicate tree. They are not validator coordinate
   strings. [COREIR-REQ-006] [EDICT-CORE-WHERE-HASH-001]
 - Intents state the required operation profile as `requiredOperationProfile`.
-  Verifier reports and target/admission decisions are external to Core.
-  [COREIR-REQ-009] [EDICT-CORE-VERIFIED-EXTERNAL-001]
+  An intent may also carry one typed basis expression; when present, that
+  expression participates in canonical Core bytes and digest. Verifier reports,
+  runtime basis resolution, and target/admission decisions remain external to
+  Core. [COREIR-REQ-009] [COREIR-REQ-018]
+  [EDICT-CORE-VERIFIED-EXTERNAL-001]
 - Edict-authored lawpack pure helper bodies use `core-fn-body`, a pure function
   body shape. They do not reuse the effect-capable `core-block` node algebra.
   [COREIR-REQ-011]
@@ -70,7 +75,9 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 - Core modules can be encoded as deterministic `edict.canonical-cbor/v1` bytes
   from their semantic value tree. Validation decodes canonical bytes and
   requires byte-identical re-encoding, rejecting non-canonical forms such as
-  non-minimal integers. [COREIR-REQ-012] [COREIR-REQ-013]
+  non-minimal integers. Integer encoding additionally rejects values outside
+  the exact domain named by their Core width. [COREIR-REQ-012]
+  [COREIR-REQ-013] [COREIR-REQ-019]
 - Canonical encoding and decoding allow at most 128 nested arrays or maps. The
   root starts at depth zero, so a scalar wrapped in exactly 128 containers is
   valid; depth 129 rejects with `NestingLimitExceeded` before deeper recursive

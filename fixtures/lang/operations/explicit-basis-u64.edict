@@ -1,0 +1,29 @@
+package examples.splice@1;
+
+use lawpack sequence.edit@1 digest "sha256:1111111111111111111111111111111111111111111111111111111111111111" as sequence;
+
+type SpliceInput = {
+  basis: String<max=128>,
+  start: U64,
+  end: U64,
+  replacement: Bytes<max=4096>,
+};
+
+type SpliceReceipt = {
+  version: U64,
+};
+
+type SpliceOutput = {
+  version: U64,
+};
+
+intent splice(input: SpliceInput) returns SpliceOutput
+  profile sequence.splice
+  basis input.basis
+  budget <= sequence.small
+  where input.start <= 18446744073709551615u64,
+        input.start <= input.end {
+  let receipt: SpliceReceipt = sequence.splice(input)
+    else { rejected(reason) => sequence.SpliceRejected };
+  return { version: receipt.version };
+}

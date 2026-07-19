@@ -15,7 +15,7 @@ use crate::{
         BundleSourceDescriptor, CanonicalError,
     },
     core_ir::{CoreModule, ResourceRef},
-    target_ir::TargetIrArtifact,
+    target_ir::{semantic_closure_for_core, TargetIrArtifact},
     target_profile::CANONICAL_CBOR_ABI,
 };
 
@@ -499,7 +499,7 @@ pub fn assemble_contract_bundle_from_target_ir(
         source_artifacts,
         source_profile_semantic_facts,
         target_ir_artifact,
-        lawpacks,
+        mut lawpacks,
         generated_artifacts,
         compiler,
         lowerer,
@@ -514,6 +514,8 @@ pub fn assemble_contract_bundle_from_target_ir(
         assurance_evidence,
     } = input;
 
+    digest_core_module(&core_module)
+        .map_err(|error| ContractBundleAssemblyError::canonical("core_module", &error))?;
     if target_ir_artifact.source_core_coordinate.as_str() != core_module.coordinate.as_str() {
         return Err(ContractBundleAssemblyError::new(
             ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
@@ -524,6 +526,8 @@ pub fn assemble_contract_bundle_from_target_ir(
             ),
         ));
     }
+    corroborate_target_ir_semantic_closure(&core_module, &target_ir_artifact, &lawpacks)?;
+    canonicalize_digest_locked_resource_set(&mut lawpacks);
 
     let target_profile =
         target_profile_from_target_ir_artifact(&target_ir_artifact.target_profile)?;
@@ -553,6 +557,86 @@ pub fn assemble_contract_bundle_from_target_ir(
         compile_explanation,
         assurance_evidence,
     })
+}
+
+fn corroborate_target_ir_semantic_closure(
+    core_module: &CoreModule,
+    target_ir_artifact: &TargetIrArtifact,
+    lawpacks: &[DigestLockedResource],
+) -> Result<(), ContractBundleAssemblyError> {
+    let expected = semantic_closure_for_core(core_module).map_err(|failure| {
+        ContractBundleAssemblyError::new(
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+            "core_module",
+            failure.detail,
+        )
+    })?;
+
+    match (&expected, &target_ir_artifact.semantic_closure) {
+        (None, None) => {}
+        (Some(_), None) | (None, Some(_)) => {
+            return Err(ContractBundleAssemblyError::new(
+                ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+                "target_ir_artifact.semantic_closure",
+                "Target IR semantic closure does not match the supplied Core module",
+            ));
+        }
+        (Some(expected), Some(actual)) => {
+            if actual.source_core != expected.source_core {
+                return Err(ContractBundleAssemblyError::new(
+                    ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+                    "target_ir_artifact.semantic_closure.source_core",
+                    "Target IR source Core identity does not match the supplied Core module",
+                ));
+            }
+            if canonical_resource_set(&actual.lawpacks)
+                != canonical_resource_set(&expected.lawpacks)
+            {
+                return Err(ContractBundleAssemblyError::new(
+                    ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+                    "target_ir_artifact.semantic_closure.lawpacks",
+                    "Target IR lawpack closure does not match the supplied Core module",
+                ));
+            }
+        }
+    }
+
+    let expected_lawpacks = expected
+        .as_ref()
+        .map(|closure| canonical_resource_set(&closure.lawpacks))
+        .unwrap_or_default();
+    let supplied_lawpacks = lawpacks
+        .iter()
+        .map(DigestLockedResource::to_resource_ref)
+        .collect::<Vec<_>>();
+    if canonical_resource_set(&supplied_lawpacks) != expected_lawpacks {
+        return Err(ContractBundleAssemblyError::new(
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+            "lawpacks",
+            "bundle lawpacks do not match the supplied Core module",
+        ));
+    }
+
+    Ok(())
+}
+
+fn canonicalize_digest_locked_resource_set(resources: &mut Vec<DigestLockedResource>) {
+    resources.sort_by(|left, right| {
+        left.coordinate()
+            .cmp(right.coordinate())
+            .then_with(|| left.digest_str().cmp(right.digest_str()))
+    });
+    resources.dedup();
+}
+
+fn canonical_resource_set(resources: &[ResourceRef]) -> Vec<(String, Option<String>)> {
+    let mut resources = resources
+        .iter()
+        .map(|resource| (resource.coordinate.clone(), resource.digest.clone()))
+        .collect::<Vec<_>>();
+    resources.sort();
+    resources.dedup();
+    resources
 }
 
 fn target_profile_from_target_ir_artifact(

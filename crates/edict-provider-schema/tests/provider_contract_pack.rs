@@ -11,11 +11,12 @@ use edict_provider_schema::{
     TARGET_IR_ARTIFACT_CDDL_ROOT,
 };
 use edict_syntax::{
-    canonical_target_profile_contract_resources, decode_canonical_cbor,
-    digest_target_profile_contract_resource, encode_target_ir_artifact, CanonicalValue, CoreBudget,
-    CoreExpr, CoreObstructionReason, CorePredicate, CoreValue,
-    ProviderArtifactSchemaValidationErrorKind, ResourceRef, TargetIrArtifact, TargetIrIntent,
-    TargetIrRequireFailure, TargetIrRequirement, TargetProfileContractResource,
+    canonical_target_profile_contract_resources, compile_to_core, decode_canonical_cbor,
+    digest_target_profile_contract_resource, encode_core_module, encode_target_ir_artifact,
+    parse_module, CanonicalValue, CompilerContext, CoreBudget, CoreExpr, CoreObstructionReason,
+    CorePredicate, CoreValue, ProviderArtifactSchemaValidationErrorKind, ResourceRef,
+    TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement,
+    TargetIrSemanticClosure, TargetProfileContractResource, WriteClass,
     AUTHORITY_FACTS_API_VERSION, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
 };
@@ -36,6 +37,8 @@ const TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.cbor");
 const ALTERNATE_TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor");
+const OPERATION_SOURCE: &str =
+    include_str!("../../../fixtures/lang/operations/explicit-basis-u64.edict");
 const EXPECTED_DOMAIN_BINDINGS: [(&str, &str); 6] = [
     (AUTHORITY_FACTS_API_VERSION, "authority-facts"),
     (CORE_MODULE_DIGEST_DOMAIN, "core-module"),
@@ -185,6 +188,14 @@ fn target_ir_root_matches_reference_encoder() {
     pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &encoded_requirements)
         .expect("encoder output with both requirement dispositions satisfies the root");
 
+    let mut missing_semantic_closure = encoded_target_ir_with_coordinate("example.target@1");
+    remove_map_field(&mut missing_semantic_closure, "semanticClosure");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &missing_semantic_closure),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "basis-bearing external Target IR must carry its semantic closure"
+    );
+
     let mut invalid = decode_canonical_cbor(TARGET_IR_FIXTURE).expect("fixture is canonical");
     *map_value_mut(&mut invalid, "kind") = CanonicalValue::Text("targetIrDraft".to_owned());
     assert_eq!(
@@ -197,6 +208,15 @@ fn target_ir_root_matches_reference_encoder() {
     assert_eq!(
         pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &missing_field),
         Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+
+    let mut empty_source_core =
+        decode_canonical_cbor(TARGET_IR_FIXTURE).expect("fixture is canonical");
+    *map_value_mut(&mut empty_source_core, "sourceCoreCoordinate") = text("");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &empty_source_core),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "published Target IR schema must reject an empty source Core coordinate"
     );
 
     let mut empty_target_profile =
@@ -247,6 +267,30 @@ fn target_ir_root_matches_reference_encoder() {
         pack.validate_domain("runtime.unknown/v1", &invalid),
         Err(ProviderArtifactSchemaValidationErrorKind::UnsupportedDomain)
     );
+}
+
+#[test]
+fn core_root_accepts_reference_encoded_operation_basis() {
+    let context = CompilerContext::new()
+        .with_operation_profile("sequence.splice", "continuum.profile.write/v1")
+        .with_operation_profile_write_classes("sequence.splice", [WriteClass::Replace])
+        .with_effect_write_class("sequence.splice", WriteClass::Replace)
+        .with_budget(
+            "sequence.small",
+            CoreBudget {
+                max_steps: 64,
+                max_allocated_bytes: 16 * 1024,
+                max_output_bytes: 4096,
+            },
+        );
+    let module = parse_module(OPERATION_SOURCE).expect("operation source parses");
+    let core = compile_to_core(&module, &context).expect("operation source compiles");
+    let value = decode_canonical_cbor(&encode_core_module(&core).expect("Core encodes"))
+        .expect("Core bytes are canonical");
+
+    assemble(canonical_target_profile_contract_resources())
+        .validate_domain(CORE_MODULE_DIGEST_DOMAIN, &value)
+        .expect("reference-encoded operation Core satisfies the published root");
 }
 
 #[test]
@@ -557,10 +601,23 @@ fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
             digest: Some(format!("sha256:{}", "1".repeat(64))),
         },
         source_core_coordinate: "example.core@1".to_owned(),
+        semantic_closure: Some(TargetIrSemanticClosure {
+            source_core: ResourceRef {
+                coordinate: "example.core@1".to_owned(),
+                digest: Some(format!("sha256:{}", "2".repeat(64))),
+            },
+            lawpacks: vec![ResourceRef {
+                coordinate: "example.lawpack@1".to_owned(),
+                digest: Some(format!("sha256:{}", "3".repeat(64))),
+            }],
+        }),
         intents: BTreeMap::from([(
             "apply".to_owned(),
             TargetIrIntent {
                 operation_profile: "example.operation/v1".to_owned(),
+                basis: Some(CoreExpr::Const(CoreValue::String(
+                    "example.basis@1".to_owned(),
+                ))),
                 input_constraints: Vec::new(),
                 core_evaluation_budget: CoreBudget {
                     max_steps: 1,

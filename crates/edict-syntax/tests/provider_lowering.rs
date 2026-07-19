@@ -197,7 +197,7 @@ fn bundle_input(
         )],
         source_profile_semantic_facts: resource("source-profile.provider-fixture/v1", 'f'),
         target_ir_artifact: artifact,
-        lawpacks: vec![resource("provider-fixture.lawpack@1", '2')],
+        lawpacks: Vec::new(),
         generated_artifacts: vec![resource("provider-fixture.registration/v1", '3')],
         compiler: resource("edict.compiler/v1", '4'),
         lowerer: resource(lowerer_coordinate, '5'),

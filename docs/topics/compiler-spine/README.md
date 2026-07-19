@@ -38,12 +38,24 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 ## Current Contract
 
 - The lowerable subset is deliberately narrow: local record type declarations,
-  one-parameter intents, `profile`, `basis none`, `budget <=`, `where`
-  predicates, pure `let` bindings, one annotated effectful `let ... else`
-  shape, lowerable `require ... else` obstruction arms, `return`, strings,
-  booleans, integers, field access, record literals, equality predicates, and
-  string concatenation. [CSPINE-REQ-006] [CSPINE-REQ-011]
-  [CSPINE-REQ-017]
+  one-parameter intents, `profile`, `basis none` or one input-derived explicit
+  basis, `budget <=`, `where` predicates, pure `let` bindings, one annotated
+  effectful `let ... else` shape, lowerable `require ... else` obstruction
+  arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
+  field access, record literals, equality predicates, and string concatenation.
+  [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017]
+- The fixed-width source scalar set is `I32`, `I64`, `U32`, and `U64`.
+  Explicitly suffixed literals retain their exact width and signedness;
+  bare literals inherit an unambiguous expected width from supported comparison,
+  annotation, and record-return contexts. Unconstrained bare literals, overflow,
+  negative unsigned values, and cross-width assignments reject in type checking;
+  signed minima are accepted through unary-negative literal folding. Statically
+  bounded `Bytes<max=N>` lowers with its exact bound.
+  [CSPINE-REQ-019] [CSPINE-REQ-021]
+- An explicit basis expression is checked in the pure pre-body environment
+  containing the intent parameter, before body locals exist. The typed
+  expression is preserved in Core; this is authoring evidence, not runtime
+  basis resolution or admission. [CSPINE-REQ-020]
 - Core lowering produces structured in-memory `CoreModule` values with module
   coordinate, imports, types, intents, input constraints, budgets, locals,
   ordered nodes, and result expressions. [CSPINE-REQ-003]

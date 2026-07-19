@@ -370,13 +370,14 @@ mod contract_bundle_assembly {
         BundleSubjectKind, CompilerContext, ContractBundleAssemblyErrorKind,
         ContractBundleAssemblyFromTargetIrInput, ContractBundleAssemblyInput,
         ContractBundleAssuranceEvidenceInput, ContractBundleSourceArtifact,
-        ContractBundleValidationFailureKind, ContractBundleValidationStatus, CoreBudget,
-        DigestLockedResource, ResourceRef, SuppliedTargetIrResource, TargetEffectLowering,
-        TargetIrArtifact, TargetIrLoweringFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
-        ECHO_SPAN_IR_DOMAIN,
+        ContractBundleValidationFailureKind, ContractBundleValidationStatus, CoreBudget, CoreExpr,
+        CoreImport, CoreImportKind, CoreValue, DigestLockedResource, ResourceRef,
+        SuppliedTargetIrResource, TargetEffectLowering, TargetIrArtifact, TargetIrLoweringFacts,
+        WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
     };
 
     const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
+        use lawpack hello.optics@1 digest \"sha256:2222222222222222222222222222222222222222222222222222222222222222\" as hello;\n\
         type Input = { id: String<max=16>, };\n\
         type Receipt = { id: String<max=16>, };\n\
         type Output = { id: String<max=16>, };\n\
@@ -638,6 +639,158 @@ mod contract_bundle_assembly {
             ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
         );
         assert_eq!(err.field(), "target_ir_artifact.source_core_coordinate");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_core_digest_substitution() {
+        let mut input = assembly_from_target_ir_input();
+        input
+            .core_module
+            .intents
+            .get_mut("t")
+            .expect("intent t")
+            .core_evaluation_budget
+            .max_steps += 1;
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("Target IR closure must bind the supplied Core digest");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(
+            err.field(),
+            "target_ir_artifact.semantic_closure.source_core"
+        );
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_stripped_lawpack_only_closure() {
+        let mut input = assembly_from_target_ir_input();
+        input.target_ir_artifact.semantic_closure = None;
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("lawpack-bearing Core requires its Target IR closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "target_ir_artifact.semantic_closure");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_lawpack_set_substitution() {
+        let mut input = assembly_from_target_ir_input();
+        input.lawpacks[0] = resource("hello.optics@1", 'e');
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("bundle lawpacks must equal the Target IR closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "lawpacks");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_unexpected_semantic_closure() {
+        let mut input = assembly_from_target_ir_input();
+        let injected_closure = input
+            .target_ir_artifact
+            .semantic_closure
+            .clone()
+            .expect("lawpack-bearing fixture has a closure");
+        input
+            .core_module
+            .imports
+            .retain(|import| import.kind != CoreImportKind::Lawpack);
+        input.target_ir_artifact = lower_to_target_ir(&input.core_module, &echo_facts())
+            .artifact
+            .expect("closure-free Core still lowers");
+        assert!(input.target_ir_artifact.semantic_closure.is_none());
+        input.target_ir_artifact.semantic_closure = Some(injected_closure);
+        input.lawpacks.clear();
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("closure-free Core rejects an injected semantic closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "target_ir_artifact.semantic_closure");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_artifact_lawpack_substitution() {
+        let mut input = assembly_from_target_ir_input();
+        input
+            .target_ir_artifact
+            .semantic_closure
+            .as_mut()
+            .expect("lawpack-bearing fixture has a closure")
+            .lawpacks[0]
+            .digest = Some(digest('e'));
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("artifact lawpacks must equal the supplied Core closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "target_ir_artifact.semantic_closure.lawpacks");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_preserves_canonical_core_failure() {
+        let mut input = assembly_from_target_ir_input();
+        input
+            .core_module
+            .intents
+            .get_mut("t")
+            .expect("intent t")
+            .body
+            .result = CoreExpr::Const(CoreValue::Int {
+            width: "U32".to_owned(),
+            value: "4294967296".to_owned(),
+        });
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("malformed Core must retain its canonical failure category");
+
+        assert_eq!(err.kind(), ContractBundleAssemblyErrorKind::CanonicalDigest);
+        assert_eq!(err.field(), "core_module");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_canonicalizes_bundle_lawpacks() {
+        let mut input = assembly_from_target_ir_input();
+        input.core_module.imports.push(CoreImport {
+            kind: CoreImportKind::Lawpack,
+            resource: ResourceRef {
+                coordinate: "zeta.optics@1".to_owned(),
+                digest: Some(digest('e')),
+            },
+            alias: Some("zeta".to_owned()),
+        });
+        input.target_ir_artifact = lower_to_target_ir(&input.core_module, &echo_facts())
+            .artifact
+            .expect("two-lawpack Core lowers");
+        let hello = resource("hello.optics@1", '2');
+        let zeta = resource("zeta.optics@1", 'e');
+        input.lawpacks = vec![zeta.clone(), hello.clone(), hello.clone()];
+
+        let manifest = assemble_contract_bundle_from_target_ir(input)
+            .expect("equivalent lawpack construction order assembles");
+
+        assert_eq!(
+            manifest.lawpacks,
+            vec![hello.to_resource_ref(), zeta.to_resource_ref()]
+        );
     }
 
     #[test]
