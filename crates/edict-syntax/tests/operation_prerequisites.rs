@@ -463,6 +463,23 @@ fn target_lowering_refuses_an_empty_source_core_coordinate() {
 }
 
 #[test]
+fn legacy_target_ir_encoder_rejects_an_empty_source_core_coordinate() {
+    let (_, mut artifact) = lower_operation(OPERATION_SOURCE);
+    artifact.source_core_coordinate.clear();
+    artifact.semantic_closure = None;
+    for intent in artifact.intents.values_mut() {
+        intent.basis = None;
+    }
+
+    assert_eq!(
+        encode_target_ir_artifact(&artifact)
+            .expect_err("legacy Target IR with an empty Core coordinate must not encode")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+}
+
+#[test]
 fn semantic_closure_lawpack_set_is_order_invariant() {
     let core = compile_operation(OPERATION_SOURCE);
     let primary = core

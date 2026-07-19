@@ -1141,13 +1141,22 @@ fn assert_available_target_ir_projection(stdout: &[Value], expected_target_diges
         target_ir
             .pointer("/review/semanticClosure/sourceCore/coordinate")
             .and_then(Value::as_str),
-        Some("demo.echo@1")
+        Some("demo.echo@1"),
+        "Target IR review must expose the semantic closure source Core coordinate"
     );
     assert_eq!(
         target_ir
             .pointer("/review/semanticClosure/lawpacks/0/coordinate")
             .and_then(Value::as_str),
-        Some("demo.write@1")
+        Some("demo.write@1"),
+        "Target IR review must expose the semantic closure lawpack coordinate"
+    );
+    assert_eq!(
+        target_ir
+            .pointer("/review/semanticClosure/lawpacks/0/digest")
+            .and_then(Value::as_str),
+        Some("sha256:2222222222222222222222222222222222222222222222222222222222222222"),
+        "Target IR review must expose the semantic closure lawpack digest"
     );
 }
 

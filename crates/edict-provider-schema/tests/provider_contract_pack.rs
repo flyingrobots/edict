@@ -210,6 +210,15 @@ fn target_ir_root_matches_reference_encoder() {
         Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
     );
 
+    let mut empty_source_core =
+        decode_canonical_cbor(TARGET_IR_FIXTURE).expect("fixture is canonical");
+    *map_value_mut(&mut empty_source_core, "sourceCoreCoordinate") = text("");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &empty_source_core),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "published Target IR schema must reject an empty source Core coordinate"
+    );
+
     let mut empty_target_profile =
         decode_canonical_cbor(TARGET_IR_FIXTURE).expect("fixture is canonical");
     let target_profile = map_value_mut(&mut empty_target_profile, "targetProfile");
