@@ -482,6 +482,12 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
         ),
     ];
     if let Some(closure) = &artifact.semantic_closure {
+        if closure.source_core.coordinate != artifact.source_core_coordinate {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                "Target IR semantic closure source Core coordinate does not match the artifact source Core coordinate",
+            ));
+        }
         entries.push((
             "semanticClosure",
             target_ir_semantic_closure_value(closure)?,
