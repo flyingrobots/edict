@@ -432,3 +432,21 @@ fn invalid_or_conflicting_lawpack_resources_refuse_before_target_artifact() {
         CanonicalErrorKind::UnsupportedValue
     );
 }
+
+#[test]
+fn semantic_closure_cannot_substitute_a_different_source_core_coordinate() {
+    let (_, mut artifact) = lower_operation(OPERATION_SOURCE);
+    artifact
+        .semantic_closure
+        .as_mut()
+        .expect("operation has semantic closure")
+        .source_core
+        .coordinate = "examples.substituted@1".to_owned();
+
+    assert_eq!(
+        digest_target_ir_artifact(&artifact)
+            .expect_err("contradictory source Core coordinates must not gain identity")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+}
