@@ -654,10 +654,11 @@ impl<'a> TypeChecker<'a> {
         };
         let mut locals = vec![input_binding.clone()];
         let mut env = BTreeMap::from([(param.name.clone(), (input_binding.clone(), input_shape))]);
-        let Some(basis) = source.clauses.iter().find_map(|clause| match clause {
+        let mut basis_clauses = source.clauses.iter().filter_map(|clause| match clause {
             IntentClause::Basis(basis) => Some(basis),
             _ => None,
-        }) else {
+        });
+        let Some(basis) = basis_clauses.next() else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnsupportedSourceShape,
@@ -666,6 +667,15 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
+        if basis_clauses.next().is_some() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "intent contains duplicate `basis` clause",
+                source.span,
+            ));
+            return None;
+        }
         let basis = match basis {
             Some(basis) => Some(self.check_expr(basis, &env)?.expr),
             None => None,
