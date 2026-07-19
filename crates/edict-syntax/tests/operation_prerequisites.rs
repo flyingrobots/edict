@@ -9,7 +9,7 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, digest_target_ir_artifact,
     encode_core_module, encode_target_ir_artifact, lower_to_target_ir, parse_module,
     resolve_module, type_check, CanonicalErrorKind, CanonicalValue, CompilerContext,
-    CompilerErrorKind, CompilerStage, CoreBudget, CoreExpr, CoreImport, CoreImportKind,
+    CompilerErrorKind, CompilerStage, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreNode,
     CorePredicate, CoreType, CoreValue, ResourceRef, TargetEffectLowering, TargetIrArtifact,
     TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus, WriteClass,
     ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
@@ -209,6 +209,71 @@ fn fixed_width_integer_types_and_suffixes_preserve_exact_domains() {
             })
         );
     }
+}
+
+#[test]
+fn bare_integer_literals_inherit_unambiguous_fixed_width_context() {
+    let comparison = compile_operation(&OPERATION_SOURCE.replace("18446744073709551615u64", "1"));
+    let CorePredicate::Compare { right, .. } =
+        &comparison.intents["splice"].input_constraints[0].predicate
+    else {
+        panic!("first input constraint is not a comparison");
+    };
+    assert_eq!(
+        right,
+        &CoreExpr::Const(CoreValue::Int {
+            width: "U64".to_owned(),
+            value: "1".to_owned(),
+        })
+    );
+
+    let annotated = compile_operation(&OPERATION_SOURCE.replace(
+        "  let receipt: SpliceReceipt",
+        "  let marker: U32 = 1;\n  let receipt: SpliceReceipt",
+    ));
+    let CoreNode::Let { value, .. } = &annotated.intents["splice"].body.nodes[0] else {
+        panic!("annotated bare integer did not lower as a pure let");
+    };
+    assert_eq!(
+        value,
+        &CoreExpr::Const(CoreValue::Int {
+            width: "U32".to_owned(),
+            value: "1".to_owned(),
+        })
+    );
+
+    let returned = compile_operation(&OPERATION_SOURCE.replace(
+        "return { version: receipt.version };",
+        "return { version: 1 };",
+    ));
+    let CoreExpr::Record { fields } = &returned.intents["splice"].body.result else {
+        panic!("operation result is not a record");
+    };
+    assert_eq!(
+        fields["version"],
+        CoreExpr::Const(CoreValue::Int {
+            width: "U64".to_owned(),
+            value: "1".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn unconstrained_bare_integer_literal_refuses_before_core() {
+    let source = OPERATION_SOURCE.replace(
+        "  let receipt: SpliceReceipt",
+        "  let marker = 1;\n  let receipt: SpliceReceipt",
+    );
+    let module = parse_module(&source).expect("mutated source parses");
+    let errors = compile_to_core(&module, &operation_context())
+        .expect_err("a bare integer without an expected width must reject");
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| (error.stage, error.kind))
+            .collect::<Vec<_>>(),
+        vec![(CompilerStage::TypeCheck, CompilerErrorKind::TypeMismatch)]
+    );
 }
 
 #[test]

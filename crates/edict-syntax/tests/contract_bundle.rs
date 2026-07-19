@@ -377,6 +377,7 @@ mod contract_bundle_assembly {
     };
 
     const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
+        use lawpack hello.optics@1 digest \"sha256:2222222222222222222222222222222222222222222222222222222222222222\" as hello;\n\
         type Input = { id: String<max=16>, };\n\
         type Receipt = { id: String<max=16>, };\n\
         type Output = { id: String<max=16>, };\n\
@@ -638,6 +639,60 @@ mod contract_bundle_assembly {
             ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
         );
         assert_eq!(err.field(), "target_ir_artifact.source_core_coordinate");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_core_digest_substitution() {
+        let mut input = assembly_from_target_ir_input();
+        input
+            .core_module
+            .intents
+            .get_mut("t")
+            .expect("intent t")
+            .core_evaluation_budget
+            .max_steps += 1;
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("Target IR closure must bind the supplied Core digest");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(
+            err.field(),
+            "target_ir_artifact.semantic_closure.source_core"
+        );
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_stripped_lawpack_only_closure() {
+        let mut input = assembly_from_target_ir_input();
+        input.target_ir_artifact.semantic_closure = None;
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("lawpack-bearing Core requires its Target IR closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "target_ir_artifact.semantic_closure");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_lawpack_set_substitution() {
+        let mut input = assembly_from_target_ir_input();
+        input.lawpacks[0] = resource("hello.optics@1", 'e');
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("bundle lawpacks must equal the Target IR closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "lawpacks");
     }
 
     #[test]
