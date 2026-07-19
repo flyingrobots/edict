@@ -92,9 +92,10 @@ The optional `semanticClosure` is emitted when the operation carries an
 explicit basis or imports a lawpack. It binds the exact canonical Core digest
 and sorted digest-locked lawpack resource set used by lowering. It is omitted
 for the existing `basis none`/no-lawpack compatibility artifacts, preserving
-their reviewed bytes. The closure and Target IR digest are semantic identity
-evidence only: neither confers public operation identity, invocability, runtime
-authority, admission, or evidence of execution.
+their reviewed bytes. A basis-bearing artifact without the closure is not a
+valid canonical or published-schema Target IR value. The closure and Target IR
+digest are semantic identity evidence only: neither confers public operation
+identity, invocability, runtime authority, admission, or evidence of execution.
 
 ## Ordering
 

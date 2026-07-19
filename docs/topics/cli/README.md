@@ -48,7 +48,10 @@ It emits editor-facing projection records for requested slots:
 
 Projection review JSON is display data for tools. The digest fields are
 computed from the existing canonical Core and Target IR encoders; the projection
-JSON is not a canonical hash contract. Compiler-level source or lowering
+JSON is not a canonical hash contract. When present, review JSON exposes the
+hash-significant Core and Target IR basis expressions plus the Target IR
+source-Core/lawpack semantic closure, so a digest change is not paired with an
+otherwise indistinguishable review payload. Compiler-level source or lowering
 failures remain projection data on stdout, so editor adapters can distinguish a
 bad buffer from a broken CLI transport. [CLI-REQ-013, CLI-REQ-014]
 

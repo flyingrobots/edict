@@ -24,6 +24,7 @@ The current target IR implementation is deliberately narrow:
 
 The `edict_syntax` crate exposes `lower_to_target_ir`,
 `TargetIrLoweringFacts`, `TargetLoweringReport`, `TargetIrArtifact`,
+`TargetIrSemanticClosure`,
 `encode_target_ir_artifact`, `digest_target_ir_artifact`, and stable
 `TargetLoweringFailureKind` values. The lowerer consumes an already-built
 `CoreModule` and explicit target-lowering facts supplied by the caller. It does
@@ -86,11 +87,21 @@ earlier target step, lowering uses the same stable failure kind with a more
 specific step-output-dependency detail. Ordered or step-attached guards remain a
 future artifact-model change.
 
-Each Target IR intent also preserves the Core input constraints, Core evaluation
-budget, source-ordered requirements, source-ordered effect steps, and structured
-Core result expression for the supported slice. This records preconditions,
+Each Target IR intent also preserves an explicit Core basis expression when
+present, the Core input constraints, Core evaluation budget, source-ordered
+requirements, source-ordered effect steps, and structured Core result
+expression for the supported slice. This records authored basis, preconditions,
 evaluation limits, guard dispositions, and success-output semantics without
-executing Echo or admitting a bundle.
+resolving a runtime basis, executing Echo, or admitting a bundle.
+
+When any intent has an explicit basis or the Core module imports a lawpack, the
+artifact carries a `TargetIrSemanticClosure`. The closure binds the exact
+canonical Core coordinate/digest and a coordinate-keyed, lowercase
+digest-locked lawpack set. Equivalent lawpack order and duplicate identical
+references canonicalize to the same Target IR identity; conflicting resources,
+an empty source Core coordinate, an unidentifiable Core, or a basis-bearing
+artifact without its closure rejects before Target IR identity exists.
+[TIR-REQ-015]
 
 Canonical Target IR uses an intentional artifact-envelope value model rather
 than Rust struct serialization. The reviewed digest is SHA-256 over canonical
@@ -101,11 +112,12 @@ CBOR for:
 ```
 
 The canonical value includes the artifact's own domain, digest-locked target
-profile resource, source Core coordinate, sorted intent map, input constraints,
-Core evaluation budget, source-ordered requirements, requirement predicates and
+profile resource, source Core coordinate, optional semantic closure, sorted
+intent map, optional explicit basis expressions, input constraints, Core
+evaluation budget, source-ordered requirements, requirement predicates and
 failure dispositions, source-ordered target steps, sorted obstruction failure
-keys and arms, and structured Core result expression. Target profile digests are
-strict artifact references: missing digests and non-lowercase
+keys and arms, and structured Core result expression. Target profile and
+semantic-closure digests are strict artifact references: missing digests and non-lowercase
 `sha256:<64 hex>` review strings reject before hashing.
 
 Reviewed Echo and git-warp Target IR byte/digest goldens live under
@@ -120,7 +132,9 @@ complete rule closure, and checks both reviewed Target IR artifacts through the
 compiled root. This is structural wire-schema evidence for valid
 lowering-produced artifacts; the lowerer and encoder continue to own semantic
 identifier validity and canonical ordering or deduplication of set-like
-fields. [TIR-REQ-014]
+fields. The schema has separate closed and legacy artifact variants, so an
+external artifact carrying an explicit basis cannot validate after its semantic
+closure is removed. [TIR-REQ-014] [TIR-REQ-015]
 
 Bundle assembly can now consume a real `TargetIrArtifact` through
 `assemble_contract_bundle_from_target_ir`. That path computes
