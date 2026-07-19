@@ -23,11 +23,18 @@ target-ir-artifact = {
   domain: tstr,
   targetProfile: target-ir-resource-ref,
   sourceCoreCoordinate: tstr,
+  ? semanticClosure: target-ir-semantic-closure,
   intents: { * tstr => target-ir-intent },
+}
+
+target-ir-semantic-closure = {
+  sourceCore: target-ir-resource-ref,
+  lawpacks: [* target-ir-resource-ref],
 }
 
 target-ir-intent = {
   operationProfile: tstr,
+  ? basis: core-expr,
   inputConstraints: [* input-constraint],
   coreEvaluationBudget: core-budget,
   requirements: [* target-ir-requirement],

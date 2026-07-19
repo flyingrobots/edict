@@ -1432,6 +1432,7 @@ fn target_lowering_failure_kind_name(kind: TargetLoweringFailureKind) -> &'stati
         TargetLoweringFailureKind::UnsupportedCoreAbi => "UnsupportedCoreAbi",
         TargetLoweringFailureKind::UnsupportedCoreCapability => "UnsupportedCoreCapability",
         TargetLoweringFailureKind::UndigestedCoreImport => "UndigestedCoreImport",
+        TargetLoweringFailureKind::InvalidCoreIdentity => "InvalidCoreIdentity",
         TargetLoweringFailureKind::NoTargetSteps => "NoTargetSteps",
     }
 }

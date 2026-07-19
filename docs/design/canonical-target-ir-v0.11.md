@@ -51,11 +51,20 @@ serialization:
   "domain": <artifact domain>,
   "targetProfile": { "id": <coordinate>, "digest": ["sha256", <32 bytes>] },
   "sourceCoreCoordinate": <Core coordinate>,
+  "semanticClosure"?: {
+    "sourceCore": { "id": <Core coordinate>, "digest": ["sha256", <32 bytes>] },
+    "lawpacks": [
+      { "id": <lawpack coordinate>, "digest": ["sha256", <32 bytes>] },
+      ...
+    ]
+  },
   "intents": {
     <intent name>: {
       "operationProfile": <operation profile>,
+      "basis"?: <canonical Core expression>,
       "inputConstraints": [<canonical Core input constraints>],
       "coreEvaluationBudget": <canonical Core budget>,
+      "requirements": [<canonical Target IR requirement>, ...],
       "steps": [
         {
           "id": <step id>,
@@ -79,12 +88,22 @@ Target profile references must be digest locked before canonicalization. The
 digest review string must be exactly `sha256:` followed by 64 lowercase
 hexadecimal characters.
 
+The optional `semanticClosure` is emitted when the operation carries an
+explicit basis or imports a lawpack. It binds the exact canonical Core digest
+and sorted digest-locked lawpack resource set used by lowering. It is omitted
+for the existing `basis none`/no-lawpack compatibility artifacts, preserving
+their reviewed bytes. The closure and Target IR digest are semantic identity
+evidence only: neither confers public operation identity, invocability, runtime
+authority, admission, or evidence of execution.
+
 ## Ordering
 
 - Intent maps are sorted by intent name.
 - Obstruction arm maps are sorted by failure key.
 - Input constraints are sorted by canonical value because they are semantic
   constraints, not an execution order.
+- Semantic-closure lawpack references are sorted by canonical value and
+  deduplicated before encoding.
 - Obstruction failure key lists are sorted and deduplicated by text.
 - Target IR step lists preserve semantic Core execution order.
 - No filesystem order, ambient process state, debug formatting, or prose

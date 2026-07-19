@@ -67,7 +67,46 @@ pub(crate) fn is_sha256_review_digest(digest: &str) -> bool {
     let Some(hex) = digest.strip_prefix("sha256:") else {
         return false;
     };
-    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
+    hex.len() == 64 && hex.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+pub(crate) fn is_lowercase_sha256_review_digest(digest: &str) -> bool {
+    let Some(hex) = digest.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+pub(crate) fn parse_core_integer(width: &str, value: &str) -> Option<i128> {
+    match width {
+        "I8" => parse_signed_integer(value, i8::MIN.into(), i8::MAX.into()),
+        "I16" => parse_signed_integer(value, i16::MIN.into(), i16::MAX.into()),
+        "I32" => parse_signed_integer(value, i32::MIN.into(), i32::MAX.into()),
+        "I64" => parse_signed_integer(value, i64::MIN.into(), i64::MAX.into()),
+        "U8" => parse_unsigned_integer(value, u8::MAX.into()),
+        "U16" => parse_unsigned_integer(value, u16::MAX.into()),
+        "U32" => parse_unsigned_integer(value, u32::MAX.into()),
+        "U64" => parse_unsigned_integer(value, u64::MAX.into()),
+        _ => None,
+    }
+}
+
+fn parse_signed_integer(value: &str, min: i128, max: i128) -> Option<i128> {
+    value
+        .parse::<i128>()
+        .ok()
+        .filter(|value| (min..=max).contains(value))
+}
+
+fn parse_unsigned_integer(value: &str, max: u128) -> Option<i128> {
+    value
+        .parse::<u128>()
+        .ok()
+        .filter(|value| *value <= max)
+        .and_then(|value| i128::try_from(value).ok())
 }
 
 /// Core type model for the initial compiler-spine subset.
@@ -201,6 +240,9 @@ pub struct CoreIntent {
     pub input: String,
     pub output: String,
     pub required_operation_profile: String,
+    /// Author-authored basis expression. Runtime basis resolution and
+    /// admission remain target/runtime responsibilities.
+    pub basis: Option<CoreExpr>,
     pub input_constraints: Vec<InputConstraint>,
     pub core_evaluation_budget: CoreBudget,
     pub body: CoreBlock,

@@ -7,10 +7,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    CoreBudget, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm,
-    CoreObstructionReason, CorePredicate, CoreRequireFailureArm, InputConstraint, LocalRef,
-    ResourceRef, CORE_API_VERSION,
+    is_lowercase_sha256_review_digest, CoreBudget, CoreExpr, CoreImportKind, CoreIntent,
+    CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
+    CoreRequireFailureArm, InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION,
 };
+use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
@@ -153,6 +154,7 @@ pub enum TargetLoweringFailureKind {
     UnsupportedCoreAbi,
     UnsupportedCoreCapability,
     UndigestedCoreImport,
+    InvalidCoreIdentity,
     NoTargetSteps,
 }
 
@@ -176,12 +178,23 @@ pub struct TargetIrArtifact {
     pub domain: String,
     pub target_profile: ResourceRef,
     pub source_core_coordinate: String,
+    /// Exact semantic inputs for operation artifacts. Legacy artifacts without
+    /// an explicit basis or lawpack remain byte-identical by omitting it.
+    pub semantic_closure: Option<TargetIrSemanticClosure>,
     pub intents: BTreeMap<String, TargetIrIntent>,
+}
+
+/// Digest-locked Edict inputs whose meaning the Target IR artifact closes over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetIrSemanticClosure {
+    pub source_core: ResourceRef,
+    pub lawpacks: Vec<ResourceRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetIrIntent {
     pub operation_profile: String,
+    pub basis: Option<CoreExpr>,
     pub input_constraints: Vec<InputConstraint>,
     pub core_evaluation_budget: CoreBudget,
     pub requirements: Vec<TargetIrRequirement>,
@@ -226,6 +239,10 @@ pub fn lower_to_target_ir(
     if !core_failures.is_empty() {
         return unsupported(core_failures);
     }
+    let semantic_closure = match semantic_closure(core) {
+        Ok(semantic_closure) => semantic_closure,
+        Err(failure) => return unsupported(vec![failure]),
+    };
 
     let effect_lowerings = effect_lowerings_by_coordinate(facts);
     let operation_profiles = facts
@@ -264,6 +281,7 @@ pub fn lower_to_target_ir(
                 domain: facts.target_ir_domain.clone(),
                 target_profile: facts.target_profile.clone(),
                 source_core_coordinate: core.coordinate.clone(),
+                semantic_closure,
                 intents,
             }),
             failures,
@@ -271,6 +289,64 @@ pub fn lower_to_target_ir(
     } else {
         unsupported(failures)
     }
+}
+
+fn semantic_closure(
+    core: &CoreModule,
+) -> Result<Option<TargetIrSemanticClosure>, TargetLoweringFailure> {
+    let mut lawpacks = BTreeMap::<String, ResourceRef>::new();
+    for resource in core
+        .imports
+        .iter()
+        .filter(|import| import.kind == CoreImportKind::Lawpack)
+        .map(|import| &import.resource)
+    {
+        if !resource
+            .digest
+            .as_deref()
+            .is_some_and(is_lowercase_sha256_review_digest)
+        {
+            return Err(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UndigestedCoreImport,
+                intent: None,
+                node_index: None,
+                detail: resource.coordinate.clone(),
+            });
+        }
+        if let Some(prior) = lawpacks.get(&resource.coordinate) {
+            if prior != resource {
+                return Err(TargetLoweringFailure {
+                    kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+                    intent: None,
+                    node_index: None,
+                    detail: format!(
+                        "lawpack coordinate `{}` is bound to conflicting resources",
+                        resource.coordinate
+                    ),
+                });
+            }
+        } else {
+            lawpacks.insert(resource.coordinate.clone(), resource.clone());
+        }
+    }
+    let has_explicit_basis = core.intents.values().any(|intent| intent.basis.is_some());
+    if !has_explicit_basis && lawpacks.is_empty() {
+        return Ok(None);
+    }
+
+    let digest = digest_core_module(core).map_err(|error| TargetLoweringFailure {
+        kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+        intent: None,
+        node_index: None,
+        detail: error.to_string(),
+    })?;
+    Ok(Some(TargetIrSemanticClosure {
+        source_core: ResourceRef {
+            coordinate: core.coordinate.clone(),
+            digest: Some(digest.to_review_string()),
+        },
+        lawpacks: lawpacks.into_values().collect(),
+    }))
 }
 
 fn validate_target_selection(
@@ -381,6 +457,7 @@ fn lower_intent(
 
     TargetIrIntent {
         operation_profile: intent.required_operation_profile.clone(),
+        basis: intent.basis.clone(),
         input_constraints: intent.input_constraints.clone(),
         core_evaluation_budget: intent.core_evaluation_budget.clone(),
         requirements: state.requirements,

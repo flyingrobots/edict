@@ -11,14 +11,14 @@ use crate::ast::{
     RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
 };
 use crate::core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
-    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
-    CORE_API_VERSION,
+    parse_core_integer, CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind,
+    CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
+    CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
+    ResourceRef, CORE_API_VERSION,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
-use crate::token::Span;
+use crate::token::{IntSuffix, Span};
 
 /// Compiler stage that reported an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,6 +161,7 @@ pub struct TypedIntent {
     pub profile: String,
     pub budget: CoreBudget,
     pub input_binding: LocalRef,
+    pub basis: Option<CoreExpr>,
     pub input_constraints: Vec<InputConstraint>,
     pub body: CoreBlock,
 }
@@ -262,6 +263,7 @@ pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>>
                     input: intent.input.clone(),
                     output: intent.output.clone(),
                     required_operation_profile: intent.profile.clone(),
+                    basis: intent.basis.clone(),
                     input_constraints: intent.input_constraints.clone(),
                     core_evaluation_budget: intent.budget.clone(),
                     body: intent.body.clone(),
@@ -390,6 +392,7 @@ enum TypeKind {
     Bool,
     Int { width: String },
     String { max: u64, canonical: String },
+    Bytes { max: u64 },
     Record(BTreeMap<String, TypeShape>),
 }
 
@@ -404,6 +407,7 @@ impl TypeShape {
                 max: *max,
                 canonical: canonical.clone(),
             },
+            TypeKind::Bytes { max } => CoreType::Bytes { max: *max },
             TypeKind::Record(fields) => CoreType::Record {
                 fields: fields
                     .iter()
@@ -546,7 +550,9 @@ impl<'a> TypeChecker<'a> {
         match ty {
             TypeRef::Named { path, args } if args.is_empty() && path.len() == 1 => {
                 let name = &path[0];
-                if let Some(shape) = self.named_types.get(name) {
+                if let Some(width) = builtin_integer_width(name) {
+                    Some(integer_shape(width))
+                } else if let Some(shape) = self.named_types.get(name) {
                     Some(shape.clone())
                 } else {
                     self.errors.push(error(
@@ -559,7 +565,8 @@ impl<'a> TypeChecker<'a> {
                 }
             }
             TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span, coord_hint),
-            TypeRef::BytesTy(_)
+            TypeRef::BytesTy(Some(bound)) => self.bytes_shape(bound, span, coord_hint),
+            TypeRef::BytesTy(None)
             | TypeRef::Option(_)
             | TypeRef::CapabilityRef(_)
             | TypeRef::List { .. }
@@ -605,6 +612,27 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
+    fn bytes_shape(
+        &mut self,
+        bound: &BoundRef,
+        span: Span,
+        coord_hint: Option<String>,
+    ) -> Option<TypeShape> {
+        let BoundRef::Int { value, .. } = bound else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "coordinate byte bounds require bound proof in a later stage",
+                span,
+            ));
+            return None;
+        };
+        Some(TypeShape {
+            coord: coord_hint.unwrap_or_else(|| bytes_type_coord(*value)),
+            kind: TypeKind::Bytes { max: *value },
+        })
+    }
+
     fn check_intent(&mut self, intent: &ResolvedIntent) -> Option<TypedIntent> {
         let source = &intent.source;
         if source.params.len() != 1 {
@@ -616,20 +644,6 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
-        if !source
-            .clauses
-            .iter()
-            .any(|clause| matches!(clause, IntentClause::Basis(None)))
-        {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::UnsupportedSourceShape,
-                "initial Core lowering supports only `basis none`",
-                source.span,
-            ));
-            return None;
-        }
-
         let param = &source.params[0];
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
@@ -640,6 +654,22 @@ impl<'a> TypeChecker<'a> {
         };
         let mut locals = vec![input_binding.clone()];
         let mut env = BTreeMap::from([(param.name.clone(), (input_binding.clone(), input_shape))]);
+        let Some(basis) = source.clauses.iter().find_map(|clause| match clause {
+            IntentClause::Basis(basis) => Some(basis),
+            _ => None,
+        }) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "intent is missing the required basis clause",
+                source.span,
+            ));
+            return None;
+        };
+        let basis = match basis {
+            Some(basis) => Some(self.check_expr(basis, &env)?.expr),
+            None => None,
+        };
         let input_constraints = self.input_constraints(source, &env);
         let body = self.check_body(intent, &output_shape, &mut env, &mut locals)?;
 
@@ -650,6 +680,7 @@ impl<'a> TypeChecker<'a> {
             profile: intent.profile.clone(),
             budget: intent.budget.clone(),
             input_binding,
+            basis,
             input_constraints,
             body,
         })
@@ -1483,18 +1514,11 @@ impl<'a> TypeChecker<'a> {
                     kind: TypeKind::Bool,
                 },
             }),
-            Expr::Int { value, .. } => Some(TypedValue {
-                expr: CoreExpr::Const(CoreValue::Int {
-                    width: "I64".to_owned(),
-                    value: value.clone(),
-                }),
-                ty: TypeShape {
-                    coord: "I64".to_owned(),
-                    kind: TypeKind::Int {
-                        width: "I64".to_owned(),
-                    },
-                },
-            }),
+            Expr::Int {
+                value,
+                suffix,
+                span,
+            } => self.check_integer_literal(value, *suffix, *span),
             Expr::Field { base, field, span } => self.check_field(base, field, *span, env),
             Expr::Binary {
                 op: BinOp::Add,
@@ -1520,6 +1544,31 @@ impl<'a> TypeChecker<'a> {
                 None
             }
         }
+    }
+
+    fn check_integer_literal(
+        &mut self,
+        value: &str,
+        suffix: Option<IntSuffix>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        let width = suffix.map_or("I64", integer_suffix_width);
+        if parse_core_integer(width, value).is_none() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!("integer literal is outside the exact `{width}` domain"),
+                span,
+            ));
+            return None;
+        }
+        Some(TypedValue {
+            expr: CoreExpr::Const(CoreValue::Int {
+                width: width.to_owned(),
+                value: value.to_owned(),
+            }),
+            ty: integer_shape(width),
+        })
     }
 
     fn check_ident(
@@ -1715,7 +1764,9 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
                         .is_some_and(|actual_ty| compatible(expected_ty, actual_ty))
                 })
         }
-        (TypeKind::Bool, TypeKind::Bool) | (TypeKind::Int { .. }, TypeKind::Int { .. }) => true,
+        (TypeKind::Bool, TypeKind::Bool) => true,
+        (TypeKind::Int { width: expected }, TypeKind::Int { width: actual }) => expected == actual,
+        (TypeKind::Bytes { max: expected }, TypeKind::Bytes { max: actual }) => actual <= expected,
         _ => false,
     }
 }
@@ -1740,6 +1791,38 @@ fn compare_op(op: BinOp) -> Option<CompareOp> {
 
 fn string_type_coord(max: u64, canonical: &str) -> String {
     format!("String<max={max},canonical={canonical}>")
+}
+
+fn bytes_type_coord(max: u64) -> String {
+    format!("Bytes<max={max}>")
+}
+
+fn builtin_integer_width(name: &str) -> Option<&'static str> {
+    match name {
+        "I32" => Some("I32"),
+        "I64" => Some("I64"),
+        "U32" => Some("U32"),
+        "U64" => Some("U64"),
+        _ => None,
+    }
+}
+
+const fn integer_suffix_width(suffix: IntSuffix) -> &'static str {
+    match suffix {
+        IntSuffix::I32 => "I32",
+        IntSuffix::I64 => "I64",
+        IntSuffix::U32 => "U32",
+        IntSuffix::U64 => "U64",
+    }
+}
+
+fn integer_shape(width: &str) -> TypeShape {
+    TypeShape {
+        coord: width.to_owned(),
+        kind: TypeKind::Int {
+            width: width.to_owned(),
+        },
+    }
 }
 
 fn path_key(path: &[String]) -> String {

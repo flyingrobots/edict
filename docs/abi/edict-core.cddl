@@ -210,6 +210,7 @@ core-intent = {
   input: core-type-ref,
   output: core-type-ref,
   requiredOperationProfile: tstr,
+  ? basis: core-expr,
   inputConstraints: [* input-constraint],
   coreEvaluationBudget: core-budget,
   body: core-block,
