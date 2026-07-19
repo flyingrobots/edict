@@ -4,6 +4,7 @@
 //! operation inputs and semantic-resource identity; it does not claim Echo
 //! admission, execution, commitment, or receipt evidence.
 
+use edict_syntax::ast::IntentClause;
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, digest_target_ir_artifact,
     encode_core_module, encode_target_ir_artifact, lower_to_target_ir, parse_module,
@@ -294,6 +295,29 @@ fn direct_type_check_refuses_a_missing_basis_without_panicking() {
     let module = parse_module(&source).expect("mutated source parses");
     let resolved = resolve_module(&module, &operation_context()).expect("source resolves");
     let errors = type_check(&resolved).expect_err("missing basis must reject during type checking");
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| (error.stage, error.kind))
+            .collect::<Vec<_>>(),
+        vec![(
+            CompilerStage::TypeCheck,
+            CompilerErrorKind::UnsupportedSourceShape
+        )]
+    );
+}
+
+#[test]
+fn direct_type_check_refuses_duplicate_basis_clauses() {
+    let module = parse_module(OPERATION_SOURCE).expect("operation prerequisite source parses");
+    let mut resolved =
+        resolve_module(&module, &operation_context()).expect("operation prerequisite resolves");
+    resolved.intents[0]
+        .source
+        .clauses
+        .push(IntentClause::Basis(None));
+
+    let errors = type_check(&resolved).expect_err("duplicate basis clauses must reject");
     assert_eq!(
         errors
             .iter()
