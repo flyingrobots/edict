@@ -37,7 +37,10 @@ This slice implements **bundle digest derivation and assembly**:
   target-profile reference from that artifact. Before the computed digest enters
   the bundle preimage, the assembler recomputes the semantic closure from the
   supplied `CoreModule`, requires the artifact's Core identity and lawpack set to
-  match it, and requires the bundle lawpack set to equal that closure.
+  match it, and requires the bundle lawpack set to equal that closure. Equivalent
+  lawpack order and duplicate identical references normalize to the closure's
+  canonical set before the bundle preimage is computed. A malformed Core keeps
+  the direct assembly path's canonical-digest failure category.
 - The assembled manifest is consumed by the existing
   `validate_contract_bundle_manifest` (exit gate: validation consumes the
   assembled artifact, not a hand-written fixture).

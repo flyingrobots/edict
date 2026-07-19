@@ -460,6 +460,12 @@ pub fn decode_canonical_cbor(bytes: &[u8]) -> Result<CanonicalValue, CanonicalEr
 }
 
 fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValue, CanonicalError> {
+    if artifact.source_core_coordinate.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "Target IR source Core coordinate is empty",
+        ));
+    }
     if artifact.semantic_closure.is_none()
         && artifact
             .intents

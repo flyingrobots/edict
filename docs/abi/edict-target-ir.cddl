@@ -24,7 +24,7 @@ target-ir-artifact-common = (
   kind: "targetIrArtifact",
   domain: tstr,
   targetProfile: target-ir-resource-ref,
-  sourceCoreCoordinate: tstr,
+  sourceCoreCoordinate: tstr .regexp "(?s).+",
 )
 
 target-ir-closed-artifact = {

@@ -112,13 +112,13 @@ CBOR for:
 ```
 
 The canonical value includes the artifact's own domain, digest-locked target
-profile resource, source Core coordinate, optional semantic closure, sorted
-intent map, optional explicit basis expressions, input constraints, Core
+profile resource, non-empty source Core coordinate, optional semantic closure,
+sorted intent map, optional explicit basis expressions, input constraints, Core
 evaluation budget, source-ordered requirements, requirement predicates and
 failure dispositions, source-ordered target steps, sorted obstruction failure
 keys and arms, and structured Core result expression. Target profile and
-semantic-closure digests are strict artifact references: missing digests and non-lowercase
-`sha256:<64 hex>` review strings reject before hashing.
+semantic-closure digests are strict artifact references: missing digests and
+non-lowercase `sha256:<64 hex>` review strings reject before hashing.
 
 Reviewed Echo and git-warp Target IR byte/digest goldens live under
 `fixtures/target-ir/canonical/`. `cargo xtask target-ir-goldens --check`

@@ -499,7 +499,7 @@ pub fn assemble_contract_bundle_from_target_ir(
         source_artifacts,
         source_profile_semantic_facts,
         target_ir_artifact,
-        lawpacks,
+        mut lawpacks,
         generated_artifacts,
         compiler,
         lowerer,
@@ -514,6 +514,8 @@ pub fn assemble_contract_bundle_from_target_ir(
         assurance_evidence,
     } = input;
 
+    digest_core_module(&core_module)
+        .map_err(|error| ContractBundleAssemblyError::canonical("core_module", &error))?;
     if target_ir_artifact.source_core_coordinate.as_str() != core_module.coordinate.as_str() {
         return Err(ContractBundleAssemblyError::new(
             ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
@@ -525,6 +527,7 @@ pub fn assemble_contract_bundle_from_target_ir(
         ));
     }
     corroborate_target_ir_semantic_closure(&core_module, &target_ir_artifact, &lawpacks)?;
+    canonicalize_digest_locked_resource_set(&mut lawpacks);
 
     let target_profile =
         target_profile_from_target_ir_artifact(&target_ir_artifact.target_profile)?;
@@ -615,6 +618,15 @@ fn corroborate_target_ir_semantic_closure(
     }
 
     Ok(())
+}
+
+fn canonicalize_digest_locked_resource_set(resources: &mut Vec<DigestLockedResource>) {
+    resources.sort_by(|left, right| {
+        left.coordinate()
+            .cmp(right.coordinate())
+            .then_with(|| left.digest_str().cmp(right.digest_str()))
+    });
+    resources.dedup();
 }
 
 fn canonical_resource_set(resources: &[ResourceRef]) -> Vec<(String, Option<String>)> {

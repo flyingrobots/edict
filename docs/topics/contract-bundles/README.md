@@ -72,8 +72,12 @@ The canonical artifact identity rules are named in
   digest-locked `target_profile`. Before assembly, this path recomputes the
   semantic closure from the supplied Core, requires the artifact closure to
   match its exact Core identity and lawpack set, and requires the bundle
-  lawpacks to equal that set. This is cross-artifact corroboration at the
-  computed assembly boundary, not a runtime admission claim. [BUNDLE-REQ-008]
+  lawpacks to equal that set. Equivalent bundle lawpack order and duplicate
+  identical references normalize to the closure's canonical set before bundle
+  identity is computed. Malformed Core retains the same canonical-digest error
+  classification as the direct assembly path. This is cross-artifact
+  corroboration at the computed assembly boundary, not a runtime admission
+  claim. [BUNDLE-REQ-008]
 - `assemble_contract_bundle` remains available for already-digested external
   Target IR references. On that supplied-reference path, the same typed Target
   IR resource supplies both `manifest.target_ir.digest` and the semantic bundle
