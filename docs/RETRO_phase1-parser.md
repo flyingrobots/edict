@@ -25,7 +25,7 @@ Parsed surface, by grammar production:
 | --- | --- |
 | Module | `package`, `use shape/lawpack/target/core` (+ optional `digest`) |
 | Types | `type` records, refined `String`/`Bytes`, `Option`/`List`/`Map`/`CapabilityRef`, `enum`, `variant` (with payloads) |
-| Intents | params, `returns`, `profile`/`implements`/`basis`/`footprint`/`budget`/`where` clauses |
+| Actions | params, `returns`, `profile`/`implements`/`basis`/`footprint`/`budget`/`where` clauses |
 | Statements | `let` (+ effect-`else`), `return`, `require`, `guarantee`, `assert`, `if`/`else if`/`else`, bounded `for`, effect statements |
 | Expressions | full precedence chain; calls + type-calls; field access; records (incl. shorthand + spread); booleans; digest literals; ternary `if … then … else`; branch-yield; variant literals (`::`); `match` |
 | Obstructions | single-target and full map-form `else { failure(binder) => target, … }` |

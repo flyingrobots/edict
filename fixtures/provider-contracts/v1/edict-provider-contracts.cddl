@@ -55,7 +55,7 @@ authority-class = "domainMappable" / "participantOwned" / "integrityFault" /
 
 core-type-ref = tstr   ; canonical Core type coordinate
 
-; An operation profile supplies the optic template a Core intent resolves its
+; An operation profile supplies the optic template a Core action resolves its
 ; opticKind/boundaryKind/supportPolicy/lossDisposition from. Target profiles and
 ; lawpacks publish these as a map `{ coordinate => operation-profile }`, so the
 ; coordinate is the KEY, not a value field (EDICT-OPTIC-TEMPLATE-OWNER-001,
@@ -72,7 +72,7 @@ optic-template = {
   lossDisposition: tstr,           ; canonical loss-disposition coordinate
   ? basisTemplate: tstr,           ; optional digest-locked basis template coord
   ; the aperture requirement this template supplies. Required when the template
-  ; is the source of a Core optic's apertureRequirement (i.e. the intent has no
+  ; is the source of a Core optic's apertureRequirement (i.e. the action has no
   ; source `footprint <= ...`), since apertureRequirement is mandatory in Core
   ; (EDICT-OPTIC-APERTURE-REF-001).
   ? apertureRequirement: aperture-requirement,
@@ -97,7 +97,7 @@ core-module = {
   coordinate: tstr,
   imports: [* core-import],
   types: { * tstr => core-type },
-  intents: { + tstr => core-intent },
+  actions: { + tstr => core-action },
   requiredCoreCapabilities: [* tstr],
 }
 
@@ -291,9 +291,9 @@ input-constraint = {
   predicate: core-predicate,
 }
 
-; --- intents, blocks, and nodes -----------------------------------------
+; --- actions, blocks, and nodes -----------------------------------------
 
-core-intent = {
+core-action = {
   input: core-type-ref,
   output: core-type-ref,
   requiredOperationProfile: tstr,
@@ -764,10 +764,10 @@ target-ir-artifact = {
   domain: tstr,
   targetProfile: target-ir-resource-ref,
   sourceCoreCoordinate: tstr,
-  intents: { * tstr => target-ir-intent },
+  actions: { * tstr => target-ir-action },
 }
 
-target-ir-intent = {
+target-ir-action = {
   operationProfile: tstr,
   inputConstraints: [* input-constraint],
   coreEvaluationBudget: core-budget,

@@ -22,7 +22,7 @@ const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -34,7 +34,7 @@ const CHAINED_EFFECT_RESULTS: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -48,7 +48,7 @@ const GITWARP_APPEND_EVENT: &str = "package a.git@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.gitwarp\n\
       basis none\n\
       budget <= p.tiny\n\
@@ -60,7 +60,7 @@ const GITWARP_APPEND_EVENT: &str = "package a.git@1;\n\
 const ECHO_CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -73,7 +73,7 @@ const ECHO_CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.b@1;\n\
 const ECHO_TERMINAL_REQUIRE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -84,7 +84,7 @@ const ECHO_EFFECT_OUTPUT_DEPENDENT_REQUIRE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -100,7 +100,7 @@ const ECHO_POST_STEP_INPUT_REQUIRE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -115,7 +115,7 @@ const ECHO_POST_STEP_INPUT_REQUIRE: &str = "package a.b@1;\n\
 const GITWARP_CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.git@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.gitwarp\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -374,13 +374,13 @@ fn supported_effectful_core_lowers_to_echo_span_ir() {
     assert_eq!(artifact.domain, ECHO_SPAN_IR_DOMAIN);
     assert_eq!(artifact.target_profile.coordinate, ECHO_DPO_TARGET_PROFILE);
     assert_eq!(artifact.source_core_coordinate, "a.b@1");
-    assert_eq!(artifact.intents.len(), 1);
+    assert_eq!(artifact.actions.len(), 1);
 
-    let intent = artifact.intents.get("t").expect("lowered intent t");
-    assert_eq!(intent.operation_profile, "continuum.profile.write/v1");
-    assert_eq!(intent.steps.len(), 1);
+    let action = artifact.actions.get("t").expect("lowered action t");
+    assert_eq!(action.operation_profile, "continuum.profile.write/v1");
+    assert_eq!(action.steps.len(), 1);
 
-    let step = &intent.steps[0];
+    let step = &action.steps[0];
     assert_eq!(step.id, "t.step.0");
     assert_eq!(step.effect, "target.replace");
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
@@ -411,7 +411,7 @@ fn lowerability_native_support_feeds_echo_target_lowering() {
     let artifact = report
         .artifact
         .expect("native lowerability feeds target IR");
-    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    let step = &artifact.actions.get("t").expect("action t").steps[0];
     assert_eq!(step.effect, "target.replace");
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
 }
@@ -432,24 +432,24 @@ fn supported_gitwarp_core_lowers_to_commit_reducer_ir() {
     );
     assert_eq!(artifact.source_core_coordinate, "a.git@1");
 
-    let intent = artifact.intents.get("t").expect("lowered intent t");
-    assert_eq!(intent.operation_profile, "continuum.profile.append/v1");
+    let action = artifact.actions.get("t").expect("lowered action t");
+    assert_eq!(action.operation_profile, "continuum.profile.append/v1");
     assert_eq!(
-        intent.core_evaluation_budget,
+        action.core_evaluation_budget,
         CoreBudget {
             max_steps: 13,
             max_allocated_bytes: 2048,
             max_output_bytes: 512,
         }
     );
-    assert_eq!(intent.input_constraints.len(), 1);
+    assert_eq!(action.input_constraints.len(), 1);
     assert!(matches!(
-        intent.input_constraints[0].predicate,
+        action.input_constraints[0].predicate,
         CorePredicate::Compare { .. }
     ));
-    assert_eq!(intent.steps.len(), 1);
+    assert_eq!(action.steps.len(), 1);
 
-    let step = &intent.steps[0];
+    let step = &action.steps[0];
     assert_eq!(step.effect, "gitwarp.appendEvent");
     assert_eq!(step.target_intrinsic, "gitwarp.ref_crdt@1.appendEvent");
     assert_eq!(step.obstruction_failures, vec!["conflict".to_owned()]);
@@ -460,8 +460,8 @@ fn supported_gitwarp_core_lowers_to_commit_reducer_ir() {
     };
     assert_eq!(field, "id");
 
-    let CoreExpr::Record { fields } = &intent.result else {
-        panic!("git-warp intent result is preserved structurally");
+    let CoreExpr::Record { fields } = &action.result else {
+        panic!("git-warp action result is preserved structurally");
     };
     assert!(fields.contains_key("id"));
 }
@@ -484,7 +484,7 @@ fn lowerability_native_support_feeds_gitwarp_target_lowering() {
     let artifact = report
         .artifact
         .expect("native git-warp lowerability feeds target IR");
-    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    let step = &artifact.actions.get("t").expect("action t").steps[0];
     assert_eq!(step.effect, "gitwarp.appendEvent");
     assert_eq!(step.target_intrinsic, "gitwarp.ref_crdt@1.appendEvent");
 }
@@ -492,11 +492,11 @@ fn lowerability_native_support_feeds_gitwarp_target_lowering() {
 #[test]
 fn echo_target_ir_contains_obstruction_requirement_payload() {
     let artifact = effectful_artifact(ECHO_CONTINUE_OBSTRUCTED_REQUIRE);
-    let intent = artifact.intents.get("t").expect("lowered intent t");
+    let action = artifact.actions.get("t").expect("lowered action t");
 
-    assert!(intent.steps.is_empty());
-    assert_eq!(intent.requirements.len(), 1);
-    let requirement = &intent.requirements[0];
+    assert!(action.steps.is_empty());
+    assert_eq!(action.requirements.len(), 1);
+    let requirement = &action.requirements[0];
     assert_eq!(requirement.id, "t.require.0");
     assert_eq!(requirement.predicate, CorePredicate::True);
 
@@ -521,8 +521,8 @@ fn terminal_and_preserved_requirements_are_target_ir_distinct() {
     );
     let preserved = effectful_artifact(&preserved_source);
 
-    let terminal_requirement = &terminal.intents.get("t").expect("intent t").requirements[0];
-    let preserved_requirement = &preserved.intents.get("t").expect("intent t").requirements[0];
+    let terminal_requirement = &terminal.actions.get("t").expect("action t").requirements[0];
+    let preserved_requirement = &preserved.actions.get("t").expect("action t").requirements[0];
     assert!(matches!(
         terminal_requirement.on_failure,
         TargetIrRequireFailure::Terminal { .. }
@@ -652,7 +652,7 @@ fn lowerability_bridge_carries_only_selected_native_effect() {
     let artifact = report
         .artifact
         .expect("unselected native support does not make target lowering ambiguous");
-    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    let step = &artifact.actions.get("t").expect("action t").steps[0];
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
 }
 
@@ -679,7 +679,7 @@ fn lowerability_bridge_deduplicates_identical_native_effect_selection() {
     let artifact = report
         .artifact
         .expect("duplicate selected effect still lowers once");
-    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    let step = &artifact.actions.get("t").expect("action t").steps[0];
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
 }
 
@@ -702,7 +702,7 @@ fn unused_duplicate_effect_lowerings_do_not_reject_supported_effect() {
     let artifact = report
         .artifact
         .expect("unused duplicate lowerings do not block supported effect");
-    let step = &artifact.intents.get("t").expect("intent t").steps[0];
+    let step = &artifact.actions.get("t").expect("action t").steps[0];
     assert_eq!(step.effect, "target.replace");
     assert_eq!(step.target_intrinsic, "echo.dpo@1.replace");
 }
@@ -800,7 +800,7 @@ fn obstruction_arm_values_are_preserved_in_echo_span_ir() {
     let artifact = effectful_artifact(
         &EFFECTFUL_REPLACE.replace("domain.WriteRejected", "domain.WriteDifferentlyRejected"),
     );
-    let arm = &artifact.intents.get("t").expect("intent t").steps[0].obstruction_arms["rejected"];
+    let arm = &artifact.actions.get("t").expect("action t").steps[0].obstruction_arms["rejected"];
 
     let CoreExpr::Call {
         callee,
@@ -816,14 +816,14 @@ fn obstruction_arm_values_are_preserved_in_echo_span_ir() {
 }
 
 #[test]
-fn intent_result_is_preserved_in_echo_span_ir() {
+fn action_result_is_preserved_in_echo_span_ir() {
     let artifact = effectful_artifact(
         &EFFECTFUL_REPLACE.replace("return { id: input.id };", "return { id: receipt.id };"),
     );
-    let result = &artifact.intents.get("t").expect("intent t").result;
+    let result = &artifact.actions.get("t").expect("action t").result;
 
     let CoreExpr::Record { fields } = result else {
-        panic!("intent result is preserved as a record expression");
+        panic!("action result is preserved as a record expression");
     };
     let CoreExpr::Field { base, field } = &fields["id"] else {
         panic!("result id field is preserved as a field expression");
@@ -833,26 +833,26 @@ fn intent_result_is_preserved_in_echo_span_ir() {
 }
 
 #[test]
-fn intent_constraints_and_budget_are_preserved_in_echo_span_ir() {
+fn action_constraints_and_budget_are_preserved_in_echo_span_ir() {
     let constrained_source = EFFECTFUL_REPLACE.replace(
         "budget <= p.tiny {",
         "budget <= p.tiny\n      where input.id != \"\" {",
     );
     let artifact = effectful_artifact(&constrained_source);
-    let intent = artifact.intents.get("t").expect("intent t");
+    let action = artifact.actions.get("t").expect("action t");
 
     assert_eq!(
-        intent.core_evaluation_budget,
+        action.core_evaluation_budget,
         CoreBudget {
             max_steps: 8,
             max_allocated_bytes: 1024,
             max_output_bytes: 256,
         }
     );
-    assert_eq!(intent.input_constraints.len(), 1);
-    assert_eq!(intent.input_constraints[0].coordinate, "where.0");
+    assert_eq!(action.input_constraints.len(), 1);
+    assert_eq!(action.input_constraints[0].coordinate, "where.0");
     assert!(matches!(
-        intent.input_constraints[0].predicate,
+        action.input_constraints[0].predicate,
         CorePredicate::Compare { .. }
     ));
 }
@@ -860,13 +860,13 @@ fn intent_constraints_and_budget_are_preserved_in_echo_span_ir() {
 #[test]
 fn effect_result_bindings_are_preserved_in_echo_span_ir() {
     let artifact = effectful_artifact(CHAINED_EFFECT_RESULTS);
-    let intent = artifact.intents.get("t").expect("intent t");
+    let action = artifact.actions.get("t").expect("action t");
 
-    assert_eq!(intent.steps.len(), 2);
-    assert_eq!(intent.steps[0].binding.id, "local.0");
-    assert_eq!(intent.steps[1].binding.id, "local.1");
+    assert_eq!(action.steps.len(), 2);
+    assert_eq!(action.steps[0].binding.id, "local.0");
+    assert_eq!(action.steps[1].binding.id, "local.1");
 
-    let CoreExpr::Field { base, field } = &intent.steps[1].input else {
+    let CoreExpr::Field { base, field } = &action.steps[1].input else {
         panic!("second effect input reads from first effect result");
     };
     assert_eq!(field, "id");
@@ -1009,11 +1009,11 @@ fn unsupported_obstruction_key_rejects_without_artifact() {
 }
 
 #[test]
-fn empty_target_step_intents_reject_without_artifact() {
+fn empty_target_step_actions_reject_without_artifact() {
     let mut core = effectful_core();
-    core.intents
+    core.actions
         .get_mut("t")
-        .expect("intent t")
+        .expect("action t")
         .body
         .nodes
         .clear();
@@ -1031,7 +1031,7 @@ fn empty_target_step_intents_reject_without_artifact() {
 #[test]
 fn empty_core_modules_reject_without_artifact() {
     let mut core = effectful_core();
-    core.intents.clear();
+    core.actions.clear();
 
     let report = lower_to_target_ir(&core, &echo_facts());
 
@@ -1157,9 +1157,9 @@ fn target_ir_artifact_canonicalization_ignores_equivalent_construction_order() {
         predicate: CorePredicate::True,
     };
 
-    let left_intent = left.intents.get_mut("t").expect("intent t");
-    left_intent.input_constraints.push(extra_constraint.clone());
-    let left_step = left_intent.steps.get_mut(0).expect("step 0");
+    let left_action = left.actions.get_mut("t").expect("action t");
+    left_action.input_constraints.push(extra_constraint.clone());
+    let left_step = left_action.steps.get_mut(0).expect("step 0");
     let conflict_arm = left_step
         .obstruction_arms
         .get("conflict")
@@ -1170,9 +1170,9 @@ fn target_ir_artifact_canonicalization_ignores_equivalent_construction_order() {
         .insert("retry".to_owned(), conflict_arm.clone());
     left_step.obstruction_failures = vec!["retry".to_owned(), "conflict".to_owned()];
 
-    let right_intent = right.intents.get_mut("t").expect("intent t");
-    right_intent.input_constraints.insert(0, extra_constraint);
-    let right_step = right_intent.steps.get_mut(0).expect("step 0");
+    let right_action = right.actions.get_mut("t").expect("action t");
+    right_action.input_constraints.insert(0, extra_constraint);
+    let right_step = right_action.steps.get_mut(0).expect("step 0");
     let mut rebuilt_arms = BTreeMap::new();
     rebuilt_arms.insert("retry".to_owned(), conflict_arm);
     rebuilt_arms.insert(
@@ -1201,9 +1201,9 @@ fn target_ir_step_order_changes_digest() {
     let baseline = effectful_artifact(CHAINED_EFFECT_RESULTS);
     let mut reordered = baseline.clone();
     reordered
-        .intents
+        .actions
         .get_mut("t")
-        .expect("intent t")
+        .expect("action t")
         .steps
         .reverse();
 
@@ -1222,9 +1222,9 @@ fn target_ir_digest_moves_for_artifact_semantic_mutations() {
     assert_target_ir_digest_changes(&baseline, "source Core coordinate", |artifact| {
         artifact.source_core_coordinate = "a.changed@1".to_owned();
     });
-    assert_target_ir_digest_changes(&baseline, "intent name", |artifact| {
-        let intent = artifact.intents.remove("t").expect("intent t");
-        artifact.intents.insert("renamed".to_owned(), intent);
+    assert_target_ir_digest_changes(&baseline, "action name", |artifact| {
+        let action = artifact.actions.remove("t").expect("action t");
+        artifact.actions.insert("renamed".to_owned(), action);
     });
     assert_target_ir_digest_changes(&baseline, "effect coordinate", |artifact| {
         target_step_mut(artifact).effect = "target.replace.changed".to_owned();
@@ -1242,9 +1242,9 @@ fn target_ir_digest_moves_for_artifact_semantic_mutations() {
     });
     assert_target_ir_digest_changes(&baseline, "input constraint", |artifact| {
         artifact
-            .intents
+            .actions
             .get_mut("t")
-            .expect("intent t")
+            .expect("action t")
             .input_constraints
             .push(InputConstraint {
                 coordinate: "compiler.0".to_owned(),
@@ -1254,14 +1254,14 @@ fn target_ir_digest_moves_for_artifact_semantic_mutations() {
     });
     assert_target_ir_digest_changes(&baseline, "Core evaluation budget", |artifact| {
         artifact
-            .intents
+            .actions
             .get_mut("t")
-            .expect("intent t")
+            .expect("action t")
             .core_evaluation_budget
             .max_steps += 1;
     });
     assert_target_ir_digest_changes(&baseline, "result expression", |artifact| {
-        artifact.intents.get_mut("t").expect("intent t").result =
+        artifact.actions.get_mut("t").expect("action t").result =
             CoreExpr::Const(CoreValue::String("changed".to_owned()));
     });
 }
@@ -1322,9 +1322,9 @@ fn assert_target_ir_digest_changes(
 
 fn target_step_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::TargetIrStep {
     artifact
-        .intents
+        .actions
         .get_mut("t")
-        .expect("intent t")
+        .expect("action t")
         .steps
         .get_mut(0)
         .expect("step 0")
@@ -1332,9 +1332,9 @@ fn target_step_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::Target
 
 fn requirement_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::TargetIrRequirement {
     artifact
-        .intents
+        .actions
         .get_mut("t")
-        .expect("intent t")
+        .expect("action t")
         .requirements
         .get_mut(0)
         .expect("requirement 0")

@@ -12,7 +12,7 @@ const EFFECTFUL_SOURCE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -32,15 +32,15 @@ fn canonical_authority_facts_decode_into_existing_compiler_context() {
     let context = compiler_context_from_authority_facts(&[decoded]).expect("facts merge");
     let module = edict_syntax::parse_module(EFFECTFUL_SOURCE).expect("fixture parses");
     let core = compile_to_core(&module, &context).expect("decoded facts compile fixture");
-    let intent = core.intents.get("t").expect("compiled intent");
+    let action = core.actions.get("t").expect("compiled action");
 
     assert_eq!(
-        intent.required_operation_profile,
+        action.required_operation_profile,
         "continuum.profile.write/v1"
     );
-    assert_eq!(intent.core_evaluation_budget.max_steps, 8);
-    assert_eq!(intent.core_evaluation_budget.max_allocated_bytes, 1024);
-    assert_eq!(intent.core_evaluation_budget.max_output_bytes, 256);
+    assert_eq!(action.core_evaluation_budget.max_steps, 8);
+    assert_eq!(action.core_evaluation_budget.max_allocated_bytes, 1024);
+    assert_eq!(action.core_evaluation_budget.max_output_bytes, 256);
 }
 
 #[test]

@@ -81,7 +81,7 @@ impl ProviderArtifactSchemaValidator for TestArtifactSchemas {
                     map_value(entries, "sourceCoreCoordinate"),
                     Some(CanonicalValue::Text(_))
                 )
-                && matches!(map_value(entries, "intents"), Some(CanonicalValue::Map(_)));
+                && matches!(map_value(entries, "actions"), Some(CanonicalValue::Map(_)));
             if !target_ir_shape_is_valid {
                 return Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch);
             }

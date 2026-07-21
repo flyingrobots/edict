@@ -380,7 +380,7 @@ mod contract_bundle_assembly {
         type Input = { id: String<max=16>, };\n\
         type Receipt = { id: String<max=16>, };\n\
         type Output = { id: String<max=16>, };\n\
-        intent t(input: Input) returns Output\n\
+        action t(input: Input) returns Output\n\
           profile p.effectful\n\
           basis none\n\
           budget <= p.tiny {\n\
@@ -608,9 +608,9 @@ mod contract_bundle_assembly {
         let mut changed_input = assembly_from_target_ir_input();
         changed_input
             .target_ir_artifact
-            .intents
+            .actions
             .get_mut("t")
-            .expect("intent t")
+            .expect("action t")
             .core_evaluation_budget
             .max_steps += 1;
         let changed = assembled_from_target_ir(changed_input);
@@ -716,9 +716,9 @@ mod contract_bundle_assembly {
         assert_semantic_mutation_changes("Core semantic change", |input| {
             input
                 .core_module
-                .intents
+                .actions
                 .get_mut("sayHello")
-                .expect("intent exists")
+                .expect("action exists")
                 .core_evaluation_budget
                 .max_steps += 1;
         });

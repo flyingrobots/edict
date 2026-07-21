@@ -138,7 +138,7 @@ facts into a bundle. It must prove the route through trusted file-backed facts.
 The v1 target becomes:
 
 ```text
-one small intent goes source -> trusted file-backed facts -> Core -> target IR
+one small action goes source -> trusted file-backed facts -> Core -> target IR
 -> bundle -> admission evidence, with lawpack and target-profile provenance
 visible and digest-bound
 ```

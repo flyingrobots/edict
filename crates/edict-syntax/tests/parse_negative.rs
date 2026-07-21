@@ -15,7 +15,7 @@ fn rejects(src: &str, kind: ParseErrorKind) {
 #[test]
 fn reserved_future_decls_are_rejected_at_top_level() {
     // `migration` / `projection` are reserved for future syntax; as v1 top-level
-    // declarations they are not `type`/`intent` and must reject.
+    // declarations they are not `type`/`action` and must reject.
     rejects(
         "package a.b@1;\nmigration M = {};",
         ParseErrorKind::ExpectedToken,

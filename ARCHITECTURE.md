@@ -65,7 +65,7 @@ Module map:
 | `semantic` | Surface validation that does not require import resolution or target facts. |
 | `authority_facts` | File-backed compiler context facts for profiles, budgets, write classes, and source identity. |
 | `compiler` | Resolve, type-check, and lower the supported source subset to Core IR. |
-| `core_ir` | Runtime-neutral Core module, intent, expression, budget, import, and obstruction data. |
+| `core_ir` | Runtime-neutral Core module, action, expression, budget, import, and obstruction data. |
 | `canonical` | Canonical value model, depth-bounded canonical CBOR encoder/decoder, digest frames, and reviewed golden digest helpers. |
 | `target_profile` | Runtime-neutral target-profile manifest conformance. |
 | `lowerability` | Checks whether Core requirements can be satisfied natively, by a direct adapter, or not at all. |

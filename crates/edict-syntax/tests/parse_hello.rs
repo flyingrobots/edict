@@ -4,7 +4,7 @@
 //! `EDICT-LANG-BOUNDS-001`). This is the first real-world parse target.
 
 use edict_syntax::ast::{
-    BoundRef, Decl, Expr, ImportKind, IntentClause, RecordEntry, ScalarRefine, Stmt, TypeExpr,
+    ActionClause, BoundRef, Decl, Expr, ImportKind, RecordEntry, ScalarRefine, Stmt, TypeExpr,
     TypeRef,
 };
 use edict_syntax::{parse_module, ParseErrorKind};
@@ -54,23 +54,23 @@ fn bounded_hello_parses() {
     };
     assert_eq!(hello_reading.name, "HelloReading");
 
-    // intent sayHello(...) ...
-    let Decl::Intent(intent) = &module.decls[2] else {
-        panic!("decl 2 is an intent")
+    // action sayHello(...) ...
+    let Decl::Action(action) = &module.decls[2] else {
+        panic!("decl 2 is an action")
     };
-    assert_eq!(intent.name, "sayHello");
-    assert_eq!(intent.params.len(), 1);
-    assert_eq!(intent.params[0].name, "input");
+    assert_eq!(action.name, "sayHello");
+    assert_eq!(action.params.len(), 1);
+    assert_eq!(action.params[0].name, "input");
 
     // clauses: profile, basis none, budget, where
-    assert!(matches!(&intent.clauses[0], IntentClause::Profile(p) if p == &["hello", "readOnly"]));
-    assert!(matches!(&intent.clauses[1], IntentClause::Basis(None)));
-    assert!(matches!(&intent.clauses[2], IntentClause::Budget(b) if b == &["hello", "tinyBudget"]));
-    assert!(matches!(&intent.clauses[3], IntentClause::Where(w) if w.len() == 1));
+    assert!(matches!(&action.clauses[0], ActionClause::Profile(p) if p == &["hello", "readOnly"]));
+    assert!(matches!(&action.clauses[1], ActionClause::Basis(None)));
+    assert!(matches!(&action.clauses[2], ActionClause::Budget(b) if b == &["hello", "tinyBudget"]));
+    assert!(matches!(&action.clauses[3], ActionClause::Where(w) if w.len() == 1));
 
     // body: let message = "hello, " + input.name;  return { message };
-    assert_eq!(intent.body.stmts.len(), 2);
-    let Stmt::Let { name, value, .. } = &intent.body.stmts[0] else {
+    assert_eq!(action.body.stmts.len(), 2);
+    let Stmt::Let { name, value, .. } = &action.body.stmts[0] else {
         panic!("stmt 0 is let")
     };
     assert_eq!(name, "message");
@@ -79,7 +79,7 @@ fn bounded_hello_parses() {
         "concat is a binary expr"
     );
 
-    let Stmt::Return { value, .. } = &intent.body.stmts[1] else {
+    let Stmt::Return { value, .. } = &action.body.stmts[1] else {
         panic!("stmt 1 is return")
     };
     let Expr::Record { entries, .. } = value else {

@@ -66,7 +66,7 @@ module.exports = grammar({
     _declaration: $ => choice(
       $.type_declaration,
       $.enum_declaration,
-      $.intent_declaration,
+      $.action_declaration,
     ),
 
     enum_declaration: $ => seq(
@@ -140,13 +140,13 @@ module.exports = grammar({
       choice($.number, $.string, $.qualified_identifier),
     ),
 
-    intent_declaration: $ => seq(
-      'intent',
+    action_declaration: $ => seq(
+      'action',
       field('name', $.identifier),
       $.parameter_list,
       'returns',
       field('returns', $.type_reference),
-      repeat($.intent_clause),
+      repeat($.action_clause),
       field('body', $.block),
     ),
 
@@ -162,7 +162,7 @@ module.exports = grammar({
       field('type', $.type_reference),
     ),
 
-    intent_clause: $ => choice(
+    action_clause: $ => choice(
       seq('profile', $.qualified_identifier),
       seq('implements', $.qualified_identifier),
       seq('basis', choice('none', $.expression)),

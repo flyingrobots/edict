@@ -43,21 +43,21 @@ error ordering is not part of the Phase 2 contract. Tests assert structured
 
 - Runtime `String` and `Bytes` type references must carry explicit bounds. The
   pass checks nested type references recursively, including `Option`, `List`,
-  `Map`, `CapabilityRef`, variant payloads, intent parameters, intent returns,
+  `Map`, `CapabilityRef`, variant payloads, action parameters, action returns,
   typed `let` declarations, and expression type arguments. [SEMVAL-REQ-002]
-- Every intent must declare at least one operation mode: `profile` or
-  `implements`. An intent may declare both. [SEMVAL-REQ-003]
-- Every intent must declare a `budget` clause. [SEMVAL-REQ-004]
-- Every intent must declare a `basis` clause. This pass cannot yet resolve
+- Every action must declare at least one operation mode: `profile` or
+  `implements`. An action may declare both. [SEMVAL-REQ-003]
+- Every action must declare a `budget` clause. [SEMVAL-REQ-004]
+- Every action must declare a `basis` clause. This pass cannot yet resolve
   profile- or lawpack-supplied basis templates, so the current source-level
   contract requires an explicit source clause. [SEMVAL-REQ-005]
-- Singleton intent clauses reject duplicates for `profile`, `implements`,
+- Singleton action clauses reject duplicates for `profile`, `implements`,
   `basis`, `footprint`, and `budget`. [SEMVAL-REQ-006]
 - Module-scope import aliases, `type` declarations, `enum` declarations, and
-  `intent` declarations share a source-AST namespace and reject duplicate names.
+  `action` declarations share a source-AST namespace and reject duplicate names.
   [SEMVAL-REQ-007]
 - Source binders reject shadowing of visible module/prelude names, parameters,
-  and earlier local binders. The check covers intent parameters, `let` binders,
+  and earlier local binders. The check covers action parameters, `let` binders,
   bounded-`for` binders, match-arm binders, obstruction-map binders, ordinary
   blocks, and branch-yield blocks. [SEMVAL-REQ-007]
 - Branch, loop, match-arm, obstruction-map, and branch-yield scopes are
@@ -69,7 +69,7 @@ error ordering is not part of the Phase 2 contract. Tests assert structured
   compiler-spine stages. [SEMVAL-REQ-009] [SEMVAL-REQ-010]
 
 Semantic errors carry source spans. Clause-level duplicate diagnostics currently
-report the enclosing intent span because the parser's `IntentClause` AST does
+report the enclosing action span because the parser's `ActionClause` AST does
 not yet retain per-clause spans. [SEMVAL-REQ-001]
 
 ## Deferred

@@ -15,7 +15,7 @@ use edict_syntax::{
     CoreBudget, CoreExpr, CoreImport, CoreNode, CoreObstructionArm, CoreObstructionReason,
     CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, HighlightRole, InputConstraint,
     InputConstraintSource, ParseError, ResourceRef, SemanticError, Span, TargetEffectLowering,
-    TargetIrArtifact, TargetIrIntent, TargetIrLoweringFacts, TargetIrRequireFailure,
+    TargetIrAction, TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure,
     TargetIrRequirement, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
     WriteClass,
 };
@@ -1102,20 +1102,20 @@ fn core_review(core: &edict_syntax::CoreModule) -> Value {
             .iter()
             .map(|(name, ty)| (name.clone(), core_type_review(ty)))
             .collect::<BTreeMap<_, _>>(),
-        "intents": core.intents
+        "actions": core.actions
             .iter()
-            .map(|(name, intent)| {
+            .map(|(name, action)| {
                 (name.clone(), json!({
-                    "input": intent.input,
-                    "output": intent.output,
-                    "requiredOperationProfile": intent.required_operation_profile,
-                    "inputConstraints": intent
+                    "input": action.input,
+                    "output": action.output,
+                    "requiredOperationProfile": action.required_operation_profile,
+                    "inputConstraints": action
                         .input_constraints
                         .iter()
                         .map(input_constraint_review)
                         .collect::<Vec<_>>(),
-                    "coreEvaluationBudget": core_budget_review(&intent.core_evaluation_budget),
-                    "body": core_block_review(&intent.body),
+                    "coreEvaluationBudget": core_budget_review(&action.core_evaluation_budget),
+                    "body": core_block_review(&action.body),
                 }))
             })
             .collect::<BTreeMap<_, _>>(),
@@ -1128,29 +1128,29 @@ fn target_ir_review(artifact: &TargetIrArtifact) -> Value {
         "domain": artifact.domain,
         "targetProfile": resource_ref_review(&artifact.target_profile),
         "sourceCoreCoordinate": artifact.source_core_coordinate,
-        "intents": artifact.intents
+        "actions": artifact.actions
             .iter()
-            .map(|(name, intent)| (name.clone(), target_ir_intent_review(intent)))
+            .map(|(name, action)| (name.clone(), target_ir_action_review(action)))
             .collect::<BTreeMap<_, _>>(),
     })
 }
 
-fn target_ir_intent_review(intent: &TargetIrIntent) -> Value {
+fn target_ir_action_review(action: &TargetIrAction) -> Value {
     json!({
-        "operationProfile": intent.operation_profile,
-        "inputConstraints": intent
+        "operationProfile": action.operation_profile,
+        "inputConstraints": action
             .input_constraints
             .iter()
             .map(input_constraint_review)
             .collect::<Vec<_>>(),
-        "coreEvaluationBudget": core_budget_review(&intent.core_evaluation_budget),
-        "requirements": intent
+        "coreEvaluationBudget": core_budget_review(&action.core_evaluation_budget),
+        "requirements": action
             .requirements
             .iter()
             .map(target_ir_requirement_review)
             .collect::<Vec<_>>(),
-        "steps": intent.steps.iter().map(target_ir_step_review).collect::<Vec<_>>(),
-        "result": core_expr_review(&intent.result),
+        "steps": action.steps.iter().map(target_ir_step_review).collect::<Vec<_>>(),
+        "result": core_expr_review(&action.result),
     })
 }
 
@@ -1410,7 +1410,7 @@ fn compare_op_name(op: edict_syntax::CompareOp) -> &'static str {
 fn target_lowering_failure_review(failure: &TargetLoweringFailure) -> Value {
     json!({
         "kind": target_lowering_failure_kind_name(failure.kind),
-        "intent": failure.intent,
+        "action": failure.action,
         "nodeIndex": failure.node_index,
         "detail": failure.detail,
     })

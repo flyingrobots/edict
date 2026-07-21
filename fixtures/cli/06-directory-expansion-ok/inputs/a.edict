@@ -6,7 +6,7 @@ type HelloInput = {
   name: String<max=256>,
 };
 
-intent sayHello(input: HelloInput)
+action sayHello(input: HelloInput)
   returns HelloInput
   profile hello.readOnly
   basis none

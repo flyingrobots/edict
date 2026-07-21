@@ -4,7 +4,7 @@
 //! API and assert stable AST/error identities.
 
 mod common;
-use common::{body, intent_of};
+use common::{action_of, body};
 use edict_syntax::ast::{BinOp, BoundRef, Decl, Expr, RequireElseArm, Stmt, TypeExpr, TypeRef};
 use edict_syntax::token::IntSuffix;
 use edict_syntax::{parse_module, ParseErrorKind};
@@ -20,8 +20,8 @@ fn reject_kind(src: &str, kind: ParseErrorKind) {
 
 fn first_let_value(src: &str) -> Expr {
     let m = parse_module(src).expect("module parses");
-    let intent = intent_of(&m);
-    let Stmt::Let { value, .. } = &intent.body.stmts[0] else {
+    let action = action_of(&m);
+    let Stmt::Let { value, .. } = &action.body.stmts[0] else {
         panic!("first statement is a let");
     };
     value.clone()
@@ -204,7 +204,7 @@ fn reserved_words_are_rejected_in_all_binder_positions() {
         ParseErrorKind::ReservedKeyword,
     );
     reject_kind(
-        "package a.b@1;\nintent t(false: shape.In) returns shape.Out basis none budget <= p.b { return { false }; }",
+        "package a.b@1;\naction t(false: shape.In) returns shape.Out basis none budget <= p.b { return { false }; }",
         ParseErrorKind::ReservedKeyword,
     );
     reject_kind(
@@ -245,8 +245,8 @@ fn require_statement_parses_terminal_obstruction_source_shape() {
         "  require input.ok else domain.Blocked({ reason: input.reason });\n  return { input };",
     ))
     .expect("require statement parses");
-    let intent = intent_of(&m);
-    let Stmt::Require { predicate, arm, .. } = &intent.body.stmts[0] else {
+    let action = action_of(&m);
+    let Stmt::Require { predicate, arm, .. } = &action.body.stmts[0] else {
         panic!("first statement is a require");
     };
 
@@ -267,8 +267,8 @@ fn continue_obstructed_source_arm_parses() {
         "  require input.ok else continue obstructed { reason: jim.EditObstruction.StaleBase, basis: input.basis };\n  return { input };",
     ))
     .expect("continue-obstructed require arm parses");
-    let intent = intent_of(&m);
-    let Stmt::Require { predicate, arm, .. } = &intent.body.stmts[0] else {
+    let action = action_of(&m);
+    let Stmt::Require { predicate, arm, .. } = &action.body.stmts[0] else {
         panic!("first statement is a require");
     };
 
@@ -326,8 +326,8 @@ fn helper_shaped_continue_in_obstructed_strand_is_terminal() {
         "  require input.ok else continueInObstructedStrand({ reason: jim.EditObstruction.StaleBase });\n  return { input };",
     ))
     .expect("helper-shaped obstruction constructor remains terminal");
-    let intent = intent_of(&m);
-    let Stmt::Require { arm, .. } = &intent.body.stmts[0] else {
+    let action = action_of(&m);
+    let Stmt::Require { arm, .. } = &action.body.stmts[0] else {
         panic!("first statement is a require");
     };
     let RequireElseArm::Terminal(obstruction) = arm else {
@@ -342,8 +342,8 @@ fn helper_shaped_continue_in_obstructed_strand_is_terminal() {
 fn stale_basis_obstruction_strand_fixture_parses() {
     let m = parse_module(STALE_BASIS_OBSTRUCTION_STRAND)
         .expect("stale-basis obstruction strand fixture parses");
-    let intent = intent_of(&m);
-    let Stmt::Require { arm, .. } = &intent.body.stmts[0] else {
+    let action = action_of(&m);
+    let Stmt::Require { arm, .. } = &action.body.stmts[0] else {
         panic!("first fixture statement is a require");
     };
     let RequireElseArm::ContinueObstructed(obstruction) = arm else {

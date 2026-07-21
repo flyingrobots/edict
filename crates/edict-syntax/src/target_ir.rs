@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    CoreBudget, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreObstructionArm,
+    CoreAction, CoreBudget, CoreExpr, CoreModule, CoreNode, CoreObstructionArm,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, InputConstraint, LocalRef,
     ResourceRef, CORE_API_VERSION,
 };
@@ -74,7 +74,7 @@ impl TargetIrLoweringFacts {
         if report.status != LowerabilityStatus::Native {
             return Err(TargetLoweringFailure {
                 kind: TargetLoweringFailureKind::UnsupportedLowerabilityReport,
-                intent: None,
+                action: None,
                 node_index: None,
                 detail: format!("{:?}", report.status),
             });
@@ -82,7 +82,7 @@ impl TargetIrLoweringFacts {
         if target_profile.coordinate != report.target_profile {
             return Err(TargetLoweringFailure {
                 kind: TargetLoweringFailureKind::UnsupportedTargetProfile,
-                intent: None,
+                action: None,
                 node_index: None,
                 detail: target_profile.coordinate,
             });
@@ -90,7 +90,7 @@ impl TargetIrLoweringFacts {
         if !target_profile.is_digest_locked() {
             return Err(TargetLoweringFailure {
                 kind: TargetLoweringFailureKind::UndigestedTargetProfile,
-                intent: None,
+                action: None,
                 node_index: None,
                 detail: target_profile
                     .digest
@@ -159,7 +159,7 @@ pub enum TargetLoweringFailureKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetLoweringFailure {
     pub kind: TargetLoweringFailureKind,
-    pub intent: Option<String>,
+    pub action: Option<String>,
     pub node_index: Option<usize>,
     pub detail: String,
 }
@@ -176,11 +176,11 @@ pub struct TargetIrArtifact {
     pub domain: String,
     pub target_profile: ResourceRef,
     pub source_core_coordinate: String,
-    pub intents: BTreeMap<String, TargetIrIntent>,
+    pub actions: BTreeMap<String, TargetIrAction>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TargetIrIntent {
+pub struct TargetIrAction {
     pub operation_profile: String,
     pub input_constraints: Vec<InputConstraint>,
     pub core_evaluation_budget: CoreBudget,
@@ -244,17 +244,17 @@ pub fn lower_to_target_ir(
         effect_lowerings: &effect_lowerings,
     };
     let mut failures = Vec::new();
-    let mut intents = BTreeMap::new();
+    let mut actions = BTreeMap::new();
 
-    for (intent_name, intent) in &core.intents {
-        let lowered = lower_intent(
-            intent_name,
-            intent,
+    for (action_name, action) in &core.actions {
+        let lowered = lower_action(
+            action_name,
+            action,
             &operation_profiles,
             &context,
             &mut failures,
         );
-        intents.insert(intent_name.clone(), lowered);
+        actions.insert(action_name.clone(), lowered);
     }
 
     if failures.is_empty() {
@@ -264,7 +264,7 @@ pub fn lower_to_target_ir(
                 domain: facts.target_ir_domain.clone(),
                 target_profile: facts.target_profile.clone(),
                 source_core_coordinate: core.coordinate.clone(),
-                intents,
+                actions,
             }),
             failures,
         }
@@ -280,7 +280,7 @@ fn validate_target_selection(
     else {
         return Err(vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetProfile,
-            intent: None,
+            action: None,
             node_index: None,
             detail: facts.target_profile.coordinate.clone(),
         }]);
@@ -288,7 +288,7 @@ fn validate_target_selection(
     if !facts.target_profile.is_digest_locked() {
         return Err(vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UndigestedTargetProfile,
-            intent: None,
+            action: None,
             node_index: None,
             detail: facts
                 .target_profile
@@ -300,7 +300,7 @@ fn validate_target_selection(
     if facts.target_ir_domain != target_selection.target_ir_domain {
         return Err(vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetIrDomain,
-            intent: None,
+            action: None,
             node_index: None,
             detail: facts.target_ir_domain.clone(),
         }]);
@@ -312,17 +312,17 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
     if core.api_version != CORE_API_VERSION {
         return vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedCoreAbi,
-            intent: None,
+            action: None,
             node_index: None,
             detail: core.api_version.clone(),
         }];
     }
-    if core.intents.is_empty() {
+    if core.actions.is_empty() {
         return vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::NoTargetSteps,
-            intent: None,
+            action: None,
             node_index: None,
-            detail: "core module has no target-owned intents".to_owned(),
+            detail: "core module has no target-owned actions".to_owned(),
         }];
     }
     let floating_imports = core
@@ -331,7 +331,7 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
         .filter(|import| !import.resource.is_digest_locked())
         .map(|import| TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UndigestedCoreImport,
-            intent: None,
+            action: None,
             node_index: None,
             detail: import.resource.coordinate.clone(),
         })
@@ -343,49 +343,49 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
         .iter()
         .map(|capability| TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedCoreCapability,
-            intent: None,
+            action: None,
             node_index: None,
             detail: capability.clone(),
         })
         .collect()
 }
 
-fn lower_intent(
-    intent_name: &str,
-    intent: &CoreIntent,
+fn lower_action(
+    action_name: &str,
+    action: &CoreAction,
     operation_profiles: &BTreeSet<&str>,
     context: &TargetLoweringContext<'_>,
     failures: &mut Vec<TargetLoweringFailure>,
-) -> TargetIrIntent {
-    if !operation_profiles.contains(intent.required_operation_profile.as_str()) {
+) -> TargetIrAction {
+    if !operation_profiles.contains(action.required_operation_profile.as_str()) {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::MissingOperationProfile,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: None,
-            detail: intent.required_operation_profile.clone(),
+            detail: action.required_operation_profile.clone(),
         });
     }
 
-    let mut state = IntentLoweringState::default();
-    for (node_index, node) in intent.body.nodes.iter().enumerate() {
-        lower_node(intent_name, node_index, node, context, &mut state, failures);
+    let mut state = ActionLoweringState::default();
+    for (node_index, node) in action.body.nodes.iter().enumerate() {
+        lower_node(action_name, node_index, node, context, &mut state, failures);
     }
-    if state.requirements.is_empty() && state.steps.is_empty() && intent.body.nodes.is_empty() {
+    if state.requirements.is_empty() && state.steps.is_empty() && action.body.nodes.is_empty() {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::NoTargetSteps,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: None,
-            detail: "intent has no target-owned steps".to_owned(),
+            detail: "action has no target-owned steps".to_owned(),
         });
     }
 
-    TargetIrIntent {
-        operation_profile: intent.required_operation_profile.clone(),
-        input_constraints: intent.input_constraints.clone(),
-        core_evaluation_budget: intent.core_evaluation_budget.clone(),
+    TargetIrAction {
+        operation_profile: action.required_operation_profile.clone(),
+        input_constraints: action.input_constraints.clone(),
+        core_evaluation_budget: action.core_evaluation_budget.clone(),
         requirements: state.requirements,
         steps: state.steps,
-        result: intent.body.result.clone(),
+        result: action.body.result.clone(),
     }
 }
 
@@ -396,18 +396,18 @@ struct TargetLoweringContext<'a> {
 }
 
 #[derive(Default)]
-struct IntentLoweringState {
+struct ActionLoweringState {
     requirements: Vec<TargetIrRequirement>,
     steps: Vec<TargetIrStep>,
     step_outputs: BTreeSet<String>,
 }
 
 fn lower_node(
-    intent_name: &str,
+    action_name: &str,
     node_index: usize,
     node: &CoreNode,
     context: &TargetLoweringContext<'_>,
-    state: &mut IntentLoweringState,
+    state: &mut ActionLoweringState,
     failures: &mut Vec<TargetLoweringFailure>,
 ) {
     match node {
@@ -419,7 +419,7 @@ fn lower_node(
         } => {
             let steps_before = state.steps.len();
             lower_effect_node(
-                intent_name,
+                action_name,
                 node_index,
                 EffectNodeParts {
                     binding,
@@ -437,12 +437,12 @@ fn lower_node(
         }
         CoreNode::Let { .. } => failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedCoreNode,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: Some(node_index),
             detail: "let".to_owned(),
         }),
         CoreNode::Require { predicate, arm } => lower_require_node(
-            intent_name,
+            action_name,
             node_index,
             predicate,
             arm,
@@ -454,18 +454,18 @@ fn lower_node(
 }
 
 fn lower_require_node(
-    intent_name: &str,
+    action_name: &str,
     node_index: usize,
     predicate: &CorePredicate,
     arm: &CoreRequireFailureArm,
     context: &TargetLoweringContext<'_>,
-    state: &mut IntentLoweringState,
+    state: &mut ActionLoweringState,
     failures: &mut Vec<TargetLoweringFailure>,
 ) {
     if !context.target_selection.supports_requirements {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: Some(node_index),
             detail: "obstruction_requirement".to_owned(),
         });
@@ -474,7 +474,7 @@ fn lower_require_node(
     if require_references_step_output(predicate, arm, &state.step_outputs) {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: Some(node_index),
             detail: "obstruction_requirement_step_output_dependency".to_owned(),
         });
@@ -483,14 +483,14 @@ fn lower_require_node(
     if !state.steps.is_empty() {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: Some(node_index),
             detail: "obstruction_requirement_after_target_step".to_owned(),
         });
         return;
     }
     state.requirements.push(TargetIrRequirement {
-        id: format!("{}.require.{}", intent_name, state.requirements.len()),
+        id: format!("{}.require.{}", action_name, state.requirements.len()),
         predicate: predicate.clone(),
         on_failure: target_ir_require_failure(arm),
     });
@@ -571,7 +571,7 @@ struct EffectNodeParts<'a> {
 }
 
 fn lower_effect_node(
-    intent_name: &str,
+    action_name: &str,
     node_index: usize,
     node: EffectNodeParts<'_>,
     context: &TargetLoweringContext<'_>,
@@ -590,7 +590,7 @@ fn lower_effect_node(
         {
             failures.push(TargetLoweringFailure {
                 kind: TargetLoweringFailureKind::UnsupportedTargetIntrinsic,
-                intent: Some(intent_name.to_owned()),
+                action: Some(action_name.to_owned()),
                 node_index: Some(node_index),
                 detail: lowering.target_intrinsic.clone(),
             });
@@ -606,7 +606,7 @@ fn lower_effect_node(
                 failures.extend(unsupported_obstructions.into_iter().map(|failure| {
                     TargetLoweringFailure {
                         kind: TargetLoweringFailureKind::MissingObstruction,
-                        intent: Some(intent_name.to_owned()),
+                        action: Some(action_name.to_owned()),
                         node_index: Some(node_index),
                         detail: failure,
                     }
@@ -614,7 +614,7 @@ fn lower_effect_node(
                 return;
             }
             steps.push(TargetIrStep {
-                id: format!("{}.step.{}", intent_name, steps.len()),
+                id: format!("{}.step.{}", action_name, steps.len()),
                 binding: node.binding.clone(),
                 effect: node.effect.to_owned(),
                 target_intrinsic: lowering.target_intrinsic.clone(),
@@ -625,13 +625,13 @@ fn lower_effect_node(
         }
         [] => failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::MissingEffectLowering,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: Some(node_index),
             detail: node.effect.to_owned(),
         }),
         _ => failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::AmbiguousEffectLowering,
-            intent: Some(intent_name.to_owned()),
+            action: Some(action_name.to_owned()),
             node_index: Some(node_index),
             detail: node.effect.to_owned(),
         }),

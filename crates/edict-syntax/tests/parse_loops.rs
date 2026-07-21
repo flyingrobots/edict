@@ -15,8 +15,8 @@ fn first_stmt(src: &str) -> Stmt {
         .into_iter()
         .next()
         .and_then(|d| match d {
-            edict_syntax::ast::Decl::Intent(i) => i.body.stmts.into_iter().next(),
-            _ => panic!("decl 0 is an intent"),
+            edict_syntax::ast::Decl::Action(i) => i.body.stmts.into_iter().next(),
+            _ => panic!("decl 0 is an action"),
         })
         .expect("a statement")
 }

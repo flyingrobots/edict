@@ -15,7 +15,7 @@ claim that every eligible artifact already exists.
 PR #129 adds Core lowering for the currently lowerable `require` subset. PR #131
 adds Echo Target IR requirements for synthetic Core-compatible obstruction
 fixtures. This stale-basis source remains source-only until the compiler spine
-supports non-`basis none` intent bases and the `jim.basisFresh(...)` predicate
+supports non-`basis none` action bases and the `jim.basisFresh(...)` predicate
 form, so this directory still intentionally has no `core.review` or
 `echo-target-ir.review` artifact.
 

@@ -61,7 +61,7 @@ exports:
   expression position. It may never read host state, allocate without bound, or
   reach a target through a side door (`EDICT-LAWPACK-PURE-001`).
 - An `effect` emits a semantic fact. It is callable only in A-normal effect
-  position inside an intent body, exactly like a target intrinsic.
+  position inside an action body, exactly like a target intrinsic.
 
 A pure helper that touches runtime state, even transitively, is a relapse and
 must reject locked-bundle production.
@@ -264,7 +264,7 @@ adapter:
     guard attachment rules
 ```
 
-A portable semantic intent compiles for a target **only** when the lawpack
+A portable semantic action compiles for a target **only** when the lawpack
 supplies an adapter for that target profile. Absent an adapter, this is a
 **compiler/lowering error**, not an admission-class error: no valid target
 artifact exists yet, so admission never enters the picture. It is never a silent

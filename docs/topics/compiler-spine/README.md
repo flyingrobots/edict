@@ -38,14 +38,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 ## Current Contract
 
 - The lowerable subset is deliberately narrow: local record type declarations,
-  one-parameter intents, `profile`, `basis none`, `budget <=`, `where`
+  one-parameter actions, `profile`, `basis none`, `budget <=`, `where`
   predicates, pure `let` bindings, one annotated effectful `let ... else`
   shape, lowerable `require ... else` obstruction arms, `return`, strings,
   booleans, integers, field access, record literals, equality predicates, and
   string concatenation. [CSPINE-REQ-006] [CSPINE-REQ-011]
   [CSPINE-REQ-017]
 - Core lowering produces structured in-memory `CoreModule` values with module
-  coordinate, imports, types, intents, input constraints, budgets, locals,
+  coordinate, imports, types, actions, input constraints, budgets, locals,
   ordered nodes, and result expressions. [CSPINE-REQ-003]
 - Resolver/type-checker failures use stable `CompilerErrorKind` and
   `CompilerStage` values. Tests assert those structured values rather than

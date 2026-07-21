@@ -2,13 +2,13 @@
 //!
 //! Scope is `edict.implementation/minimal-v1` (see SPEC - Edict Language v1).
 //! Phase 1 parses: package and imports; `type` records and refined scalars;
-//! `enum` declarations and `variant` types; `intent`s with their clauses;
+//! `enum` declarations and `variant` types; `action`s with their clauses;
 //! `let`/`return`/`require`/`guarantee`/`assert`; the `if` family; bounded
 //! `for`; calls and type-calls; variant-literal constructors; and `match`.
 //! Phase 2 currently exposes the `validate_surface` compiler stage for
 //! source-AST constraints that do not require import resolution, resolved typing,
 //! target/lawpack facts, or Core IR: bounded runtime `String`/`Bytes`, required
-//! intent operation-mode/budget/basis clauses, duplicate singleton intent
+//! action operation-mode/budget/basis clauses, duplicate singleton action
 //! clauses, module namespace collisions, and source binder shadowing.
 //! Phase 3 begins the executable compiler spine with `resolve_module`,
 //! `type_check`, `lower_core`, and `compile_to_core`, currently covering the
@@ -114,8 +114,8 @@ pub use canonical::{
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
-    CompilerErrorKind, CompilerStage, ResolvedIntent, ResolvedModule, ResolvedTypeDecl,
-    TypedIntent, TypedModule,
+    CompilerErrorKind, CompilerStage, ResolvedAction, ResolvedModule, ResolvedTypeDecl,
+    TypedAction, TypedModule,
 };
 pub use contract_bundle::{
     assemble_contract_bundle, assemble_contract_bundle_from_target_ir,
@@ -128,7 +128,7 @@ pub use contract_bundle::{
     SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
+    CompareOp, CoreAction, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreModule,
     CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
     CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
     CORE_API_VERSION,
@@ -180,7 +180,7 @@ pub use provider_lowering::{
 };
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{
-    lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
+    lower_to_target_ir, TargetEffectLowering, TargetIrAction, TargetIrArtifact,
     TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrRequirement, TargetIrStep,
     TargetLoweringFailure, TargetLoweringFailureKind, TargetLoweringReport, TargetLoweringStatus,
     ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,

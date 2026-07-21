@@ -5,7 +5,7 @@
 //! Grammar: `if-expr`, `effect-branch-expr`, `if-stmt` (SPEC Edict Language v1).
 
 mod common;
-use common::{body, intent_of};
+use common::{action_of, body};
 use edict_syntax::ast::{ElseClause, Expr, Stmt};
 use edict_syntax::parse_module;
 
@@ -15,8 +15,8 @@ const BLOB: &str = include_str!("../../../fixtures/lang/effects/conditional-blob
 fn pure_ternary_parses_as_let_value() {
     let src = body("  let x = if input.n == 0 then input.lo else input.hi;\n  return { x };");
     let m = parse_module(&src).expect("ternary parses");
-    let intent = intent_of(&m);
-    let Stmt::Let { value, els, .. } = &intent.body.stmts[0] else {
+    let action = action_of(&m);
+    let Stmt::Let { value, els, .. } = &action.body.stmts[0] else {
         panic!("stmt 0 is a let");
     };
     assert!(els.is_none(), "a ternary let has no effect-else handler");
@@ -28,11 +28,11 @@ fn ternary_is_usable_in_nested_expression_position() {
     // The ternary sits at the top of `expr`, so it nests inside a call arg.
     let src = body("  let x = f(if input.a then input.b else input.c);\n  return { x };");
     let m = parse_module(&src).expect("nested ternary parses");
-    let intent = intent_of(&m);
+    let action = action_of(&m);
     let Stmt::Let {
         value: Expr::Call { args, .. },
         ..
-    } = &intent.body.stmts[0]
+    } = &action.body.stmts[0]
     else {
         panic!("rhs is a call");
     };
@@ -54,7 +54,7 @@ fn branch_yield_parses_only_as_let_rhs() {
          \x20 return { blob };",
     );
     let m = parse_module(&src).expect("branch-yield parses");
-    let intent = intent_of(&m);
+    let action = action_of(&m);
     let Stmt::Let {
         value:
             Expr::IfYield {
@@ -63,7 +63,7 @@ fn branch_yield_parses_only_as_let_rhs() {
                 ..
             },
         ..
-    } = &intent.body.stmts[0]
+    } = &action.body.stmts[0]
     else {
         panic!("rhs is a branch-yield");
     };
@@ -105,8 +105,8 @@ fn if_statement_with_else_if_chain_parses() {
          \x20 }",
     );
     let m = parse_module(&src).expect("if/else-if/else parses");
-    let intent = intent_of(&m);
-    let Stmt::If { els, .. } = &intent.body.stmts[0] else {
+    let action = action_of(&m);
+    let Stmt::If { els, .. } = &action.body.stmts[0] else {
         panic!("stmt 0 is an if");
     };
     // first else is a chained `else if` → ElseClause::If wrapping another Stmt::If
@@ -128,13 +128,13 @@ fn if_statement_with_else_if_chain_parses() {
 #[test]
 fn conditional_blob_fixture_parses() {
     let m = parse_module(BLOB).expect("conditional-blob fixture parses");
-    let intent = intent_of(&m);
+    let action = action_of(&m);
     // body: let initialBytes; let initialBlob = <branch-yield>; return
-    assert_eq!(intent.body.stmts.len(), 3);
+    assert_eq!(action.body.stmts.len(), 3);
     let Stmt::Let {
         value: Expr::IfYield { else_block, .. },
         ..
-    } = &intent.body.stmts[1]
+    } = &action.body.stmts[1]
     else {
         panic!("stmt 1 is a branch-yield let");
     };

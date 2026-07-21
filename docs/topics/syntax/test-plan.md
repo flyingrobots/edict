@@ -32,7 +32,7 @@ Out of scope:
 | SYNTAX-REQ-003 | implemented | Imports parse supported kinds, validate digest literals, and reject minimal-v1 unsupported `capability`. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-004 | implemented | Type declarations parse Phase 1 type surface and reject empty enum declarations. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-005 | implemented | Integer suffixes remain source-significant in expression literals and static bounds. | docs/SPEC_edict-language-v1.md |
-| SYNTAX-REQ-006 | implemented | Intent declaration syntax parses parameters, return type, clauses, and blocks; semantic requiredness is deferred. | docs/SPEC_edict-language-v1.md |
+| SYNTAX-REQ-006 | implemented | Action declaration syntax parses parameters, return type, clauses, and blocks; semantic requiredness is deferred. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-007 | implemented | Statement syntax includes effect call positions, guards, control flow, and bounded loops. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-008 | implemented | Expression syntax includes precedence, records, literals, conditionals, variants, and match. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-009 | implemented | Reserved keywords reject in bare-name positions while remaining legal after `.`. | docs/SPEC_edict-language-v1.md |
@@ -60,7 +60,7 @@ Out of scope:
 | SYNTAX-TP-004 | implemented | Golden path | SYNTAX-REQ-004 | Type AST nodes match expected records, bytes, variants, enums, and bounds. | bounded_hello_parses, bytes_accept_coordinate_bounds, enum_decl_parses, variant_type_with_and_without_payloads_parses | fixtures/lang/bounds/bounded-hello.edict | Structural AST equality. |
 | SYNTAX-TP-005 | implemented | Error handling | SYNTAX-REQ-004 | Empty enums reject with `ParseErrorKind::EmptyEnum`. | empty_enum_and_empty_obstruction_maps_reject | - | Parser-level syntactic emptiness. |
 | SYNTAX-TP-006 | implemented | Edge case | SYNTAX-REQ-005 | Integer suffix is preserved in `Expr::Int` and `BoundRef::Int`. | typed_integer_suffix, bound_integer_suffixes_are_preserved | - | Source-significant suffix oracle. |
-| SYNTAX-TP-007 | implemented | Golden path | SYNTAX-REQ-006 | Intent clauses and bodies parse into expected AST. | bounded_hello_parses, read_greeting_parses, require_statement_parses_terminal_obstruction_source_shape | fixtures/lang/bounds/bounded-hello.edict, fixtures/lang/effects/read-greeting.edict | Requiredness and `require` lowering semantics are deferred. |
+| SYNTAX-TP-007 | implemented | Golden path | SYNTAX-REQ-006 | Action clauses and bodies parse into expected AST. | bounded_hello_parses, read_greeting_parses, require_statement_parses_terminal_obstruction_source_shape | fixtures/lang/bounds/bounded-hello.edict, fixtures/lang/effects/read-greeting.edict | Requiredness and `require` lowering semantics are deferred. |
 | SYNTAX-TP-008 | implemented | Golden path | SYNTAX-REQ-007 | Bounded loops parse literal and coordinate bounds. | for_with_integer_bound_parses, for_with_coordinate_bound_parses | - | Loop semantic proof deferred. |
 | SYNTAX-TP-009 | implemented | Known failure | SYNTAX-REQ-007 | Missing `bounded` rejects. | for_without_bounded_is_rejected | - | Syntactic mandatory bound. |
 | SYNTAX-TP-010 | implemented | Error handling | SYNTAX-REQ-007 | Effect positions reject non-call expressions. | effect_positions_must_be_calls | - | Stable `NonCallEffect` kind. |

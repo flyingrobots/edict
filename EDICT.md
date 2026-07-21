@@ -29,9 +29,9 @@
 
 Edict is a secure, restricted, deterministic programming language (a DSL) built around a single organizing idea: **what your code is allowed to do should be verified by the compiler, not left to trust** [claim:C01, confidence:1.0]. In an ordinary runtime, a function inherits the full authority of its host process — it can read any table, call any endpoint, write any file, regardless of what its name promises. Edict names this gap **FIDLAR** — *"Footprints Ignored; Developer Lies About Risk"* — the mismatch between a function's *declared* authority (its name and signature) and its *actual* authority (whatever the process can reach) [claim:C02, confidence:1.0].
 
-Edict's answer is to replace the function with an **intent**: an operation that must declare exactly what it reads, what it writes, what it costs, how it can fail, and which digest-locked "law" governs it — and the compiler proves all of it before anything is allowed to run [claim:C03, confidence:1.0]. The output of compilation is not a binary but a **contract bundle**: a cryptographically sealed, participant-neutral artifact whose identity is a SHA-256 hash over every layer of the compilation [claim:C04, confidence:0.98].
+Edict's answer is to replace the function with an **action**: an operation that must declare exactly what it reads, what it writes, what it costs, how it can fail, and which digest-locked "law" governs it — and the compiler proves all of it before anything is allowed to run [claim:C03, confidence:1.0]. The output of compilation is not a binary but a **contract bundle**: a cryptographically sealed, participant-neutral artifact whose identity is a SHA-256 hash over every layer of the compilation [claim:C04, confidence:0.98].
 
-The project matters most in the age of autonomous AI agents. When an agent runs a conventional function, its real capability is "anything the process was granted." Edict's formal execution lane for agents is `continuum.lane.lawful-autonomous/v1`, cheekily codenamed **YOLO — "You Only Lawfully Operate"**: an agent may execute autonomously *only after* its intent compiles, its bundle is sealed and hash-locked, an assurance engine certifies it, and a participant runtime's policy admits it [claim:C05, confidence:0.97].
+The project matters most in the age of autonomous AI agents. When an agent runs a conventional function, its real capability is "anything the process was granted." Edict's formal execution lane for agents is `continuum.lane.lawful-autonomous/v1`, cheekily codenamed **YOLO — "You Only Lawfully Operate"**: an agent may execute autonomously *only after* its action compiles, its bundle is sealed and hash-locked, an assurance engine certifies it, and a participant runtime's policy admits it [claim:C05, confidence:0.97].
 
 At the original evidence baseline, Edict was at `v0.11.0-alpha.1`. The language front end, semantic validation, a compiler spine to Core IR, canonical byte encodings and digests, target-profile validation, lowerability checking, two Target IR backends, contract-bundle assembly, and Gate C admission-boundary checks all existed as tested Rust code, while runtime execution, participant policy, and any executable WASM sandbox were explicit non-claims. The current tree adds a capability-denied Wasmtime host specifically for external provider lowerer and verifier components; target-runtime execution and participant policy remain unimplemented [claim:C06, confidence:1.0]. At that baseline, the repository was remarkably young and fast-moving: first commit 2026-06-17, 458 commits and eleven published alpha releases in roughly three weeks, with 359 test functions and a zero-tolerance lint posture (`unsafe_code = "forbid"`, clippy `pedantic` at `deny`) [claim:C07, confidence:0.95].
 
@@ -54,7 +54,7 @@ type HelloReading = {
   message: String<max=512>,
 };
 
-intent sayHello(input: HelloInput)
+action sayHello(input: HelloInput)
   returns HelloReading
   profile hello.readOnly
   basis none
@@ -71,9 +71,9 @@ Things worth noticing even in a hello world:
 | Line | What it shows |
 | --- | --- |
 | `use lawpack ... digest "sha256:..."` | Every imported authority is pinned to an exact SHA-256 digest. Dependencies cannot change silently without changing the program's identity [claim:C09, confidence:1.0]. |
-| `String<max=256>` | Scalars carry compile-time bounds. Unbounded `String`/`Bytes` are rejected — the compiler can compute the intent's maximum memory footprint before admission [claim:C10, confidence:0.95]. |
-| `profile hello.readOnly` | The intent claims an operation profile; the compiler checks the body against the profile's allowed write classes and fails compilation on a mismatch [claim:C11, confidence:0.95]. |
-| `basis none` | Every intent must declare its causal anchor — the point of history it reads from — even when that anchor is explicitly "none" [claim:C12, confidence:0.95]. |
+| `String<max=256>` | Scalars carry compile-time bounds. Unbounded `String`/`Bytes` are rejected — the compiler can compute the action's maximum memory footprint before admission [claim:C10, confidence:0.95]. |
+| `profile hello.readOnly` | The action claims an operation profile; the compiler checks the body against the profile's allowed write classes and fails compilation on a mismatch [claim:C11, confidence:0.95]. |
+| `basis none` | Every action must declare its causal anchor — the point of history it reads from — even when that anchor is explicitly "none" [claim:C12, confidence:0.95]. |
 | `budget <= hello.tinyBudget` | Cost is a declared, checkable ceiling, not an afterthought [claim:C13, confidence:0.95]. |
 | `where input.name != ""` | Pure input refinements are part of the type-checked contract and are hash-significant in Core IR [claim:C14, confidence:0.9]. |
 | String concatenation | Even `"hello, " + input.name` is bounds-checked: the result's max length is the *sum* of the operands' maxima [claim:C15, confidence:0.9]. |
@@ -100,16 +100,16 @@ Edict describes itself as "a restricted deterministic source language for lawful
 
 | Phrase | Meaning |
 | --- | --- |
-| *restricted* | Not Turing-complete by design: no unbounded loops, no recursion, no dynamic dispatch surprises. Every intent's cost can be computed and capped statically [claim:C18, confidence:0.95]. |
+| *restricted* | Not Turing-complete by design: no unbounded loops, no recursion, no dynamic dispatch surprises. Every action's cost can be computed and capped statically [claim:C18, confidence:0.95]. |
 | *deterministic* | No wall clock, no randomness, no ambient environment, no I/O, no locale, no nondeterministic iteration. Byte-identical inputs produce byte-identical outputs [claim:C19, confidence:0.9]. |
 | *lawful* | Every effect is imported from a digest-locked **lawpack** (domain rules) or **target profile** (runtime capabilities). There are no ambient effects [claim:C20, confidence:0.9]. |
-| *optics over witnessed causal history* | An intent is modeled as a **WARP optic** — in the theory, a five-part control structure `Ψ = (Ω observer plan, χ aperture, ρ claim-lowering surface, Π admissibility law, Λ retention contract)` that performs one act: *slice* a bounded window of causal history, *lower* the claims inside it under a law, *witness* the result, and *retain* a compact hash-sealed boundary shell (a *hologram*). An Edict intent is a source-language encoding of exactly that tuple: aperture/footprint (χ over the slice), profile and lawpack law (Π), budget-bounded observer (Ω), and the contract bundle as the retained shell (Λ's output) [claim:T01, confidence:0.85]. The vocabulary comes from AION Paper VII and the Observer Geometry series [claim:C21, confidence:0.95]. |
+| *optics over witnessed causal history* | An action is modeled as a **WARP optic** — in the theory, a five-part control structure `Ψ = (Ω observer plan, χ aperture, ρ claim-lowering surface, Π admissibility law, Λ retention contract)` that performs one act: *slice* a bounded window of causal history, *lower* the claims inside it under a law, *witness* the result, and *retain* a compact hash-sealed boundary shell (a *hologram*). An Edict action is a source-language encoding of exactly that tuple: aperture/footprint (χ over the slice), profile and lawpack law (Π), budget-bounded observer (Ω), and the contract bundle as the retained shell (Λ's output) [claim:T01, confidence:0.85]. The vocabulary comes from AION Paper VII and the Observer Geometry series [claim:C21, confidence:0.95]. |
 
 ### 3.2 The pipeline at a glance
 
 ```mermaid
 flowchart LR
-    A["1. Write Intent<br/>(declare inputs, outputs, budgets)"] -->|Compile and prove| B["2. Cryptographic Seal<br/>(Core IR + hash-locked bundle)"]
+    A["1. Write Action<br/>(declare inputs, outputs, budgets)"] -->|Compile and prove| B["2. Cryptographic Seal<br/>(Core IR + hash-locked bundle)"]
     B -->|Submit bundle| C["3. Participant Admission<br/>(inspect the nutrition label)"]
     C -->|Execute safely| D["4. Sandboxed Runtime<br/>(enforced limits, auto-rollback)"]
 ```
@@ -117,7 +117,7 @@ flowchart LR
 <details>
   <summary>Caption: Edict in ten seconds</summary>
 
-  1. An author (human or AI agent) writes an *intent* declaring its inputs, outputs, effects, budget, and failure vocabulary.
+  1. An author (human or AI agent) writes an *action* declaring its inputs, outputs, effects, budget, and failure vocabulary.
   2. The compiler proves the declarations and produces a sealed, hash-identified contract bundle.
   3. A participant runtime inspects the bundle's machine-generated "nutrition label" and admits or rejects it under its own policy.
   4. If admitted, the runtime executes it inside a sandbox with enforced budgets and atomic rollback on obstruction.
@@ -169,7 +169,7 @@ The current Rust workspace has five members with a strict dependency direction: 
 
 ### 4.1 The language surface
 
-The v1 grammar admits one `package` declaration, then imports, then declarations (`type`, `enum`, `const`, `fn`, `intent` — with `const`/`fn` deferred in the current implementation), where an intent carries at-most-once clauses `profile`, `implements`, `basis`, `where`, `footprint`, `budget` [claim:C25, confidence:0.85]. The statement set is `let`, `assert`, `require`, `guarantee`, `record`, `if`, `for`, effect statements, and `return`; locals are immutable and there is no assignment statement [claim:C26, confidence:0.85].
+The v1 grammar admits one `package` declaration, then imports, then declarations (`type`, `enum`, `const`, `fn`, `action` — with `const`/`fn` deferred in the current implementation), where an action carries at-most-once clauses `profile`, `implements`, `basis`, `where`, `footprint`, `budget` [claim:C25, confidence:0.85]. The statement set is `let`, `assert`, `require`, `guarantee`, `record`, `if`, `for`, effect statements, and `return`; locals are immutable and there is no assignment statement [claim:C26, confidence:0.85].
 
 The type system is bounded everywhere: scalars are `Bool`, `I32`/`I64`/`U32`/`U64`, `String`, `Bytes`, `Digest`, `Unit` (no floats); `String<max=N, canonical=nfc>` and `Bytes<max=N>` are refined scalar forms; `List<T, max=N>` and `Map<K, V, max=N>` require finite maxima; `Option<T>` provides optionality; integer literal width and signedness are hash-significant [claim:C27, confidence:0.85]. `len(String)` counts Unicode scalars and `len(Bytes)` counts bytes, with canonicalization applied before measuring [claim:C28, confidence:0.8].
 
@@ -220,11 +220,11 @@ Compilation is deliberately staged, and tests prove the stages do not collapse i
 parse -> validate_surface -> resolve -> type_check -> lower_core -> canonicalize
 ```
 
-Surface validation (`validate_surface`) is context-free over the AST and enforces seven stable rules: `UnboundedScalar`, `MissingOperationMode`, `MissingBudget`, `MissingBasis`, `DuplicateIntentClause`, `DuplicateName`, `ShadowedName` [claim:C41, confidence:0.95]. The compiler proper (`resolve_module → type_check → lower_core`, or `compile_to_core` in one call) consumes a `CompilerContext` of *authority facts* — operation profiles, profile write-class allowances, effect write classes, and budgets — and refuses to invent any fact it was not given: a missing fact is a `MissingContextFact` error, and an effect whose write class is outside the profile's allowance is a `ProfileEffectMismatch` [claim:C42, confidence:0.95]. Those facts can be loaded from digest-bound JSON authority-facts files whose sources must be `lawpack` or `targetProfile` identities locked to a SHA-256 digest, with stable failure kinds for malformed, non-digest-locked, or conflicting facts [claim:C43, confidence:0.95].
+Surface validation (`validate_surface`) is context-free over the AST and enforces seven stable rules: `UnboundedScalar`, `MissingOperationMode`, `MissingBudget`, `MissingBasis`, `DuplicateActionClause`, `DuplicateName`, `ShadowedName` [claim:C41, confidence:0.95]. The compiler proper (`resolve_module → type_check → lower_core`, or `compile_to_core` in one call) consumes a `CompilerContext` of *authority facts* — operation profiles, profile write-class allowances, effect write classes, and budgets — and refuses to invent any fact it was not given: a missing fact is a `MissingContextFact` error, and an effect whose write class is outside the profile's allowance is a `ProfileEffectMismatch` [claim:C42, confidence:0.95]. Those facts can be loaded from digest-bound JSON authority-facts files whose sources must be `lawpack` or `targetProfile` identities locked to a SHA-256 digest, with stable failure kinds for malformed, non-digest-locked, or conflicting facts [claim:C43, confidence:0.95].
 
 ### 4.5 Core IR and canonical bytes
 
-Core IR (`edict.core/v1`) is the runtime-neutral heart: a `CoreModule` holds imports, types, and intents in `BTreeMap`s (deterministic order), and each `CoreIntent` carries input/output types, the required operation profile, typed input constraints, a three-part evaluation budget (`maxSteps`, `maxAllocatedBytes`, `maxOutputBytes`), and a body of `Let`/`Require`/`Effect` nodes [claim:C44, confidence:0.95]. Local names are **alpha-normalized**: the compiler synthesizes position-derived ids (`arg.0`/`$arg0`, `local.{n}`/`$local{n}`, `obstruction.{n}`) so your variable names never influence the hash [claim:C45, confidence:0.95]. Source spans are deliberately stripped: if they were preserved, adding a comment would shift spans, change the Core bytes, and mutate the contract's cryptographic identity — the "formatting identity hazard" [claim:C46, confidence:0.95].
+Core IR (`edict.core/v1`) is the runtime-neutral heart: a `CoreModule` holds imports, types, and actions in `BTreeMap`s (deterministic order), and each `CoreAction` carries input/output types, the required operation profile, typed input constraints, a three-part evaluation budget (`maxSteps`, `maxAllocatedBytes`, `maxOutputBytes`), and a body of `Let`/`Require`/`Effect` nodes [claim:C44, confidence:0.95]. Local names are **alpha-normalized**: the compiler synthesizes position-derived ids (`arg.0`/`$arg0`, `local.{n}`/`$local{n}`, `obstruction.{n}`) so your variable names never influence the hash [claim:C45, confidence:0.95]. Source spans are deliberately stripped: if they were preserved, adding a comment would shift spans, change the Core bytes, and mutate the contract's cryptographic identity — the "formatting identity hazard" [claim:C46, confidence:0.95].
 
 Canonical encoding is a strict CBOR subset (`edict.canonical-cbor/v1`): definite lengths only, minimal integer encodings, map keys sorted by their *encoded bytes*, duplicate keys rejected — and, unusually, canonicality is enforced on *decode* as well: the decoder re-encodes what it read and requires an exact byte match, so a non-canonical artifact cannot even be read as valid [claim:C47, confidence:0.95]. Canonical Core, Target IR, and bundle digests are domain-separated by hashing the canonical encoding of a frame `["edict.digest/v1", "<domain>", <value>]`, with domains like `edict.core.module/v1` and `edict.target-ir.artifact/v1`, and digests travel as typed `[algorithm, bytes]` pairs — hex strings like `sha256:...` are review-display forms, never hash inputs [claim:C48, confidence:0.95]. Admission-request digests intentionally use a separate labeled, length-prefixed framing rather than canonical CBOR [claim:C61, confidence:0.9].
 
@@ -232,7 +232,7 @@ Canonical encoding is a strict CBOR subset (`edict.canonical-cbor/v1`): definite
 
 Edict Core contains no storage nouns, so executing it requires **lowering** through a declared, digest-locked **target profile**. A v1 `TargetProfileManifest` declares its intrinsics, operation profiles, footprint and cost algebras, obstruction taxonomy, verifier, lowerer, sandbox, fuel model, and a fixed v1 application doctrine: `atomic` application, `application-snapshot` read consistency, `precommit-atomic` guard evaluation, and `no-visible-effects` rollback [claim:C49, confidence:0.95].
 
-Before lowering, a typed **lowerability check** classifies each intent as `Native`, `Adapted`, or `Unsupported`. V1 is strict: an effect is either natively supported by a target intrinsic or discharged by *exactly one direct* lawpack adapter — adapter chains and composite discharge are rejected outright as future v2 work, ambiguity is an error, and unsupported means a loud compiler error rather than a silent approximation [claim:C50, confidence:0.95].
+Before lowering, a typed **lowerability check** classifies each action as `Native`, `Adapted`, or `Unsupported`. V1 is strict: an effect is either natively supported by a target intrinsic or discharged by *exactly one direct* lawpack adapter — adapter chains and composite discharge are rejected outright as future v2 work, ambiguity is an error, and unsupported means a loud compiler error rather than a silent approximation [claim:C50, confidence:0.95].
 
 Two Target IR backends exist today [claim:C51, confidence:0.95]:
 
@@ -293,16 +293,16 @@ The repository's process is unusually explicit. Release gates require that "No c
 
 ### TLDR
 
-**Edict is a small, deliberately weak programming language whose compiler produces cryptographically sealed "operation contracts" instead of executables.** You write an *intent* that says "here is exactly what I read, write, spend, and how I can fail, under these hash-pinned rules." The compiler proves every claim, strips away anything cosmetic, and hashes what remains into an identity that changes if *anything meaningful* changes. A runtime later reads that contract like a nutrition label and decides — under its own policy — whether to run it. Nothing hidden can influence execution: no clock, no randomness, no host state, no silent dependency upgrades. At the original `v0.11.0-alpha.1` baseline, the language, compiler-to-Core, canonical hashing, two lowering backends, bundle assembly, and admission-boundary *checks* were real, tested Rust; the current tree also has a constrained provider-component host, while the target runtime and policy engines remain the next acts [claim:C06, confidence:1.0].
+**Edict is a small, deliberately weak programming language whose compiler produces cryptographically sealed "operation contracts" instead of executables.** You write an *action* that says "here is exactly what I read, write, spend, and how I can fail, under these hash-pinned rules." The compiler proves every claim, strips away anything cosmetic, and hashes what remains into an identity that changes if *anything meaningful* changes. A runtime later reads that contract like a nutrition label and decides — under its own policy — whether to run it. Nothing hidden can influence execution: no clock, no randomness, no host state, no silent dependency upgrades. At the original `v0.11.0-alpha.1` baseline, the language, compiler-to-Core, canonical hashing, two lowering backends, bundle assembly, and admission-boundary *checks* were real, tested Rust; the current tree also has a constrained provider-component host, while the target runtime and policy engines remain the next acts [claim:C06, confidence:1.0].
 
 ### Glossary
 
 | Terminology | Definition | Remarks |
 | --- | --- | --- |
 | **FIDLAR** | "Footprints Ignored; Developer Lies About Risk" — the gap between what a function's name promises and what its process can actually do | The founding villain of the project; also an invariant (I-007 "FIDLAR Rejection") [claim:C02, confidence:1.0] |
-| **Intent** | Edict's unit of execution: an operation declaring bounded inputs/outputs, basis, budget, footprint, profile, and failure mapping | Replaces "function"; modeled as an *optic* [claim:C03, confidence:1.0] |
-| **Aperture** | The bounded set of state an intent may read or write; in Observer Geometry terms, the *projection* — what history detail is visible to the observer | Reaching outside it is a compile-time rejection [claim:C76, confidence:0.9]. Theory keeps aperture (what is visible) orthogonal to basis (how it is expressed / where it is judged) [claim:T02, confidence:0.8] |
-| **Basis** | The causal-history anchor an intent reads from — theory calls this the *bounded basis* an admission is "judged against under explicit law," resolved to a coordinate in causal history | Must be declared, even as `basis none`; evaluated in the pure pre-body environment [claim:C12, confidence:0.9]. In the Continuum API this is the Coordinate, with determinism laws applying to the *resolved* coordinate receipt, not the request [claim:T03, confidence:0.8] |
+| **Action** | Edict's unit of execution: an operation declaring bounded inputs/outputs, basis, budget, footprint, profile, and failure mapping | Replaces "function"; modeled as an *optic* [claim:C03, confidence:1.0] |
+| **Aperture** | The bounded set of state an action may read or write; in Observer Geometry terms, the *projection* — what history detail is visible to the observer | Reaching outside it is a compile-time rejection [claim:C76, confidence:0.9]. Theory keeps aperture (what is visible) orthogonal to basis (how it is expressed / where it is judged) [claim:T02, confidence:0.8] |
+| **Basis** | The causal-history anchor an action reads from — theory calls this the *bounded basis* an admission is "judged against under explicit law," resolved to a coordinate in causal history | Must be declared, even as `basis none`; evaluated in the pure pre-body environment [claim:C12, confidence:0.9]. In the Continuum API this is the Coordinate, with determinism laws applying to the *resolved* coordinate receipt, not the request [claim:T03, confidence:0.8] |
 | **Footprint** | The read/write/delete contact set of an operation — descended from the delete/use sets of double-pushout graph rewriting, where footprint disjointness is the formal test for safe concurrency | "Delete–use interference is the only sin"; footprint honesty (computed ≤ declared) is Edict invariant I-006 [claim:T04, confidence:0.85] |
 | **WARP graph** | The substrate state object: a recursively nested graph where every node and edge can carry another WARP graph, bottoming out at atoms | "Graphs all the way down — but with a floor." Paper VII then demotes it: the graph is a coordinate chart over history, not the territory [claim:T05, confidence:0.85] |
 | **Hologram / boundary shell** | A witness-bearing boundary artifact sufficient to verify, replay, transport, or selectively reveal a slice of history without exposing its interior | The contract bundle is Edict's hologram; its direct theoretical ancestor is the content-addressed Boundary Transition Record (BTR) [claim:T06, confidence:0.85] |
@@ -336,7 +336,7 @@ mindmap
       Ambient authority
       Agent blast radius
     Language
-      Intents as optics
+      Actions as optics
       Bounded types
       A-normal form effects
       Typed obstructions
@@ -370,7 +370,7 @@ mindmap
 <details>
   <summary>Caption: Edict concept map</summary>
 
-  The project decomposes into six conceptual clusters. **Problem** motivates everything: functions lie about their footprint. **Language** is what authors touch: intents with bounded types, sequenced effects, and typed failure. **Compilation** turns source into a runtime-neutral Core IR using only externally supplied, digest-bound facts. **Identity** makes every artifact hash-stable and mutation-sensitive. **Targets** map neutral Core onto real runtimes without contaminating it. **Trust** is the outer loop: sealed bundles, machine-readable labels, participant admission, and adversarial assurance.
+  The project decomposes into six conceptual clusters. **Problem** motivates everything: functions lie about their footprint. **Language** is what authors touch: actions with bounded types, sequenced effects, and typed failure. **Compilation** turns source into a runtime-neutral Core IR using only externally supplied, digest-bound facts. **Identity** makes every artifact hash-stable and mutation-sensitive. **Targets** map neutral Core onto real runtimes without contaminating it. **Trust** is the outer loop: sealed bundles, machine-readable labels, participant admission, and adversarial assurance.
 
 </details>
 
@@ -392,8 +392,8 @@ flowchart TD
         F -->|can| T3["users.deleteAll()"]
         F -->|can| T4["network / filesystem"]
     end
-    subgraph EdictWorld["Edict intent"]
-        I["readGreeting intent"] -->|declared and proven| A["exactly: read Greeting by id"]
+    subgraph EdictWorld["Edict action"]
+        I["readGreeting action"] -->|declared and proven| A["exactly: read Greeting by id"]
         I -.->|compile error| X["anything else"]
     end
 ```
@@ -402,14 +402,14 @@ flowchart TD
   <summary>Caption: Ambient authority vs declared-and-proven authority</summary>
 
   1. The conventional function's name says "read a message thread," but the process grants it reach into every table, the network, and the filesystem — the FIDLAR gap.
-  2. The Edict intent must declare its exact read (a `Greeting` node by id) and the compiler proves the body stays within that declaration.
+  2. The Edict action must declare its exact read (a `Greeting` node by id) and the compiler proves the body stays within that declaration.
   3. Any attempt to reach further is not caught at runtime — it fails to *compile*, so the artifact never exists [claim:C03, confidence:1.0].
 
 </details>
 
-#### 5.2 Level 1 — The language: writing an intent
+#### 5.2 Level 1 — The language: writing an action
 
-An intent looks like a function but reads like a contract. Here is the effectful fixture that actually compiles in the repo today [claim:C82, confidence:1.0]:
+An action looks like a function but reads like a contract. Here is the effectful fixture that actually compiles in the repo today [claim:C82, confidence:1.0]:
 
 ```graphql
 package examples.greeting@1;
@@ -418,7 +418,7 @@ use shape "schemas/greeting.graphql" as shape;
 use lawpack greeting.optics@1 digest "sha256:00000000...00000000" as greetingLaw;
 use target echo.dpo@1 digest "sha256:11111111...11111111" as echo;
 
-intent readGreeting(input: shape.ReadGreetingInput)
+action readGreeting(input: shape.ReadGreetingInput)
   returns shape.GreetingReading
   profile echo.readOnly
   basis input.greetingId
@@ -441,7 +441,7 @@ intent readGreeting(input: shape.ReadGreetingInput)
 | --- | --- | --- |
 | `use shape "..."` | GraphQL type definitions — Edict compiles *against* your schema rather than owning it | Path-referenced |
 | `use lawpack ...` | Domain law: pure helpers, effect signatures, obstruction types, budgets | Yes, mandatory in bundles |
-| `use target ...` | The runtime profile this intent lowers through | Yes, mandatory in bundles |
+| `use target ...` | The runtime profile this action lowers through | Yes, mandatory in bundles |
 
 A fourth kind, `use capability`, exists in product sketches but is *rejected* by the v1 parser as unsupported syntax — a nice example of the project encoding its own deferrals as errors rather than silence [claim:C83, confidence:0.95].
 
@@ -520,7 +520,7 @@ classDiagram
       coordinate
       imports: Vec~CoreImport~
       types: BTreeMap
-      intents: BTreeMap
+      actions: BTreeMap
       required_core_capabilities
     }
     class CoreImport {
@@ -533,7 +533,7 @@ classDiagram
       digest: Option~sha256~
       is_digest_locked()
     }
-    class CoreIntent {
+    class CoreAction {
       input / output
       required_operation_profile
       input_constraints
@@ -571,9 +571,9 @@ classDiagram
 
     CoreModule --> CoreImport
     CoreImport --> ResourceRef
-    CoreModule --> CoreIntent
-    CoreIntent --> CoreBudget
-    CoreIntent --> CoreBlock
+    CoreModule --> CoreAction
+    CoreAction --> CoreBudget
+    CoreAction --> CoreBlock
     CoreBlock --> CoreNode
     CoreNode --> EffectNode
     EffectNode --> CoreObstructionArm
@@ -587,7 +587,7 @@ classDiagram
   | --- | --- |
   | `CoreModule` | The hashable unit; `BTreeMap` collections give deterministic iteration order for free [claim:C44, confidence:0.95] |
   | `ResourceRef` | Every external reference carries a coordinate plus an optional digest; `is_digest_locked()` demands a valid `sha256:` review digest |
-  | `CoreIntent` | Carries the contract (profile, constraints, budget) alongside the body |
+  | `CoreAction` | Carries the contract (profile, constraints, budget) alongside the body |
   | `CoreBudget` | The portable three-axis budget: steps, peak allocated bytes, output bytes [claim:C86, confidence:0.9] |
   | `CoreNode::Effect` | The semantic effect node: a binding, an effect coordinate, one input, and a `BTreeMap` obstruction map |
   | `LocalRef` | Alpha-normalized: ids are position-derived (`arg.0`, `local.3`, `obstruction.1`), so renaming a source variable cannot change the hash [claim:C45, confidence:0.95] |
@@ -628,7 +628,7 @@ Core IR deliberately contains no storage nouns — "Core contains laws of physic
 
 ```mermaid
 flowchart TD
-    E["Semantic effect required by intent"] --> N{"Native intrinsic<br/>in target profile?"}
+    E["Semantic effect required by action"] --> N{"Native intrinsic<br/>in target profile?"}
     N -->|"exactly one, guards satisfied"| NAT["Native"]
     N -->|"multiple match"| AMB1["Error: AmbiguousNativeSupport"]
     N -->|none| A{"Direct lawpack adapter<br/>for this target?"}
@@ -648,7 +648,7 @@ flowchart TD
 
 </details>
 
-The two shipped backends make the neutrality concrete: the same Core module lowers to `echo.span-ir/v1` for the Echo runtime and to `gitwarp.commit-reducer-ir/v1` for git-warp — and the git-warp profile honestly declares it does not support `require` guards, so intents using them refuse to lower rather than degrade [claim:C51, confidence:0.95].
+The two shipped backends make the neutrality concrete: the same Core module lowers to `echo.span-ir/v1` for the Echo runtime and to `gitwarp.commit-reducer-ir/v1` for git-warp — and the git-warp profile honestly declares it does not support `require` guards, so actions using them refuse to lower rather than degrade [claim:C51, confidence:0.95].
 
 #### 5.6 Level 5 — Trust: bundles, admission, and the YOLO lane
 
@@ -808,13 +808,13 @@ flowchart LR
         P7["Paper VII<br/>WARP optic 5-tuple,<br/>commitment / folding / revelation"]
         P8["Paper VIII / Continuum<br/>admission, four outcomes,<br/>evidence posture"]
         OG1["OG-I<br/>projection, basis,<br/>degeneracy, budgets"]
-        OG2["OG-II<br/>suffix transport,<br/>intent-loss floor"]
+        OG2["OG-II<br/>suffix transport,<br/>action-loss floor"]
         OG3["OG-III<br/>support ledger,<br/>witness debt, holonomy"]
     end
     subgraph Edict["Edict constructs"]
         FP["footprint clause +<br/>write-class checks"]
         CB["contract bundle +<br/>digest pinning"]
-        INT["intent = optic<br/>(profile, budget, basis, law)"]
+        INT["action = optic<br/>(profile, budget, basis, law)"]
         ADM["Gate C admission +<br/>typed obstructions"]
         BAS["basis clause +<br/>aperture + budget"]
         OBS["obstruction strands"]
@@ -835,11 +835,11 @@ flowchart LR
   | Theory source | What it defines | The Edict construct it grounds |
   | --- | --- | --- |
   | Paper II (ticks) | Read/write (delete/use) footprints as the formal independence test for safe concurrency; tick confluence; deterministic scheduler; descriptive receipts | The `footprint` clause, write-class checking, and determinism-as-contract. FIDLAR's "Footprints Ignored" is a literal Paper II accusation, not a metaphor [claim:T04, confidence:0.85] |
-  | Paper III (holography) | The bulk/boundary split: full history reconstructible from initial state + tick patches; the prescriptive patch ("what happened") vs descriptive receipt ("why") split; content-addressed Boundary Transition Records | The contract bundle (Edict's BTR/hologram), the hash ladder, and the intent/witness envelope separation. The "anti-tautology" — holography holds only when patches pin every choice — is the formal reason Edict digest-locks lawpacks, targets, and bases [claim:T06, confidence:0.85] [claim:T11, confidence:0.8] |
-  | Paper VII (optics) | The WARP optic five-tuple; the one act at every scale; the commitment/folding/revelation plane split; "there is no graph" | The intent as optic; the revelation-vs-affect intent classes; runtime-neutral Core ("no storage nouns" because storage is a *reading*, not a substrate) [claim:T01, confidence:0.85] |
+  | Paper III (holography) | The bulk/boundary split: full history reconstructible from initial state + tick patches; the prescriptive patch ("what happened") vs descriptive receipt ("why") split; content-addressed Boundary Transition Records | The contract bundle (Edict's BTR/hologram), the hash ladder, and the action/witness envelope separation. The "anti-tautology" — holography holds only when patches pin every choice — is the formal reason Edict digest-locks lawpacks, targets, and bases [claim:T06, confidence:0.85] [claim:T11, confidence:0.8] |
+  | Paper VII (optics) | The WARP optic five-tuple; the one act at every scale; the commitment/folding/revelation plane split; "there is no graph" | The action as optic; the revelation-vs-affect action classes; runtime-neutral Core ("no storage nouns" because storage is a *reading*, not a substrate) [claim:T01, confidence:0.85] |
   | Paper VIII (Continuum) | Admission as "a runtime-owned, witnessed act judged against a bounded basis under explicit law"; four canonical outcomes `Derived / Plural / Conflict / Obstruction`; evidence posture lattice; obstruction witnesses as "causal teaching artifacts" for agents | Gate C, typed obstruction outcomes, the participant-neutral bundle, and the whole YOLO lane posture [claim:T09, confidence:0.85] [claim:T12, confidence:0.8] |
   | OG-I | Projection (aperture) vs basis (native expression) vs accumulation as orthogonal observer axes; degeneracy; budget elasticity | The `basis` and `budget` clauses; why aperture and basis are separate declarations [claim:T02, confidence:0.8] |
-  | OG-II | Suffix transport without rollback; the last-write-wins "intent-recovery insufficiency floor" — silent merges permanently erase intent | Obstruction strands: preserving a blocked attempt as first-class causal material is exactly how a system avoids the insufficiency floor [claim:T13, confidence:0.8] |
+  | OG-II | Suffix transport without rollback; the last-write-wins "action-recovery insufficiency floor" — silent merges permanently erase action | Obstruction strands: preserving a blocked attempt as first-class causal material is exactly how a system avoids the insufficiency floor [claim:T13, confidence:0.8] |
   | OG-III | The four-compartment support ledger (carried/declared-lost/blocked/refuting); witness holonomy (loop defect); witness debt; hallucination as structural overreport | The Aperture Ledger's support-carried/lost/blocked/refuting fields and witness-debt vocabulary in the Edict spec [claim:T07, confidence:0.85] [claim:T08, confidence:0.85] |
 
 </details>
@@ -850,7 +850,7 @@ Three consequences of the theory are worth spelling out, because they sharpen cl
 2. **Determinism is conditional, and the conditions are exactly what Edict pins.** In Paper II, a state admits many candidate rewrites; determinism holds once the batch (scheduler policy) is fixed. In the Continuum API, determinism laws apply to the *resolved* coordinate, not the request. Edict's obsessive digest-locking of lawpacks, target profiles, bases, and compiler facts is the language-level enforcement of those conditions — the "anti-tautology" that a sealed artifact only means replay if its boundary is sufficient and stable [claim:T11, confidence:0.8] [claim:T03, confidence:0.8].
 3. **Obstruction is pedagogy, not just failure.** Continuum frames the machine-readable obstruction witness as a "causal teaching artifact" that an agent uses to refine its next attempt. That reframes Edict's typed obstructions and obstruction strands: they are the feedback channel of the lawful-autonomous loop, which is why they must be typed, structured, and preserved rather than collapsed into exceptions [claim:T12, confidence:0.8].
 
-There is also real Edict source circulating in the theory corpus itself — a `task.edit_document@1` intent with a `require jim.basisFresh(input.basis) else ... StaleBase` optimistic-concurrency guard and a typed `EditReceipt | EditObstruction` return union — confirming that the README's aspirational `createEntry` example reflects a syntax already being exercised in cross-project design work [claim:T14, confidence:0.8].
+There is also real Edict source circulating in the theory corpus itself — a `task.edit_document@1` action with a `require jim.basisFresh(input.basis) else ... StaleBase` optimistic-concurrency guard and a typed `EditReceipt | EditObstruction` return union — confirming that the README's aspirational `createEntry` example reflects a syntax already being exercised in cross-project design work [claim:T14, confidence:0.8].
 
 ---
 
@@ -869,7 +869,7 @@ Beyond the headline design, the codebase is full of small, sharp decisions worth
 | 7 | **Nesting is load-bearing in preimages** — tests assert `DigestList([A,B])` hashes differently from `[Digest(A), Digest(B)]` [claim:C56, confidence:0.95] | Digest preimages are typed structures, not concatenated bytes; classic length-extension-style ambiguities are structurally impossible |
 | 8 | **Coordinate changes move digests even with identical bytes** — a toolchain's *identity* is part of the release preimage [claim:C56, confidence:0.95] | "Same bytes, different claimed origin" is a detectable supply-chain event |
 | 9 | **Requirements must precede effects** — Target IR rejects any `require` placed after a step or reading a step output [claim:C52, confidence:0.9] | Guards are provably pre-effect; no interleaved check-then-act ambiguity survives lowering |
-| 10 | **`basis none` must be said out loud** — every intent declares its causal anchor, even the empty one [claim:C12, confidence:0.9] | Absence of history-dependence is a claim, not a default |
+| 10 | **`basis none` must be said out loud** — every action declares its causal anchor, even the empty one [claim:C12, confidence:0.9] | Absence of history-dependence is a claim, not a default |
 | 11 | **The repo audits itself in-tree** — dated code-quality, documentation-quality, and ship-readiness audits live in `docs/audit/` [claim:C99, confidence:0.9] | Ship-readiness is versioned evidence, like everything else here |
 | 12 | **Docs are executable** — topic-shelf READMEs are wired in as doctests, and `cargo xtask verify` checks golden bytes, digests, topic contracts, and link hygiene in one gate [claim:C100, confidence:0.9] | Documentation drift fails the build instead of accumulating |
 | 13 | **Spec aphorisms** — "A theorem the IR cannot represent is a wish"; "Core contains laws of physics, not furniture"; "A prose ABI is not yet an ABI" [claim:C88, confidence:0.85] | The specs read like they were written to be quoted — and each aphorism encodes a real invariant |
@@ -935,7 +935,7 @@ Most file citations pin the original report baseline, git sha `56f82ec` (`56f82e
 | --- | --- | --- | --- | --- |
 | C01 | Edict is a secure DSL where the compiler, not trust, verifies what code may do | `README.md#3@56f82ec`, `README.md#5@56f82ec` | 1.0 | Read directly |
 | C02 | FIDLAR = "Footprints Ignored; Developer Lies About Risk"; also invariant I-007 | `README.md#62@56f82ec`, `docs/SPEC_edict-language-v1.md#986@56f82ec` | 1.0 | Spec never expands the acronym; README does |
-| C03 | An intent declares reads, writes, cost, failure modes, and governing law; compiler verifies before admission | `README.md#107-118@56f82ec` | 1.0 | |
+| C03 | An action declares reads, writes, cost, failure modes, and governing law; compiler verifies before admission | `README.md#107-118@56f82ec` | 1.0 | |
 | C04 | Compilation output is a contract bundle whose identity is a hash over every layer | `README.md#255-283@56f82ec`, `crates/edict-syntax/src/contract_bundle.rs#428-452@56f82ec` | 0.98 | |
 | C05 | YOLO = "You Only Lawfully Operate", codename for `continuum.lane.lawful-autonomous/v1`; six-step precondition list for autonomous execution | `README.md#353-381@56f82ec`, `docs/SPEC_edict-language-v1.md#135@56f82ec` | 0.97 | Spec lane coordinate verified at section level |
 | C06 | At the baseline, v0.11.0-alpha.1 implemented the front end through bundle assembly and had no executable WASM sandbox; the current tree adds a capability-denied Wasmtime host for provider components, while target-runtime execution and participant policy remain unimplemented | `README.md#16-25@56f82ec`, `README.md#624-643@56f82ec`, `ARCHITECTURE.md#109-121@c75c3f5`, `ARCHITECTURE.md#187-193@c75c3f5`, `ARCHITECTURE.md#218-229@c75c3f5` | 1.0 | Historical baseline plus explicit current-tree correction |
@@ -944,7 +944,7 @@ Most file citations pin the original report baseline, git sha `56f82ec` (`56f82e
 | C09 | Imports are pinned to SHA-256 digests; drift changes identity | `README.md#193-196@56f82ec`, `crates/edict-syntax/src/parser.rs#163-168@56f82ec` | 1.0 | Parser enforces `sha256:` + 64 hex |
 | C10 | Unbounded String/Bytes rejected; bounds enable max-memory computation | `crates/edict-syntax/src/semantic.rs#311-320@56f82ec`, `docs/TECHNICAL_EXPLANATION.md#641-647@56f82ec` | 0.95 | |
 | C11 | Profile claims are checked against effect write classes; mismatch fails compilation | `crates/edict-syntax/src/compiler.rs#1047-1087@56f82ec`, `README.md#199-204@56f82ec` | 0.95 | |
-| C12 | Every intent must declare a basis; `basis none` is the explicit no-basis form; basis is evaluated pure | `crates/edict-syntax/src/semantic.rs#253-259@56f82ec`, `crates/edict-syntax/src/parser.rs#818-824@56f82ec`, `docs/SPEC_edict-language-v1.md#1785@56f82ec` | 0.95 | |
+| C12 | Every action must declare a basis; `basis none` is the explicit no-basis form; basis is evaluated pure | `crates/edict-syntax/src/semantic.rs#253-259@56f82ec`, `crates/edict-syntax/src/parser.rs#818-824@56f82ec`, `docs/SPEC_edict-language-v1.md#1785@56f82ec` | 0.95 | |
 | C13 | Budget is a mandatory declared ceiling | `crates/edict-syntax/src/semantic.rs#246-252@56f82ec` | 0.95 | |
 | C14 | `where` predicates become typed input constraints, hash-significant in Core | `crates/edict-syntax/src/compiler.rs#658-680@56f82ec`, `docs/SPEC_edict-language-v1.md#1763@56f82ec` | 0.9 | |
 | C15 | String concatenation bound = sum of operand maxima | `crates/edict-syntax/src/compiler.rs#1695-1725@56f82ec`, `docs/SPEC_edict-language-v1.md#1597@56f82ec` | 0.9 | |
@@ -957,7 +957,7 @@ Most file citations pin the original report baseline, git sha `56f82ec` (`56f82e
 | C22 | Stack layering: GraphQL → Wesley → Edict → Core → targets → Continuum → runtimes | `README.md#453-470@56f82ec` | 0.95 | |
 | C23 | Current five-member workspace adds provider schema and Wasmtime host crates with one-way dependency boundaries | `Cargo.toml#1-15@c75c3f5`, `ARCHITECTURE.md#8-25@c75c3f5` | 1.0 | Current workspace map |
 | C24 | edict-syntax's breadth is acknowledged; layered crate split planned (not a rename) | `ARCHITECTURE.md#23-45@56f82ec`, `docs/design/crate-scope-v0.11.md#1@56f82ec` | 1.0 | |
-| C25 | Grammar: package, imports, type/enum/const/fn/intent; at-most-once intent clauses | `docs/SPEC_edict-language-v1.md#1329@56f82ec`, `crates/edict-syntax/src/ast.rs#173-182@56f82ec` | 0.85 | `const`/`fn` deferred in impl per `crates/edict-syntax/src/lib.rs#31-37@56f82ec` |
+| C25 | Grammar: package, imports, type/enum/const/fn/action; at-most-once action clauses | `docs/SPEC_edict-language-v1.md#1329@56f82ec`, `crates/edict-syntax/src/ast.rs#173-182@56f82ec` | 0.85 | `const`/`fn` deferred in impl per `crates/edict-syntax/src/lib.rs#31-37@56f82ec` |
 | C26 | Statement set: let/assert/require/guarantee/record/if/for/effect/return; locals immutable | `docs/SPEC_edict-language-v1.md#1329@56f82ec`, `docs/SPEC_edict-language-v1.md#1700@56f82ec`, `crates/edict-syntax/src/ast.rs#193-246@56f82ec` | 0.85 | `record` statement not yet parsed in impl |
 | C27 | Type system: Bool/I32/I64/U32/U64/String/Bytes/Digest/Unit, no floats; refined scalars; bounded List/Map; Option; hash-significant int widths | `docs/SPEC_edict-language-v1.md#1578@56f82ec`, `docs/SPEC_edict-language-v1.md#1272@56f82ec`, `crates/edict-syntax/src/ast.rs#122-144@56f82ec` | 0.85 | |
 | C28 | len(String) counts Unicode scalars; len(Bytes) counts bytes (EDICT-LANG-LEN-001) | `docs/SPEC_edict-language-v1.md#1597@56f82ec` | 0.8 | |
@@ -976,7 +976,7 @@ Most file citations pin the original report baseline, git sha `56f82ec` (`56f82e
 | C41 | validate_surface enforces 7 stable rules | `crates/edict-syntax/src/semantic.rs#13-22@56f82ec` | 0.95 | |
 | C42 | CompilerContext holds 4 fact maps; MissingContextFact / ProfileEffectMismatch semantics | `crates/edict-syntax/src/compiler.rs#56-66@56f82ec`, `crates/edict-syntax/src/compiler.rs#1047-1087@56f82ec` | 0.95 | |
 | C43 | Authority facts: digest-bound JSON, lawpack/targetProfile sources, 9 stable failure kinds, conflict detection | `crates/edict-syntax/src/authority_facts.rs#70-81@56f82ec`, `crates/edict-syntax/src/authority_facts.rs#275-282@56f82ec`, `crates/edict-syntax/src/authority_facts.rs#351-370@56f82ec` | 0.95 | |
-| C44 | CoreModule/CoreIntent structure with BTreeMaps and three-part budget | `crates/edict-syntax/src/core_ir.rs#13-21@56f82ec`, `crates/edict-syntax/src/core_ir.rs#189-205@56f82ec` | 0.95 | |
+| C44 | CoreModule/CoreAction structure with BTreeMaps and three-part budget | `crates/edict-syntax/src/core_ir.rs#13-21@56f82ec`, `crates/edict-syntax/src/core_ir.rs#189-205@56f82ec` | 0.95 | |
 | C45 | Alpha-normalized locals: arg.0/$arg0, local.n, obstruction.n | `crates/edict-syntax/src/core_ir.rs#108-114@56f82ec`, `crates/edict-syntax/src/compiler.rs#636-640@56f82ec`, `crates/edict-syntax/src/compiler.rs#1685-1693@56f82ec` | 0.95 | |
 | C46 | Spans stripped from Core IR to avoid the formatting identity hazard | `docs/TECHNICAL_EXPLANATION.md#666-683@56f82ec`, `crates/edict-syntax/src/token.rs#10-16@56f82ec` | 0.95 | |
 | C47 | Canonical CBOR: minimal ints, byte-sorted map keys, duplicate rejection, decode-side canonicality enforcement | `crates/edict-syntax/src/canonical.rs#1056-1075@56f82ec`, `crates/edict-syntax/src/canonical.rs#1107-1136@56f82ec`, `crates/edict-syntax/src/canonical.rs#424-451@56f82ec` | 0.95 | |
@@ -1046,7 +1046,7 @@ Citations prefixed `agy:` refer to files in the `agy-readings` corpus at commit 
 
 | Claim ID | Claim | Citation(s) | Confidence | Notes |
 | --- | --- | --- | --- | --- |
-| T01 | A WARP optic is a five-part control structure Ψ = (observer plan Ω, aperture χ, claim-lowering surface ρ, admissibility law Π, retention contract Λ) performing "Slice. Lower. Witness. Retain."; an Edict intent encodes that tuple | `agy:paper-7-summary.md#28@25ff542`, `agy:braid-optics-design.md#15-18@25ff542`, `agy:onramp-aion-07-its-all-optics.md#29-39@25ff542` | 0.85 | Five-tuple corroborated in two documents; component letter-assignments vary slightly between them |
+| T01 | A WARP optic is a five-part control structure Ψ = (observer plan Ω, aperture χ, claim-lowering surface ρ, admissibility law Π, retention contract Λ) performing "Slice. Lower. Witness. Retain."; an Edict action encodes that tuple | `agy:paper-7-summary.md#28@25ff542`, `agy:braid-optics-design.md#15-18@25ff542`, `agy:onramp-aion-07-its-all-optics.md#29-39@25ff542` | 0.85 | Five-tuple corroborated in two documents; component letter-assignments vary slightly between them |
 | T02 | Observer Geometry keeps projection/aperture (what is visible), basis (native expression vocabulary), and accumulation (aggregation over history) as orthogonal observer axes; degeneracy = how many histories collapse to one trace | `agy:og-1-summary.md#18-20@25ff542`, `agy:observer-geometry-overview.md#27-37@25ff542` | 0.8 | Edict's `basis` clause uses the Paper VIII "bounded basis" sense (see T03), not the OG-I trace-vocabulary sense — a naming subtlety worth a docs note |
 | T03 | Admission is "a runtime-owned, witnessed act judged against a bounded basis under explicit law"; determinism laws apply to the resolved coordinate (receipt), not the request | `agy:paper-8-summary.md#21@25ff542`, `agy:WARP-CONTINUUM-APIs.md#148-158@25ff542` | 0.8 | |
 | T04 | Footprints originate in Paper II's double-pushout rewriting as delete/use sets; disjoint footprints are the formal independence test enabling confluent parallel execution ("delete–use interference is the only sin") | `agy:paper-2-summary.md#15@25ff542`, `agy:onramp-aion-02-ticks.md#62-73@25ff542`, `agy:og-2-summary.md#17@25ff542` | 0.85 | Grounds Edict invariant I-006 (footprint honesty) and gives FIDLAR's "Footprints Ignored" its technical bite |
@@ -1056,10 +1056,10 @@ Citations prefixed `agy:` refer to files in the `agy-readings` corpus at commit 
 | T08 | Witness debt = the gap between emitted report and justified status; hallucination is structurally defined as overreporting beyond carried support | `agy:og-3-summary.md#23-34@25ff542`, `agy:observer-geometry-overview.md#45@25ff542` | 0.85 | Formally checked in Coq/Rocq per the summaries |
 | T09 | Continuum defines four canonical admission/lowering outcomes — Derived, Plural, Conflict, Obstruction — with plurality and conflict as first-class honest results; the Continuum app API mirrors this as `Accepted/Plural/Conflict/Obstruction` and `Observed/Plural/Conflict/Obstructed` | `agy:paper-8-summary.md#30@25ff542`, `agy:aion-overview.md#65@25ff542`, `agy:onramp-aion-07-its-all-optics.md#33@25ff542`, `agy:WARP-CONTINUUM-APIs.md#559@25ff542` | 0.85 | Corroborated in four documents; resolves this report's original "pluralize" evidence gap |
 | T10 | AION's core inversion: history is the primary immutable artifact; current state is a materialized view projected from it | `agy:aion-overview.md#8@25ff542` | 0.85 | |
-| T11 | Computational holography (bulk reconstructible from initial state + tick patches) holds only when patches are sufficient and stable — every choice pinned, nothing outside the declared boundary ("the anti-tautology") — which is the formal justification for Edict's digest pinning; Paper III also predicts "what happened" and "why" become *intent* and *witness* in separate envelopes | `agy:onramp-aion-03-holography.md#53-75@25ff542`, `agy:paper-3-summary.md#20-21@25ff542` | 0.8 | |
+| T11 | Computational holography (bulk reconstructible from initial state + tick patches) holds only when patches are sufficient and stable — every choice pinned, nothing outside the declared boundary ("the anti-tautology") — which is the formal justification for Edict's digest pinning; Paper III also predicts "what happened" and "why" become *action* and *witness* in separate envelopes | `agy:onramp-aion-03-holography.md#53-75@25ff542`, `agy:paper-3-summary.md#20-21@25ff542` | 0.8 | |
 | T12 | Agents interacting through Continuum receive machine-readable "obstruction witnesses" as "causal teaching artifacts" to refine behavior | `agy:paper-8-summary.md#37@25ff542` | 0.8 | Reframes Edict obstructions as the feedback channel of the lawful-autonomous loop |
-| T13 | OG-II proves silent last-write-wins merges create a permanent "intent-recovery insufficiency floor"; only preserving conflict/authored acts as first-class objects avoids it | `agy:og-2-summary.md#29@25ff542`, `agy:observer-geometry-overview.md#38@25ff542` | 0.8 | The theoretical case for Edict's obstruction strands |
-| T14 | Real Edict source exists in cross-project design docs: a `task.edit_document@1` intent with pinned digests, `budget <=`, a `require jim.basisFresh(input.basis) else ... StaleBase` guard, effect-level `else` obstructions, and a typed `EditReceipt` &#124; `EditObstruction` return union | `agy:agy/continuum-receipts.md#12-46@25ff542` | 0.8 | Matches the README's aspirational `createEntry` syntax family |
+| T13 | OG-II proves silent last-write-wins merges create a permanent "action-recovery insufficiency floor"; only preserving conflict/authored acts as first-class objects avoids it | `agy:og-2-summary.md#29@25ff542`, `agy:observer-geometry-overview.md#38@25ff542` | 0.8 | The theoretical case for Edict's obstruction strands |
+| T14 | Real Edict source exists in cross-project design docs: a `task.edit_document@1` action with pinned digests, `budget <=`, a `require jim.basisFresh(input.basis) else ... StaleBase` guard, effect-level `else` obstructions, and a typed `EditReceipt` &#124; `EditObstruction` return union | `agy:agy/continuum-receipts.md#12-46@25ff542` | 0.8 | Matches the README's aspirational `createEntry` syntax family |
 | T15 | The PROVE-IT evidence ladder runs L0 (agent assertion) → L1 (signed receipt) → L2 (history inclusion proof, "minimum serious alpha requirement") → L3 (holographic witness capsule) → L4 (challenge replay) → L5 (proof-carrying transition); the "buildable Continuum" rests on L2+L3+signature | `agy:agy/continuum-receipts.md#57-84@25ff542` | 0.8 | |
 | T16 | The evidence posture lattice spans origin, proof strength, access, and completeness dimensions; Paper VI defines FULL/ZK/OPAQUE provenance tiers; Paper VII's commitment/folding/revelation split enables "perfect provenance and real privacy at the same time" | `agy:paper-8-summary.md#32@25ff542`, `agy:paper-6-summary.md#28@25ff542`, `agy:onramp-aion-07-its-all-optics.md#94-96@25ff542` | 0.75 | Speculative as an *Edict roadmap* claim; well-attested as theory |
 
@@ -1095,14 +1095,14 @@ Citations prefixed `agy:` refer to files in the `agy-readings` corpus at commit 
 
 **The bundle is a hologram — and calling it a "receipt" anywhere would be a category error.** The theory keeps three artifacts rigorously apart: the descriptive *receipt* (why, audit-grade), the prescriptive *patch* (what, replay-grade), and the sealed *hologram/BTR* (boundary, transport-grade). Edict's code already respects this (bundles exclude admission artifacts; receipts are admission-side), but as prose accumulates, that three-way distinction is the easiest one to blur. It might deserve its own topic shelf.
 
-**Obstruction strands are OG-II's theorem wearing work clothes.** The "intent-recovery insufficiency floor" — silent merges permanently erase intent — is, to me, the single most practical result in the whole corpus, and `require ... else continue obstructed { reason: ... }` is its direct engineering consequence: never collapse an authored attempt, preserve it as repairable causal material. I'd surface that lineage in the obstruction-strands design note; it upgrades the feature from "nice error handling" to "provably necessary."
+**Obstruction strands are OG-II's theorem wearing work clothes.** The "action-recovery insufficiency floor" — silent merges permanently erase action — is, to me, the single most practical result in the whole corpus, and `require ... else continue obstructed { reason: ... }` is its direct engineering consequence: never collapse an authored attempt, preserve it as repairable causal material. I'd surface that lineage in the obstruction-strands design note; it upgrades the feature from "nice error handling" to "provably necessary."
 
 ### B.3 Ideas and brainstorms
 
 1. **Moriarty is measuring holonomy — say so.** OG-III's loop defect measures how evidence degrades around a translation loop. Moriarty's hash-impact matrix is exactly a discrete holonomy measurement over the artifact graph: mutate, propagate, and check which digests move. Formalizing the matrix as "digest holonomy must be zero on semantics-preserving loops and provably nonzero on semantic mutations" would give Moriarty a crisp mathematical spec — and might surface canonicalization bugs as *loop defects* rather than ad-hoc test failures.
 2. **Watson should carry a support ledger.** If Watson is ever implemented over an LLM, OG-III hands you its compliance test for free: every explanation is an emitted report, so require Watson to attach the support ledger (carried/lost/blocked/refuting) for each remedial claim, and reject explanations with nonzero witness debt. "The explainer may not hallucinate" becomes a checkable property, not a hope. A `watson.explanation/v1` schema with mandatory per-claim support references would be a striking first.
 3. **Nutrition labels could advertise witness debt = 0.** The label already reports profile, budget, footprint, obstructions. Adding an evidence-posture line (origin / proof strength / access / completeness, per the Paper VIII lattice) and an explicit "witness debt: none — every claim below is compiler-derived" would make the label's own trustworthiness self-describing.
-4. **Budget elasticity as a v2 budget refinement.** OG-I models observers with *budget elasticity* — how much more they recover as budgets grow. Edict budgets today are scalar ceilings. An elasticity-aware budget ("this intent degrades gracefully: at half budget it returns a coarser reading") would let participants admit operations at negotiated resolution instead of binary accept/reject. That pairs naturally with the accept-with-lowered-ceilings outcome already in the admission spec.
+4. **Budget elasticity as a v2 budget refinement.** OG-I models observers with *budget elasticity* — how much more they recover as budgets grow. Edict budgets today are scalar ceilings. An elasticity-aware budget ("this action degrades gracefully: at half budget it returns a coarser reading") would let participants admit operations at negotiated resolution instead of binary accept/reject. That pairs naturally with the accept-with-lowered-ceilings outcome already in the admission spec.
 5. **Adopt the four-outcome coproduct at the Edict admission boundary.** The repo's admission spec models accept/reject/lower; the theory's `Derived | Plural | Conflict | Obstruction` is richer and already leaked into the README. When v0.12's admission harness lands, aligning the receipt decision taxonomy with the Continuum coproduct early would avoid a painful migration later — exhaustive-match handling of all four outcomes is exactly the kind of law (`Exhaustive Admission`) the Continuum API notes already state.
 6. **The two-lowerer trial is a rulial-distance experiment.** Paper IV defines translation cost between observers; two independent lowerers producing byte-identical Target IR is a demonstration that the semantic digest sits at rulial distance zero between two implementations. Framing conformance that way suggests a generalization: *measure* the divergence when they disagree (where in the artifact, under which mutation class) instead of just failing — a diagnostic gold mine for canonicalization work.
 7. **Obstruction strands will eventually meet Paper VI.** If agents' blocked attempts are preserved as first-class causal material, then strands are behavioral records of an agent's decision-making — precisely the material provenance sovereignty exists to protect. A future where strand payloads support ZK/OPAQUE tiers ("prove the strand exists and is repairable, without revealing the attempt's content") feels less like speculation and more like an inevitable v3 issue.
@@ -1134,7 +1134,7 @@ printf '%s\n%s\n' \
 
 ### Lab 2 — Sloppy source, three typed diagnostics (exit 1)
 
-Feed it an inline source with an unbounded `String` and an intent missing its `budget` and `basis` clauses:
+Feed it an inline source with an unbounded `String` and an action missing its `budget` and `basis` clauses:
 
 ```graphql
 package examples.broken@1;
@@ -1143,7 +1143,7 @@ type Sloppy = {
   name: String,        // unbounded — not allowed
 };
 
-intent greet(input: Sloppy)
+action greet(input: Sloppy)
   returns Sloppy
   profile hello.readOnly
 {
@@ -1161,7 +1161,7 @@ All three violations are reported in one pass, on stderr, with byte spans:
 ```
 
 The spans are structured but not yet surgical insertion points. In this
-transcript, both missing-clause diagnostics share the broad intent-body span
+transcript, both missing-clause diagnostics share the broad action-body span
 `64..168`; consumers should not assume that every missing clause receives a
 distinct, exact source location.
 
@@ -1197,7 +1197,7 @@ Ask the unreleased `project` operation for Core IR *without* supplying authority
 Supply the facts in `compilerContext` — a read-only profile for `hello.readOnly` and a `{maxSteps: 64, maxAllocatedBytes: 4096, maxOutputBytes: 1024}` budget for `hello.tinyBudget` — and the same request yields a live Core review and a canonical digest:
 
 ```json
-{"schema":"edict.projection.core/v1","state":"available","digest":"sha256:f8243875a77aa3cc8f02529e2c8b18e183ed6b02ad5f6fd6d0795c6ad532ce85","review":{"apiVersion":"edict.core/v1","coordinate":"examples.hello@1","intents":{"sayHello":{"body":{"locals":[{"alphaName":"$arg0","id":"arg.0","ty":"examples.hello@1.HelloInput"},{"alphaName":"$local0","id":"local.0","ty":"String<max=263,canonical=raw-utf8>"}],"...":"..."}}}}}
+{"schema":"edict.projection.core/v1","state":"available","digest":"sha256:f8243875a77aa3cc8f02529e2c8b18e183ed6b02ad5f6fd6d0795c6ad532ce85","review":{"apiVersion":"edict.core/v1","coordinate":"examples.hello@1","actions":{"sayHello":{"body":{"locals":[{"alphaName":"$arg0","id":"arg.0","ty":"examples.hello@1.HelloInput"},{"alphaName":"$local0","id":"local.0","ty":"String<max=263,canonical=raw-utf8>"}],"...":"..."}}}}}
 ```
 
 Two details in that review are worth savoring. The locals are the alpha-normalized `$arg0` / `$local0` — your variable names are already gone. And the concatenation `"hello, " + input.name` was typed `String<max=263>`: the compiler summed the literal's length (7) and the input's bound (256). Bounds are arithmetic, not annotations.
@@ -1230,7 +1230,7 @@ use target  <pkg>@<ver> digest "sha256:<64hex>" as <alias>;
 type <Name> = { field: Type, ... };                  // record | variant | ref
 enum <Name> { Case1, Case2 }
 
-intent <name>(input: <Type>)
+action <name>(input: <Type>)
   returns <Type>                                     // may be a union: Reading | Obstruction
   profile <alias>.<profile>                          // and/or implements
   basis <expr> | basis none                          // mandatory
@@ -1268,7 +1268,7 @@ intent <name>(input: <Type>)
 | Family | Codes |
 | --- | --- |
 | Parser (19) | `Lex`, `ExpectedToken`, `ExpectedKeyword`, `ExpectedIdentifier`, `ExpectedExpression`, `InvalidInteger`, `InvalidDigest`, `InvalidVersion`, `ReservedKeyword`, `UnsupportedSyntax`, `InvalidName`, `EmptyEnum`, `EmptyObstructionMap`, `EmptyMatch`, `MissingRequiredField`, `DuplicateField`, `NonCallEffect`, `ReturnInYieldBlock`, `InvalidTypeCall` |
-| Semantic (7) | `UnboundedScalar`, `MissingOperationMode`, `MissingBudget`, `MissingBasis`, `DuplicateIntentClause`, `DuplicateName`, `ShadowedName` |
+| Semantic (7) | `UnboundedScalar`, `MissingOperationMode`, `MissingBudget`, `MissingBasis`, `DuplicateActionClause`, `DuplicateName`, `ShadowedName` |
 | Compiler (10) | `SurfaceValidation`, `MissingContextFact`, `UnsupportedSourceShape`, `UnresolvedType`, `UnknownField`, `TypeMismatch`, `ExpectedPredicate`, `ProfileEffectMismatch`, `DuplicateObstructionFailure`, `DuplicateObstructionPayloadField` |
 | CLI exit codes | `0` ok · `1` compiler/validation diagnostics · `2` invalid CLI input |
 

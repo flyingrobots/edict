@@ -44,7 +44,7 @@ programs, prove bounds, or itself lower to Core IR. [SYNTAX-REQ-001]
   and payload-carrying `variant` types. Empty enums reject. [SYNTAX-REQ-004]
 - Integer literal suffixes are preserved where syntax carries them, including
   static bounds. [SYNTAX-REQ-005]
-- Intent declarations parse parameters, return type, clause surface, statement
+- Action declarations parse parameters, return type, clause surface, statement
   blocks, and expression bodies. Clause requiredness is semantic validation, not
   parser validation. [SYNTAX-REQ-006]
 - Statements parse `let`, `return`, `require`, `guarantee`, `assert`, effect

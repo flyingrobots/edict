@@ -4,7 +4,7 @@ use shape "schemas/blob.graphql" as shape;
 use lawpack rope.optics@1 digest "sha256:0000000000000000000000000000000000000000000000000000000000000000" as rope;
 use target echo.dpo@1 digest "sha256:1111111111111111111111111111111111111111111111111111111111111111" as echo;
 
-intent storeBlob(input: shape.StoreBlobInput)
+action storeBlob(input: shape.StoreBlobInput)
   returns shape.MaybeBlob
   profile echo.readWrite
   basis input.initialBytes

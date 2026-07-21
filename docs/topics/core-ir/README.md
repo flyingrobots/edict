@@ -34,7 +34,7 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 
 ## Current Contract
 
-- Core modules carry imports, type definitions, intents, and required Core
+- Core modules carry imports, type definitions, actions, and required Core
   capabilities. Imports are digest-locked `resource-ref` values, but the Core
   module does not contain its own self-hash field. [COREIR-REQ-001]
   [COREIR-REQ-007]
@@ -58,13 +58,13 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 - Input constraints are explicit `input-constraint` records containing a source
   coordinate, origin class, and predicate tree. They are not validator coordinate
   strings. [COREIR-REQ-006] [EDICT-CORE-WHERE-HASH-001]
-- Intents state the required operation profile as `requiredOperationProfile`.
+- Actions state the required operation profile as `requiredOperationProfile`.
   Verifier reports and target/admission decisions are external to Core.
   [COREIR-REQ-009] [EDICT-CORE-VERIFIED-EXTERNAL-001]
 - Edict-authored lawpack pure helper bodies use `core-fn-body`, a pure function
   body shape. They do not reuse the effect-capable `core-block` node algebra.
   [COREIR-REQ-011]
-- Schema-shape fixtures prove minimal accepted Core module/intent shapes and
+- Schema-shape fixtures prove minimal accepted Core module/action shapes and
   rejected missing or external-evidence fields against the CDDL declarations.
   [COREIR-REQ-010]
 - Core modules can be encoded as deterministic `edict.canonical-cbor/v1` bytes

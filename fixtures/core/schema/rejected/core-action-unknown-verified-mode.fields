@@ -1,6 +1,6 @@
 # `verifiedOperationMode` is verifier/admission evidence, not a Core field.
 expect reject
-shape core-intent
+shape core-action
 field body
 field coreEvaluationBudget
 field input

@@ -66,7 +66,7 @@ marker.
 Two distinct audiences are served unevenly:
 
 - **Conceptual reader / evaluator** (why does Edict exist?) — **served very well.**
-  The narrative, the intent example, the "failure is a typed outcome" framing,
+  The narrative, the action example, the "failure is a typed outcome" framing,
   and the AION pointer answer "what is it / why / how does it fit".
 - **Hands-on developer** (how do I run it?) — **not served.** Their top-3
   questions — *How do I build/install it? How do I run `edict check`? What does a
@@ -91,7 +91,7 @@ is never surfaced as a copy-pasteable example.
 
 1. **Mark the hero diagram as a vision/roadmap view** (or add a parallel
    "Shipping today" line): label which stages exist at the current alpha
-   (Write Intent → Compile & Validate via `edict check`) versus envisioned
+   (Write Action → Compile & Validate via `edict check`) versus envisioned
    (Seal/Admission/Sandbox), so the first impression matches `Current Status`.
 2. **Add a "Build & Run" / "Using the CLI" section**: how to build the binary
    (`cargo build -p edict-cli` → `target/debug/edict`), a copy-pasteable
@@ -164,7 +164,7 @@ not a rewrite. A rewrite would destroy genuinely good conceptual content.
 
 ### 3.2 Deliverable (Incremental Update Prompt)
 
-- **Action Prompt:** `Apply incremental documentation fixes to the edict repo without rewriting existing conceptual content: (1) In README.md, annotate the "Edict in 10 Seconds" diagram to distinguish shipping-today stages (Write Intent, Compile & Validate via 'edict check') from envisioned stages (Seal, Admission, WASM Sandbox), keeping it consistent with the Current Status section. (2) Add a "Build & Run" section with cargo build -p edict-cli, a copy-pasteable edict check JSONL example, expected stdout/stderr, and the 0/1/2 exit-code table, linking docs/topics/cli/ and docs/schemas/. (3) Add a "Using the library" rustdoc-backed snippet. (4) Create SECURITY.md (vulnerability reporting), NOTICE (Apache-2.0 attribution), and CODE_OF_CONDUCT.md at repo root. (5) Add a runnable crate-level example to crates/edict-syntax/src/lib.rs and ensure cargo test --doc passes. Run markdownlint-cli2 and cargo xtask verify before finishing.`
+- **Action Prompt:** `Apply incremental documentation fixes to the edict repo without rewriting existing conceptual content: (1) In README.md, annotate the "Edict in 10 Seconds" diagram to distinguish shipping-today stages (Write Action, Compile & Validate via 'edict check') from envisioned stages (Seal, Admission, WASM Sandbox), keeping it consistent with the Current Status section. (2) Add a "Build & Run" section with cargo build -p edict-cli, a copy-pasteable edict check JSONL example, expected stdout/stderr, and the 0/1/2 exit-code table, linking docs/topics/cli/ and docs/schemas/. (3) Add a "Using the library" rustdoc-backed snippet. (4) Create SECURITY.md (vulnerability reporting), NOTICE (Apache-2.0 attribution), and CODE_OF_CONDUCT.md at repo root. (5) Add a runnable crate-level example to crates/edict-syntax/src/lib.rs and ensure cargo test --doc passes. Run markdownlint-cli2 and cargo xtask verify before finishing.`
 
 ### 3.3 Mitigation Prompt (ready to execute next)
 

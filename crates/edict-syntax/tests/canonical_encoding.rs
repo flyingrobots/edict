@@ -27,11 +27,11 @@ fn canonical_core_bytes_are_independent_of_map_construction_order() {
         .rev()
         .map(|(name, ty)| (name.clone(), ty.clone()))
         .collect();
-    reordered.intents = core
-        .intents
+    reordered.actions = core
+        .actions
         .iter()
         .rev()
-        .map(|(name, intent)| (name.clone(), intent.clone()))
+        .map(|(name, action)| (name.clone(), action.clone()))
         .collect();
 
     assert_eq!(
@@ -46,9 +46,9 @@ fn canonical_core_bytes_change_when_core_meaning_changes() {
     let core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
     let mut changed = core.clone();
     changed
-        .intents
+        .actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .core_evaluation_budget
         .max_steps += 1;
 
@@ -62,17 +62,17 @@ fn canonical_core_bytes_change_when_core_meaning_changes() {
 fn canonical_core_bytes_change_when_effect_coordinate_changes() {
     let mut core = bounded_hello_core();
     let binding = core
-        .intents
+        .actions
         .get("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .body
         .locals
         .last()
         .expect("local exists")
         .clone();
-    core.intents
+    core.actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .body
         .nodes
         .push(CoreNode::Effect {
@@ -85,9 +85,9 @@ fn canonical_core_bytes_change_when_effect_coordinate_changes() {
         });
     let mut changed = core.clone();
     let CoreNode::Effect { effect, .. } = changed
-        .intents
+        .actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .body
         .nodes
         .last_mut()
@@ -108,9 +108,9 @@ fn canonical_core_bytes_change_when_local_identity_changes() {
     let core = bounded_hello_core();
     let mut changed = core.clone();
     changed
-        .intents
+        .actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .body
         .locals
         .first_mut()
@@ -247,9 +247,9 @@ fn canonical_core_bytes_treat_required_capabilities_as_a_set() {
 fn canonical_core_bytes_are_independent_of_input_constraint_order() {
     let module = parse_module(BOUNDED_HELLO).expect("fixture parses");
     let mut core = compile_to_core(&module, &hello_context()).expect("fixture compiles to Core");
-    core.intents
+    core.actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .input_constraints
         .push(InputConstraint {
             coordinate: "compiler.0".to_owned(),
@@ -258,9 +258,9 @@ fn canonical_core_bytes_are_independent_of_input_constraint_order() {
         });
     let mut reordered = core.clone();
     reordered
-        .intents
+        .actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .input_constraints
         .reverse();
 

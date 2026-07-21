@@ -12,7 +12,7 @@ type Paint = variant {
   Transparent,
 };
 
-intent describe(input: shape.DescribeInput)
+action describe(input: shape.DescribeInput)
   returns shape.Description
   profile palette.readOnly
   basis input.paint

@@ -14,7 +14,7 @@ use edict_syntax::{
     canonical_target_profile_contract_resources, decode_canonical_cbor,
     digest_target_profile_contract_resource, encode_target_ir_artifact, CanonicalValue, CoreBudget,
     CoreExpr, CoreObstructionReason, CorePredicate, CoreValue,
-    ProviderArtifactSchemaValidationErrorKind, ResourceRef, TargetIrArtifact, TargetIrIntent,
+    ProviderArtifactSchemaValidationErrorKind, ResourceRef, TargetIrAction, TargetIrArtifact,
     TargetIrRequireFailure, TargetIrRequirement, TargetProfileContractResource,
     AUTHORITY_FACTS_API_VERSION, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
@@ -210,28 +210,28 @@ fn target_ir_root_matches_reference_encoder() {
 
     let mut malformed_nested =
         decode_canonical_cbor(TARGET_IR_FIXTURE).expect("fixture is canonical");
-    let CanonicalValue::Map(intents) = map_value_mut(&mut malformed_nested, "intents") else {
-        panic!("Target IR intents must be a map");
+    let CanonicalValue::Map(actions) = map_value_mut(&mut malformed_nested, "actions") else {
+        panic!("Target IR actions must be a map");
     };
-    let intent = &mut intents
+    let action = &mut actions
         .first_mut()
-        .expect("reviewed Target IR has an intent")
+        .expect("reviewed Target IR has an action")
         .1;
-    *map_value_mut(intent, "steps") = CanonicalValue::Null;
+    *map_value_mut(action, "steps") = CanonicalValue::Null;
     assert_eq!(
         pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &malformed_nested),
         Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
     );
 
     let mut malformed_requirement = encoded_target_ir_with_requirements();
-    let CanonicalValue::Map(intents) = map_value_mut(&mut malformed_requirement, "intents") else {
-        panic!("Target IR intents must be a map");
+    let CanonicalValue::Map(actions) = map_value_mut(&mut malformed_requirement, "actions") else {
+        panic!("Target IR actions must be a map");
     };
-    let intent = &mut intents
+    let action = &mut actions
         .first_mut()
-        .expect("encoded Target IR has an intent")
+        .expect("encoded Target IR has an action")
         .1;
-    let CanonicalValue::Array(requirements) = map_value_mut(intent, "requirements") else {
+    let CanonicalValue::Array(requirements) = map_value_mut(action, "requirements") else {
         panic!("Target IR requirements must be an array");
     };
     let requirement = requirements
@@ -557,9 +557,9 @@ fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
             digest: Some(format!("sha256:{}", "1".repeat(64))),
         },
         source_core_coordinate: "example.core@1".to_owned(),
-        intents: BTreeMap::from([(
+        actions: BTreeMap::from([(
             "apply".to_owned(),
-            TargetIrIntent {
+            TargetIrAction {
                 operation_profile: "example.operation/v1".to_owned(),
                 input_constraints: Vec::new(),
                 core_evaluation_budget: CoreBudget {

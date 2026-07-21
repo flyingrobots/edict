@@ -40,10 +40,10 @@ fn variant_type_with_and_without_payloads_parses() {
 }
 
 fn first_let_value(src: &str) -> Expr {
-    let Decl::Intent(intent) = parse_ok(src).decls.into_iter().next().expect("a decl") else {
-        panic!("decl 0 is an intent");
+    let Decl::Action(action) = parse_ok(src).decls.into_iter().next().expect("a decl") else {
+        panic!("decl 0 is an action");
     };
-    let Stmt::Let { value, .. } = intent.body.stmts.into_iter().next().expect("a stmt") else {
+    let Stmt::Let { value, .. } = action.body.stmts.into_iter().next().expect("a stmt") else {
         panic!("stmt 0 is a let");
     };
     value
@@ -52,7 +52,7 @@ fn first_let_value(src: &str) -> Expr {
 #[test]
 fn variant_literal_with_payload_parses() {
     let src = "package a.b@1;\n\
-        intent t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
+        action t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
           let x = shape.Paint::Solid(input.rgb);\n\
           return { x };\n\
         }";
@@ -73,7 +73,7 @@ fn variant_literal_with_payload_parses() {
 #[test]
 fn variant_literal_without_payload_parses() {
     let src = "package a.b@1;\n\
-        intent t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
+        action t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
           let x = shape.Paint::Transparent;\n\
           return { x };\n\
         }";
@@ -87,7 +87,7 @@ fn variant_literal_without_payload_parses() {
 #[test]
 fn match_expr_with_binders_parses() {
     let src = "package a.b@1;\n\
-        intent t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
+        action t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
           let label = match input.paint {\n\
             Solid(rgb) => rgb.hex,\n\
             Named(name) => name.text,\n\
@@ -108,7 +108,7 @@ fn match_expr_with_binders_parses() {
 #[test]
 fn empty_match_is_rejected() {
     let src = "package a.b@1;\n\
-        intent t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
+        action t(input: shape.In) returns shape.Out basis none budget <= p.b {\n\
           let x = match input.paint { };\n\
           return { x };\n\
         }";
@@ -121,17 +121,17 @@ fn empty_match_is_rejected() {
 #[test]
 fn palette_fixture_parses() {
     let m = parse_module(PALETTE).expect("color-match fixture parses");
-    // enum, variant type, intent
+    // enum, variant type, action
     assert!(matches!(m.decls[0], Decl::Enum(_)));
     assert!(matches!(m.decls[1], Decl::Type(_)));
-    assert!(matches!(m.decls[2], Decl::Intent(_)));
-    let Decl::Intent(intent) = &m.decls[2] else {
-        panic!("decl 2 is an intent");
+    assert!(matches!(m.decls[2], Decl::Action(_)));
+    let Decl::Action(action) = &m.decls[2] else {
+        panic!("decl 2 is an action");
     };
     let Stmt::Let {
         value: Expr::Match { arms, .. },
         ..
-    } = &intent.body.stmts[0]
+    } = &action.body.stmts[0]
     else {
         panic!("stmt 0 is a match let");
     };
@@ -139,7 +139,7 @@ fn palette_fixture_parses() {
     let Stmt::Let {
         value: Expr::VariantLit { case, .. },
         ..
-    } = &intent.body.stmts[1]
+    } = &action.body.stmts[1]
     else {
         panic!("stmt 1 is a variant-literal let");
     };

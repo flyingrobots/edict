@@ -29,15 +29,15 @@ fn file_backed_authority_facts_compile_bounded_hello() {
             .expect("authority facts load");
     let module = edict_syntax::parse_module(BOUNDED_HELLO).expect("fixture parses");
     let core = compile_to_core(&module, &context).expect("loaded facts compile fixture");
-    let intent = core.intents.get("sayHello").expect("compiled intent");
+    let action = core.actions.get("sayHello").expect("compiled action");
 
     assert_eq!(
-        intent.required_operation_profile,
+        action.required_operation_profile,
         "continuum.profile.read-only/v1"
     );
-    assert_eq!(intent.core_evaluation_budget.max_steps, 64);
-    assert_eq!(intent.core_evaluation_budget.max_allocated_bytes, 4096);
-    assert_eq!(intent.core_evaluation_budget.max_output_bytes, 1024);
+    assert_eq!(action.core_evaluation_budget.max_steps, 64);
+    assert_eq!(action.core_evaluation_budget.max_allocated_bytes, 4096);
+    assert_eq!(action.core_evaluation_budget.max_output_bytes, 1024);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn file_backed_authority_facts_reject_write_effect_profile_mismatch() {
         "package a.b@1;\n\
          type Input = { id: String<max=16>, };\n\
          type Output = { id: String<max=16>, };\n\
-         intent t(input: Input) returns Output\n\
+         action t(input: Input) returns Output\n\
            profile p.readOnly\n\
            basis none\n\
            budget <= p.tiny {\n\

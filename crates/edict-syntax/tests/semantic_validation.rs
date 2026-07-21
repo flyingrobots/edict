@@ -37,7 +37,7 @@ fn validate_module_remains_surface_stage_compatibility_alias() {
 fn surface_validation_defers_import_and_name_resolution() {
     let module = parse_module(
         "package a.b@1;\n\
-         intent t(input: missing.Input) returns missing.Output\n\
+         action t(input: missing.Input) returns missing.Output\n\
            profile missing.readOnly\n\
            basis input.id\n\
            budget <= missing.budget {\n\
@@ -54,7 +54,7 @@ fn surface_validation_defers_import_and_name_resolution() {
 fn surface_validation_defers_contextual_typing_and_loop_bound_proof() {
     let module = parse_module(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out\n\
+         action t(input: shape.In) returns shape.Out\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -74,7 +74,7 @@ fn surface_validation_defers_contextual_typing_and_loop_bound_proof() {
 fn surface_validation_defers_obstruction_exhaustiveness() {
     let module = parse_module(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out\n\
+         action t(input: shape.In) returns shape.Out\n\
            profile shape.readWrite\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -125,10 +125,10 @@ fn unbounded_runtime_scalars_are_rejected_in_declaration_type_surfaces() {
 }
 
 #[test]
-fn unbounded_runtime_scalars_are_rejected_in_intent_and_expression_surfaces() {
+fn unbounded_runtime_scalars_are_rejected_in_action_and_expression_surfaces() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
-         intent t(input: String) returns Bytes\n\
+         action t(input: String) returns Bytes\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -149,10 +149,10 @@ fn unbounded_runtime_scalars_are_rejected_in_intent_and_expression_surfaces() {
 }
 
 #[test]
-fn intent_required_clauses_are_validated() {
+fn action_required_clauses_are_validated() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out {\n\
+         action t(input: shape.In) returns shape.Out {\n\
            return { input };\n\
          }",
     );
@@ -170,7 +170,7 @@ fn intent_required_clauses_are_validated() {
 fn duplicate_implements_and_footprint_clauses_are_rejected() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out\n\
+         action t(input: shape.In) returns shape.Out\n\
            profile shape.readOnly\n\
            implements shape.reader\n\
            implements shape.writer\n\
@@ -184,8 +184,8 @@ fn duplicate_implements_and_footprint_clauses_are_rejected() {
     assert_eq!(
         kinds,
         vec![
-            SemanticErrorKind::DuplicateIntentClause,
-            SemanticErrorKind::DuplicateIntentClause,
+            SemanticErrorKind::DuplicateActionClause,
+            SemanticErrorKind::DuplicateActionClause,
         ]
     );
 }
@@ -195,7 +195,7 @@ fn profile_or_implements_satisfies_operation_mode() {
     for clause in ["profile shape.readOnly", "implements shape.reader"] {
         let src = format!(
             "package a.b@1;\n\
-             intent t(input: shape.In) returns shape.Out\n\
+             action t(input: shape.In) returns shape.Out\n\
                {clause}\n\
                basis none\n\
                budget <= shape.tinyBudget {{\n\
@@ -208,10 +208,10 @@ fn profile_or_implements_satisfies_operation_mode() {
 }
 
 #[test]
-fn duplicate_singleton_intent_clauses_are_rejected() {
+fn duplicate_singleton_action_clauses_are_rejected() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out\n\
+         action t(input: shape.In) returns shape.Out\n\
            profile shape.readOnly\n\
            profile shape.readWrite\n\
            basis none\n\
@@ -224,9 +224,9 @@ fn duplicate_singleton_intent_clauses_are_rejected() {
     assert_eq!(
         kinds,
         vec![
-            SemanticErrorKind::DuplicateIntentClause,
-            SemanticErrorKind::DuplicateIntentClause,
-            SemanticErrorKind::DuplicateIntentClause,
+            SemanticErrorKind::DuplicateActionClause,
+            SemanticErrorKind::DuplicateActionClause,
+            SemanticErrorKind::DuplicateActionClause,
         ]
     );
 }
@@ -238,7 +238,7 @@ fn module_namespace_collisions_are_rejected() {
          use shape \"schemas/a.graphql\" as Input;\n\
          type Input = { id: String<max=8>, };\n\
          enum Status { Ready }\n\
-         intent Status(input: shape.In) returns shape.Out\n\
+         action Status(input: shape.In) returns shape.Out\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -260,7 +260,7 @@ fn local_binders_cannot_shadow_visible_names() {
         "package a.b@1;\n\
          use shape \"schemas/a.graphql\" as shape;\n\
          type Input = { id: String<max=8>, };\n\
-         intent t(shape: Input) returns Input\n\
+         action t(shape: Input) returns Input\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -281,7 +281,7 @@ fn local_binders_cannot_shadow_visible_names() {
 fn branch_and_loop_binders_are_scoped() {
     let module = parse_module(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out\n\
+         action t(input: shape.In) returns shape.Out\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -305,7 +305,7 @@ fn branch_and_loop_binders_are_scoped() {
 fn branch_yield_binders_are_scoped() {
     let module = parse_module(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out\n\
+         action t(input: shape.In) returns shape.Out\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -329,7 +329,7 @@ fn expression_binders_cannot_shadow_visible_names() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
          type Input = { id: String<max=8>, };\n\
-         intent t(input: Input) returns Input\n\
+         action t(input: Input) returns Input\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\
@@ -345,7 +345,7 @@ fn clause_expression_binders_see_parameters() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
          type Input = { id: String<max=8>, };\n\
-         intent t(input: Input) returns Input\n\
+         action t(input: Input) returns Input\n\
            profile shape.readOnly\n\
            basis none\n\
            budget <= shape.tinyBudget\n\
@@ -360,7 +360,7 @@ fn clause_expression_binders_see_parameters() {
 fn obstruction_map_binders_cannot_shadow_visible_names() {
     let kinds = semantic_kinds(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out\n\
+         action t(input: shape.In) returns shape.Out\n\
            profile shape.readWrite\n\
            basis none\n\
            budget <= shape.tinyBudget {\n\

@@ -12,12 +12,12 @@ use std::str;
 use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreIntent, CoreModule, CoreNode,
+    CompareOp, CoreAction, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreModule, CoreNode,
     CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint, InputConstraintSource,
     LocalRef, ResourceRef,
 };
 use crate::target_ir::{
-    TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement, TargetIrStep,
+    TargetIrAction, TargetIrArtifact, TargetIrRequireFailure, TargetIrRequirement, TargetIrStep,
 };
 
 /// Canonical encoding profile for Core artifacts.
@@ -481,12 +481,12 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
             text(&artifact.source_core_coordinate),
         ),
         (
-            "intents",
+            "actions",
             string_map_results(
                 artifact
-                    .intents
+                    .actions
                     .iter()
-                    .map(|(name, intent)| Ok((name.as_str(), target_ir_intent_value(intent)?))),
+                    .map(|(name, action)| Ok((name.as_str(), target_ir_action_value(action)?))),
             )?,
         ),
     ]))
@@ -517,26 +517,26 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
     ]))
 }
 
-fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+fn target_ir_action_value(action: &TargetIrAction) -> Result<CanonicalValue, CanonicalError> {
     Ok(map([
-        ("operationProfile", text(&intent.operation_profile)),
+        ("operationProfile", text(&action.operation_profile)),
         (
             "inputConstraints",
-            sorted_array_results(intent.input_constraints.iter().map(input_constraint_value))?,
+            sorted_array_results(action.input_constraints.iter().map(input_constraint_value))?,
         ),
         (
             "coreEvaluationBudget",
-            core_budget_value(&intent.core_evaluation_budget),
+            core_budget_value(&action.core_evaluation_budget),
         ),
         (
             "requirements",
-            array_results(intent.requirements.iter().map(target_ir_requirement_value))?,
+            array_results(action.requirements.iter().map(target_ir_requirement_value))?,
         ),
         (
             "steps",
-            array_results(intent.steps.iter().map(target_ir_step_value))?,
+            array_results(action.steps.iter().map(target_ir_step_value))?,
         ),
-        ("result", core_expr_value(&intent.result)?),
+        ("result", core_expr_value(&action.result)?),
     ]))
 }
 
@@ -608,12 +608,12 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
             )?,
         ),
         (
-            "intents",
+            "actions",
             string_map_results(
                 module
-                    .intents
+                    .actions
                     .iter()
-                    .map(|(name, intent)| Ok((name.as_str(), core_intent_value(intent)?))),
+                    .map(|(name, action)| Ok((name.as_str(), core_action_value(action)?))),
             )?,
         ),
         (
@@ -728,23 +728,23 @@ fn core_type_value(ty: &CoreType) -> CanonicalValue {
     }
 }
 
-fn core_intent_value(intent: &CoreIntent) -> Result<CanonicalValue, CanonicalError> {
+fn core_action_value(action: &CoreAction) -> Result<CanonicalValue, CanonicalError> {
     Ok(map([
-        ("input", text(&intent.input)),
-        ("output", text(&intent.output)),
+        ("input", text(&action.input)),
+        ("output", text(&action.output)),
         (
             "requiredOperationProfile",
-            text(&intent.required_operation_profile),
+            text(&action.required_operation_profile),
         ),
         (
             "inputConstraints",
-            sorted_array_results(intent.input_constraints.iter().map(input_constraint_value))?,
+            sorted_array_results(action.input_constraints.iter().map(input_constraint_value))?,
         ),
         (
             "coreEvaluationBudget",
-            core_budget_value(&intent.core_evaluation_budget),
+            core_budget_value(&action.core_evaluation_budget),
         ),
-        ("body", core_block_value(&intent.body)?),
+        ("body", core_block_value(&action.body)?),
     ]))
 }
 

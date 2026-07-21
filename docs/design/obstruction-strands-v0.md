@@ -185,10 +185,10 @@ native consequence is blocked, repairable, diagnostic completion, or something
 else.
 
 The Target IR v0 shape models source/Core `require` guards as explicit
-requirements on the intent, separate from target effect steps:
+requirements on the action, separate from target effect steps:
 
 ```text
-TargetIrIntent {
+TargetIrAction {
   requirements: [
     {
       id,
@@ -207,7 +207,7 @@ precondition or guard obligations. This keeps hard rejection and preserved
 obstruction digest-distinct without pretending that an obstructed strand is a
 success-path write.
 
-Intent-level Target IR requirements are pre-step guards. A source/Core `require`
+Action-level Target IR requirements are pre-step guards. A source/Core `require`
 after an emitted target step, including a guard that depends on a prior effect
 result, needs an ordered or step-attached Target IR shape before it can be
 represented honestly.

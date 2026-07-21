@@ -185,7 +185,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "intent_declaration"
+          "name": "action_declaration"
         }
       ]
     },
@@ -736,12 +736,12 @@
         }
       ]
     },
-    "intent_declaration": {
+    "action_declaration": {
       "type": "SEQ",
       "members": [
         {
           "type": "STRING",
-          "value": "intent"
+          "value": "action"
         },
         {
           "type": "FIELD",
@@ -771,7 +771,7 @@
           "type": "REPEAT",
           "content": {
             "type": "SYMBOL",
-            "name": "intent_clause"
+            "name": "action_clause"
           }
         },
         {
@@ -867,7 +867,7 @@
         }
       ]
     },
-    "intent_clause": {
+    "action_clause": {
       "type": "CHOICE",
       "members": [
         {

@@ -237,7 +237,7 @@ externally visible target state unchanged.
 
 ## Runtime Effect Domain
 
-An Edict intent may lower to effects owned by at most one runtime target profile.
+An Edict action may lower to effects owned by at most one runtime target profile.
 Lawpack semantic effects may lower into that same target. Cross-target
 application requires a composite target profile that explicitly owns
 coordination, obstruction classification, and atomicity semantics.

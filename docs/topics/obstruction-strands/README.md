@@ -64,7 +64,7 @@ CoreNode::Require {
 Current lowerable Echo Target IR shape:
 
 ```text
-TargetIrIntent {
+TargetIrAction {
   requirements: [
     TargetIrRequirement {
       predicate,

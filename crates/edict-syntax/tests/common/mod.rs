@@ -5,18 +5,18 @@
 //! test uses every helper, hence the crate-level `dead_code` allowance.
 #![allow(dead_code)]
 
-use edict_syntax::ast::{Decl, IntentDecl, Module};
+use edict_syntax::ast::{ActionDecl, Decl, Module};
 use edict_syntax::{compile_to_core, parse_module, CompilerContext, CoreBudget, CoreModule};
 
 /// Shared source fixture for the initial pure local-record compiler slice.
 pub const BOUNDED_HELLO: &str =
     include_str!("../../../../fixtures/lang/bounds/bounded-hello.edict");
 
-/// Wrap a statement sequence in a minimal, well-formed intent body.
+/// Wrap a statement sequence in a minimal, well-formed action body.
 pub fn body(stmts: &str) -> String {
     format!(
         "package a.b@1;\n\
-         intent t(input: shape.In) returns shape.Out basis none budget <= p.b {{\n\
+         action t(input: shape.In) returns shape.Out basis none budget <= p.b {{\n\
          {stmts}\n\
          }}"
     )
@@ -47,10 +47,10 @@ pub fn bounded_hello_core() -> CoreModule {
     compile_to_core(&module, &hello_context()).expect("bounded-hello fixture compiles to Core")
 }
 
-/// The first declaration as an intent.
-pub fn intent_of(m: &Module) -> &IntentDecl {
-    let Decl::Intent(intent) = &m.decls[0] else {
-        panic!("decl 0 is an intent");
+/// The first declaration as an action.
+pub fn action_of(m: &Module) -> &ActionDecl {
+    let Decl::Action(action) = &m.decls[0] else {
+        panic!("decl 0 is an action");
     };
-    intent
+    action
 }

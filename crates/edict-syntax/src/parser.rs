@@ -4,8 +4,8 @@
 //! text so they remain usable as member names after `.`.
 
 use crate::ast::{
-    BinOp, Block, BoundRef, ContinueObstructedArm, Decl, ElseClause, EnumDecl, Expr,
-    FieldConstraint, FieldDecl, Import, ImportKind, IntentClause, IntentDecl, MatchArm, Module,
+    ActionClause, ActionDecl, BinOp, Block, BoundRef, ContinueObstructedArm, Decl, ElseClause,
+    EnumDecl, Expr, FieldConstraint, FieldDecl, Import, ImportKind, MatchArm, Module,
     ObstructionArm, ObstructionHandler, ObstructionTarget, PackageRef, Param, RecordEntry,
     RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp, VariantCase, YieldBlock,
 };
@@ -126,7 +126,7 @@ fn is_keyword(s: &str) -> bool {
             | "type"
             | "enum"
             | "variant"
-            | "intent"
+            | "action"
             | "returns"
             | "profile"
             | "implements"
@@ -525,11 +525,11 @@ impl Parser {
             Ok(Decl::Type(self.type_decl()?))
         } else if self.at_kw("enum") {
             Ok(Decl::Enum(self.enum_decl()?))
-        } else if self.at_kw("intent") {
-            Ok(Decl::Intent(self.intent_decl()?))
+        } else if self.at_kw("action") {
+            Ok(Decl::Action(self.action_decl()?))
         } else {
             self.err(format!(
-                "expected `type`, `enum`, or `intent` declaration, found {:?}",
+                "expected `type`, `enum`, or `action` declaration, found {:?}",
                 self.peek()
             ))
         }
@@ -781,11 +781,11 @@ impl Parser {
         Ok(Some(max))
     }
 
-    // --- intents ---
+    // --- actions ---
 
-    fn intent_decl(&mut self) -> Result<IntentDecl, ParseError> {
+    fn action_decl(&mut self) -> Result<ActionDecl, ParseError> {
         let start = self.peek_span().start;
-        self.expect_kw("intent")?;
+        self.expect_kw("action")?;
         let name = self.ident()?;
         self.expect(&TokenKind::LParen)?;
         let mut params = Vec::new();
@@ -811,39 +811,39 @@ impl Parser {
         loop {
             if self.at_kw("profile") {
                 self.idx += 1;
-                clauses.push(IntentClause::Profile(self.path()?));
+                clauses.push(ActionClause::Profile(self.path()?));
             } else if self.at_kw("implements") {
                 self.idx += 1;
-                clauses.push(IntentClause::Implements(self.path()?));
+                clauses.push(ActionClause::Implements(self.path()?));
             } else if self.at_kw("basis") {
                 self.idx += 1;
                 if self.eat_kw("none") {
-                    clauses.push(IntentClause::Basis(None));
+                    clauses.push(ActionClause::Basis(None));
                 } else {
-                    clauses.push(IntentClause::Basis(Some(self.expr()?)));
+                    clauses.push(ActionClause::Basis(Some(self.expr()?)));
                 }
             } else if self.at_kw("footprint") {
                 self.idx += 1;
                 self.expect(&TokenKind::Le)?;
-                clauses.push(IntentClause::Footprint(self.path()?));
+                clauses.push(ActionClause::Footprint(self.path()?));
             } else if self.at_kw("budget") {
                 self.idx += 1;
                 self.expect(&TokenKind::Le)?;
-                clauses.push(IntentClause::Budget(self.path()?));
+                clauses.push(ActionClause::Budget(self.path()?));
             } else if self.at_kw("where") {
                 self.idx += 1;
                 let mut preds = vec![self.expr()?];
                 while self.eat(&TokenKind::Comma) {
                     preds.push(self.expr()?);
                 }
-                clauses.push(IntentClause::Where(preds));
+                clauses.push(ActionClause::Where(preds));
             } else {
                 break;
             }
         }
 
         let body = self.block()?;
-        Ok(IntentDecl {
+        Ok(ActionDecl {
             name,
             params,
             returns,

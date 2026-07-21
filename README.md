@@ -8,14 +8,14 @@ Unlike general-purpose runtimes where code has unrestricted access to the filesy
 
 ```mermaid
 flowchart LR
-    A["1. Write Intent\n(Declare inputs, outputs, & budgets)"] -->|Compile & Prove| B["2. Cryptographic Seal\n(Core IR + Hash-Locked Manifest)"]
+    A["1. Write Action\n(Declare inputs, outputs, & budgets)"] -->|Compile & Prove| B["2. Cryptographic Seal\n(Core IR + Hash-Locked Manifest)"]
     B -->|Submit Bundle| C["3. Participant Admission\n(Inspect 'Nutrition Label')"]
     C -->|Execute Safely| D["4. WASM Sandbox\n(Enforced limits & auto-rollback)"]
 ```
 
 > **Shipping today vs. envisioned.** This diagram is the full architecture. The
 > current alpha (`v0.11.0-alpha.1`) implements stage 1 and the front half of
-> stage 2 — writing intents and **compiling + validating** them through the
+> stage 2 — writing actions and **compiling + validating** them through the
 > `edict check` CLI and `edict_syntax` library, plus canonical Core IR,
 > canonical Target IR artifact bytes, and participant-neutral contract-bundle
 > assembly with reviewed digest goldens. Participant admission, runtime
@@ -104,7 +104,7 @@ Edict is a restricted deterministic language where the compiler enforces what an
 operation is actually allowed to do — not as a convention, but as a verified
 contract.
 
-You write an *intent*. The intent declares:
+You write an *action*. The action declares:
 
 - **What it reads** — exactly which data it is allowed to inspect, bounded
 - **What it writes** — exactly which effects it may produce, with typed outcomes
@@ -124,7 +124,7 @@ do.
 
 ---
 
-## What An Intent Looks Like
+## What An Action Looks Like
 
 The smallest useful Edict program is deliberately boring:
 
@@ -141,7 +141,7 @@ type HelloReading = {
   message: String,
 };
 
-intent sayHello(input: HelloInput)
+action sayHello(input: HelloInput)
   returns HelloReading
   profile hello.readOnly
   budget <= hello.tinyBudget
@@ -152,14 +152,14 @@ intent sayHello(input: HelloInput)
 }
 ```
 
-No ambient access. No clock. No filesystem. No network. No database. This intent
+No ambient access. No clock. No filesystem. No network. No database. This action
 compiles to a Core IR with zero runtime effects. The current compiler-spine can
 prove the pure subset and can reject known profile/effect write-class conflicts
 from deterministic compiler context facts, including facts loaded from explicit
 authority-facts files. Loading full lawpack and target-profile manifests remains
 future target/lawpack work.
 
-A more realistic intent — one that actually reads from a backing store — looks like
+A more realistic action — one that actually reads from a backing store — looks like
 this:
 
 ```graphql
@@ -169,7 +169,7 @@ use shape "schemas/greeting.graphql" as shape;
 use lawpack greeting.optics@1 digest "sha256:b4e..." as greeting;
 use target echo.dpo@1 digest "sha256:c9f..." as echo;
 
-intent readGreeting(input: shape.ReadGreetingInput)
+action readGreeting(input: shape.ReadGreetingInput)
   returns shape.GreetingReading
   profile echo.readOnly
   budget <= greeting.readGreetingBudget
@@ -194,7 +194,7 @@ Walk through this line by line:
   cryptographic hash*. You can't silently upgrade a law package and keep the same
   bundle identity. Version drift is visible by construction.
 - `use target echo.dpo@1 digest "sha256:..."` — imports the target runtime profile
-  under which this intent will execute. Edict Core is runtime-neutral; it lowers
+  under which this action will execute. Edict Core is runtime-neutral; it lowers
   to a specific target through an explicitly declared, hash-locked profile.
 - `profile echo.readOnly` — a claim the current compiler can check when the
   caller supplies deterministic profile and effect write-class facts, including
@@ -243,8 +243,8 @@ let barValue = bar.create({ id: input.id })
 let z = hash(fooValue, barValue);
 ```
 
-The explicit form makes the intent's effect structure legible to the compiler, to
-tooling, and to human reviewers. When an agent submits an Edict intent for
+The explicit form makes the action's effect structure legible to the compiler, to
+tooling, and to human reviewers. When an agent submits an Edict action for
 admission, a participant can read the effect sequence directly from the Core IR —
 not by running the code, but by inspecting the artifact.
 
@@ -252,7 +252,7 @@ not by running the code, but by inspecting the artifact.
 
 ## What The Compiler Produces
 
-An Edict intent doesn't compile to a binary that you run. It compiles to a
+An Edict action doesn't compile to a binary that you run. It compiles to a
 **contract bundle** — a structured, participant-neutral artifact that can be
 inspected, admitted, and executed by a runtime that accepts it.
 
@@ -363,7 +363,7 @@ checked the footprint. Nobody verified the law. The operation just ran.
 
 The YOLO lane is the alternative. An agent may execute autonomously *only after*:
 
-1. Its intent is expressed in Edict source.
+1. Its action is expressed in Edict source.
 2. The source compiles to a Core IR with verified footprint, budget, and effects.
 3. The Core lowers to a target-specific IR through a declared, hash-locked target
    profile.
@@ -408,10 +408,10 @@ returns `null`, or crashes. The failure is an escape hatch from the type system.
 Callers catch it or don't; nothing enforces that they handle it correctly.
 
 In Edict, effects that can fail must declare typed *obstructions* — named,
-structured failure outcomes that are part of the intent's return type:
+structured failure outcomes that are part of the action's return type:
 
 ```graphql
-intent createEntry(input: shape.EntryInput)
+action createEntry(input: shape.EntryInput)
   returns shape.EntryReceipt | history.EntryObstruction
   profile history.readWrite
   budget <= history.createEntryBudget
@@ -435,10 +435,10 @@ intent createEntry(input: shape.EntryInput)
 
 `StaleBase` and `Conflict` aren't exceptions. They're expected domain outcomes
 that callers can match, reason about, and respond to. The participant runtime that
-evaluates this intent knows, before execution, exactly what failure vocabulary the
+evaluates this action knows, before execution, exactly what failure vocabulary the
 operation can produce.
 
-This matters for agents in particular. An agent that submits an Edict intent and
+This matters for agents in particular. An agent that submits an Edict action and
 receives `history.EntryObstruction.StaleBase` knows exactly what happened and
 can decide how to respond — refresh its basis and retry, escalate, or abandon —
 without inspecting a stack trace or parsing an error message.

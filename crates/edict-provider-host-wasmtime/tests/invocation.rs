@@ -30,7 +30,7 @@ const SCHEMA: &[u8] = br#"
 artifact = null / {
   kind: "targetIrArtifact",
   domain: tstr,
-  intents: { * tstr => any },
+  actions: { * tstr => any },
   targetProfile: { * tstr => any },
   sourceCoreCoordinate: tstr,
 }

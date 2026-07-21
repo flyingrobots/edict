@@ -29,7 +29,7 @@ mindmap
         Recursive Descent
         Precedence Climbing
         AST Module
-      Intents
+      Actions
         Bounded Aperture
         Declared Basis
         Explicit Budgets
@@ -61,16 +61,16 @@ The Edict ecosystem employs specialized terminology derived from capabilities-ba
 | Term | Definition |
 | :--- | :--- |
 | **FIDLAR** | *Footprints Ignored; Developer Lies About Risk*. The security gap between a function's declared purpose (e.g., its name or signature) and its actual authority (whatever the host process can access). Edict eliminates FIDLAR by statically verifying and cryptographically sealing code authority. |
-| **Intent** | The primary unit of execution in Edict. Unlike a traditional function, an intent is an optic-shaped operation specification that declares its bounded input, output, basis, budget, footprint bounds, and governing law. |
-| **Aperture** | The bounded set of state and capabilities that an intent is permitted to read or write. Accessing anything outside the declared aperture triggers a compile-time rejection. |
+| **Action** | The primary unit of execution in Edict. Unlike a traditional function, an action is an optic-shaped operation specification that declares its bounded input, output, basis, budget, footprint bounds, and governing law. |
+| **Aperture** | The bounded set of state and capabilities that an action is permitted to read or write. Accessing anything outside the declared aperture triggers a compile-time rejection. |
 | **Basis** | The causal history reference point or timeline anchor used to resolve projections. It represents the point of state from which the execution begins. |
 | **Lawpack** | A cryptographically locked, authority-free package of pure helper functions, typed constants, semantic effect signatures, and target adapters. Lawpacks represent domain rules and are pinned by SHA-256 hashes. |
 | **Target Profile / DPO** | A Deterministic Process Object specification defining the execution environment's runtime intrinsics, verifier rules, footprint/cost algebras, and target-lowering properties (e.g., `echo.dpo`). |
-| **Core IR** | A runtime-neutral, canonical representation of compiled Edict intents. It has no side-channel APIs, no file system, and no networking, and is completely deterministic. |
+| **Core IR** | A runtime-neutral, canonical representation of compiled Edict actions. It has no side-channel APIs, no file system, and no networking, and is completely deterministic. |
 | **Contract Bundle** | A participant-neutral, CBOR-encoded package of compiled Core IR, target lowerings, proof evidence, and cryptographic signatures. |
 | **HOLMES / Watson / Moriarty** | The Wesley platform's assurance machinery. **HOLMES** manages evidence and attestations; **Watson** verifies bundle compliance; **Moriarty** runs fuzzing and relapse tests to discover gaps. |
 | **A-Normal Form (ANF)** | A restricted syntactic structure where every intermediate effectful computation must be bound to a distinct variable. This makes the sequencing of side effects explicit and verifiable. |
-| **SHA-Lock / Digest-Lock** | Pinned references to external dependencies (lawpacks, targets) using their SHA-256 digests. This guarantees that dependencies cannot change silently without modifying the intent's identity. |
+| **SHA-Lock / Digest-Lock** | Pinned references to external dependencies (lawpacks, targets) using their SHA-256 digests. This guarantees that dependencies cannot change silently without modifying the action's identity. |
 
 ---
 
@@ -78,9 +78,9 @@ The Edict ecosystem employs specialized terminology derived from capabilities-ba
 
 Edict's architecture separates language syntax, target runtime specifics, and contract admission rules to enforce static capability checks.
 
-Edict compiles source modules containing raw intent declarations to a canonical, runtime-neutral intermediate representation (Core IR). This Core IR represents pure calculations and explicit target adapters, stripping away all ambient authority. The static verification uses hash-locked schemas (GraphQL shapes), lawpacks (rule definitions), and target profiles to form a cryptographic contract bundle.
+Edict compiles source modules containing raw action declarations to a canonical, runtime-neutral intermediate representation (Core IR). This Core IR represents pure calculations and explicit target adapters, stripping away all ambient authority. The static verification uses hash-locked schemas (GraphQL shapes), lawpacks (rule definitions), and target profiles to form a cryptographic contract bundle.
 
-This bundle is sent to the Continuum platform for admission check. When the platform policy is satisfied, it issues admission receipts, making the intent available for deterministic execution inside sandboxed target runtimes.
+This bundle is sent to the Continuum platform for admission check. When the platform policy is satisfied, it issues admission receipts, making the action available for deterministic execution inside sandboxed target runtimes.
 
 ---
 
@@ -98,7 +98,7 @@ During bootstrapping, the Edict compiler (`wesley` or the compiler engine) loads
 
 ### The Runtime Phase (Sandboxed Evaluation)
 
-Once compiled and admitted as a **Contract Bundle**, the runtime executes the intent within a Deterministic Process Object (DPO) container:
+Once compiled and admitted as a **Contract Bundle**, the runtime executes the action within a Deterministic Process Object (DPO) container:
 
 1. **Budget Enforcement**: Evaluates cost dynamically. The verifier checks operations against a strict fuel limit (`budget <= law.tinyBudget`).
 2. **Footprint Bounds**: Dynamic read/write effects are checked against the verified aperture.
@@ -144,7 +144,7 @@ sequenceDiagram
     activate Parser
     Parser->>Parser: package_decl()
     Parser->>Parser: import() loops
-    Parser->>Parser: decl() loops (Type/Intent)
+    Parser->>Parser: decl() loops (Type/Action)
     Parser->>Parser: precedence climbing for Expressions
     Parser-->>AST: Construct ast::Module
     deactivate Parser
@@ -228,7 +228,7 @@ fn string(&mut self) -> Result<TokenKind, LexError> {
 
 ## 6. Syntactic Analysis & Precedence Climbing (`parser.rs`)
 
-The parser is implemented as a recursive-descent parser. Top-level files declare a package, list imports, and describe type declarations and intents.
+The parser is implemented as a recursive-descent parser. Top-level files declare a package, list imports, and describe type declarations and actions.
 
 ### Module AST Structure
 
@@ -255,7 +255,7 @@ classDiagram
     class Decl {
         <<enumeration>>
         Type(TypeDecl)
-        Intent(IntentDecl)
+        Action(ActionDecl)
     }
     class TypeDecl {
         +String name
@@ -263,11 +263,11 @@ classDiagram
         +TypeExpr body
         +Span span
     }
-    class IntentDecl {
+    class ActionDecl {
         +String name
         +Vec~Param~ params
         +TypeRef returns
-        +Vec~IntentClause~ clauses
+        +Vec~ActionClause~ clauses
         +Block body
         +Span span
     }
@@ -275,7 +275,7 @@ classDiagram
     Module --> Import
     Module --> Decl
     Decl --> TypeDecl
-    Decl --> IntentDecl
+    Decl --> ActionDecl
 ```
 
 ### Highlight: Precedence Climbing
@@ -347,7 +347,7 @@ type HelloReading = {
   message: String<max=512>,
 };
 
-intent sayHello(input: HelloInput)
+action sayHello(input: HelloInput)
   returns HelloReading
   profile hello.readOnly
   basis none
@@ -422,7 +422,7 @@ During syntactic analysis, the above code is materialized into the following mem
       }
     },
     {
-      "Intent": {
+      "Action": {
         "name": "sayHello",
         "params": [
           {
@@ -536,7 +536,7 @@ Because the parser uses explicit recursive matching, it bails out immediately at
 
 Edict is built from the ground up to prevent the ambient authority problem (FIDLAR). It establishes three crisp boundaries:
 
-1. **Aperture Limits**: Compiled intents cannot issue direct syscalls. Filesystem, networking, and environment configurations are excluded from the grammar. Any dynamic read/write is mapped to target-profile adapters that are explicitly defined and sandboxed.
+1. **Aperture Limits**: Compiled actions cannot issue direct syscalls. Filesystem, networking, and environment configurations are excluded from the grammar. Any dynamic read/write is mapped to target-profile adapters that are explicitly defined and sandboxed.
 2. **Cryptographic SHA-Locks**: The dependency structure is frozen. If a developer attempts to update a lawpack to change behavior without updating the digest lock `digest "sha256:..."` in the import header, compilation fails. Silent code changes are impossible.
 3. **Sandbox Borders**: The compiled bundle executes inside a WASM component sandbox. Interaction with external state is mediated through a WebAssembly Interface Type (WIT) interface, ensuring complete control over runtime actions.
 
@@ -544,11 +544,11 @@ Edict is built from the ground up to prevent the ambient authority problem (FIDL
 
 ## 10. Concurrency, Parallelism, and Determinism
 
-Traditional programming languages embrace concurrency (multithreading, async queues, lock coordination) to maximize processing throughput. Edict rejects ambient runtime concurrency within intents to preserve **strict determinism**:
+Traditional programming languages embrace concurrency (multithreading, async queues, lock coordination) to maximize processing throughput. Edict rejects ambient runtime concurrency within actions to preserve **strict determinism**:
 
 - **No Threads**: There are no thread-spawning primitives, promises, or background tasks within Edict code.
 - **Purely Sequential Processing**: In Edict, the compilation path enforces A-normal form (ANF) for effectful statements. An effect must be evaluated, resolved, and bound before the next instruction executes. This guarantees that all effects have a single, verifiable, reproducible path of causation.
-- **Parallel Verification**: While the execution of an intent is single-threaded, the *verification* of contract bundles and signatures by `wesley`'s assurance platform can be run across thousands of parallel threads safely since individual intents are side-effect-free during the check phase.
+- **Parallel Verification**: While the execution of an action is single-threaded, the *verification* of contract bundles and signatures by `wesley`'s assurance platform can be run across thousands of parallel threads safely since individual actions are side-effect-free during the check phase.
 
 ---
 
@@ -573,7 +573,7 @@ During the creation of Edict minimal-v1, the architecture made explicit design c
 
 ### Contextual Keywords vs. Reserved Keywords
 
-- **Trade-off**: The parser matches keywords (`max`, `min`, `canonical`, `type`, `intent`) contextually using identifier string comparison instead of reserving them globally.
+- **Trade-off**: The parser matches keywords (`max`, `min`, `canonical`, `type`, `action`) contextually using identifier string comparison instead of reserving them globally.
 - **Benefit**: Developers can name fields or parameters `max` or `type` (e.g., `input.type`) without compiling errors.
 - **Cost**: The parsing code is slightly more complex, requiring defensive identifier peeking to determine whether a keyword represents a declaration keyword or a variable name.
 
@@ -599,7 +599,7 @@ When analyzing computer languages in general, systems engineers evaluate them ac
 
 Traditional General-Purpose Languages (GPLs) like Rust, Go, or Python are **Turing-complete** by design. They support arbitrary computation, unbounded loops, dynamic memory allocation, and indirect system calls. In contrast, Domain-Specific Languages (DSLs) restrict execution semantics to solve specific systemic problems efficiently.
 
-Edict is a highly specialized DSL. By design, Edict lacks Turing completeness in its source language: it prohibits arbitrary iterative loops and unbounded recursion. This is not a limitation but a deliberate security feature. It ensures that the Execution Halting Problem is mitigated statically. Every Edict intent can have its cost calculated and capped before execution starts.
+Edict is a highly specialized DSL. By design, Edict lacks Turing completeness in its source language: it prohibits arbitrary iterative loops and unbounded recursion. This is not a limitation but a deliberate security feature. It ensures that the Execution Halting Problem is mitigated statically. Every Edict action can have its cost calculated and capped before execution starts.
 
 ### State Paradigm & Execution Determinism
 
@@ -630,7 +630,7 @@ Edict incorporates several specific syntactic and behavioral designs that differ
 
 ### Quirk B: Contextual Keyword Resolution
 
-- **Quirk**: Keywords like `max`, `min`, `canonical`, `type`, and `intent` are not reserved tokens in Edict. The lexer produces a generic `Ident(String)` token for all keywords. The [parser](../crates/edict-syntax/src/parser.rs#L44-L92) determines contextually whether an identifier represents a declaration keyword or a variable name.
+- **Quirk**: Keywords like `max`, `min`, `canonical`, `type`, and `action` are not reserved tokens in Edict. The lexer produces a generic `Ident(String)` token for all keywords. The [parser](../crates/edict-syntax/src/parser.rs#L44-L92) determines contextually whether an identifier represents a declaration keyword or a variable name.
 - **Why We Did It This Way**: In languages with reserved keyword sets, developers cannot use common words like `type` or `max` as field names (e.g., `payload.type` or `object.max` are syntax errors in Rust and Java unless escaped). By matching keywords contextually, Edict allows developers to write natural, standard API interfaces while keeping the underlying compiler lexer simple and zero-dependency.
 
 ### Quirk C: Obstruction-Driven Control Flow (No Exceptions)
@@ -641,7 +641,7 @@ Edict incorporates several specific syntactic and behavioral designs that differ
 ### Quirk D: Constrained Scalar Types (`String<max=256>`)
 
 - **Quirk**: Basic types are parameterized directly in type signatures with bounds (e.g., `String<max=256>` or `Bytes<max=1024>`).
-- **Why We Did It This Way**: GPLs allow dynamically sized strings, allocating memory from a heap as needed. In high-assurance sandboxes, dynamic heap allocation can lead to denial-of-service memory exhaustion attacks. Integrating length bounds directly into the type definition allows the Edict compiler to compute the maximum memory footprint of an intent before admission.
+- **Why We Did It This Way**: GPLs allow dynamically sized strings, allocating memory from a heap as needed. In high-assurance sandboxes, dynamic heap allocation can lead to denial-of-service memory exhaustion attacks. Integrating length bounds directly into the type definition allows the Edict compiler to compute the maximum memory footprint of an action before admission.
 
 ---
 
@@ -673,7 +673,7 @@ Edict contract bundles are identified by the cryptographic hash of their compile
 
 1. Adding a single comment, space, or running a code reformatter (like `rustfmt`) would shift source spans.
 2. Shifting source spans would change the compiled Core IR byte representation.
-3. The cryptographic hash of the intent would mutate, changing its identity.
+3. The cryptographic hash of the action would mutate, changing its identity.
 
 As a result, a developer who merely cleaned up whitespace or comments would create a "new" contract in the eyes of the Continuum admission engine. This would invalidate prior HOLMES attestations and audit approvals.
 

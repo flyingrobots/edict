@@ -18,7 +18,7 @@ const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -29,7 +29,7 @@ const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
 const EFFECTFUL_BRANCH_YIELD: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -45,7 +45,7 @@ const DUPLICATE_OBSTRUCTION_FAILURE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -60,7 +60,7 @@ const ORDERED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -75,7 +75,7 @@ const REVERSED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -89,7 +89,7 @@ const REVERSED_OBSTRUCTION_FAILURES: &str = "package a.b@1;\n\
 const TERMINAL_REQUIRE_OBSTRUCTION: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.read\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -99,7 +99,7 @@ const TERMINAL_REQUIRE_OBSTRUCTION: &str = "package a.b@1;\n\
 const TERMINAL_REQUIRE_WITH_REASON_PAYLOAD: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.read\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -109,7 +109,7 @@ const TERMINAL_REQUIRE_WITH_REASON_PAYLOAD: &str = "package a.b@1;\n\
 const CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.read\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -184,26 +184,26 @@ fn bounded_hello_compiles_to_initial_core() {
         }
     );
 
-    let intent = core.intents.get("sayHello").expect("sayHello intent");
+    let action = core.actions.get("sayHello").expect("sayHello action");
     assert_eq!(
-        intent.required_operation_profile,
+        action.required_operation_profile,
         "continuum.profile.read-only/v1"
     );
-    assert_eq!(intent.core_evaluation_budget.max_steps, 64);
-    assert_eq!(intent.input_constraints.len(), 1);
+    assert_eq!(action.core_evaluation_budget.max_steps, 64);
+    assert_eq!(action.input_constraints.len(), 1);
 
     assert!(matches!(
-        &intent.input_constraints[0].predicate,
+        &action.input_constraints[0].predicate,
         CorePredicate::Compare { .. }
     ));
-    assert_eq!(intent.body.locals.len(), 2);
-    assert_eq!(intent.body.locals[0].id, "arg.0");
-    assert_eq!(intent.body.locals[0].alpha_name, "$arg0");
-    assert_eq!(intent.body.locals[1].id, "local.0");
-    assert_eq!(intent.body.locals[1].alpha_name, "$local0");
-    assert_eq!(intent.body.nodes.len(), 1);
-    assert!(matches!(intent.body.nodes[0], CoreNode::Let { .. }));
-    assert!(matches!(intent.body.result, CoreExpr::Record { .. }));
+    assert_eq!(action.body.locals.len(), 2);
+    assert_eq!(action.body.locals[0].id, "arg.0");
+    assert_eq!(action.body.locals[0].alpha_name, "$arg0");
+    assert_eq!(action.body.locals[1].id, "local.0");
+    assert_eq!(action.body.locals[1].alpha_name, "$local0");
+    assert_eq!(action.body.nodes.len(), 1);
+    assert!(matches!(action.body.nodes[0], CoreNode::Let { .. }));
+    assert!(matches!(action.body.result, CoreExpr::Record { .. }));
 }
 
 #[test]
@@ -212,18 +212,18 @@ fn compiler_spine_exposes_distinct_stage_boundaries() {
     let resolved = resolve_module(&module, &hello_context()).expect("resolve stage");
     assert_eq!(resolved.coordinate, "examples.hello@1");
     assert_eq!(
-        resolved.intents[0].profile,
+        resolved.actions[0].profile,
         "continuum.profile.read-only/v1"
     );
 
     let typed = type_check(&resolved).expect("type-check stage");
     assert_eq!(
-        typed.intents[0].input_binding.ty,
+        typed.actions[0].input_binding.ty,
         "examples.hello@1.HelloInput"
     );
 
     let core = lower_core(&typed).expect("lower Core stage");
-    assert!(core.intents.contains_key("sayHello"));
+    assert!(core.actions.contains_key("sayHello"));
 }
 
 #[test]
@@ -249,7 +249,7 @@ fn missing_context_facts_reject_in_resolve_stage() {
 fn unresolved_local_types_reject_in_type_check_stage() {
     let module = parse_module(
         "package a.b@1;\n\
-         intent t(input: MissingInput) returns MissingOutput\n\
+         action t(input: MissingInput) returns MissingOutput\n\
            profile p.read\n\
            basis none\n\
            budget <= p.tiny {\n\
@@ -284,7 +284,7 @@ fn unresolved_record_field_types_reject_in_type_check_stage() {
     let module = parse_module(
         "package a.b@1;\n\
          type Box = { value: MissingValue, };\n\
-         intent t(input: Box) returns Box\n\
+         action t(input: Box) returns Box\n\
            profile p.read\n\
            basis none\n\
            budget <= p.tiny {\n\
@@ -350,7 +350,7 @@ fn read_only_profile_rejects_write_effect_body() {
         "package a.b@1;\n\
          type Input = { id: String<max=16>, };\n\
          type Output = { id: String<max=16>, };\n\
-         intent t(input: Input) returns Output\n\
+         action t(input: Input) returns Output\n\
            profile p.readOnly\n\
            basis none\n\
            budget <= p.tiny {\n\
@@ -393,7 +393,7 @@ fn read_only_profile_rejects_write_effect_let_without_else() {
         "package a.b@1;\n\
          type Input = { id: String<max=16>, };\n\
          type Output = { id: String<max=16>, };\n\
-         intent t(input: Input) returns Output\n\
+         action t(input: Input) returns Output\n\
            profile p.readOnly\n\
            basis none\n\
            budget <= p.tiny {\n\
@@ -431,7 +431,7 @@ fn read_only_profile_rejects_write_effect_let_without_else() {
 }
 
 #[test]
-fn effectful_write_intent_lowers_to_typed_core_from_file_backed_facts() {
+fn effectful_write_action_lowers_to_typed_core_from_file_backed_facts() {
     let dir = temp_case_dir("effectful-write");
     let target = write_json(
         &dir,
@@ -444,20 +444,20 @@ fn effectful_write_intent_lowers_to_typed_core_from_file_backed_facts() {
             .expect("authority facts load");
     let module = parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
     let core = compile_to_core(&module, &context).expect("effectful source compiles to Core");
-    let intent = core.intents.get("t").expect("compiled effectful intent");
+    let action = core.actions.get("t").expect("compiled effectful action");
 
     assert_eq!(
-        intent.required_operation_profile,
+        action.required_operation_profile,
         "continuum.profile.write/v1"
     );
-    assert_eq!(intent.body.nodes.len(), 1);
+    assert_eq!(action.body.nodes.len(), 1);
 
     let CoreNode::Effect {
         binding,
         effect,
         input,
         obstruction_map,
-    } = &intent.body.nodes[0]
+    } = &action.body.nodes[0]
     else {
         panic!("effectful source lowers to a semantic effect node");
     };
@@ -765,7 +765,7 @@ fn continue_obstructed_reason_rejects_local_expression() {
     let source = "package a.b@1;\n\
         type Input = { id: String<max=16>, };\n\
         type Output = { id: String<max=16>, };\n\
-        intent t(input: Input) returns Output\n\
+        action t(input: Input) returns Output\n\
           profile p.read\n\
           basis none\n\
           budget <= p.tiny {\n\
@@ -825,9 +825,9 @@ fn compile_pure_source(source: &str) -> edict_syntax::CoreModule {
 }
 
 fn only_require_node(core: &edict_syntax::CoreModule) -> &CoreNode {
-    let intent = core.intents.get("t").expect("compiled intent");
-    assert_eq!(intent.body.nodes.len(), 1);
-    &intent.body.nodes[0]
+    let action = core.actions.get("t").expect("compiled action");
+    assert_eq!(action.body.nodes.len(), 1);
+    &action.body.nodes[0]
 }
 
 fn assert_reason<'a>(

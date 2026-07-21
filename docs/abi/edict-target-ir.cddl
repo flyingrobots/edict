@@ -23,10 +23,10 @@ target-ir-artifact = {
   domain: tstr,
   targetProfile: target-ir-resource-ref,
   sourceCoreCoordinate: tstr,
-  intents: { * tstr => target-ir-intent },
+  actions: { * tstr => target-ir-action },
 }
 
-target-ir-intent = {
+target-ir-action = {
   operationProfile: tstr,
   inputConstraints: [* input-constraint],
   coreEvaluationBudget: core-budget,

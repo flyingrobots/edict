@@ -159,7 +159,7 @@ fn effectful_core_with_obstruction_map() -> CanonicalValue {
             )]),
         ),
     ]);
-    let intent = map(&[
+    let action = map(&[
         ("input", CanonicalValue::Text("Unit".to_owned())),
         ("output", CanonicalValue::Text("Unit".to_owned())),
         (
@@ -195,7 +195,7 @@ fn effectful_core_with_obstruction_map() -> CanonicalValue {
         ),
         ("imports", CanonicalValue::Array(Vec::new())),
         ("types", map(&[])),
-        ("intents", map(&[("apply", intent)])),
+        ("actions", map(&[("apply", action)])),
         (
             "requiredCoreCapabilities",
             CanonicalValue::Array(Vec::new()),

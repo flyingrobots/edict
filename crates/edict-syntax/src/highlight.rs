@@ -107,7 +107,7 @@ fn is_highlight_keyword(text: &str) -> bool {
             | "type"
             | "enum"
             | "variant"
-            | "intent"
+            | "action"
             | "returns"
             | "profile"
             | "implements"

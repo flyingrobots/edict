@@ -18,7 +18,7 @@ pub struct CoreModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub types: BTreeMap<String, CoreType>,
-    pub intents: BTreeMap<String, CoreIntent>,
+    pub actions: BTreeMap<String, CoreAction>,
     pub required_core_capabilities: Vec<String>,
 }
 
@@ -195,9 +195,9 @@ pub struct CoreBudget {
     pub max_output_bytes: u64,
 }
 
-/// Core intent shape for the initial lowerer.
+/// Core action shape for the initial lowerer.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CoreIntent {
+pub struct CoreAction {
     pub input: String,
     pub output: String,
     pub required_operation_profile: String,

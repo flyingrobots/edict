@@ -52,7 +52,7 @@ pub struct Import {
 pub enum Decl {
     Type(TypeDecl),
     Enum(EnumDecl),
-    Intent(IntentDecl),
+    Action(ActionDecl),
 }
 
 /// `enum Name { CASE, CASE, ... }` — a closed set of payload-free cases.
@@ -150,13 +150,13 @@ pub struct ScalarRefine {
     pub canonical: Option<String>,
 }
 
-/// `intent name(params) returns Ty <clauses> { body }`
+/// `action name(params) returns Ty <clauses> { body }`
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct IntentDecl {
+pub struct ActionDecl {
     pub name: String,
     pub params: Vec<Param>,
     pub returns: TypeRef,
-    pub clauses: Vec<IntentClause>,
+    pub clauses: Vec<ActionClause>,
     pub body: Block,
     pub span: Span,
 }
@@ -169,9 +169,9 @@ pub struct Param {
     pub span: Span,
 }
 
-/// An intent clause (order-independent).
+/// An action clause (order-independent).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum IntentClause {
+pub enum ActionClause {
     Profile(Vec<String>),
     Implements(Vec<String>),
     /// `basis none` or `basis <expr>`.
@@ -188,7 +188,7 @@ pub struct Block {
     pub span: Span,
 }
 
-/// A statement inside an intent body (minimal-v1 subset).
+/// A statement inside an action body (minimal-v1 subset).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Stmt {
     Let {

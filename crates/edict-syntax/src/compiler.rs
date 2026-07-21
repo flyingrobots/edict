@@ -6,12 +6,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldDecl, Import, ImportKind, IntentClause,
-    IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, RecordEntry,
+    ActionClause, ActionDecl, BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldDecl, Import,
+    ImportKind, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, RecordEntry,
     RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, YieldBlock,
 };
 use crate::core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
+    CompareOp, CoreAction, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreModule,
     CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
     CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
     CORE_API_VERSION,
@@ -123,7 +123,7 @@ pub struct ResolvedModule {
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
     pub types: Vec<ResolvedTypeDecl>,
-    pub intents: Vec<ResolvedIntent>,
+    pub actions: Vec<ResolvedAction>,
 }
 
 /// Resolved type declaration.
@@ -133,14 +133,14 @@ pub struct ResolvedTypeDecl {
     pub source: TypeDecl,
 }
 
-/// Resolved intent declaration.
+/// Resolved action declaration.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResolvedIntent {
+pub struct ResolvedAction {
     pub name: String,
     pub profile: String,
     pub allowed_write_classes: Option<BTreeSet<WriteClass>>,
     pub budget: CoreBudget,
-    pub source: IntentDecl,
+    pub source: ActionDecl,
 }
 
 /// Module after type checking and Core-ready local normalization.
@@ -149,12 +149,12 @@ pub struct TypedModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub types: BTreeMap<String, CoreType>,
-    pub intents: Vec<TypedIntent>,
+    pub actions: Vec<TypedAction>,
 }
 
-/// Typed intent boundary consumed by `lower_core`.
+/// Typed action boundary consumed by `lower_core`.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TypedIntent {
+pub struct TypedAction {
     pub name: String,
     pub input: String,
     pub output: String,
@@ -202,7 +202,7 @@ pub fn resolve_module(
     let coordinate = package_coordinate(&module.package.path, &module.package.version);
     let imports = resolve_imports(&module.imports, &mut errors);
     let mut types = Vec::new();
-    let mut intents = Vec::new();
+    let mut actions = Vec::new();
 
     for decl in &module.decls {
         match decl {
@@ -216,9 +216,9 @@ pub fn resolve_module(
                 "enum declarations are not in the initial lowerable subset",
                 decl.span,
             )),
-            Decl::Intent(intent) => {
-                if let Some(resolved) = resolve_intent(intent, context, &mut errors) {
-                    intents.push(resolved);
+            Decl::Action(action) => {
+                if let Some(resolved) = resolve_action(action, context, &mut errors) {
+                    actions.push(resolved);
                 }
             }
         }
@@ -231,7 +231,7 @@ pub fn resolve_module(
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
             types,
-            intents,
+            actions,
         },
     )
 }
@@ -252,19 +252,19 @@ pub fn type_check(resolved: &ResolvedModule) -> Result<TypedModule, Vec<Compiler
 /// Core-ready, so this stage is expected to be infallible for valid
 /// [`TypedModule`] values.
 pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>> {
-    let intents = typed
-        .intents
+    let actions = typed
+        .actions
         .iter()
-        .map(|intent| {
+        .map(|action| {
             (
-                intent.name.clone(),
-                CoreIntent {
-                    input: intent.input.clone(),
-                    output: intent.output.clone(),
-                    required_operation_profile: intent.profile.clone(),
-                    input_constraints: intent.input_constraints.clone(),
-                    core_evaluation_budget: intent.budget.clone(),
-                    body: intent.body.clone(),
+                action.name.clone(),
+                CoreAction {
+                    input: action.input.clone(),
+                    output: action.output.clone(),
+                    required_operation_profile: action.profile.clone(),
+                    input_constraints: action.input_constraints.clone(),
+                    core_evaluation_budget: action.budget.clone(),
+                    body: action.body.clone(),
                 },
             )
         })
@@ -274,7 +274,7 @@ pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>>
         coordinate: typed.coordinate.clone(),
         imports: typed.imports.clone(),
         types: typed.types.clone(),
-        intents,
+        actions,
         required_core_capabilities: Vec::new(),
     })
 }
@@ -317,17 +317,17 @@ fn core_import_kind(kind: ImportKind) -> Option<CoreImportKind> {
     }
 }
 
-fn resolve_intent(
-    intent: &IntentDecl,
+fn resolve_action(
+    action: &ActionDecl,
     context: &CompilerContext,
     errors: &mut Vec<CompilerError>,
-) -> Option<ResolvedIntent> {
+) -> Option<ResolvedAction> {
     let mut profile = None;
     let mut allowed_write_classes = None;
     let mut budget = None;
-    for clause in &intent.clauses {
+    for clause in &action.clauses {
         match clause {
-            IntentClause::Profile(path) => {
+            ActionClause::Profile(path) => {
                 let key = path_key(path);
                 match context.operation_profiles.get(&key) {
                     Some(value) => {
@@ -337,36 +337,36 @@ fn resolve_intent(
                     }
                     None => errors.push(missing_context_fact(
                         format!("operation profile `{key}` has no compiler context fact"),
-                        intent.span,
+                        action.span,
                     )),
                 }
             }
-            IntentClause::Budget(path) => {
+            ActionClause::Budget(path) => {
                 let key = path_key(path);
                 match context.budgets.get(&key) {
                     Some(value) => budget = Some(value.clone()),
                     None => errors.push(missing_context_fact(
                         format!("budget `{key}` has no compiler context fact"),
-                        intent.span,
+                        action.span,
                     )),
                 }
             }
-            IntentClause::Implements(_) => errors.push(error(
+            ActionClause::Implements(_) => errors.push(error(
                 CompilerStage::Resolve,
                 CompilerErrorKind::UnsupportedSourceShape,
-                "`implements` intents are outside the initial lowerable subset",
-                intent.span,
+                "`implements` actions are outside the initial lowerable subset",
+                action.span,
             )),
-            IntentClause::Basis(_) | IntentClause::Footprint(_) | IntentClause::Where(_) => {}
+            ActionClause::Basis(_) | ActionClause::Footprint(_) | ActionClause::Where(_) => {}
         }
     }
 
-    Some(ResolvedIntent {
-        name: intent.name.clone(),
+    Some(ResolvedAction {
+        name: action.name.clone(),
         profile: profile?,
         allowed_write_classes,
         budget: budget?,
-        source: intent.clone(),
+        source: action.clone(),
     })
 }
 
@@ -463,17 +463,17 @@ impl<'a> TypeChecker<'a> {
 
     fn check(mut self) -> Result<TypedModule, Vec<CompilerError>> {
         self.check_types();
-        let mut intents = Vec::new();
-        for intent in &self.resolved.intents {
-            if let Some(typed) = self.check_intent(intent) {
-                intents.push(typed);
+        let mut actions = Vec::new();
+        for action in &self.resolved.actions {
+            if let Some(typed) = self.check_action(action) {
+                actions.push(typed);
             }
         }
         let module = TypedModule {
             coordinate: self.resolved.coordinate.clone(),
             imports: self.resolved.imports.clone(),
             types: self.core_types,
-            intents,
+            actions,
         };
         finish(self.errors, module)
     }
@@ -605,13 +605,13 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
-    fn check_intent(&mut self, intent: &ResolvedIntent) -> Option<TypedIntent> {
-        let source = &intent.source;
+    fn check_action(&mut self, action: &ResolvedAction) -> Option<TypedAction> {
+        let source = &action.source;
         if source.params.len() != 1 {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnsupportedSourceShape,
-                "initial Core lowering supports exactly one intent parameter",
+                "initial Core lowering supports exactly one action parameter",
                 source.span,
             ));
             return None;
@@ -619,7 +619,7 @@ impl<'a> TypeChecker<'a> {
         if !source
             .clauses
             .iter()
-            .any(|clause| matches!(clause, IntentClause::Basis(None)))
+            .any(|clause| matches!(clause, ActionClause::Basis(None)))
         {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -641,14 +641,14 @@ impl<'a> TypeChecker<'a> {
         let mut locals = vec![input_binding.clone()];
         let mut env = BTreeMap::from([(param.name.clone(), (input_binding.clone(), input_shape))]);
         let input_constraints = self.input_constraints(source, &env);
-        let body = self.check_body(intent, &output_shape, &mut env, &mut locals)?;
+        let body = self.check_body(action, &output_shape, &mut env, &mut locals)?;
 
-        Some(TypedIntent {
-            name: intent.name.clone(),
+        Some(TypedAction {
+            name: action.name.clone(),
             input: input_binding.ty.clone(),
             output: output_shape.coord,
-            profile: intent.profile.clone(),
-            budget: intent.budget.clone(),
+            profile: action.profile.clone(),
+            budget: action.budget.clone(),
             input_binding,
             input_constraints,
             body,
@@ -657,13 +657,13 @@ impl<'a> TypeChecker<'a> {
 
     fn input_constraints(
         &mut self,
-        intent: &IntentDecl,
+        action: &ActionDecl,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
     ) -> Vec<InputConstraint> {
         let mut out = Vec::new();
         let mut index = 0usize;
-        for clause in &intent.clauses {
-            if let IntentClause::Where(predicates) = clause {
+        for clause in &action.clauses {
+            if let ActionClause::Where(predicates) = clause {
                 for predicate in predicates {
                     if let Some(predicate) = self.check_predicate(predicate, env) {
                         out.push(InputConstraint {
@@ -681,16 +681,16 @@ impl<'a> TypeChecker<'a> {
 
     fn check_body(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         output_shape: &TypeShape,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
     ) -> Option<CoreBlock> {
-        let source = &intent.source;
+        let source = &action.source;
         let mut state = BodyState::default();
 
         for stmt in &source.body.stmts {
-            self.check_body_stmt(intent, output_shape, stmt, env, locals, &mut state);
+            self.check_body_stmt(action, output_shape, stmt, env, locals, &mut state);
         }
 
         if let Some(result) = state.result {
@@ -703,7 +703,7 @@ impl<'a> TypeChecker<'a> {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::TypeMismatch,
-                "intent body must return a value",
+                "action body must return a value",
                 source.span,
             ));
             None
@@ -712,7 +712,7 @@ impl<'a> TypeChecker<'a> {
 
     fn check_body_stmt(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         output_shape: &TypeShape,
         stmt: &Stmt,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
@@ -727,7 +727,7 @@ impl<'a> TypeChecker<'a> {
                 els,
                 span,
             } => self.check_let_stmt(
-                intent,
+                action,
                 LetStatement {
                     name,
                     ty: ty.as_ref(),
@@ -750,12 +750,12 @@ impl<'a> TypeChecker<'a> {
                         CompilerStage::TypeCheck,
                         CompilerErrorKind::TypeMismatch,
                         "return value does not match declared output type",
-                        intent.source.span,
+                        action.source.span,
                     ));
                 }
             }
             Stmt::Effect { call, span, .. } => {
-                if self.check_effect_profile(intent, call, *span) {
+                if self.check_effect_profile(action, call, *span) {
                     self.unsupported_stmt(*span, "effect statement");
                 }
             }
@@ -945,28 +945,28 @@ impl<'a> TypeChecker<'a> {
 
     fn check_let_stmt(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         stmt: LetStatement<'_>,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
         if let Some(handler) = stmt.handler {
-            self.check_effectful_let(intent, stmt, handler, env, locals, state);
+            self.check_effectful_let(action, stmt, handler, env, locals, state);
         } else {
-            self.check_pure_let(intent, stmt, env, locals, state);
+            self.check_pure_let(action, stmt, env, locals, state);
         }
     }
 
     fn check_pure_let(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         stmt: LetStatement<'_>,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        if !self.check_known_effect_profiles(intent, stmt.value) {
+        if !self.check_known_effect_profiles(action, stmt.value) {
             return;
         }
         let Some(value) = self.check_expr(stmt.value, env) else {
@@ -1008,14 +1008,14 @@ impl<'a> TypeChecker<'a> {
 
     fn check_effectful_let(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         stmt: LetStatement<'_>,
         handler: &ObstructionHandler,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        if !self.check_effect_profile(intent, stmt.value, stmt.span) {
+        if !self.check_effect_profile(action, stmt.value, stmt.span) {
             return;
         }
         let Some(binding_shape) = self.effect_binding_shape(stmt.ty, stmt.span) else {
@@ -1044,7 +1044,7 @@ impl<'a> TypeChecker<'a> {
         env.insert(stmt.name.to_owned(), (local, binding_shape));
     }
 
-    fn check_effect_profile(&mut self, intent: &ResolvedIntent, call: &Expr, span: Span) -> bool {
+    fn check_effect_profile(&mut self, action: &ResolvedAction, call: &Expr, span: Span) -> bool {
         let Some(effect) = effect_coordinate(call) else {
             self.unsupported_stmt(span, "effect call");
             return false;
@@ -1058,13 +1058,13 @@ impl<'a> TypeChecker<'a> {
             ));
             return false;
         };
-        let Some(allowed_write_classes) = &intent.allowed_write_classes else {
+        let Some(allowed_write_classes) = &action.allowed_write_classes else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::MissingContextFact,
                 format!(
                     "operation profile `{}` has no write-class compiler context fact",
-                    intent.profile
+                    action.profile
                 ),
                 span,
             ));
@@ -1078,7 +1078,7 @@ impl<'a> TypeChecker<'a> {
                 CompilerErrorKind::ProfileEffectMismatch,
                 format!(
                     "effect `{effect}` requires write class {write_class:?}, which profile `{}` does not allow",
-                    intent.profile
+                    action.profile
                 ),
                 span,
             ));
@@ -1231,11 +1231,11 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
-    fn check_known_effect_profiles(&mut self, intent: &ResolvedIntent, expr: &Expr) -> bool {
+    fn check_known_effect_profiles(&mut self, action: &ResolvedAction, expr: &Expr) -> bool {
         let mut accepted = true;
         if let Some(effect) = effect_coordinate(expr) {
             if self.resolved.effect_write_classes.contains_key(&effect) {
-                accepted &= self.check_effect_profile(intent, expr, expr_span(expr));
+                accepted &= self.check_effect_profile(action, expr, expr_span(expr));
             }
         }
         match expr {
@@ -1245,32 +1245,32 @@ impl<'a> TypeChecker<'a> {
             | Expr::Bool { .. }
             | Expr::Digest { .. } => {}
             Expr::Field { base, .. } => {
-                accepted &= self.check_known_effect_profiles(intent, base);
+                accepted &= self.check_known_effect_profiles(action, base);
             }
             Expr::Call { callee, args, .. } => {
-                accepted &= self.check_known_effect_profiles(intent, callee);
+                accepted &= self.check_known_effect_profiles(action, callee);
                 for arg in args {
-                    accepted &= self.check_known_effect_profiles(intent, arg);
+                    accepted &= self.check_known_effect_profiles(action, arg);
                 }
             }
             Expr::Unary { operand, .. } => {
-                accepted &= self.check_known_effect_profiles(intent, operand);
+                accepted &= self.check_known_effect_profiles(action, operand);
             }
             Expr::Binary { lhs, rhs, .. } => {
-                accepted &= self.check_known_effect_profiles(intent, lhs);
-                accepted &= self.check_known_effect_profiles(intent, rhs);
+                accepted &= self.check_known_effect_profiles(action, lhs);
+                accepted &= self.check_known_effect_profiles(action, rhs);
             }
             Expr::Record { entries, .. } => {
                 for entry in entries {
-                    accepted &= self.check_known_effect_profiles_in_record_entry(intent, entry);
+                    accepted &= self.check_known_effect_profiles_in_record_entry(action, entry);
                 }
             }
             Expr::If {
                 cond, then, els, ..
             } => {
-                accepted &= self.check_known_effect_profiles(intent, cond);
-                accepted &= self.check_known_effect_profiles(intent, then);
-                accepted &= self.check_known_effect_profiles(intent, els);
+                accepted &= self.check_known_effect_profiles(action, cond);
+                accepted &= self.check_known_effect_profiles(action, then);
+                accepted &= self.check_known_effect_profiles(action, els);
             }
             Expr::IfYield {
                 pred,
@@ -1278,21 +1278,21 @@ impl<'a> TypeChecker<'a> {
                 else_block,
                 ..
             } => {
-                accepted &= self.check_known_effect_profiles(intent, pred);
-                accepted &= self.check_known_effect_profiles_in_yield_block(intent, then_block);
-                accepted &= self.check_known_effect_profiles_in_yield_block(intent, else_block);
+                accepted &= self.check_known_effect_profiles(action, pred);
+                accepted &= self.check_known_effect_profiles_in_yield_block(action, then_block);
+                accepted &= self.check_known_effect_profiles_in_yield_block(action, else_block);
             }
             Expr::VariantLit { payload, .. } => {
                 if let Some(payload) = payload {
-                    accepted &= self.check_known_effect_profiles(intent, payload);
+                    accepted &= self.check_known_effect_profiles(action, payload);
                 }
             }
             Expr::Match {
                 scrutinee, arms, ..
             } => {
-                accepted &= self.check_known_effect_profiles(intent, scrutinee);
+                accepted &= self.check_known_effect_profiles(action, scrutinee);
                 for arm in arms {
-                    accepted &= self.check_known_effect_profiles(intent, &arm.body);
+                    accepted &= self.check_known_effect_profiles(action, &arm.body);
                 }
             }
         }
@@ -1301,12 +1301,12 @@ impl<'a> TypeChecker<'a> {
 
     fn check_known_effect_profiles_in_record_entry(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         entry: &RecordEntry,
     ) -> bool {
         match entry {
             RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
-                self.check_known_effect_profiles(intent, value)
+                self.check_known_effect_profiles(action, value)
             }
             RecordEntry::Shorthand { .. } => true,
         }
@@ -1314,32 +1314,32 @@ impl<'a> TypeChecker<'a> {
 
     fn check_known_effect_profiles_in_yield_block(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         block: &YieldBlock,
     ) -> bool {
         let mut accepted = true;
         for stmt in &block.stmts {
-            accepted &= self.check_known_effect_profiles_in_stmt(intent, stmt);
+            accepted &= self.check_known_effect_profiles_in_stmt(action, stmt);
         }
-        accepted &= self.check_known_effect_profiles(intent, &block.value);
+        accepted &= self.check_known_effect_profiles(action, &block.value);
         accepted
     }
 
     fn check_known_effect_profiles_in_block(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         block: &Block,
     ) -> bool {
         let mut accepted = true;
         for stmt in &block.stmts {
-            accepted &= self.check_known_effect_profiles_in_stmt(intent, stmt);
+            accepted &= self.check_known_effect_profiles_in_stmt(action, stmt);
         }
         accepted
     }
 
     fn check_known_effect_profiles_in_stmt(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         stmt: &Stmt,
     ) -> bool {
         match stmt {
@@ -1347,45 +1347,45 @@ impl<'a> TypeChecker<'a> {
                 value, els, span, ..
             } => {
                 if els.is_some() {
-                    self.check_effect_profile(intent, value, *span)
+                    self.check_effect_profile(action, value, *span)
                 } else {
-                    self.check_known_effect_profiles(intent, value)
+                    self.check_known_effect_profiles(action, value)
                 }
             }
-            Stmt::Effect { call, span, .. } => self.check_effect_profile(intent, call, *span),
+            Stmt::Effect { call, span, .. } => self.check_effect_profile(action, call, *span),
             Stmt::Require { predicate, .. }
             | Stmt::Guarantee { predicate, .. }
-            | Stmt::Assert { predicate, .. } => self.check_known_effect_profiles(intent, predicate),
+            | Stmt::Assert { predicate, .. } => self.check_known_effect_profiles(action, predicate),
             Stmt::If {
                 cond,
                 then_block,
                 els,
                 ..
             } => {
-                let mut accepted = self.check_known_effect_profiles(intent, cond);
-                accepted &= self.check_known_effect_profiles_in_block(intent, then_block);
+                let mut accepted = self.check_known_effect_profiles(action, cond);
+                accepted &= self.check_known_effect_profiles_in_block(action, then_block);
                 if let Some(els) = els {
-                    accepted &= self.check_known_effect_profiles_in_else(intent, els);
+                    accepted &= self.check_known_effect_profiles_in_else(action, els);
                 }
                 accepted
             }
             Stmt::For { iter, body, .. } => {
-                let mut accepted = self.check_known_effect_profiles(intent, iter);
-                accepted &= self.check_known_effect_profiles_in_block(intent, body);
+                let mut accepted = self.check_known_effect_profiles(action, iter);
+                accepted &= self.check_known_effect_profiles_in_block(action, body);
                 accepted
             }
-            Stmt::Return { value, .. } => self.check_known_effect_profiles(intent, value),
+            Stmt::Return { value, .. } => self.check_known_effect_profiles(action, value),
         }
     }
 
     fn check_known_effect_profiles_in_else(
         &mut self,
-        intent: &ResolvedIntent,
+        action: &ResolvedAction,
         els: &ElseClause,
     ) -> bool {
         match els {
-            ElseClause::Block(block) => self.check_known_effect_profiles_in_block(intent, block),
-            ElseClause::If(stmt) => self.check_known_effect_profiles_in_stmt(intent, stmt),
+            ElseClause::Block(block) => self.check_known_effect_profiles_in_block(action, block),
+            ElseClause::If(stmt) => self.check_known_effect_profiles_in_stmt(action, stmt),
         }
     }
 

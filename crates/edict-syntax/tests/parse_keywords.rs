@@ -9,7 +9,7 @@ use edict_syntax::{parse_module, ParseErrorKind};
 fn keywords_are_rejected_as_bare_values() {
     for kw in [
         "then", "else", "yield", "for", "in", "bounded", "return", "let", "where", "require",
-        "assert", "intent", "type", "enum",
+        "assert", "action", "type", "enum",
     ] {
         let src = body(&format!("  let x = {kw};\n  return {{ x }};"));
         let err = parse_module(&src).expect_err("keyword must reject as bare value");

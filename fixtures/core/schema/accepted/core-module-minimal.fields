@@ -4,6 +4,6 @@ shape core-module
 field apiVersion
 field coordinate
 field imports
-field intents
+field actions
 field requiredCoreCapabilities
 field types

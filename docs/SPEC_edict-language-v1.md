@@ -69,7 +69,7 @@ the boundaries that must not leak back into language meaning:
 ## Decision Summary
 
 Edict v1 is a restricted deterministic source language for lawful optics over
-witnessed causal history. An Edict intent is an optic-shaped operation
+witnessed causal history. An Edict action is an optic-shaped operation
 specification: it declares a bounded aperture, typed input and output, imported
 law and target authorities, inferred effects, proof obligations, obstruction
 mappings, support posture, and target-owned application requirements.
@@ -102,7 +102,7 @@ Edict inherits its motivating shape from Observer Geometry and WARP optics:
   lowers it under an admissibility law, and retains a holographic boundary
   shell.
 
-Therefore an Edict intent is not only a typed function from input to output. It
+Therefore an Edict action is not only a typed function from input to output. It
 is an authored optic candidate:
 
 ```text
@@ -116,14 +116,14 @@ obstruction mappings, canonical Core IR, and bundle evidence. Future syntax may
 make basis, aperture, support ledgers, degeneracy posture, and holographic
 witness shells more explicit, but v1 must not contradict those concepts.
 
-Intent classes:
+Action classes:
 
-- **revelation optic:** read-only or observer intent that projects a bounded
+- **revelation optic:** read-only or observer action that projects a bounded
   aperture into a reading without authoring history;
-- **affect/reintegration optic:** write intent that proposes effects against a
+- **affect/reintegration optic:** write action that proposes effects against a
   basis and carries the guards, support obligations, and obstruction vocabulary
   needed for participant admission;
-- **semantic lawpack optic:** storage-neutral intent that lowers through a
+- **semantic lawpack optic:** storage-neutral action that lowers through a
   digest-locked lawpack into a concrete target profile.
 
 Target profiles interpret Edict Core optics into runtime-owned execution
@@ -274,9 +274,9 @@ Edict has four separable layers.
 ### 1. Edict Source
 
 Human and agent authored syntax. It declares packages, imports, types, pure
-functions, intents, assertions, and target intrinsic calls. Migration and
+functions, actions, assertions, and target intrinsic calls. Migration and
 projection syntax is reserved for future versions; v1 expresses migrations as
-ordinary intents with a migration profile.
+ordinary actions with a migration profile.
 
 ### 2. Edict Core IR
 
@@ -738,7 +738,7 @@ unit. Writes become visible only if all reads, guards, effects, budgets,
 resource checks, and guarantees succeed.
 
 Any obstruction or platform-owned failure aborts the application without
-externally visible partial writes. If an intent appears to need effects across
+externally visible partial writes. If an action appears to need effects across
 multiple physical systems, it must target a composite target profile that owns
 the coordination and atomicity semantics.
 
@@ -894,7 +894,7 @@ must carry the same source artifact digest, Core IR digest, target profile,
 footprint, cost budget, verifier result, generated artifacts, admission posture,
 and obstruction taxonomy as write operations.
 
-Observer source sugar, if accepted by a frontend, must desugar to an `intent`
+Observer source sugar, if accepted by a frontend, must desugar to an `action`
 with a read-only source claim. The read-only claim remains inferential: writes,
 appends, runtime-materialized semantic records, unbounded reads, or unchecked
 costs reject the bundle.
@@ -985,7 +985,7 @@ admission and scheduling precision.
 
 ### I-007 FIDLAR Rejection
 
-An Edict intent must not receive raw runtime mutation authority in the
+An Edict action must not receive raw runtime mutation authority in the
 lawful-autonomous lane. Privileged/native host extensions must use a separate
 trust lane and must not claim compile-time footprint honesty unless they lower
 to checked target IR with inferred effects.
@@ -999,7 +999,7 @@ must emit a mismatch diagnostic unless the author updates the lock.
 
 ### I-009 Canonical Names
 
-Package, type, function, intent, field, profile, and import names normalize to
+Package, type, function, action, field, profile, and import names normalize to
 canonical coordinates. The canonical coordinate, not local alias spelling, is
 used in Core IR hashes.
 
@@ -1135,7 +1135,7 @@ changing the identity of the enclosed contract bundle
 
 ### I-029 Atomic Application
 
-A lawful-autonomous v1 intent lowers to one target-owned atomic application
+A lawful-autonomous v1 action lowers to one target-owned atomic application
 unit. Runtime reads and guards observe one target-defined application snapshot.
 All writes become visible atomically. Any obstruction, resource failure, budget
 failure, failed runtime precondition, or failed precommit guarantee leaves
@@ -1143,14 +1143,14 @@ externally visible target state unchanged.
 
 ### I-030 Single Runtime Effect Domain
 
-An intent may lower to effects owned by at most one runtime target profile.
+An action may lower to effects owned by at most one runtime target profile.
 Lawpack semantic effects may lower into that target. Cross-target application
 requires a composite target profile that owns coordination, obstruction, and
 atomicity semantics.
 
-### I-031 Intent Optic Structure
+### I-031 Action Optic Structure
 
-Every Edict intent is an optic-shaped lawful operation specification. Core
+Every Edict action is an optic-shaped lawful operation specification. Core
 carries a **minimal normative optic contract** — `opticKind`, `basis`,
 `boundaryKind` (`projection`/`affect`), aperture/footprint requirement,
 `supportPolicy`, and `lossDisposition` (see Optic Contract under Edict Core IR).
@@ -1189,7 +1189,7 @@ type RecordGitWarpImportBatchReceipt = {
   batchId: Digest,
 };
 
-intent recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
+action recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
   returns RecordGitWarpImportBatchReceipt
   profile echo.createOnly
   basis input.basisId
@@ -1223,7 +1223,7 @@ package graft.structural_history@1;
 
 use lawpack history.optics@1 digest "sha256:..." as history;
 
-intent recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
+action recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
   returns RecordGitWarpImportBatchReceipt
   implements history.recordEntry
   basis input.basisId
@@ -1355,7 +1355,7 @@ declaration     = type-decl
                 | enum-decl
                 | const-decl
                 | fn-decl
-                | intent-decl ;
+                | action-decl ;
 
 bound-ref       = int-lit | qual-ident ;
 
@@ -1398,10 +1398,10 @@ pure-statement  = let-stmt
                 | assert-stmt
                 | return-stmt ;
 
-intent-decl     = "intent" , ident , "(" , param-list? , ")" ,
+action-decl     = "action" , ident , "(" , param-list? , ")" ,
                   "returns" , type-ref ,
-                  intent-clause* , block ;
-intent-clause   = profile-clause
+                  action-clause* , block ;
+action-clause   = profile-clause
                 | implements-clause
                 | basis-clause
                 | where-clause
@@ -1517,13 +1517,13 @@ Semantic grammar rules:
   accepted as v1 declarations.
 - Keywords are reserved as bare identifiers but may appear after `.` as member
   names, so `ref.ensure(value)` and `history.event.record(value)` are legal.
-- Each intent may contain at most one `profile`, one `implements`, one `basis`,
+- Each action may contain at most one `profile`, one `implements`, one `basis`,
   one `footprint`, and one `budget` clause.
-- The grammar accepts `intent-clause*`, but clause **requiredness** is a semantic
+- The grammar accepts `action-clause*`, but clause **requiredness** is a semantic
   rule; omitting a required clause is parseable but rejected in semantic
-  validation (`EDICT-LANG-INTENT-CLAUSES-001`). Required: **at least one** of
+  validation (`EDICT-LANG-ACTION-CLAUSES-001`). Required: **at least one** of
   `profile` (operation mode on a target) or `implements` (a portable law profile
-  the intent satisfies) — an intent may carry **both** (e.g. `implements` a law
+  the action satisfies) — an action may carry **both** (e.g. `implements` a law
   profile while declaring a `profile` operation mode); a `budget` clause; and a
   `basis` clause (see next bullet). Optional: `footprint` (a declared ceiling;
   the computed footprint is inferred regardless) and `where`.
@@ -1613,7 +1613,7 @@ Only `String` may pin a `canonical=` policy; `Bytes` carries `max` only.
 max-only refinement), because bytes are measured and hashed raw and must not be
 normalized (`EDICT-LANG-BYTES-NOCANON-001`).
 
-Boundedness is expressible **everywhere** a type appears: intent parameters,
+Boundedness is expressible **everywhere** a type appears: action parameters,
 return types, type aliases, record fields, function parameters and returns, and
 imported-effect arguments. A naked, unbounded runtime `String` or `Bytes` value
 is rejected in the lawful-autonomous lane because its output cost cannot be
@@ -1670,7 +1670,7 @@ lawful-autonomous locked bundle.
 ## Expressions
 
 Edict expressions are pure unless the expression is an imported effect call
-in A-normal effect position inside an intent body. Pure expressions may:
+in A-normal effect position inside an action body. Pure expressions may:
 
 - construct records, variants, lists, and maps;
 - read local variables and operation inputs;
@@ -1699,7 +1699,7 @@ Pure expressions may not:
 
 ## Statements
 
-Intent bodies are statement-oriented so effect ordering is explicit. The v1
+Action bodies are statement-oriented so effect ordering is explicit. The v1
 statement set is deliberately small:
 
 - `let` binds an immutable local.
@@ -1774,7 +1774,7 @@ application unit begins.
 - Domain-specific checks against runtime state belong in `require` (with its
   typed obstruction), never in `where`.
 
-Multiple `where` clauses merge conjunctively. The Core intent carries the
+Multiple `where` clauses merge conjunctively. The Core action carries the
 **typed predicate trees** themselves in `inputConstraints` (not merely a
 validator coordinate), because the predicates are hash-significant: changing
 `where input.repo != ""` to a different input predicate must change the semantic
@@ -1785,10 +1785,10 @@ non-hash sidecar.
 ## Basis Expressions
 
 A `basis` expression is evaluated in the **pure pre-body environment**
-(`EDICT-LANG-BASIS-PURE-001`). It may reference intent parameters, constants,
+(`EDICT-LANG-BASIS-PURE-001`). It may reference action parameters, constants,
 `CapabilityRef` values, and total digest-locked pure functions over those
 values. It must **not** reference target state, imported effects, effect
-results, or locals bound in the intent body. A profile- or lawpack-supplied
+results, or locals bound in the action body. A profile- or lawpack-supplied
 basis template obeys the same restriction.
 
 This protects the central doctrine: the basis is what the operation *says* it
@@ -2154,7 +2154,7 @@ not source syntax and not target IR.
   "imports": [],
   "types": [],
   "functions": [],
-  "intents": [],
+  "actions": [],
   "canonicalizationProfile": {
     "id": "edict.canonical-cbor/v1",
     "digest": "sha256:..."
@@ -2183,12 +2183,12 @@ Core IR digest. Lowerer and verifier component digests are bundle fields, not
 Core fields: a different conforming lowerer must not change the semantic Core IR
 digest (`EDICT-CORE-NOPACKAGING-001`).
 
-### Core Intent Shape
+### Core Action Shape
 
 ```json
 {
   "name": "recordGitWarpImportBatch",
-  "coordinate": "graft.structural_history@1.intent.recordGitWarpImportBatch",
+  "coordinate": "graft.structural_history@1.action.recordGitWarpImportBatch",
   "input": "RecordGitWarpImportBatchInput",
   "output": "RecordGitWarpImportBatchReceipt",
   "optic": {
@@ -2227,12 +2227,12 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
 }
 ```
 
-Hash-significant intent fields are the optic contract, the
+Hash-significant action fields are the optic contract, the
 `requiredOperationProfile` **requirement**, target authorities, law profiles,
 the typed `inputConstraints` predicate trees (not a validator reference),
 Core/target budgets, and the body. (The module-level `requiredCoreCapabilities`
 field is also hash-significant; see Core Module Shape.) The following are **not**
-in the Core intent preimage:
+in the Core action preimage:
 
 - `verifiedOperationMode` — a verifier-report field, not a Core claim. Core
   states the requirement; the verifier proves the verdict
@@ -2246,7 +2246,7 @@ in the Core intent preimage:
 
 ### Optic Contract
 
-Per I-031, every intent carries a minimal normative optic contract in Core. Each
+Per I-031, every action carries a minimal normative optic contract in Core. Each
 field has exactly one deterministic source of truth
 (`EDICT-OPTIC-SOURCE-001`):
 
@@ -2406,7 +2406,7 @@ Core IR canonicalization must:
   the `coordinate` is authoritative (I-009), and the `name` is review metadata;
 - fail if any imported digest is unresolved.
 
-The Core intent preimage **includes**, positively and exhaustively
+The Core action preimage **includes**, positively and exhaustively
 (`EDICT-CORE-PREIMAGE-LIST-001`):
 
 - `coordinate`;
@@ -2538,7 +2538,7 @@ Diagnostic shape:
     "start": { "line": 12, "column": 3 },
     "end": { "line": 12, "column": 54 }
   },
-  "coordinate": "graft.structural_history@1.intent.recordGitWarpImportBatch",
+  "coordinate": "graft.structural_history@1.action.recordGitWarpImportBatch",
   "repair": {
     "kind": "adjust-footprint-bound-or-remove-effect",
     "details": {}
@@ -2652,7 +2652,7 @@ are present.
 - Add parser conformance fixtures for valid and invalid syntax.
 - Add parser fixtures for branch-yield conditional effects, effect `else`
   obstruction mapping, `budget <=`, bound refs, spread literals,
-  order-independent intent clauses, and rejected `migration`/`projection`
+  order-independent action clauses, and rejected `migration`/`projection`
   declarations.
 - Add Core IR canonicalization fixtures with exact expected hashes.
 - Add relapse fixtures proving no graph built-ins exist in Core.
@@ -2769,7 +2769,7 @@ These are important but are not parser or language freeze prerequisites:
 - Declared footprint underclaim rejects compilation.
 - FIDLAR raw callbacks are impossible in normal syntax.
 - Target lowering produces profile-owned target IR.
-- Target lowering preserves the intent optic structure: basis, aperture or
+- Target lowering preserves the action optic structure: basis, aperture or
   footprint, projection or affect boundary, support posture, guards,
   obstruction mappings, cost bounds, and canonical artifact identity.
 - Support loss, degeneracy, footprint overlap, and witness debt cannot be
@@ -2781,8 +2781,8 @@ These are important but are not parser or language freeze prerequisites:
 - GraphQL source-profile imports without digest-locked bounds reject
   locked-bundle production. Participant policy cannot supply missing Core type
   bounds.
-- Read-only intent containing a write effect rejects.
-- Read-only intent containing a runtime-materialized semantic append/log effect
+- Read-only action containing a write effect rejects.
+- Read-only action containing a runtime-materialized semantic append/log effect
   rejects.
 - Query and observer operations are first-class lawful-autonomous operations
   with Core IR digest, target profile, footprint, budget, verifier result,
@@ -2809,7 +2809,7 @@ These are important but are not parser or language freeze prerequisites:
 - Runtime reads, guards, writes, resource checks, and guarantees lower to one
   target-owned atomic application unit with no externally visible partial
   writes on obstruction.
-- An intent may emit runtime effects for only one target profile unless it uses
+- An action may emit runtime effects for only one target profile unless it uses
   a composite target profile that owns coordination and atomicity.
 - Codename terms reject from hash-significant canonical coordinates.
 - Branch-yield conditional effect values lower to structured Core branches with
@@ -2822,7 +2822,7 @@ These are important but are not parser or language freeze prerequisites:
   laundered into author-defined domain obstructions.
 - Source `budget <=` clauses lower to Core budgets and reject underclaimed cost.
 - Loop, list, map, and field bounds accept literal or digest-locked bound refs.
-- Intent clauses are order-independent with unique profile/implements/footprint
+- Action clauses are order-independent with unique profile/implements/footprint
   and budget clauses.
 - `migration` and `projection` are reserved and rejected by the v1 parser.
 - `some`, `none`, and `default` are prelude functions with pinned semantics.
@@ -2844,7 +2844,7 @@ These are important but are not parser or language freeze prerequisites:
 - Authoritative hash input is `edict.canonical-cbor/v1`; canonical JSON is
   review/debug rendering.
 - First non-Echo target is `kv.transactional@1`; event-log follows later.
-- Migrations start as ordinary intents with a migration profile.
+- Migrations start as ordinary actions with a migration profile.
 - Target profile manifests are data; lowerers and verifiers are locked,
   sandboxed executable components satisfying the manifest.
 - Portable semantic records may exist only as sugar for lawpack semantic
@@ -2861,7 +2861,7 @@ These are important but are not parser or language freeze prerequisites:
   costs, obstructions, target requirements, and admission requirements are
   inlined or summarized by verifier-approved bundle evidence.
 - A future version may add first-class `migration`, `projection`, and `observer`
-  declarations after ordinary intents and observer desugaring prove the
+  declarations after ordinary actions and observer desugaring prove the
   semantics.
 - A future version may loosen map-key restrictions for imported types with
   explicitly declared canonical key semantics.
@@ -2878,16 +2878,16 @@ These are important but are not parser or language freeze prerequisites:
 - Do not require GraphQL for native Edict authoring.
 - Do not make HOLMES, Watson, or Moriarty runtime authorities.
 
-## Appendix A: jedit Intent Stress Test
+## Appendix A: jedit Action Stress Test
 
 > [!NOTE]
 > jedit is the intended first real-world use case, so these are kept
 > **clause-conformant**, not left to rot. The rope-package and structural-history
-> intents below carry the clauses v1 requires (including `basis`, per
-> `EDICT-LANG-INTENT-CLAUSES-001`) and are fixture candidates. The one
+> actions below carry the clauses v1 requires (including `basis`, per
+> `EDICT-LANG-ACTION-CLAUSES-001`) and are fixture candidates. The one
 > deliberate exception is the **Product Text Buffer Optic Sketch**, which uses
 > `use capability` and `invoke` — **explicitly rejected v1 grammar** — to expose
-> design pressure; it is a negative/illustrative sketch, not a conforming intent.
+> design pressure; it is a negative/illustrative sketch, not a conforming action.
 
 ### Source Anchors
 
@@ -2920,7 +2920,7 @@ Two adjacent jedit contract surfaces also exist:
 
 This appendix treats `rope.graphql` as the primary stress surface because it is
 the installed generated jedit package. Consistent with the note above: the
-rope-package and structural-history intents are clause-conformant **fixture
+rope-package and structural-history actions are clause-conformant **fixture
 candidates**, while the product text-buffer optic surface is the one deliberate
 **non-v1 sketch** (it exposes capability invocation/composition and opaque
 handles via the rejected `invoke`/`use capability` forms). "Stress fixture" here
@@ -2972,7 +2972,7 @@ use shape "contracts/jedit/rope.graphql" as shape;
 use lawpack jedit.rope@1 as rope;
 use target echo.dpo@1 as echo;
 
-intent createBufferWorldline(input: shape.CreateBufferWorldlineInput)
+action createBufferWorldline(input: shape.CreateBufferWorldlineInput)
   returns shape.CreateBufferWorldlineResult
   profile echo.createOnly
   basis none
@@ -3059,7 +3059,7 @@ intent createBufferWorldline(input: shape.CreateBufferWorldlineInput)
   };
 }
 
-intent replaceRangeAsTick(input: shape.ReplaceRangeAsTickInput)
+action replaceRangeAsTick(input: shape.ReplaceRangeAsTickInput)
   returns shape.ReplaceRangeAsTickResult
   profile echo.boundaryReplacementLens
   basis input.baseHeadId
@@ -3170,7 +3170,7 @@ intent replaceRangeAsTick(input: shape.ReplaceRangeAsTickInput)
   };
 }
 
-intent createCheckpoint(input: shape.CreateCheckpointInput)
+action createCheckpoint(input: shape.CreateCheckpointInput)
   returns shape.CreateCheckpointResult
   profile echo.createOnly
   basis input.worldlineId
@@ -3206,7 +3206,7 @@ intent createCheckpoint(input: shape.CreateCheckpointInput)
   };
 }
 
-intent worldlineSnapshot(input: shape.WorldlineSnapshotInput)
+action worldlineSnapshot(input: shape.WorldlineSnapshotInput)
   returns shape.WorldlineSnapshot
   profile echo.readOnly
   basis input.worldlineId
@@ -3232,7 +3232,7 @@ intent worldlineSnapshot(input: shape.WorldlineSnapshotInput)
   };
 }
 
-intent textWindow(input: shape.TextWindowInput)
+action textWindow(input: shape.TextWindowInput)
   returns shape.TextWindowReading
   profile echo.readOnly
   basis input.worldlineId
@@ -3294,7 +3294,7 @@ use shape "contracts/jedit/text-buffer-optic.graphql" as optic;
 use lawpack jedit.text_buffer_optic@1 as textBuffer;
 use capability jedit.rope_contract@1 as rope;
 
-intent createBuffer(input: optic.CreateBufferInput)
+action createBuffer(input: optic.CreateBufferInput)
   returns optic.CreateBufferPayload
   profile textBuffer.productCreate
 {
@@ -3315,7 +3315,7 @@ intent createBuffer(input: optic.CreateBufferInput)
   };
 }
 
-intent replaceRange(input: optic.ReplaceRangeInput)
+action replaceRange(input: optic.ReplaceRangeInput)
   returns optic.ReplaceRangePayload
   profile textBuffer.productEdit
 {
@@ -3340,7 +3340,7 @@ intent replaceRange(input: optic.ReplaceRangeInput)
   };
 }
 
-intent textWindow(
+action textWindow(
   readBasis: optic.ReadBasisHandle,
   input: optic.TextWindowInput
 )
@@ -3379,7 +3379,7 @@ package jedit.structural_history@1;
 use shape "contracts/jedit/structural-history.graphql" as historyShape;
 use lawpack jedit.structural_history@1 as history;
 
-intent createTextHistory(input: historyShape.CreateTextHistoryInput)
+action createTextHistory(input: historyShape.CreateTextHistoryInput)
   returns historyShape.CreateTextHistoryPayload
   implements history.createTextHistory
   basis none
@@ -3396,7 +3396,7 @@ intent createTextHistory(input: historyShape.CreateTextHistoryInput)
   return history.createdPayload(input);
 }
 
-intent replaceTextRange(input: historyShape.ReplaceTextRangeInput)
+action replaceTextRange(input: historyShape.ReplaceTextRangeInput)
   returns historyShape.ReplaceTextRangePayload
   implements history.replaceTextRange
   basis input.baseRevisionId
@@ -3418,7 +3418,7 @@ intent replaceTextRange(input: historyShape.ReplaceTextRangeInput)
   return history.replacePayload(input);
 }
 
-intent openTextEditGroup(input: historyShape.OpenTextEditGroupInput)
+action openTextEditGroup(input: historyShape.OpenTextEditGroupInput)
   returns historyShape.TextEditGroupPayload
   implements history.openTextEditGroup
   basis input.historyId
@@ -3432,7 +3432,7 @@ intent openTextEditGroup(input: historyShape.OpenTextEditGroupInput)
   return history.openGroupPayload(input);
 }
 
-intent includeTextEventInOpenGroup(
+action includeTextEventInOpenGroup(
   input: historyShape.IncludeTextEventInOpenGroupInput
 )
   returns historyShape.TextEditGroupPayload
@@ -3449,7 +3449,7 @@ intent includeTextEventInOpenGroup(
   return history.includeEventPayload(input);
 }
 
-intent closeTextEditGroup(input: historyShape.CloseTextEditGroupInput)
+action closeTextEditGroup(input: historyShape.CloseTextEditGroupInput)
   returns historyShape.TextEditGroupPayload
   implements history.closeTextEditGroup
   basis input.historyId
@@ -3463,7 +3463,7 @@ intent closeTextEditGroup(input: historyShape.CloseTextEditGroupInput)
   return history.closeGroupPayload(input);
 }
 
-intent createTextCheckpoint(input: historyShape.CreateTextCheckpointInput)
+action createTextCheckpoint(input: historyShape.CreateTextCheckpointInput)
   returns historyShape.CreateTextCheckpointPayload
   implements history.createTextCheckpoint
   basis input.revisionId
@@ -3480,7 +3480,7 @@ intent createTextCheckpoint(input: historyShape.CreateTextCheckpointInput)
   return history.checkpointPayload(input);
 }
 
-intent textHistorySnapshot(input: historyShape.TextHistorySnapshotInput)
+action textHistorySnapshot(input: historyShape.TextHistorySnapshotInput)
   returns historyShape.TextHistorySnapshotReading
   implements history.textHistorySnapshot
   profile history.readOnly
@@ -3508,7 +3508,7 @@ dedicated language repository. It is not Echo-shaped, but it should still lower
 to Echo when an Echo target lawpack exists. It may also lower naturally to an
 event-log target without graph semantics.
 
-The snapshot intent uses a semantic query effect because a pure lawpack helper
+The snapshot action uses a semantic query effect because a pure lawpack helper
 cannot observe history state. If a future lawpack exposes a proof-only plan
 constructor, it must be named and classified as a non-runtime symbolic plan; it
 must not smuggle state-dependent output through a pure helper.

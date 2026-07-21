@@ -1,6 +1,6 @@
 # Required fields for a minimal Core intent shape.
 expect accept
-shape core-intent
+shape core-action
 field body
 field coreEvaluationBudget
 field input

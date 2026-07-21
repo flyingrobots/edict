@@ -356,14 +356,14 @@ versions still track specification maturity rather than a released product.
   targets and unsupported Core nodes reject with stable target-lowering failure
   kinds before any artifact is emitted. Target IR preserves effect result
   bindings, effect inputs, obstruction failure keys, obstruction arm values, and
-  intent result expressions. Target IR lowering facts can also be derived from
+  action result expressions. Target IR lowering facts can also be derived from
   selected native lowerability results, keeping target artifact paths
   tied to the lowerability report's target profile, operation profile, and
   selected native effect support. The lowerer rejects unsupported Core ABI
   versions, unsupported Core capability flags, undigested target-profile
   references, non-Echo target intrinsics, operation profiles unsupported by the
-  selected target facts, and intents with no target-owned steps before Target IR
-  emission. Target IR intents also preserve Core input constraints and Core
+  selected target facts, and actions with no target-owned steps before Target IR
+  emission. Target IR actions also preserve Core input constraints and Core
   evaluation budgets so supported artifacts do not drop preconditions or
   evaluation limits. Added the second supported target slice:
   `gitwarp.ref_crdt@1` can lower the same supported effectful Core shape into a
@@ -574,8 +574,8 @@ versions still track specification maturity rather than a released product.
 - **Phase 2 — source-AST semantic validation (`edict-syntax`).** Added
   `validate_module`, stable `SemanticErrorKind` categories, deterministic tests,
   and a semantic-validation topic shelf for checks that do not require Core IR:
-  bounded runtime `String`/`Bytes`, intent operation-mode/budget/basis
-  requiredness, duplicate singleton intent clauses, module namespace collision
+  bounded runtime `String`/`Bytes`, action operation-mode/budget/basis
+  requiredness, duplicate singleton action clauses, module namespace collision
   checks, and scoped binder shadowing checks.
 - **Topic shelf pilot (`docs/topics/syntax/`).** Added the first current-truth
   topic chapter and verification matrix for the Phase 1 syntax front end,
@@ -587,7 +587,7 @@ versions still track specification maturity rather than a released product.
   recursive-descent parser for the `edict.implementation/minimal-v1` surface.
   Now parses: package/imports (shape/lawpack/target/core, optional `digest`);
   `type` records and refined scalars; `enum` declarations; `variant` types with
-  optional payloads; `intent`s with their clauses; `let`/`return`; calls and
+  optional payloads; `action`s with their clauses; `let`/`return`; calls and
   type-calls (`echo.ref<T>(...)`); effect statements with single- and
   map-form `else` obstruction handlers; `require`/`guarantee`/`assert`; the full
   `if` family (ternary `if … then … else …`, effectful branch-yield in
@@ -681,7 +681,7 @@ versions still track specification maturity rather than a released product.
 - Self-review nits: dropped an unused WIT import; de-duplicated the
   `basis`-requiredness wording; locked `edict-common.cddl` in `spec.lock.json`;
   corrected the `edict-common.cddl` header.
-- Second-order ripples from the above (Codex + CodeRabbit round): an intent may
+- Second-order ripples from the above (Codex + CodeRabbit round): an action may
   carry **both** `profile` and `implements` (was wrongly "exactly one"); pure
   expressions may call **pure** target/lawpack constructors (only effect
   intrinsics forbidden); integer-literal propagation reaches binary operands;
@@ -708,7 +708,7 @@ versions still track specification maturity rather than a released product.
   non-fixtures; `effectFailures` coordinates must be unique per effect.
 - **jedit appendix brought to clause-conformance** (it is the intended first
   real-world use case): added correct `basis` clauses to all 12 rope-package and
-  structural-history intents; the Product Text Buffer Optic sketch remains the
+  structural-history actions; the Product Text Buffer Optic sketch remains the
   one deliberate non-v1 example (uses rejected `invoke`/`use capability` to show
   design pressure). Appendix note rewritten accordingly.
 

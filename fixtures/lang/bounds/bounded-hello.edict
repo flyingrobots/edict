@@ -10,7 +10,7 @@ type HelloReading = {
   message: String<max=512>,
 };
 
-intent sayHello(input: HelloInput)
+action sayHello(input: HelloInput)
   returns HelloReading
   profile hello.readOnly
   basis none

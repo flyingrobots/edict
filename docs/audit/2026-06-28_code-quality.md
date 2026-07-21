@@ -84,7 +84,7 @@ CLI diagnostics are strong: structured, staged (`parse`/`semantic`/`cli`), stabl
 
 ### 2.1 Documentation Gap
 
-The friction point past basic usage is the absence of an **API/CLI quickstart**. The 584-line `README.md` is an excellent conceptual + spec narrative ("Edict in 10 Seconds", "What An Intent Looks Like") but has **no Installation, no CLI Usage, and no library Quickstart** heading, and the crates carry **zero runnable rustdoc examples** (0 fenced examples in either `lib.rs`). A developer who buys the pitch has nowhere to learn `edict check`. (Full treatment in the companion Documentation audit.)
+The friction point past basic usage is the absence of an **API/CLI quickstart**. The 584-line `README.md` is an excellent conceptual + spec narrative ("Edict in 10 Seconds", "What An Action Looks Like") but has **no Installation, no CLI Usage, and no library Quickstart** heading, and the crates carry **zero runnable rustdoc examples** (0 fenced examples in either `lib.rs`). A developer who buys the pitch has nowhere to learn `edict check`. (Full treatment in the companion Documentation audit.)
 
 - **Action Prompt (Documentation Creation):** `Add a "Using the CLI" section to README.md with a copy-pasteable edict check example (a JSONL settings + source request piped to the binary, the expected JSONL stdout, and the exit-code table), and add a crate-level rustdoc example to crates/edict-syntax/src/lib.rs showing parse_module + validate_surface. Ensure doc examples compile under cargo test --doc.`
 

@@ -51,11 +51,11 @@ fn core_module_digest_is_stable_for_equivalent_core_ordering() {
         .rev()
         .map(|(name, ty)| (name.clone(), ty.clone()))
         .collect();
-    reordered.intents = core
-        .intents
+    reordered.actions = core
+        .actions
         .iter()
         .rev()
-        .map(|(name, intent)| (name.clone(), intent.clone()))
+        .map(|(name, action)| (name.clone(), action.clone()))
         .collect();
 
     assert_eq!(
@@ -69,9 +69,9 @@ fn core_module_digest_changes_when_core_meaning_changes() {
     let core = bounded_hello_core();
     let mut changed = core.clone();
     changed
-        .intents
+        .actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .core_evaluation_budget
         .max_steps += 1;
 
@@ -86,9 +86,9 @@ fn core_module_digest_changes_when_local_identity_changes() {
     let core = bounded_hello_core();
     let mut changed = core.clone();
     changed
-        .intents
+        .actions
         .get_mut("sayHello")
-        .expect("intent exists")
+        .expect("action exists")
         .body
         .locals
         .first_mut()

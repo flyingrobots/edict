@@ -401,7 +401,7 @@ contract graft.structural_history v1 {
   use lawpack history.optics@1 as history;
   use target echo.dpo@1 as echo;
 
-  intent recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
+  action recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
     returns RecordGitWarpImportBatchReceipt
     profile echo.createOnly
     budget <= history.recordBatchBudget
@@ -438,7 +438,7 @@ Portable semantic Edict targets an abstract lawpack and can lower to multiple ru
 contract graft.structural_history v1 {
   use lawpack history.optics@1 as history;
 
-  intent recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
+  action recordGitWarpImportBatch(input: RecordGitWarpImportBatchInput)
     returns RecordGitWarpImportBatchReceipt
     implements history.recordEntry
     budget <= history.recordBatchBudget

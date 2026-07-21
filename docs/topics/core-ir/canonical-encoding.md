@@ -47,7 +47,7 @@ For Core, `core_module_value` projects a `CoreModule` into a map containing:
 - `coordinate`;
 - `imports`;
 - `types`;
-- `intents`;
+- `actions`;
 - `requiredCoreCapabilities`.
 
 Nested Core values follow the same rule: each semantic variant becomes an

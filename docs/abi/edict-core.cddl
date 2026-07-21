@@ -10,7 +10,7 @@ core-module = {
   coordinate: tstr,
   imports: [* core-import],
   types: { * tstr => core-type },
-  intents: { + tstr => core-intent },
+  actions: { + tstr => core-action },
   requiredCoreCapabilities: [* tstr],
 }
 
@@ -204,9 +204,9 @@ input-constraint = {
   predicate: core-predicate,
 }
 
-; --- intents, blocks, and nodes -----------------------------------------
+; --- actions, blocks, and nodes -----------------------------------------
 
-core-intent = {
+core-action = {
   input: core-type-ref,
   output: core-type-ref,
   requiredOperationProfile: tstr,

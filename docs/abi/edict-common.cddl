@@ -50,7 +50,7 @@ authority-class = "domainMappable" / "participantOwned" / "integrityFault" /
 
 core-type-ref = tstr   ; canonical Core type coordinate
 
-; An operation profile supplies the optic template a Core intent resolves its
+; An operation profile supplies the optic template a Core action resolves its
 ; opticKind/boundaryKind/supportPolicy/lossDisposition from. Target profiles and
 ; lawpacks publish these as a map `{ coordinate => operation-profile }`, so the
 ; coordinate is the KEY, not a value field (EDICT-OPTIC-TEMPLATE-OWNER-001,
@@ -67,7 +67,7 @@ optic-template = {
   lossDisposition: tstr,           ; canonical loss-disposition coordinate
   ? basisTemplate: tstr,           ; optional digest-locked basis template coord
   ; the aperture requirement this template supplies. Required when the template
-  ; is the source of a Core optic's apertureRequirement (i.e. the intent has no
+  ; is the source of a Core optic's apertureRequirement (i.e. the action has no
   ; source `footprint <= ...`), since apertureRequirement is mandatory in Core
   ; (EDICT-OPTIC-APERTURE-REF-001).
   ? apertureRequirement: aperture-requirement,

@@ -807,8 +807,8 @@ fn tree_sitter_grammar_declares_current_editor_contract() {
         "type_declaration",
         "enum_declaration",
         "variant_type",
-        "intent_declaration",
-        "intent_clause",
+        "action_declaration",
+        "action_clause",
         "block",
         "let_statement",
         "return_statement",
@@ -840,7 +840,7 @@ fn tree_sitter_grammar_declares_current_editor_contract() {
         "type",
         "enum",
         "variant",
-        "intent",
+        "action",
         "returns",
         "profile",
         "implements",
@@ -1015,7 +1015,7 @@ fn textmate_grammar_covers_public_highlight_roles() {
     let punctuation_regex = textmate_repository_match(&grammar, "punctuation");
     let type_regex = textmate_repository_match(&grammar, "types");
     let identifier_regex = textmate_repository_match(&grammar, "identifiers");
-    let source = "package use type enum variant intent returns profile implements basis \
+    let source = "package use type enum variant action returns profile implements basis \
             footprint budget where let return require guarantee assert if then else for in \
             bounded yield match shape lawpack target core capability as digest fn const true \
             false HelloInput input = == != < <= > >= + - * / % ! && || => -> :: ... ; : , . @ \
@@ -4018,7 +4018,7 @@ fn core_cddl_declares_v1_semantic_model() {
         "core-module =",
         "apiVersion: \"edict.core/v1\"",
         "core-type =",
-        "core-intent =",
+        "core-action =",
         "core-block =",
         "core-node =",
         "core-expr =",

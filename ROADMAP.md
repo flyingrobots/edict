@@ -382,7 +382,7 @@ Scope:
 
 Exit gates:
 
-- At least one effectful intent compiles from source through typed Core with
+- At least one effectful action compiles from source through typed Core with
   deterministic fixtures. Met by PR #63.
 - Unsupported effectful forms fail with stable diagnostics before lowering. Met
   by PR #63.
@@ -433,7 +433,7 @@ Scope:
 
 Exit gates:
 
-- One source intent can compile to Core and lower to a concrete target IR
+- One source action can compile to Core and lower to a concrete target IR
   artifact for the selected Echo or git-warp profile.
 - Lowerability evidence and target IR generation agree on the same fact set.
 - Unsupported target features fail loudly rather than falling back silently.

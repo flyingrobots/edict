@@ -20,7 +20,7 @@ const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
@@ -33,7 +33,7 @@ const GITWARP_APPEND_EVENT: &str = "package a.git@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
-    intent t(input: Input) returns Output\n\
+    action t(input: Input) returns Output\n\
       profile p.gitwarp\n\
       basis none\n\
       budget <= p.tiny\n\

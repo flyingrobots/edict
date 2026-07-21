@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use crate::ast::{
-    Block, Decl, ElseClause, Expr, IntentClause, IntentDecl, Module, ObstructionHandler,
+    ActionClause, ActionDecl, Block, Decl, ElseClause, Expr, Module, ObstructionHandler,
     ObstructionTarget, RecordEntry, RequireElseArm, Stmt, TypeExpr, TypeRef, YieldBlock,
 };
 use crate::token::Span;
@@ -16,7 +16,7 @@ pub enum SemanticErrorKind {
     MissingOperationMode,
     MissingBudget,
     MissingBasis,
-    DuplicateIntentClause,
+    DuplicateActionClause,
     DuplicateName,
     ShadowedName,
 }
@@ -36,7 +36,7 @@ impl SemanticErrorKind {
             SemanticErrorKind::MissingOperationMode => "MissingOperationMode",
             SemanticErrorKind::MissingBudget => "MissingBudget",
             SemanticErrorKind::MissingBasis => "MissingBasis",
-            SemanticErrorKind::DuplicateIntentClause => "DuplicateIntentClause",
+            SemanticErrorKind::DuplicateActionClause => "DuplicateActionClause",
             SemanticErrorKind::DuplicateName => "DuplicateName",
             SemanticErrorKind::ShadowedName => "ShadowedName",
         }
@@ -81,9 +81,9 @@ pub fn validate_surface(module: &Module) -> Result<(), Vec<SemanticError>> {
         match decl {
             Decl::Type(decl) => validate_type_expr(&decl.body, decl.span, &mut errors),
             Decl::Enum(_) => {}
-            Decl::Intent(intent) => {
+            Decl::Action(action) => {
                 let mut names = NameEnv::new(protected_names.clone());
-                validate_intent(intent, &mut names, &mut errors);
+                validate_action(action, &mut names, &mut errors);
             }
         }
     }
@@ -114,7 +114,7 @@ fn collect_module_names(module: &Module, errors: &mut Vec<SemanticError>) -> BTr
         match decl {
             Decl::Type(decl) => record_module_name(&mut names, &decl.name, decl.span, errors),
             Decl::Enum(decl) => record_module_name(&mut names, &decl.name, decl.span, errors),
-            Decl::Intent(decl) => record_module_name(&mut names, &decl.name, decl.span, errors),
+            Decl::Action(decl) => record_module_name(&mut names, &decl.name, decl.span, errors),
         }
     }
     names
@@ -198,7 +198,7 @@ impl NameEnv {
     }
 }
 
-fn validate_intent(intent: &IntentDecl, names: &mut NameEnv, errors: &mut Vec<SemanticError>) {
+fn validate_action(action: &ActionDecl, names: &mut NameEnv, errors: &mut Vec<SemanticError>) {
     let mut profile = None;
     let mut implements = None;
     let mut basis = None;
@@ -206,29 +206,29 @@ fn validate_intent(intent: &IntentDecl, names: &mut NameEnv, errors: &mut Vec<Se
     let mut budget = None;
 
     names.push_scope();
-    for param in &intent.params {
+    for param in &action.params {
         names.bind(&param.name, param.span, errors);
     }
 
-    for clause in &intent.clauses {
+    for clause in &action.clauses {
         match clause {
-            IntentClause::Profile(_) => {
-                record_singleton("profile", intent.span, &mut profile, errors);
+            ActionClause::Profile(_) => {
+                record_singleton("profile", action.span, &mut profile, errors);
             }
-            IntentClause::Implements(_) => {
-                record_singleton("implements", intent.span, &mut implements, errors);
+            ActionClause::Implements(_) => {
+                record_singleton("implements", action.span, &mut implements, errors);
             }
-            IntentClause::Basis(expr) => {
-                record_singleton("basis", intent.span, &mut basis, errors);
+            ActionClause::Basis(expr) => {
+                record_singleton("basis", action.span, &mut basis, errors);
                 if let Some(expr) = expr {
                     validate_expr(expr, names, errors);
                 }
             }
-            IntentClause::Footprint(_) => {
-                record_singleton("footprint", intent.span, &mut footprint, errors);
+            ActionClause::Footprint(_) => {
+                record_singleton("footprint", action.span, &mut footprint, errors);
             }
-            IntentClause::Budget(_) => record_singleton("budget", intent.span, &mut budget, errors),
-            IntentClause::Where(predicates) => {
+            ActionClause::Budget(_) => record_singleton("budget", action.span, &mut budget, errors),
+            ActionClause::Where(predicates) => {
                 for predicate in predicates {
                     validate_expr(predicate, names, errors);
                 }
@@ -239,30 +239,30 @@ fn validate_intent(intent: &IntentDecl, names: &mut NameEnv, errors: &mut Vec<Se
     if profile.is_none() && implements.is_none() {
         errors.push(error(
             SemanticErrorKind::MissingOperationMode,
-            "intent must declare at least one of `profile` or `implements`",
-            intent.span,
+            "action must declare at least one of `profile` or `implements`",
+            action.span,
         ));
     }
     if budget.is_none() {
         errors.push(error(
             SemanticErrorKind::MissingBudget,
-            "intent must declare a `budget` clause",
-            intent.span,
+            "action must declare a `budget` clause",
+            action.span,
         ));
     }
     if basis.is_none() {
         errors.push(error(
             SemanticErrorKind::MissingBasis,
-            "intent must declare a `basis` clause",
-            intent.span,
+            "action must declare a `basis` clause",
+            action.span,
         ));
     }
 
-    for param in &intent.params {
+    for param in &action.params {
         validate_type_ref(&param.ty, param.span, errors);
     }
-    validate_type_ref(&intent.returns, intent.span, errors);
-    validate_block(&intent.body, names, errors);
+    validate_type_ref(&action.returns, action.span, errors);
+    validate_block(&action.body, names, errors);
     names.pop_scope();
 }
 
@@ -273,11 +273,11 @@ fn record_singleton(
     errors: &mut Vec<SemanticError>,
 ) {
     if slot.replace(()).is_some() {
-        // Intent clauses do not currently preserve their own spans, so duplicate
-        // clause diagnostics report at intent granularity.
+        // Action clauses do not currently preserve their own spans, so duplicate
+        // clause diagnostics report at action granularity.
         errors.push(error(
-            SemanticErrorKind::DuplicateIntentClause,
-            format!("intent contains duplicate `{name}` clause"),
+            SemanticErrorKind::DuplicateActionClause,
+            format!("action contains duplicate `{name}` clause"),
             span,
         ));
     }
@@ -572,8 +572,8 @@ mod semantic_error_kind_codes {
             (SemanticErrorKind::MissingBudget, "MissingBudget"),
             (SemanticErrorKind::MissingBasis, "MissingBasis"),
             (
-                SemanticErrorKind::DuplicateIntentClause,
-                "DuplicateIntentClause",
+                SemanticErrorKind::DuplicateActionClause,
+                "DuplicateActionClause",
             ),
             (SemanticErrorKind::DuplicateName, "DuplicateName"),
             (SemanticErrorKind::ShadowedName, "ShadowedName"),

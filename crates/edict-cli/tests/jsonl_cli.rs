@@ -19,7 +19,7 @@ type HelloInput = {
   name: String<max=256>,
 };
 
-intent sayHello(input: HelloInput)
+action sayHello(input: HelloInput)
   returns HelloInput
   profile hello.readOnly
   basis none
@@ -35,7 +35,7 @@ type Input = { id: String<max=16>, };
 type Receipt = { id: String<max=16>, };
 type Output = { id: String<max=16>, };
 
-intent replaceThing(input: Input)
+action replaceThing(input: Input)
   returns Output
   profile p.effectful
   basis none
@@ -1050,7 +1050,7 @@ fn assert_syntax_projection(stdout: &[Value]) {
     assert!(
         spans.iter().any(|span| {
             span.get("role").and_then(Value::as_str) == Some("keyword")
-                && span.get("lexeme").and_then(Value::as_str) == Some("intent")
+                && span.get("lexeme").and_then(Value::as_str) == Some("action")
         }),
         "syntax spans must expose editor roles over dirty source text"
     );
@@ -1087,8 +1087,8 @@ fn assert_available_core_projection(stdout: &[Value], expected_core_digest: &str
         Some("edict.core/v1")
     );
     assert!(
-        core.pointer("/review/intents/replaceThing").is_some(),
-        "Core review must include the lowered intent"
+        core.pointer("/review/actions/replaceThing").is_some(),
+        "Core review must include the lowered action"
     );
 }
 
@@ -1118,7 +1118,7 @@ fn assert_available_target_ir_projection(stdout: &[Value], expected_target_diges
     );
     assert_eq!(
         target_ir
-            .pointer("/review/intents/replaceThing/steps/0/targetIntrinsic")
+            .pointer("/review/actions/replaceThing/steps/0/targetIntrinsic")
             .and_then(Value::as_str),
         Some("echo.dpo@1.replace")
     );

@@ -51,8 +51,8 @@ serialization:
   "domain": <artifact domain>,
   "targetProfile": { "id": <coordinate>, "digest": ["sha256", <32 bytes>] },
   "sourceCoreCoordinate": <Core coordinate>,
-  "intents": {
-    <intent name>: {
+  "actions": {
+    <action name>: {
       "operationProfile": <operation profile>,
       "inputConstraints": [<canonical Core input constraints>],
       "coreEvaluationBudget": <canonical Core budget>,
@@ -81,7 +81,7 @@ hexadecimal characters.
 
 ## Ordering
 
-- Intent maps are sorted by intent name.
+- Action maps are sorted by action name.
 - Obstruction arm maps are sorted by failure key.
 - Input constraints are sorted by canonical value because they are semantic
   constraints, not an execution order.
