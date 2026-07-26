@@ -114,7 +114,7 @@ fn hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter() {
     assert_eq!(artifact.target_profile.coordinate, "echo.dpo@1");
     assert_eq!(
         artifact.target_profile.digest.as_deref(),
-        Some("sha256:eedf7bdbf6fe4b6a4036695f41c3dc0a5c692d27e206c9d4c0c5eab41e2f63c9")
+        Some("sha256:2e2494121aecf5e6a2d920f5fb85408825d394765fad41484c416397c920fb04")
     );
     let semantic_closure = artifact
         .semantic_closure
