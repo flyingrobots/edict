@@ -49,6 +49,7 @@ pub enum LawpackAdapterFailureKind {
     UnknownBudget,
     InvalidWriteClass,
     InvalidTargetIntrinsic,
+    InvalidTargetConfiguration,
     SourceImportMismatch,
 }
 
@@ -71,6 +72,7 @@ pub struct LawpackAdapterOperationProfile {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LawpackAdapterEffect {
     pub target_intrinsic: String,
+    pub target_configuration: LawpackResourceRef,
     pub write_class: WriteClass,
     pub footprint_obligation: String,
     pub cost_obligation: String,
@@ -334,6 +336,7 @@ fn parse_effects(
             &path,
             &[
                 "targetIntrinsic",
+                "targetConfiguration",
                 "writeClass",
                 "footprintObligation",
                 "costObligation",
@@ -355,6 +358,10 @@ fn parse_effects(
             coordinate,
             LawpackAdapterEffect {
                 target_intrinsic: required_nonempty_text(&fields, "targetIntrinsic", &path)?,
+                target_configuration: parse_resource_ref(
+                    required(&fields, "targetConfiguration", &path)?,
+                    &format!("{path}.targetConfiguration"),
+                )?,
                 write_class: parse_write_class(&required_text(&fields, "writeClass", &path)?)?,
                 footprint_obligation: required_nonempty_text(
                     &fields,
@@ -645,6 +652,55 @@ fn parse_write_class(value: &str) -> Result<WriteClass, Vec<LawpackAdapterFailur
             "v1 authority write class",
         ))),
     }
+}
+
+fn parse_resource_ref(
+    value: &CanonicalValue,
+    path: &str,
+) -> Result<LawpackResourceRef, Vec<LawpackAdapterFailure>> {
+    let fields = closed_map(value, path, &["id", "digest"])?;
+    Ok(LawpackResourceRef {
+        id: required_nonempty_text(&fields, "id", path)?,
+        digest: parse_digest(
+            required(&fields, "digest", path)?,
+            &format!("{path}.digest"),
+        )?,
+    })
+}
+
+fn parse_digest(
+    value: &CanonicalValue,
+    path: &str,
+) -> Result<[u8; 32], Vec<LawpackAdapterFailure>> {
+    let CanonicalValue::Array(parts) = value else {
+        return Err(one(failure(
+            LawpackAdapterFailureKind::InvalidTargetConfiguration,
+            path,
+            "['sha256', 32-byte bstr]",
+        )));
+    };
+    let [CanonicalValue::Text(algorithm), CanonicalValue::Bytes(bytes)] = parts.as_slice() else {
+        return Err(one(failure(
+            LawpackAdapterFailureKind::InvalidTargetConfiguration,
+            path,
+            "['sha256', 32-byte bstr]",
+        )));
+    };
+    let Ok(digest) = <[u8; 32]>::try_from(bytes.as_slice()) else {
+        return Err(one(failure(
+            LawpackAdapterFailureKind::InvalidTargetConfiguration,
+            path,
+            "['sha256', 32-byte bstr]",
+        )));
+    };
+    if algorithm != "sha256" {
+        return Err(one(failure(
+            LawpackAdapterFailureKind::InvalidTargetConfiguration,
+            path,
+            "['sha256', 32-byte bstr]",
+        )));
+    }
+    Ok(digest)
 }
 
 fn digest_value(

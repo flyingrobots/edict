@@ -21,6 +21,10 @@ const EXPORTS_CBOR: &str = "fixtures/lawpack/hello-echo/exports.cbor";
 const EXPORTS_DIGEST: &str = "fixtures/lawpack/hello-echo/exports.sha256";
 const ADAPTER_CBOR: &str = "fixtures/lawpack/hello-echo/adapter.cbor";
 const ADAPTER_DIGEST: &str = "fixtures/lawpack/hello-echo/adapter.sha256";
+const TARGET_CONFIGURATION_CBOR: &str =
+    "fixtures/lawpack/hello-echo/echo-operation-configuration.cbor";
+const TARGET_CONFIGURATION_DIGEST: &str =
+    "fixtures/lawpack/hello-echo/echo-operation-configuration.sha256";
 const CREATE_GREETING_SOURCE: &str = "fixtures/lawpack/hello-echo/create-greeting.edict";
 const CREATE_GREETING_CORE_CBOR: &str = "fixtures/lawpack/hello-echo/create-greeting.core.cbor";
 const CREATE_GREETING_CORE_DIGEST: &str = "fixtures/lawpack/hello-echo/create-greeting.core.sha256";
@@ -29,6 +33,7 @@ const CREATE_GREETING_TARGET_IR_CBOR: &str =
 const CREATE_GREETING_TARGET_IR_DIGEST: &str =
     "fixtures/lawpack/hello-echo/create-greeting.target-ir.sha256";
 const ADAPTER_COORDINATE: &str = "hello.echo.echo-dpo-adapter/v1";
+const TARGET_CONFIGURATION_COORDINATE: &str = "hello.echo.echo-operation-configuration/v1";
 const ECHO_TARGET_PROFILE_DIGEST: [u8; 32] = [
     0xee, 0xdf, 0x7b, 0xdb, 0xf6, 0xfe, 0x4b, 0x6a, 0x40, 0x36, 0x69, 0x5f, 0x41, 0xc3, 0xdc, 0x0a,
     0x5c, 0x69, 0x2d, 0x27, 0xe2, 0x06, 0xc9, 0xd4, 0xc0, 0xc5, 0xea, 0xb4, 0x1e, 0x2f, 0x63, 0xc9,
@@ -70,7 +75,12 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
     let exports_bytes = encode_canonical_cbor(&exports_value)
         .map_err(|error| format!("encode Hello Echo exports: {error}"))?;
     let exports_digest = digest_value(EXPORTS_COORDINATE, &exports_value)?;
-    let adapter_value = hello_echo_adapter();
+    let target_configuration_value = hello_echo_target_configuration();
+    let target_configuration_bytes = encode_canonical_cbor(&target_configuration_value)
+        .map_err(|error| format!("encode Hello Echo target configuration: {error}"))?;
+    let target_configuration_digest =
+        digest_value(TARGET_CONFIGURATION_COORDINATE, &target_configuration_value)?;
+    let adapter_value = hello_echo_adapter(target_configuration_digest);
     let adapter_bytes = encode_canonical_cbor(&adapter_value)
         .map_err(|error| format!("encode Hello Echo adapter: {error}"))?;
     let adapter_digest = digest_value(ADAPTER_COORDINATE, &adapter_value)?;
@@ -118,6 +128,8 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
     let manifest_digest = format!("{}\n", bundle.manifest_digest_review_string());
     let exports_digest = format!("{}\n", bundle.manifest().exports.digest_review_string());
     let adapter_digest = format!("{}\n", sha256_review_string(&adapter_digest));
+    let target_configuration_digest =
+        format!("{}\n", sha256_review_string(&target_configuration_digest));
 
     Ok(vec![
         (MANIFEST_CBOR, manifest_bytes),
@@ -126,6 +138,11 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
         (EXPORTS_DIGEST, exports_digest.into_bytes()),
         (ADAPTER_CBOR, adapter_bytes),
         (ADAPTER_DIGEST, adapter_digest.into_bytes()),
+        (TARGET_CONFIGURATION_CBOR, target_configuration_bytes),
+        (
+            TARGET_CONFIGURATION_DIGEST,
+            target_configuration_digest.into_bytes(),
+        ),
         (CREATE_GREETING_CORE_CBOR, core_bytes),
         (CREATE_GREETING_CORE_DIGEST, core_digest.into_bytes()),
         (CREATE_GREETING_TARGET_IR_CBOR, target_ir_bytes),
@@ -182,7 +199,7 @@ fn hello_echo_manifest(exports_digest: [u8; 32], adapter_digest: [u8; 32]) -> Ca
     ])
 }
 
-fn hello_echo_adapter() -> CanonicalValue {
+fn hello_echo_adapter(target_configuration_digest: [u8; 32]) -> CanonicalValue {
     map([
         ("apiVersion", text("edict.lawpack-adapter/v1")),
         ("class", text("declarative")),
@@ -207,6 +224,10 @@ fn hello_echo_adapter() -> CanonicalValue {
                     (
                         "targetIntrinsic",
                         text("echo.dpo@1.anchored-node-attachment-create-if-absent"),
+                    ),
+                    (
+                        "targetConfiguration",
+                        resource_ref(TARGET_CONFIGURATION_COORDINATE, target_configuration_digest),
                     ),
                     ("writeClass", text("create")),
                     (
@@ -234,6 +255,49 @@ fn hello_echo_adapter() -> CanonicalValue {
                     ("maxOutputBytes", CanonicalValue::Integer(512)),
                 ]),
             )]),
+        ),
+    ])
+}
+
+fn hello_echo_target_configuration() -> CanonicalValue {
+    map([
+        (
+            "apiVersion",
+            text("echo.operation-lowering-configuration/v1"),
+        ),
+        (
+            "programKind",
+            text("anchored-node-attachment-create-if-absent/v1"),
+        ),
+        (
+            "requiredNodeTypeProfile",
+            text("hello.echo.node.greeting/v1"),
+        ),
+        (
+            "requiredAttachmentTypeProfile",
+            text("hello.echo.attachment.greeting-message/v1"),
+        ),
+        ("maxReplacementBytes", CanonicalValue::Integer(256)),
+        (
+            "authorityProfile",
+            text("hello.echo.authority.local-demo/v1"),
+        ),
+        (
+            "budgetCeiling",
+            map([
+                ("steps", CanonicalValue::Integer(16)),
+                ("readBytes", CanonicalValue::Integer(64)),
+                ("writeBytes", CanonicalValue::Integer(320)),
+            ]),
+        ),
+        (
+            "invocationBinding",
+            map([
+                ("nodeKeyField", text("key")),
+                ("replacementField", text("message")),
+                ("nodeIdDerivation", text("sha256-utf8/v1")),
+                ("warpIdSource", text("action-lane/v1")),
+            ]),
         ),
     ])
 }

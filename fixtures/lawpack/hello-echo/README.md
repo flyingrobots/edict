@@ -10,6 +10,11 @@ a fake transport, or a handwritten Echo executable package.
 - `exports.sha256` is its `hello.echo.exports/v1` domain-framed identity.
 - `adapter.cbor` is the canonical direct declarative Echo target adapter.
 - `adapter.sha256` is its manifest-bound domain-framed identity.
+- `echo-operation-configuration.cbor` is the target-owned, adapter-bound
+  program, budget, authority, and invocation-binding configuration that Echo
+  may interpret.
+- `echo-operation-configuration.sha256` is its
+  `hello.echo.echo-operation-configuration/v1` domain-framed identity.
 - `create-greeting.edict` imports the exact manifest digest and declares the
   bounded `createGreeting` action with typed `AlreadyExists` mapping.
 - `create-greeting.core.cbor` is the canonical Core module compiled from that
@@ -38,3 +43,5 @@ compiler derives Core and `echo.span-ir/v1` facts from that closure without a
 handwritten compiler context. The golden command compiles and lowers the source
 before reproducing the reviewed Core and Target IR bytes and identities. This
 fixture does not yet emit an Echo executable package or execute an Echo Action.
+Edict corroborates the target-configuration reference but deliberately leaves
+its Echo-specific semantics to the Echo-owned target provider.

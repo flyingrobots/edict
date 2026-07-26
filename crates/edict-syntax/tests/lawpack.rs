@@ -20,6 +20,11 @@ const MANIFEST_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-ec
 const EXPORTS_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor");
 const ADAPTER_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor");
 const ADAPTER_DIGEST: &str = include_str!("../../../fixtures/lawpack/hello-echo/adapter.sha256");
+const TARGET_CONFIGURATION_COORDINATE: &str = "hello.echo.echo-operation-configuration/v1";
+const TARGET_CONFIGURATION_BYTES: &[u8] =
+    include_bytes!("../../../fixtures/lawpack/hello-echo/echo-operation-configuration.cbor");
+const TARGET_CONFIGURATION_DIGEST: &str =
+    include_str!("../../../fixtures/lawpack/hello-echo/echo-operation-configuration.sha256");
 const MANIFEST_DIGEST: &str = include_str!("../../../fixtures/lawpack/hello-echo/manifest.sha256");
 const CREATE_GREETING_SOURCE: &str =
     include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
@@ -75,6 +80,28 @@ fn hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter() {
     let adapter =
         decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
     assert_eq!(adapter.digest_review_string(), ADAPTER_DIGEST.trim());
+    let effect = adapter
+        .effects()
+        .get("hello.echo@1.createGreeting")
+        .expect("createGreeting adapter effect");
+    assert_eq!(
+        effect.target_configuration.id,
+        TARGET_CONFIGURATION_COORDINATE
+    );
+    assert_eq!(
+        effect.target_configuration.digest_review_string(),
+        TARGET_CONFIGURATION_DIGEST.trim()
+    );
+    let target_configuration =
+        decode_canonical_cbor(TARGET_CONFIGURATION_BYTES).expect("decode target configuration");
+    assert_eq!(
+        encode_canonical_cbor(&target_configuration).expect("re-encode target configuration"),
+        TARGET_CONFIGURATION_BYTES
+    );
+    assert_eq!(
+        digest_value(TARGET_CONFIGURATION_COORDINATE, &target_configuration),
+        effect.target_configuration.digest
+    );
     let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
         .expect("derive compiler and target facts");
     let core = compile_to_core(&module, preparation.compiler_context())
@@ -165,6 +192,31 @@ fn lawpack_adapter_bytes_must_be_canonical_and_digest_bound() {
     assert_eq!(
         adapter_failure_kinds(&failures),
         vec![LawpackAdapterFailureKind::AdapterDigestMismatch]
+    );
+}
+
+#[test]
+fn lawpack_adapter_requires_a_typed_target_configuration_reference() {
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let effect = first_map_value_mut(field_mut(&mut adapter, "effectImplementations"));
+    let target_configuration = field_mut(effect, "targetConfiguration");
+    let digest = field_mut(target_configuration, "digest");
+    let CanonicalValue::Array(parts) = digest else {
+        panic!("target configuration digest fixture must be an array");
+    };
+    let CanonicalValue::Bytes(bytes) = &mut parts[1] else {
+        panic!("target configuration digest fixture must contain bytes");
+    };
+    bytes.pop();
+
+    let bundle = bundle_with_adapter(&adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode malformed adapter");
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect_err("malformed target configuration reference must reject");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::InvalidTargetConfiguration]
     );
 }
 

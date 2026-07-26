@@ -41,7 +41,8 @@ The current executable Rust surfaces touching lawpacks are:
 - canonical manifest/export loading through `ValidatedLawpackBundle`;
 - complete dependency-set validation with exact manifest-digest edges;
 - canonical direct-adapter loading with exact target selection, adapter digest
-  corroboration, and complete profile/effect/budget coverage;
+  corroboration, complete profile/effect/budget coverage, and typed target
+  configuration resource references;
 - compiler and Target IR fact derivation from the exact
   module/lawpack/adapter closure;
 - reproducible canonical Core and Target IR artifacts for the standalone Hello
@@ -74,9 +75,12 @@ The current executable Rust surfaces touching lawpacks are:
 - `decode_lawpack_adapter` accepts only canonical adapter bytes selected by one
   exact digest-locked target descriptor. It requires exact operation-profile,
   runtime-effect, budget, footprint, cost, and named-failure coverage before
-  returning an opaque validated adapter. `prepare_lawpack_compilation` then
-  derives compiler and Target IR facts through the source import's exact alias
-  and manifest digest. [LAWPACKS-REQ-008]
+  returning an opaque validated adapter. Each effect also carries one typed,
+  digest-locked target-configuration reference. Edict preserves that reference
+  but does not interpret its target-owned semantics.
+  `prepare_lawpack_compilation` then derives compiler and Target IR facts
+  through the source import's exact alias and manifest digest.
+  [LAWPACKS-REQ-008]
 - The Hello Echo golden generator compiles the exact source and lawpack closure,
   lowers the resulting Core module, and pins canonical Core and Target IR bytes
   under their native domain-framed identities. [LAWPACKS-REQ-009]
@@ -102,6 +106,7 @@ The following are not implemented:
 
 - executable target-adapter component loading; v1 currently specifies and
   implements the direct declarative adapter class only;
+- target-owned configuration resource loading and interpretation;
 - Echo executable-operation package emission from lowered Target IR;
 - lawpack conformance fixtures and two-lowerer differential trials.
 
