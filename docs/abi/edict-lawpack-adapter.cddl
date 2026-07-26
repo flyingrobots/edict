@@ -29,6 +29,7 @@ lawpack-adapter-operation-profile = {
 ; failure fields must exactly discharge the matching exported effect.
 lawpack-adapter-effect = {
   targetIntrinsic: tstr,
+  targetConfiguration: resource-ref,
   writeClass: lawpack-adapter-write-class,
   footprintObligation: tstr,
   costObligation: tstr,

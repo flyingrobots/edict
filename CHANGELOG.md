@@ -20,10 +20,13 @@ versions still track specification maturity rather than a released product.
 - Added the direct declarative `edict.lawpack-adapter/v1` ABI. Exact canonical
   adapter bytes are selected and digest-bound by a validated lawpack, must
   completely discharge exported operation-profile, runtime-effect, footprint,
-  cost, budget, and named-failure obligations, and derive compiler and Target
-  IR facts through the source module's exact digest-locked import. The Hello
+  cost, budget, and named-failure obligations, bind each runtime effect to an
+  exact target-owned configuration resource, and derive compiler and Target IR
+  facts through the source module's exact digest-locked import. Edict preserves
+  the configuration identity without interpreting target semantics. The Hello
   Echo source now lowers to `echo.span-ir/v1` without a caller-built
-  `CompilerContext` or `TargetIrLoweringFacts`. Target profiles accept only the
+  `CompilerContext` or `TargetIrLoweringFacts`, and its compiler-produced Core
+  and Target IR bytes are reviewed goldens. Target profiles accept only the
   exact direct adapter ABI, and the self-contained provider contract pack
   publishes its CDDL root.
 
