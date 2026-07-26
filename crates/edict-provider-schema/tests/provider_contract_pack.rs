@@ -25,6 +25,7 @@ use sha2::{Digest, Sha256};
 const COMMON_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-common.cddl");
 const CORE_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-core.cddl");
 const LAWPACK_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-lawpack.cddl");
+const LAWPACK_ADAPTER_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-lawpack-adapter.cddl");
 const TARGET_PROFILE_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-target-profile.cddl");
 const AUTHORITY_FACTS_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-authority-facts.cddl");
 const TARGET_IR_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-target-ir.cddl");
@@ -37,6 +38,8 @@ const TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.cbor");
 const ALTERNATE_TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor");
+const LAWPACK_ADAPTER_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor");
 const OPERATION_SOURCE: &str =
     include_str!("../../../fixtures/lang/operations/explicit-basis-u64.edict");
 const EXPECTED_DOMAIN_BINDINGS: [(&str, &str); 6] = [
@@ -68,7 +71,7 @@ fn contract_pack_is_self_contained_and_repeatable() {
         PROVIDER_CONTRACT_PACK_COORDINATE
     );
     assert_eq!(forward.manifest().license, PROVIDER_CONTRACT_PACK_LICENSE);
-    assert_eq!(forward.manifest().contracts.len(), 9);
+    assert_eq!(forward.manifest().contracts.len(), 10);
     assert_eq!(forward.manifest().domains.len(), 6);
     assert_eq!(forward.manifest().resources.len(), 5);
     assert!(forward
@@ -512,6 +515,7 @@ fn input_with(
         common_cddl: COMMON_CDDL,
         core_cddl,
         lawpack_cddl: LAWPACK_CDDL,
+        lawpack_adapter_cddl: LAWPACK_ADAPTER_CDDL,
         target_profile_cddl: TARGET_PROFILE_CDDL,
         authority_facts_cddl: AUTHORITY_FACTS_CDDL,
         target_ir_cddl,
@@ -558,6 +562,11 @@ fn representative_contract_instances() -> Vec<(&'static str, CanonicalValue)> {
         (
             "core-module",
             decode_canonical_cbor(CORE_FIXTURE).expect("Core fixture is canonical"),
+        ),
+        (
+            "lawpack-adapter",
+            decode_canonical_cbor(LAWPACK_ADAPTER_FIXTURE)
+                .expect("lawpack adapter fixture is canonical"),
         ),
         ("lawpack-exports", lawpack_exports()),
         ("lawpack-manifest", lawpack_manifest()),

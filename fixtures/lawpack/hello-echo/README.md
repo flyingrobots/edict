@@ -8,6 +8,8 @@ a fake transport, or a handwritten Echo executable package.
 - `manifest.sha256` is its `edict.lawpack/v1` domain-framed identity.
 - `exports.cbor` is the canonical export surface.
 - `exports.sha256` is its `hello.echo.exports/v1` domain-framed identity.
+- `adapter.cbor` is the canonical direct declarative Echo target adapter.
+- `adapter.sha256` is its manifest-bound domain-framed identity.
 - `create-greeting.edict` imports the exact manifest digest and declares the
   bounded `createGreeting` action with typed `AlreadyExists` mapping.
 
@@ -23,5 +25,7 @@ Check reviewed artifacts without modifying them:
 cargo xtask lawpack-goldens --check
 ```
 
-The lawpack loader proves the module boundary. It does not yet load or execute
-the referenced Echo target adapter; that is the next compiler crossing.
+The loader validates the manifest, exports, and exact direct adapter. The
+compiler derives Core and `echo.span-ir/v1` facts from that closure without a
+handwritten compiler context. This fixture does not yet emit an Echo executable
+package or execute an Echo Action.

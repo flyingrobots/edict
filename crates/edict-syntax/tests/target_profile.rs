@@ -7,6 +7,7 @@
 use edict_syntax::{
     validate_target_profile_manifest, ResourceRef, TargetProfileConformanceFailureKind,
     TargetProfileConformanceStatus, TargetProfileManifest, CORE_API_VERSION,
+    LAWPACK_ADAPTER_API_VERSION,
 };
 
 fn digest_locked(coordinate: &str) -> ResourceRef {
@@ -38,7 +39,7 @@ fn echo_profile() -> TargetProfileManifest {
         bundle_profile: digest_locked("echo.dpo.bundle/v1"),
         generated_artifact_profiles: vec![digest_locked("echo.dpo.registration/v1")],
         canonical_encoding_rules: digest_locked("edict.canonical-cbor/v1"),
-        accepted_lawpack_adapter_abi: Vec::new(),
+        accepted_lawpack_adapter_abi: vec![LAWPACK_ADAPTER_API_VERSION.to_owned()],
         diagnostic_abi: digest_locked("edict.diagnostics/v1"),
         application_model: "atomic".to_owned(),
         read_consistency: "application-snapshot".to_owned(),
@@ -129,15 +130,26 @@ fn accepted_core_abi_must_include_v1_core() {
 }
 
 #[test]
-fn deferred_lawpack_adapter_abi_must_stay_empty_in_v1() {
+fn direct_lawpack_adapter_abi_is_supported_in_v1() {
+    let profile = echo_profile();
+
+    assert!(failure_kinds(&profile).is_empty());
+}
+
+#[test]
+fn unknown_or_duplicate_lawpack_adapter_abis_are_rejected() {
     let mut profile = echo_profile();
-    profile
-        .accepted_lawpack_adapter_abi
-        .push("edict.lawpack-adapter/v1".to_owned());
+    profile.accepted_lawpack_adapter_abi = vec!["edict.lawpack-adapter/v2".to_owned()];
 
     assert_eq!(
         failure_kinds(&profile),
-        vec![TargetProfileConformanceFailureKind::DeferredLawpackAdapterAbiUnsupported]
+        vec![TargetProfileConformanceFailureKind::UnsupportedLawpackAdapterAbi]
+    );
+
+    profile.accepted_lawpack_adapter_abi = vec![LAWPACK_ADAPTER_API_VERSION.to_owned(); 2];
+    assert_eq!(
+        failure_kinds(&profile),
+        vec![TargetProfileConformanceFailureKind::UnsupportedLawpackAdapterAbi]
     );
 }
 

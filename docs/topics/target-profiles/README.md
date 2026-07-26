@@ -55,7 +55,7 @@ The canonical artifact shape for `edict.target-profile/v1` is named in
 
 - `TargetProfileManifest` records profile identity, accepted Core ABI,
   intrinsic namespace, every required digest-locked manifest component,
-  canonical encoding rules, deferred lawpack-adapter ABI entries, diagnostics,
+  canonical encoding rules, direct lawpack-adapter ABI entries, diagnostics,
   v1 application doctrine, deterministic execution, and conformance fixture
   corpus references. [TPROF-REQ-001]
 - Conformance is runtime-neutral. `echo.dpo@1` and `kv.transactional@1` shaped
@@ -66,8 +66,10 @@ The canonical artifact shape for `edict.target-profile/v1` is named in
   coordinate and valid `sha256:<64 hex>` digest review rendering.
   [TPROF-REQ-003]
 - A conforming profile must accept `edict.core/v1`. [TPROF-REQ-004]
-- `acceptedLawpackAdapterAbi` remains empty in v1 until the byte-level
-  `edict.lawpack-adapter/v1` ABI is specified. [TPROF-REQ-005]
+- `acceptedLawpackAdapterAbi` is absent/empty for profiles that do not consume
+  lawpack adapters or exactly `["edict.lawpack-adapter/v1"]` for profiles that
+  accept the direct declarative ABI. Unknown and duplicate claims reject.
+  [TPROF-REQ-005]
 - `multiTarget` remains false in v1 conformance until composite profile
   validation exists. [TPROF-REQ-006]
 - The v1 application doctrine accepted by the checker is atomic application,

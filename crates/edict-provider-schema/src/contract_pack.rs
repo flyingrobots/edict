@@ -32,9 +32,10 @@ const PACK_HEADER: &str = "; SPDX-License-Identifier: Apache-2.0\n\
 ; edict-provider-contracts.cddl\n\
 ; Generated from Edict-owned ABI fragments. DO NOT EDIT.\n";
 
-const CONTRACT_BINDINGS: [(&str, &str); 9] = [
+const CONTRACT_BINDINGS: [(&str, &str); 10] = [
     ("authority-facts", "authority-facts"),
     ("core-module", "core-module"),
+    ("lawpack-adapter", "lawpack-adapter"),
     ("lawpack-exports", "lawpack-exports"),
     ("lawpack-manifest", "lawpack-manifest"),
     ("lowering-requirements", "lowering-requirements"),
@@ -68,6 +69,7 @@ pub struct ProviderContractPackInput<'a> {
     pub common_cddl: &'a [u8],
     pub core_cddl: &'a [u8],
     pub lawpack_cddl: &'a [u8],
+    pub lawpack_adapter_cddl: &'a [u8],
     pub target_profile_cddl: &'a [u8],
     pub authority_facts_cddl: &'a [u8],
     pub target_ir_cddl: &'a [u8],
@@ -291,6 +293,7 @@ pub fn assemble_provider_contract_pack(
         common_cddl,
         core_cddl,
         lawpack_cddl,
+        lawpack_adapter_cddl,
         target_profile_cddl,
         authority_facts_cddl,
         target_ir_cddl,
@@ -300,6 +303,7 @@ pub fn assemble_provider_contract_pack(
         ("edict-common.cddl", common_cddl),
         ("edict-core.cddl", core_cddl),
         ("edict-lawpack.cddl", lawpack_cddl),
+        ("edict-lawpack-adapter.cddl", lawpack_adapter_cddl),
         ("edict-target-profile.cddl", target_profile_cddl),
         ("edict-authority-facts.cddl", authority_facts_cddl),
         ("edict-target-ir.cddl", target_ir_cddl),

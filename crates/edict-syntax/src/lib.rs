@@ -77,6 +77,7 @@ pub mod contract_bundle;
 pub mod core_ir;
 pub mod highlight;
 pub mod lawpack;
+pub mod lawpack_adapter;
 pub mod lowerability;
 pub mod parser;
 pub mod provider;
@@ -144,6 +145,11 @@ pub use lawpack::{
     LawpackPureFunctionImplementation, LawpackResourceRef, LawpackSemanticEffect,
     LawpackTargetAdapter, LawpackValidationFailure, LawpackValidationFailureKind, LawpackVerifier,
     LawpackVerifierClass, ValidatedLawpackBundle, LAWPACK_API_VERSION,
+};
+pub use lawpack_adapter::{
+    decode_lawpack_adapter, prepare_lawpack_compilation, LawpackAdapterEffect,
+    LawpackAdapterFailure, LawpackAdapterFailureKind, LawpackAdapterOperationProfile,
+    PreparedLawpackCompilation, ValidatedLawpackAdapter, LAWPACK_ADAPTER_API_VERSION,
 };
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,

@@ -9,6 +9,7 @@ use crate::goldens::{check_golden_file_with_command, write_golden_file};
 const COMMON_CDDL: &str = "docs/abi/edict-common.cddl";
 const CORE_CDDL: &str = "docs/abi/edict-core.cddl";
 const LAWPACK_CDDL: &str = "docs/abi/edict-lawpack.cddl";
+const LAWPACK_ADAPTER_CDDL: &str = "docs/abi/edict-lawpack-adapter.cddl";
 const TARGET_PROFILE_CDDL: &str = "docs/abi/edict-target-profile.cddl";
 const AUTHORITY_FACTS_CDDL: &str = "docs/abi/edict-authority-facts.cddl";
 const TARGET_IR_CDDL: &str = "docs/abi/edict-target-ir.cddl";
@@ -30,6 +31,7 @@ pub(crate) fn provider_contract_pack(
     let common_cddl = read(root, COMMON_CDDL)?;
     let core_cddl = read(root, CORE_CDDL)?;
     let lawpack_cddl = read(root, LAWPACK_CDDL)?;
+    let lawpack_adapter_cddl = read(root, LAWPACK_ADAPTER_CDDL)?;
     let target_profile_cddl = read(root, TARGET_PROFILE_CDDL)?;
     let authority_facts_cddl = read(root, AUTHORITY_FACTS_CDDL)?;
     let target_ir_cddl = read(root, TARGET_IR_CDDL)?;
@@ -37,6 +39,7 @@ pub(crate) fn provider_contract_pack(
         common_cddl: &common_cddl,
         core_cddl: &core_cddl,
         lawpack_cddl: &lawpack_cddl,
+        lawpack_adapter_cddl: &lawpack_adapter_cddl,
         target_profile_cddl: &target_profile_cddl,
         authority_facts_cddl: &authority_facts_cddl,
         target_ir_cddl: &target_ir_cddl,

@@ -264,6 +264,14 @@ adapter:
     guard attachment rules
 ```
 
+The canonical byte contract for the direct declarative adapter is
+[`docs/abi/edict-lawpack-adapter.cddl`](./abi/edict-lawpack-adapter.cddl).
+Its operation-profile, effect, and budget maps must exactly cover the owning
+lawpack's exported operation profiles, runtime effects, and referenced cost
+obligations. The adapter repeats the exported footprint, cost, and named-failure
+sets so the loader can corroborate them before deriving compiler or Target IR
+facts; a mismatch is a compile-time adapter error.
+
 A portable semantic intent compiles for a target **only** when the lawpack
 supplies an adapter for that target profile. Absent an adapter, this is a
 **compiler/lowering error**, not an admission-class error: no valid target
