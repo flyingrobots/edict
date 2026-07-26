@@ -1,6 +1,6 @@
 package examples.hello_echo@1;
 
-use lawpack hello.echo@1 digest "sha256:437ba16695431df90658a3801b84ae8011f93ff0dd09a2bf9f261ab6a507f680" as hello;
+use lawpack hello.echo@1 digest "sha256:21f3643c75764f8179ab725b8a8335178a52efddea50a628e09ee03aba565f41" as hello;
 
 type CreateGreetingInput = {
   basis: String<max=128>,
