@@ -10,6 +10,14 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the first executable `edict.lawpack/v1` loader. Exact canonical
+  manifests and export surfaces decode into an opaque typed bundle, corroborate
+  the export digest, validate the closed verifier, helper, effect, obstruction,
+  and operation-profile shapes, and reject incomplete, substituted, or cyclic
+  dependency sets. The reviewed Hello Echo fixture includes canonical bytes,
+  exact digests, and a real `createGreeting` source import checked by
+  `cargo xtask lawpack-goldens`.
+
 - Added `EDICT.md`, a comprehensive cited introduction and deep-dive report:
   hello-world walkthrough, feature deep dive, plain-English walkthrough with
   glossary and diagrams, unique technical details, roadmap discussion, and a

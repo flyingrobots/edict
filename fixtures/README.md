@@ -44,6 +44,8 @@ authority-facts canonical fixture lives in
 [`authority-facts/canonical/`](./authority-facts/canonical/). Additional
 Edict-owned target-profile contract resources live in
 [`target-profile/contract-resources/`](./target-profile/contract-resources/).
+The first canonical lawpack manifest/export fixture and its digest-pinned Edict
+source live in [`lawpack/hello-echo/`](./lawpack/hello-echo/).
 The Rust-neutral provider contract pack and its exact manifest live in
 [`provider-contracts/v1/`](./provider-contracts/v1/).
 Additional source coverage, relapse-zoo cases, runtime-owned target fixtures,

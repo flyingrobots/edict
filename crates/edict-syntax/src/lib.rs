@@ -76,6 +76,7 @@ pub mod compiler;
 pub mod contract_bundle;
 pub mod core_ir;
 pub mod highlight;
+pub mod lawpack;
 pub mod lowerability;
 pub mod parser;
 pub mod provider;
@@ -134,6 +135,16 @@ pub use core_ir::{
     CORE_API_VERSION,
 };
 pub use highlight::{highlight_source, HighlightRole, HighlightToken};
+pub use lawpack::{
+    decode_lawpack_bundle, validate_lawpack_dependency_graph, LawpackApertureRequirement,
+    LawpackAuthorityClass, LawpackDependency, LawpackDeterminismClass, LawpackEffectFailure,
+    LawpackEffectKind, LawpackExecutableComponent, LawpackExecutionClass, LawpackExportedConstant,
+    LawpackExportedType, LawpackExports, LawpackManifest, LawpackObstruction,
+    LawpackOperationProfile, LawpackOpticTemplate, LawpackPureFunction,
+    LawpackPureFunctionImplementation, LawpackResourceRef, LawpackSemanticEffect,
+    LawpackTargetAdapter, LawpackValidationFailure, LawpackValidationFailureKind, LawpackVerifier,
+    LawpackVerifierClass, ValidatedLawpackBundle, LAWPACK_API_VERSION,
+};
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,
     LowerabilityEffectResult, LowerabilityEffectStatus, LowerabilityFailure,
