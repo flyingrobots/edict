@@ -1,0 +1,48 @@
+; edict-lawpack-adapter.cddl
+; Canonical schema for one direct declarative lawpack target adapter.
+; Authoritative byte encoding: edict.canonical-cbor/v1.
+;
+; The enclosing lawpack manifest selects the exact target profile, target IR,
+; and adapter resource digest. Those identities are not repeated here.
+
+lawpack-adapter = {
+  apiVersion: "edict.lawpack-adapter/v1",
+  class: "declarative",
+  operationProfiles: {
+    * tstr => lawpack-adapter-operation-profile
+  },
+  effectImplementations: {
+    * tstr => lawpack-adapter-effect
+  },
+  budgets: {
+    * tstr => lawpack-adapter-budget
+  },
+}
+
+; Keys are canonical lawpack operation-profile coordinates.
+lawpack-adapter-operation-profile = {
+  core: tstr,
+  semanticEffects: [+ tstr],
+}
+
+; Keys are canonical lawpack semantic-effect coordinates. Footprint, cost, and
+; failure fields must exactly discharge the matching exported effect.
+lawpack-adapter-effect = {
+  targetIntrinsic: tstr,
+  writeClass: lawpack-adapter-write-class,
+  footprintObligation: tstr,
+  costObligation: tstr,
+  failureMappings: { * failure-ident => tstr },
+}
+
+; Keys are canonical exported cost-obligation coordinates.
+lawpack-adapter-budget = {
+  maxSteps: uint,
+  maxAllocatedBytes: uint,
+  maxOutputBytes: uint,
+}
+
+lawpack-adapter-write-class = "none" / "read" / "create" / "ensure" /
+                              "append" / "modify" / "delete"
+
+; failure-ident is defined in edict-common.cddl.

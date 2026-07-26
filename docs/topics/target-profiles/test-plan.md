@@ -11,7 +11,7 @@ In scope:
 - runtime-neutral acceptance of Echo and non-Echo target-profile shapes;
 - digest-locked manifest component references;
 - accepted Core ABI requirements;
-- deferred lawpack-adapter ABI emptiness;
+- exact direct lawpack-adapter ABI compatibility;
 - v1 atomic application doctrine.
 - authority-facts documents whose source kind is `targetProfile` for first
   compiler operation-profile facts.
@@ -45,7 +45,7 @@ Out of scope:
 | TPROF-REQ-002 | implemented | Target-profile conformance is runtime-neutral: Echo-shaped and KV-shaped profiles are checked by the same obligations without requiring graph/runtime-specific nouns. | issue #1 |
 | TPROF-REQ-003 | implemented | Normative manifest component references must be digest-locked by non-empty coordinate and valid `sha256:<64 hex>` digest review renderings. | docs/abi/edict-target-profile.cddl |
 | TPROF-REQ-004 | implemented | A conforming v1 target profile must accept `edict.core/v1`. | docs/abi/edict-target-profile.cddl |
-| TPROF-REQ-005 | implemented | `acceptedLawpackAdapterAbi` is rejected when non-empty until the byte-level adapter ABI is specified. | EDICT-ABI-LAWPACK-ADAPTER-DEFER-001 |
+| TPROF-REQ-005 | implemented | `acceptedLawpackAdapterAbi` is absent/empty or exactly `["edict.lawpack-adapter/v1"]`; unknown and duplicate claims reject. | EDICT-ABI-LAWPACK-ADAPTER-001 |
 | TPROF-REQ-006 | implemented | `multiTarget: true` is rejected until composite profile validation exists. | ROADMAP.md |
 | TPROF-REQ-007 | implemented | V1 conformance requires atomic application, application-snapshot reads, precommit-atomic guard evaluation, and no-visible-effects obstruction rollback. | docs/SPEC_edict-target-profile-abi-v1.md |
 | TPROF-REQ-008 | implemented | Authority-facts loading accepts digest-locked `targetProfile` source identity for first compiler operation-profile facts without claiming full manifest loading. | docs/topics/authority-facts/test-plan.md |
@@ -69,7 +69,7 @@ Out of scope:
 | TPROF-TP-001 | implemented | Golden path | TPROF-REQ-001, TPROF-REQ-002 | Echo-shaped and KV-shaped manifests both return `TargetProfileConformanceStatus::Conformant` with no failures. | echo_and_kv_profiles_conform_to_the_same_runtime_neutral_manifest_contract | crates/edict-syntax/tests/target_profile.rs | Proves the checker is not Echo-specific. |
 | TPROF-TP-002 | implemented | Boundary guard | TPROF-REQ-003 | Removing or malforming the verifier digest returns `NonConformant` with `NonDigestLockedResource` on the `verifier` field. | missing_digest_on_normative_manifest_slot_is_rejected, malformed_digest_on_normative_manifest_slot_is_rejected | crates/edict-syntax/tests/target_profile.rs | Stable failure kind and field, not prose. |
 | TPROF-TP-003 | implemented | Boundary guard | TPROF-REQ-004 | Removing `edict.core/v1` from accepted Core ABI returns `MissingAcceptedCoreAbi`. | accepted_core_abi_must_include_v1_core | crates/edict-syntax/tests/target_profile.rs | Ensures target profiles declare the Core contract they accept. |
-| TPROF-TP-004 | implemented | Boundary guard | TPROF-REQ-005 | Adding `edict.lawpack-adapter/v1` before that ABI is specified returns `DeferredLawpackAdapterAbiUnsupported`. | deferred_lawpack_adapter_abi_must_stay_empty_in_v1 | crates/edict-syntax/tests/target_profile.rs | Keeps adapter ABI claims out of this release. |
+| TPROF-TP-004 | implemented | Compatibility | TPROF-REQ-005 | The exact direct adapter ABI is accepted; unknown and duplicate ABI claims return `UnsupportedLawpackAdapterAbi`. | direct_lawpack_adapter_abi_is_supported_in_v1, unknown_or_duplicate_lawpack_adapter_abis_are_rejected | crates/edict-syntax/tests/target_profile.rs | Keeps target claims closed over the one implemented ABI. |
 | TPROF-TP-005 | implemented | Boundary guard | TPROF-REQ-006 | Setting `multiTarget` true returns `UnsupportedCompositeProfile`. | multi_target_profiles_are_rejected_until_composite_validation_exists | crates/edict-syntax/tests/target_profile.rs | Prevents unvalidated composite profiles from passing v1 conformance. |
 | TPROF-TP-006 | implemented | Boundary guard | TPROF-REQ-007 | Non-atomic application doctrine returns stable failure kinds for application model, read consistency, guard evaluation, and rollback. | atomic_application_semantics_are_required_for_v1_conformance | crates/edict-syntax/tests/target_profile.rs | Asserts structured behavior only. |
 | TPROF-TP-007 | implemented | Authority facts | TPROF-REQ-008 | A target-profile-sourced authority-facts file can provide operation-profile facts consumed by the compiler. | file_backed_authority_facts_compile_bounded_hello, file_backed_authority_facts_reject_write_effect_profile_mismatch | crates/edict-syntax/tests/authority_facts.rs | Asserts compiler behavior, not manifest prose. |

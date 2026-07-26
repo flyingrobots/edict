@@ -98,23 +98,22 @@ including `bundleProfile`, `generatedArtifactProfiles`, `canonicalEncodingRules`
 and `diagnosticAbi`. This is the **single** authoritative manifest; the Language
 spec must not duplicate it (`EDICT-ABI-NODUP-001`).
 
-`acceptedLawpackAdapterAbi` is **reserved and deferred**: it will list accepted
-lawpack-adapter ABI ids once the byte-level `edict.lawpack-adapter/v1` ABI is
-specified. Until that schema exists it is optional and empty, and a target must
-not be expected to validate adapter compatibility from it
-(`EDICT-ABI-LAWPACK-ADAPTER-DEFER-001`). Lawpack adapters are still digest-locked
-resource references in the lawpack manifest; only the cross-ABI compatibility
-field is deferred.
+`acceptedLawpackAdapterAbi` is optional. A target that consumes the direct
+declarative adapter ABI declares exactly `["edict.lawpack-adapter/v1"]`; a
+target that does not consume lawpack adapters leaves the field absent or empty.
+Unknown and duplicate entries reject
+(`EDICT-ABI-LAWPACK-ADAPTER-001`). The adapter itself remains a digest-locked
+resource selected by the lawpack manifest.
 
 Display metadata is not part of this manifest. Human-facing names, codenames,
 and marketing copy live in sidecar documents keyed by the target profile digest.
 
 The reference `edict_syntax` conformance surface accepts typed manifest values
 only. It validates the profile API version, identity, accepted Core ABI,
-digest-locked component references, canonical encoding rule, deferred
-lawpack-adapter ABI emptiness, and v1 application doctrine. The checker is
-runtime-neutral: Echo and non-Echo profile shapes are accepted or rejected by the
-same obligations.
+digest-locked component references, canonical encoding rule, direct
+lawpack-adapter ABI compatibility, and v1 application doctrine. The checker is
+runtime-neutral: Echo and non-Echo profile shapes are accepted or rejected by
+the same obligations.
 
 ## Exchange Types And Plugin Boundary
 

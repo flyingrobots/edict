@@ -17,6 +17,15 @@ versions still track specification maturity rather than a released product.
   dependency sets. The reviewed Hello Echo fixture includes canonical bytes,
   exact digests, and a real `createGreeting` source import checked by
   `cargo xtask lawpack-goldens`.
+- Added the direct declarative `edict.lawpack-adapter/v1` ABI. Exact canonical
+  adapter bytes are selected and digest-bound by a validated lawpack, must
+  completely discharge exported operation-profile, runtime-effect, footprint,
+  cost, budget, and named-failure obligations, and derive compiler and Target
+  IR facts through the source module's exact digest-locked import. The Hello
+  Echo source now lowers to `echo.span-ir/v1` without a caller-built
+  `CompilerContext` or `TargetIrLoweringFacts`. Target profiles accept only the
+  exact direct adapter ABI, and the self-contained provider contract pack
+  publishes its CDDL root.
 
 - Added `EDICT.md`, a comprehensive cited introduction and deep-dive report:
   hello-world walkthrough, feature deep dive, plain-English walkthrough with

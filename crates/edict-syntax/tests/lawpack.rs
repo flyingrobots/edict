@@ -4,17 +4,21 @@
 //! stable failure kinds. They do not construct an already-trusted manifest.
 
 use edict_syntax::{
-    decode_canonical_cbor, decode_lawpack_bundle, encode_canonical_cbor, parse_module,
-    validate_lawpack_dependency_graph, CanonicalValue, LawpackExecutionClass,
-    LawpackPureFunctionImplementation, LawpackValidationFailureKind, LawpackVerifierClass,
-    ValidatedLawpackBundle,
+    compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
+    encode_canonical_cbor, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
+    validate_lawpack_dependency_graph, CanonicalValue, LawpackAdapterFailureKind,
+    LawpackExecutionClass, LawpackPureFunctionImplementation, LawpackValidationFailureKind,
+    LawpackVerifierClass, TargetLoweringStatus, ValidatedLawpackBundle,
 };
 use sha2::{Digest, Sha256};
 
 const DIGEST_FRAME: &str = "edict.digest/v1";
 const EXPORTS_COORDINATE: &str = "hello.echo.exports/v1";
+const ADAPTER_COORDINATE: &str = "hello.echo.echo-dpo-adapter/v1";
 const MANIFEST_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor");
 const EXPORTS_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor");
+const ADAPTER_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor");
+const ADAPTER_DIGEST: &str = include_str!("../../../fixtures/lawpack/hello-echo/adapter.sha256");
 const MANIFEST_DIGEST: &str = include_str!("../../../fixtures/lawpack/hello-echo/manifest.sha256");
 const CREATE_GREETING_SOURCE: &str =
     include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
@@ -51,6 +55,172 @@ fn hello_echo_lawpack_bundle_loads_from_exact_canonical_resources() {
     assert_eq!(
         bundle.manifest_digest_review_string(),
         MANIFEST_DIGEST.trim()
+    );
+}
+
+#[test]
+fn hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter() {
+    let bundle =
+        decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
+    let module = parse_module(CREATE_GREETING_SOURCE).expect("parse createGreeting source");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
+    assert_eq!(adapter.digest_review_string(), ADAPTER_DIGEST.trim());
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive compiler and target facts");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile source-derived Core");
+    let report = lower_to_target_ir(&core, preparation.target_ir_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    let artifact = report.artifact.expect("Echo Target IR artifact");
+    assert_eq!(artifact.domain, "echo.span-ir/v1");
+    assert_eq!(artifact.target_profile.coordinate, "echo.dpo@1");
+    assert_eq!(
+        artifact.target_profile.digest.as_deref(),
+        Some("sha256:eedf7bdbf6fe4b6a4036695f41c3dc0a5c692d27e206c9d4c0c5eab41e2f63c9")
+    );
+    let semantic_closure = artifact
+        .semantic_closure
+        .as_ref()
+        .expect("lawpack-backed semantic closure");
+    assert_eq!(semantic_closure.lawpacks.len(), 1);
+    assert_eq!(semantic_closure.lawpacks[0].coordinate, "hello.echo@1");
+    assert_eq!(
+        semantic_closure.lawpacks[0].digest.as_deref(),
+        Some(MANIFEST_DIGEST.trim())
+    );
+    let intent = artifact
+        .intents
+        .get("createGreeting")
+        .expect("createGreeting intent");
+    assert!(
+        intent.basis.is_some(),
+        "explicit basis must survive lowering"
+    );
+    assert_eq!(
+        intent.steps[0].target_intrinsic,
+        "echo.dpo@1.anchored-node-attachment-create-if-absent"
+    );
+    assert_eq!(intent.steps[0].obstruction_failures, vec!["alreadyExists"]);
+    assert!(
+        intent.steps[0]
+            .obstruction_arms
+            .contains_key("alreadyExists"),
+        "typed failure arm must survive lowering"
+    );
+}
+
+#[test]
+fn lawpack_adapter_bytes_must_be_canonical_and_digest_bound() {
+    let bundle =
+        decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
+    let noncanonical = decode_lawpack_adapter(&bundle, "echo.dpo@1", &[0x18, 0x00])
+        .expect_err("noncanonical adapter must reject");
+    assert_eq!(
+        adapter_failure_kinds(&noncanonical),
+        vec![LawpackAdapterFailureKind::InvalidCanonicalCbor]
+    );
+
+    let mut substituted =
+        decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter fixture");
+    replace_field(
+        &mut substituted,
+        "class",
+        text("a different canonical adapter"),
+    );
+    let substituted_bytes =
+        encode_canonical_cbor(&substituted).expect("encode substituted adapter");
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &substituted_bytes)
+        .expect_err("adapter digest substitution must reject");
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::AdapterDigestMismatch]
+    );
+}
+
+#[test]
+fn lawpack_adapter_selection_requires_one_exact_target_profile() {
+    let bundle =
+        decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@2", ADAPTER_BYTES)
+        .expect_err("unselected target profile must reject");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::MissingTargetAdapter]
+    );
+}
+
+#[test]
+fn lawpack_adapter_requires_complete_exported_effect_coverage() {
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
+    let bundle = bundle_with_adapter(&adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode adapter");
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect_err("missing effect implementation must reject");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::MissingEffectImplementation]
+    );
+}
+
+#[test]
+fn lawpack_adapter_corroborates_footprint_cost_and_failure_obligations() {
+    for (field, replacement, expected) in [
+        (
+            "footprintObligation",
+            text("hello.echo@1.someOtherFootprint"),
+            LawpackAdapterFailureKind::ObligationMismatch,
+        ),
+        (
+            "costObligation",
+            text("hello.echo@1.someOtherBudget"),
+            LawpackAdapterFailureKind::ObligationMismatch,
+        ),
+    ] {
+        let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+        let effect = first_map_value_mut(field_mut(&mut adapter, "effectImplementations"));
+        replace_field(effect, field, replacement);
+        let bundle = bundle_with_adapter(&adapter);
+        let bytes = encode_canonical_cbor(&adapter).expect("encode adapter");
+        let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+            .expect_err("mismatched obligation must reject");
+        assert_eq!(adapter_failure_kinds(&failures), vec![expected]);
+    }
+
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let effect = first_map_value_mut(field_mut(&mut adapter, "effectImplementations"));
+    map_mut(field_mut(effect, "failureMappings")).clear();
+    let bundle = bundle_with_adapter(&adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode adapter");
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect_err("incomplete failure mapping must reject");
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::FailureMappingMismatch]
+    );
+}
+
+#[test]
+fn lawpack_compilation_requires_the_exact_digest_locked_source_import() {
+    let bundle =
+        decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
+    let source = CREATE_GREETING_SOURCE.replace(
+        MANIFEST_DIGEST.trim(),
+        &format!("sha256:{}", "0".repeat(64)),
+    );
+    let module = parse_module(&source).expect("parse source with substituted import");
+    let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect_err("substituted source import must reject");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::SourceImportMismatch]
     );
 }
 
@@ -596,6 +766,27 @@ fn failure_kinds(
     failures: &[edict_syntax::LawpackValidationFailure],
 ) -> Vec<LawpackValidationFailureKind> {
     failures.iter().map(|failure| failure.kind).collect()
+}
+
+fn adapter_failure_kinds(
+    failures: &[edict_syntax::LawpackAdapterFailure],
+) -> Vec<LawpackAdapterFailureKind> {
+    failures.iter().map(|failure| failure.kind).collect()
+}
+
+fn bundle_with_adapter(adapter: &CanonicalValue) -> ValidatedLawpackBundle {
+    let mut manifest = decode_canonical_cbor(MANIFEST_BYTES).expect("decode canonical manifest");
+    let descriptor = first_array_item_mut(field_mut(&mut manifest, "targetAdapters"));
+    replace_field(
+        descriptor,
+        "adapter",
+        resource_ref(
+            ADAPTER_COORDINATE,
+            digest_value(ADAPTER_COORDINATE, adapter),
+        ),
+    );
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode rebound manifest");
+    decode_lawpack_bundle(&manifest_bytes, EXPORTS_BYTES).expect("load rebound lawpack")
 }
 
 fn insert_field(value: &mut CanonicalValue, field: &str, replacement: CanonicalValue) {

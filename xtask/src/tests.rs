@@ -130,6 +130,7 @@ fn assert_provider_contract_manifest_metadata(manifest: &Value) {
         [
             ("authority-facts", "authority-facts"),
             ("core-module", "core-module"),
+            ("lawpack-adapter", "lawpack-adapter"),
             ("lawpack-exports", "lawpack-exports"),
             ("lawpack-manifest", "lawpack-manifest"),
             ("lowering-requirements", "lowering-requirements"),
@@ -264,6 +265,7 @@ fn provider_contract_pack_check_rejects_drift_without_rewriting() {
         "docs/abi/edict-common.cddl",
         "docs/abi/edict-core.cddl",
         "docs/abi/edict-lawpack.cddl",
+        "docs/abi/edict-lawpack-adapter.cddl",
         "docs/abi/edict-target-profile.cddl",
         "docs/abi/edict-authority-facts.cddl",
         "docs/abi/edict-target-ir.cddl",
