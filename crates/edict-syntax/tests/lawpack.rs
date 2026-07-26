@@ -5,7 +5,8 @@
 
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
-    encode_canonical_cbor, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
+    digest_core_module, digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
+    encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     validate_lawpack_dependency_graph, CanonicalValue, LawpackAdapterFailureKind,
     LawpackExecutionClass, LawpackPureFunctionImplementation, LawpackValidationFailureKind,
     LawpackVerifierClass, TargetLoweringStatus, ValidatedLawpackBundle,
@@ -22,6 +23,14 @@ const ADAPTER_DIGEST: &str = include_str!("../../../fixtures/lawpack/hello-echo/
 const MANIFEST_DIGEST: &str = include_str!("../../../fixtures/lawpack/hello-echo/manifest.sha256");
 const CREATE_GREETING_SOURCE: &str =
     include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+const CREATE_GREETING_CORE_BYTES: &[u8] =
+    include_bytes!("../../../fixtures/lawpack/hello-echo/create-greeting.core.cbor");
+const CREATE_GREETING_CORE_DIGEST: &str =
+    include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.core.sha256");
+const CREATE_GREETING_TARGET_IR_BYTES: &[u8] =
+    include_bytes!("../../../fixtures/lawpack/hello-echo/create-greeting.target-ir.cbor");
+const CREATE_GREETING_TARGET_IR_DIGEST: &str =
+    include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.target-ir.sha256");
 
 #[test]
 fn hello_echo_lawpack_bundle_loads_from_exact_canonical_resources() {
@@ -108,6 +117,26 @@ fn hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter() {
             .obstruction_arms
             .contains_key("alreadyExists"),
         "typed failure arm must survive lowering"
+    );
+    assert_eq!(
+        encode_core_module(&core).expect("encode createGreeting Core"),
+        CREATE_GREETING_CORE_BYTES
+    );
+    assert_eq!(
+        digest_core_module(&core)
+            .expect("digest createGreeting Core")
+            .to_review_string(),
+        CREATE_GREETING_CORE_DIGEST.trim()
+    );
+    assert_eq!(
+        encode_target_ir_artifact(&artifact).expect("encode createGreeting Target IR"),
+        CREATE_GREETING_TARGET_IR_BYTES
+    );
+    assert_eq!(
+        digest_target_ir_artifact(&artifact)
+            .expect("digest createGreeting Target IR")
+            .to_review_string(),
+        CREATE_GREETING_TARGET_IR_DIGEST.trim()
     );
 }
 

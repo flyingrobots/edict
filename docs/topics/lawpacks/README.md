@@ -44,6 +44,8 @@ The current executable Rust surfaces touching lawpacks are:
   corroboration, and complete profile/effect/budget coverage;
 - compiler and Target IR fact derivation from the exact
   module/lawpack/adapter closure;
+- reproducible canonical Core and Target IR artifacts for the standalone Hello
+  Echo crossing;
 - authority-facts loading for budget and effect write-class facts whose source
   identity is a digest-locked lawpack reference;
 - target-profile validation for the exact `edict.lawpack-adapter/v1` ABI;
@@ -75,6 +77,9 @@ The current executable Rust surfaces touching lawpacks are:
   returning an opaque validated adapter. `prepare_lawpack_compilation` then
   derives compiler and Target IR facts through the source import's exact alias
   and manifest digest. [LAWPACKS-REQ-008]
+- The Hello Echo golden generator compiles the exact source and lawpack closure,
+  lowers the resulting Core module, and pins canonical Core and Target IR bytes
+  under their native domain-framed identities. [LAWPACKS-REQ-009]
 - Lowerability may classify an operation as adapted when exactly one
   digest-locked direct adapter satisfies the required semantic effect, write
   class, and guard facts. Floating, chained, or ambiguous adapter claims reject
