@@ -1,7 +1,13 @@
 use std::fmt::Write as _;
+use std::fs;
 use std::path::Path;
 
-use edict_syntax::{decode_lawpack_bundle, encode_canonical_cbor, CanonicalValue};
+use edict_syntax::{
+    compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, digest_core_module,
+    digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
+    encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
+    CanonicalValue, TargetLoweringStatus,
+};
 use sha2::{Digest, Sha256};
 
 use crate::goldens::{check_golden_file_with_command, write_golden_file};
@@ -15,6 +21,13 @@ const EXPORTS_CBOR: &str = "fixtures/lawpack/hello-echo/exports.cbor";
 const EXPORTS_DIGEST: &str = "fixtures/lawpack/hello-echo/exports.sha256";
 const ADAPTER_CBOR: &str = "fixtures/lawpack/hello-echo/adapter.cbor";
 const ADAPTER_DIGEST: &str = "fixtures/lawpack/hello-echo/adapter.sha256";
+const CREATE_GREETING_SOURCE: &str = "fixtures/lawpack/hello-echo/create-greeting.edict";
+const CREATE_GREETING_CORE_CBOR: &str = "fixtures/lawpack/hello-echo/create-greeting.core.cbor";
+const CREATE_GREETING_CORE_DIGEST: &str = "fixtures/lawpack/hello-echo/create-greeting.core.sha256";
+const CREATE_GREETING_TARGET_IR_CBOR: &str =
+    "fixtures/lawpack/hello-echo/create-greeting.target-ir.cbor";
+const CREATE_GREETING_TARGET_IR_DIGEST: &str =
+    "fixtures/lawpack/hello-echo/create-greeting.target-ir.sha256";
 const ADAPTER_COORDINATE: &str = "hello.echo.echo-dpo-adapter/v1";
 const ECHO_TARGET_PROFILE_DIGEST: [u8; 32] = [
     0xee, 0xdf, 0x7b, 0xdb, 0xf6, 0xfe, 0x4b, 0x6a, 0x40, 0x36, 0x69, 0x5f, 0x41, 0xc3, 0xdc, 0x0a,
@@ -33,6 +46,26 @@ pub(crate) enum LawpackGoldenMode {
 }
 
 pub(crate) fn lawpack_goldens(root: &Path, mode: LawpackGoldenMode) -> Result<(), String> {
+    for (path, bytes) in hello_echo_golden_artifacts(root)? {
+        match mode {
+            LawpackGoldenMode::Check => {
+                check_golden_file_with_command(root, path, &bytes, WRITE_COMMAND)?;
+            }
+            LawpackGoldenMode::Write => write_golden_file(&root.join(path), &bytes)?,
+        }
+    }
+
+    println!(
+        "lawpack-goldens: {FIXTURE_ROOT} {}",
+        match mode {
+            LawpackGoldenMode::Check => "checked",
+            LawpackGoldenMode::Write => "written",
+        }
+    );
+    Ok(())
+}
+
+fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>)>, String> {
     let exports_value = hello_echo_exports();
     let exports_bytes = encode_canonical_cbor(&exports_value)
         .map_err(|error| format!("encode Hello Echo exports: {error}"))?;
@@ -46,52 +79,61 @@ pub(crate) fn lawpack_goldens(root: &Path, mode: LawpackGoldenMode) -> Result<()
         .map_err(|error| format!("encode Hello Echo manifest: {error}"))?;
     let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
         .map_err(|failures| format!("validate Hello Echo lawpack: {failures:?}"))?;
+    let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
+        .map_err(|failures| format!("validate Hello Echo adapter: {failures:?}"))?;
+    let source = fs::read_to_string(root.join(CREATE_GREETING_SOURCE))
+        .map_err(|error| format!("read {CREATE_GREETING_SOURCE}: {error}"))?;
+    let module = parse_module(&source)
+        .map_err(|error| format!("parse {CREATE_GREETING_SOURCE}: {error:?}"))?;
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .map_err(|failures| format!("prepare Hello Echo compilation: {failures:?}"))?;
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .map_err(|error| format!("compile Hello Echo Core: {error:?}"))?;
+    let core_bytes =
+        encode_core_module(&core).map_err(|error| format!("encode Hello Echo Core: {error}"))?;
+    let core_digest = format!(
+        "{}\n",
+        digest_core_module(&core)
+            .map_err(|error| format!("digest Hello Echo Core: {error}"))?
+            .to_review_string()
+    );
+    let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
+    if target_ir_report.status != TargetLoweringStatus::Lowered {
+        return Err(format!(
+            "lower Hello Echo Target IR: expected lowered status, got {:?}",
+            target_ir_report.status
+        ));
+    }
+    let target_ir = target_ir_report
+        .artifact
+        .ok_or_else(|| "lower Hello Echo Target IR: lowered report omitted artifact".to_owned())?;
+    let target_ir_bytes = encode_target_ir_artifact(&target_ir)
+        .map_err(|error| format!("encode Hello Echo Target IR: {error}"))?;
+    let target_ir_digest = format!(
+        "{}\n",
+        digest_target_ir_artifact(&target_ir)
+            .map_err(|error| format!("digest Hello Echo Target IR: {error}"))?
+            .to_review_string()
+    );
     let manifest_digest = format!("{}\n", bundle.manifest_digest_review_string());
     let exports_digest = format!("{}\n", bundle.manifest().exports.digest_review_string());
     let adapter_digest = format!("{}\n", sha256_review_string(&adapter_digest));
 
-    match mode {
-        LawpackGoldenMode::Check => {
-            check_golden_file_with_command(root, MANIFEST_CBOR, &manifest_bytes, WRITE_COMMAND)?;
-            check_golden_file_with_command(
-                root,
-                MANIFEST_DIGEST,
-                manifest_digest.as_bytes(),
-                WRITE_COMMAND,
-            )?;
-            check_golden_file_with_command(root, EXPORTS_CBOR, &exports_bytes, WRITE_COMMAND)?;
-            check_golden_file_with_command(
-                root,
-                EXPORTS_DIGEST,
-                exports_digest.as_bytes(),
-                WRITE_COMMAND,
-            )?;
-            check_golden_file_with_command(root, ADAPTER_CBOR, &adapter_bytes, WRITE_COMMAND)?;
-            check_golden_file_with_command(
-                root,
-                ADAPTER_DIGEST,
-                adapter_digest.as_bytes(),
-                WRITE_COMMAND,
-            )?;
-        }
-        LawpackGoldenMode::Write => {
-            write_golden_file(&root.join(MANIFEST_CBOR), &manifest_bytes)?;
-            write_golden_file(&root.join(MANIFEST_DIGEST), manifest_digest.as_bytes())?;
-            write_golden_file(&root.join(EXPORTS_CBOR), &exports_bytes)?;
-            write_golden_file(&root.join(EXPORTS_DIGEST), exports_digest.as_bytes())?;
-            write_golden_file(&root.join(ADAPTER_CBOR), &adapter_bytes)?;
-            write_golden_file(&root.join(ADAPTER_DIGEST), adapter_digest.as_bytes())?;
-        }
-    }
-
-    println!(
-        "lawpack-goldens: {FIXTURE_ROOT} {}",
-        match mode {
-            LawpackGoldenMode::Check => "checked",
-            LawpackGoldenMode::Write => "written",
-        }
-    );
-    Ok(())
+    Ok(vec![
+        (MANIFEST_CBOR, manifest_bytes),
+        (MANIFEST_DIGEST, manifest_digest.into_bytes()),
+        (EXPORTS_CBOR, exports_bytes),
+        (EXPORTS_DIGEST, exports_digest.into_bytes()),
+        (ADAPTER_CBOR, adapter_bytes),
+        (ADAPTER_DIGEST, adapter_digest.into_bytes()),
+        (CREATE_GREETING_CORE_CBOR, core_bytes),
+        (CREATE_GREETING_CORE_DIGEST, core_digest.into_bytes()),
+        (CREATE_GREETING_TARGET_IR_CBOR, target_ir_bytes),
+        (
+            CREATE_GREETING_TARGET_IR_DIGEST,
+            target_ir_digest.into_bytes(),
+        ),
+    ])
 }
 
 fn hello_echo_manifest(exports_digest: [u8; 32], adapter_digest: [u8; 32]) -> CanonicalValue {

@@ -12,6 +12,14 @@ a fake transport, or a handwritten Echo executable package.
 - `adapter.sha256` is its manifest-bound domain-framed identity.
 - `create-greeting.edict` imports the exact manifest digest and declares the
   bounded `createGreeting` action with typed `AlreadyExists` mapping.
+- `create-greeting.core.cbor` is the canonical Core module compiled from that
+  exact source and lawpack closure.
+- `create-greeting.core.sha256` is its `edict.core.module/v1`
+  domain-framed identity.
+- `create-greeting.target-ir.cbor` is the canonical `echo.span-ir/v1`
+  artifact lowered from that exact Core module.
+- `create-greeting.target-ir.sha256` is its
+  `edict.target-ir.artifact/v1` domain-framed identity.
 
 Regenerate only through:
 
@@ -27,5 +35,6 @@ cargo xtask lawpack-goldens --check
 
 The loader validates the manifest, exports, and exact direct adapter. The
 compiler derives Core and `echo.span-ir/v1` facts from that closure without a
-handwritten compiler context. This fixture does not yet emit an Echo executable
-package or execute an Echo Action.
+handwritten compiler context. The golden command compiles and lowers the source
+before reproducing the reviewed Core and Target IR bytes and identities. This
+fixture does not yet emit an Echo executable package or execute an Echo Action.

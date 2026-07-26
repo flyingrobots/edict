@@ -17,6 +17,8 @@ In scope:
   rejection of unknown or duplicate declarations;
 - canonical direct-adapter loading, digest corroboration, complete semantic
   closure, and compiler/Target IR fact derivation;
+- canonical compiler-produced Core and Target IR fixture bytes with their
+  native domain-framed identities;
 - lowerability behavior for one-hop digest-locked direct adapters;
 - contract-bundle handling of lawpack artifact references as external,
   participant-neutral resources.
@@ -45,6 +47,7 @@ Out of scope:
 | LAWPACKS-REQ-006 | implemented | Authority-facts loading accepts digest-locked `lawpack` source identity for first compiler budget and effect write-class facts without claiming full manifest validation. | docs/topics/authority-facts/test-plan.md |
 | LAWPACKS-REQ-007 | implemented | Provider manifests model lawpacks as generated provider artifacts with digest-locked semantic source and generator provenance; Edict validates the reference/provenance envelope without owning runtime lawpack semantics. | issue #139, docs/topics/providers/test-plan.md |
 | LAWPACKS-REQ-008 | implemented | Edict validates one exact direct declarative `edict.lawpack-adapter/v1` resource selected by a loaded lawpack manifest, requires complete profile/effect/budget coverage, and corroborates every exported footprint, cost, and named-failure obligation before deriving compiler or target facts. | issue #169, docs/abi/edict-lawpack-adapter.cddl |
+| LAWPACKS-REQ-009 | implemented | The standalone Hello Echo fixture pins exact canonical Core and Target IR bytes produced from the digest-locked source/lawpack/adapter closure and computes each identity with the artifact's native domain. | issue #169, fixtures/lawpack/hello-echo/README.md, xtask/src/lawpack_goldens.rs |
 
 ## Fixtures
 
@@ -52,7 +55,7 @@ Out of scope:
 | --- | --- | --- |
 | fixtures/lang/bounds/bounded-hello.edict | Lawpack import source fixture. | Parser preserves the `hello.optics@1` lawpack import and digest review string. |
 | fixtures/lang/effects/read-greeting.edict | Multi-import source fixture. | Parser preserves shape, lawpack, and target imports for effect-call syntax. |
-| fixtures/lawpack/hello-echo/README.md | Standalone capability fixture for the first real Edict-to-Echo crossing. | Canonical manifest and exports load with exact digests; `createGreeting` exposes a bounded create effect and typed `AlreadyExists` failure without GraphQL or a handwritten Echo package. |
+| fixtures/lawpack/hello-echo/README.md | Standalone capability fixture for the first real Edict-to-Echo crossing. | Canonical manifest, exports, and adapter load with exact digests; exact source compiles to pinned canonical Core and Target IR; `createGreeting` exposes a bounded create effect and typed `AlreadyExists` failure without GraphQL or a handwritten Echo package. |
 
 ## Cases
 
@@ -66,6 +69,7 @@ Out of scope:
 | LAWPACKS-TP-006 | implemented | Authority facts | LAWPACKS-REQ-006 | A lawpack-sourced authority-facts file can provide budget and effect write-class facts consumed by the compiler. | file_backed_authority_facts_compile_bounded_hello, file_backed_authority_facts_reject_write_effect_profile_mismatch | crates/edict-syntax/tests/authority_facts.rs | Asserts compiler behavior, not manifest prose. |
 | LAWPACKS-TP-007 | implemented | Provider provenance | LAWPACKS-REQ-007 | A provider manifest fixture can carry a generated lawpack artifact with digest-locked semantic source and generator provenance, while unlocked artifact/provenance references reject with stable provider validation failures. | generated_provider_manifest_fixture_validates, provider_manifest_rejects_unlocked_generated_artifact, provider_manifest_rejects_unlocked_generated_provenance, provider_manifest_rejects_unlocked_generator_provenance | fixtures/providers/echo-generated/provider-manifest.json, crates/edict-syntax/tests/provider.rs | Provider validation is envelope/provenance validation only; no Echo semantics are interpreted. |
 | LAWPACKS-TP-008 | implemented | Direct adapter | LAWPACKS-REQ-008 | The exact Hello Echo adapter selected by the manifest derives all compiler and Echo Target IR facts, while missing, substituted, non-canonical, incomplete, target-mismatched, import-mismatched, or obligation-mismatched adapters fail closed before trusted compiler facts exist. | hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter, lawpack_adapter_bytes_must_be_canonical_and_digest_bound, lawpack_adapter_selection_requires_one_exact_target_profile, lawpack_adapter_requires_complete_exported_effect_coverage, lawpack_adapter_corroborates_footprint_cost_and_failure_obligations, lawpack_compilation_requires_the_exact_digest_locked_source_import | fixtures/lawpack/hello-echo/README.md, crates/edict-syntax/tests/lawpack.rs | The positive test constructs no `CompilerContext` or `TargetIrLoweringFacts`. |
+| LAWPACKS-TP-009 | implemented | Compiler artifacts | LAWPACKS-REQ-009 | Compiling and lowering the exact Hello Echo closure reproduces the reviewed Core and Target IR bytes and their native domain-framed identities. | hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter | fixtures/lawpack/hello-echo/create-greeting.core.cbor, fixtures/lawpack/hello-echo/create-greeting.target-ir.cbor, crates/edict-syntax/tests/lawpack.rs, xtask/src/lawpack_goldens.rs | The fixtures are outputs of the real compiler pipeline, not handwritten substitutes; `cargo xtask lawpack-goldens --check` reproduces them. |
 
 ## Determinism Obligations
 
@@ -82,5 +86,7 @@ Out of scope:
 
 ## Open Gaps
 
-- No lawpack target adapter ABI is accepted in v1 target-profile manifests.
-- No target-adapter component is executed or semantically verified by Edict.
+- No executable target-adapter component is loaded or semantically verified by
+  Edict; v1 implements only the direct declarative adapter ABI.
+- No Echo executable-operation package or structurally separate verification
+  report is emitted from the compiler-produced Target IR.
