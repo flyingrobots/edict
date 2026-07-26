@@ -118,7 +118,7 @@ pub fn parse_module(src: &str) -> Result<Module, ParseError> {
 ///   identifiers in value position;
 /// - `record`/`map`/`unit`/`migration`/`projection`, whose productions are not
 ///   yet parsed — they will join this set when their syntax lands.
-fn is_keyword(s: &str) -> bool {
+pub(crate) fn is_keyword(s: &str) -> bool {
     matches!(
         s,
         "package"

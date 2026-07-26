@@ -5,10 +5,11 @@ Status: current HEAD contract.
 This shelf describes the lawpack boundary that exists today. A lawpack is an
 external, digest-locked source of portable Edict semantics. Edict can parse
 lawpack imports, carry lawpack references through bundle and lowerability
-contracts, reject unsupported v1 adapter claims, and load first compiler context
-facts from authority-facts documents whose source kind is `lawpack`. It does not
-yet validate full lawpack manifest instances or load complete lawpack export
-surfaces.
+contracts, reject unsupported v1 adapter claims, load first compiler context
+facts from authority-facts documents whose source kind is `lawpack`, and decode
+exact canonical lawpack manifests and export surfaces into an opaque validated
+bundle. Complete supplied dependency sets are checked for exact digest binding,
+missing dependencies, and cycles before use.
 
 Provider manifests can describe lawpacks as generated provider artifacts with
 digest-locked semantic-source and generator provenance. This validates only the
@@ -30,12 +31,15 @@ The machine-readable lawpack manifest and export surface are specified in
 [`docs/abi/edict-lawpack.cddl`](../../abi/edict-lawpack.cddl), with explanatory
 reference material in
 [`docs/SPEC_edict-lawpack-abi-v1.md`](../../SPEC_edict-lawpack-abi-v1.md).
-Those files are current design/reference material, not an executable validator.
-[LAWPACKS-REQ-005]
+`decode_lawpack_bundle` enforces the closed canonical shape and local semantic
+obligations. `validate_lawpack_dependency_graph` validates the complete supplied
+dependency set independent of input order. [LAWPACKS-REQ-005]
 
 The current executable Rust surfaces touching lawpacks are:
 
 - parser support for `ImportKind::Lawpack`;
+- canonical manifest/export loading through `ValidatedLawpackBundle`;
+- complete dependency-set validation with exact manifest-digest edges;
 - authority-facts loading for budget and effect write-class facts whose source
   identity is a digest-locked lawpack reference;
 - target-profile validation that keeps the deferred
@@ -51,6 +55,15 @@ The current executable Rust surfaces touching lawpacks are:
 - Lawpack source imports require lexically valid digest review strings when a
   digest is present. Invalid digest strings reject at the parser boundary.
   [LAWPACKS-REQ-001]
+- Canonical manifests and export surfaces reject non-canonical bytes, missing
+  or unknown fields, malformed typed digests, substituted exports, invalid
+  discriminants, duplicate identities, unmappable failure names, opaque Edict
+  helper bodies, unbounded executable components, and runtime effects with no
+  target-adapter descriptor. The successful wrapper exposes typed values but
+  cannot be fabricated or mutated by callers. [LAWPACKS-REQ-005]
+- Dependency validation resolves the complete supplied set by `(id, version)`,
+  detects cycles independent of input ordering, then corroborates every edge
+  against the exact resolved manifest digest. [LAWPACKS-REQ-005]
 - v1 target profiles do not yet accept a lawpack adapter ABI declaration. The
   field exists for byte-level `edict.lawpack-adapter/v1` ABI ids once that ABI
   is specified, and non-empty values reject until then. [LAWPACKS-REQ-003]
@@ -74,13 +87,10 @@ The current executable Rust surfaces touching lawpacks are:
 
 The following are not implemented:
 
-- full `edict.lawpack/v1` manifest file loading beyond authority-facts
-  documents;
-- full `edict.lawpack/v1` CDDL instance validation;
-- export-surface validation for pure functions, semantic effects,
-  obstructions, and operation profiles;
-- dependency DAG validation;
-- target adapter ABI validation;
+- target-adapter component loading or semantic verification beyond the
+  digest-locked descriptor envelope;
+- direct derivation of `CompilerContext` or Target IR lowering facts from a
+  selected lawpack adapter;
 - lawpack conformance fixtures and two-lowerer differential trials.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
