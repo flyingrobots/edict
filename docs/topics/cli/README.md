@@ -21,7 +21,27 @@ accepted request schema identifiers, and the exit-code contract. Any other
 argument is rejected with an `InvalidArguments` diagnostic and exit `2`.
 [CLI-REQ-009]
 
-The implemented operations are `check` and `project`.
+The implemented operations are `build`, `check`, and `project`.
+
+A `build` request contains one settings record and no compiler-input records.
+Its `application` field points to an `edict.application/v1` JSON manifest. The
+manifest names one exact Edict source, its complete lawpack closure, the
+selected target profile and provider package, and the output directory. The
+current executable-operation route accepts exactly one source and one root
+lawpack, validates the complete supplied dependency graph, compiles and lowers
+the source through the lawpack's declarative target adapter, and resolves the
+selected provider only from its checked package manifest.
+
+The build invokes the provider's checked lowerer component and its structurally
+separate verifier component through the capability-denied provider host. Only
+an accepted verification result reaches the output directory. The current Echo
+target writes the exact provider-emitted bytes as:
+
+- `executable-operation-package.cbor`;
+- `verification-report.cbor`.
+
+Edict does not re-encode either artifact and does not execute the package.
+[CLI-REQ-015]
 
 A `check` request accepts:
 
@@ -64,12 +84,14 @@ within that root, or the CLI rejects the request with `InputPathOutsideRoot` and
 exit `2`. Inline source records are not filesystem reads. [CLI-REQ-003,
 CLI-REQ-011]
 
-Successful `check` results are emitted to stdout. `check` compiler diagnostics,
-CLI input errors, and failure status records are emitted to stderr. `project`
-projection records, including compiler diagnostics and lowering failures, are
-emitted to stdout when the request itself is valid. Both streams use one JSON
-object per line with no banners, spinners, blank lines, or direct human prose
-outside JSON string fields. [CLI-REQ-001, CLI-REQ-014]
+Successful `check` results are emitted to stdout. A successful `build` emits
+only its terminal status record to stdout after the accepted artifacts have
+been written. `check` compiler diagnostics, build failures, CLI input errors,
+and failure status records are emitted to stderr. `project` projection records,
+including compiler diagnostics and lowering failures, are emitted to stdout
+when the request itself is valid. Both streams use one JSON object per line
+with no banners, spinners, blank lines, or direct human prose outside JSON
+string fields. [CLI-REQ-001, CLI-REQ-014, CLI-REQ-015]
 
 When a CLI-input failure happens after the requested operation is known, the
 diagnostic and terminal status records carry that command. Invalid `project`
@@ -99,9 +121,9 @@ the checked-in schemas as the accepted wire shape.
 
 ## Exit Codes
 
-- `0`: request completed successfully. For `project`, this can include
-  compiler diagnostics or Target IR lowering failures emitted as projection
-  records.
+- `0`: request completed successfully. For `build`, the accepted provider
+  artifacts were written. For `project`, this can include compiler diagnostics
+  or Target IR lowering failures emitted as projection records.
 - `1`: compiler or validation diagnostics were produced for at least one
   source input in the `check` operation.
 - `2`: CLI input or usage was invalid before compiler validation could run.
@@ -119,8 +141,8 @@ expansion paths, including optional root-confinement rejection. [CLI-REQ-008]
 
 The following are not implemented by this first CLI slice:
 
-- bundle assembly;
-- admission workflow execution;
+- general-purpose bundle assembly;
+- runtime admission and execution workflows;
 - human-pretty output mode;
 - Echo execution;
 - language-server transport.

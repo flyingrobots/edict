@@ -10,6 +10,20 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the public `edict` CLI `build` operation for standalone applications.
+  A settings-only JSONL request loads one exact `edict.application/v1`
+  manifest, source, complete lawpack dependency closure, direct target adapter,
+  target configuration, selected provider profile, and checked provider
+  package. Edict compiles and lowers the real source, invokes the provider's
+  lowerer and structurally separate verifier through the capability-denied
+  Wasmtime host, and writes only the accepted provider-emitted package and
+  verification-report bytes. It does not reimplement the provider encoder or
+  execute the package.
+- Added the generator-owned portable `causal.cell@1.createIfAbsent` lawpack
+  closure for external applications. `cargo xtask lawpack-goldens` now
+  reproduces its canonical manifest, exports, direct Echo adapter, target
+  configuration, and digest sidecars only after validating the closure and
+  compiling a digest-pinned Edict witness through Target IR.
 - Added the first executable `edict.lawpack/v1` loader. Exact canonical
   manifests and export surfaces decode into an opaque typed bundle, corroborate
   the export digest, validate the closed verifier, helper, effect, obstruction,

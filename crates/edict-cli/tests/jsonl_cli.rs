@@ -55,6 +55,33 @@ const ECHO_TARGET_PROFILE_DIGEST: &str =
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
+fn build_accepts_application_request_without_compiler_input_records() {
+    let output = run_edict(&jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "settings",
+        "operation": "build",
+        "application": "missing-edict-application.json",
+    })]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("build failure emits a diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("ApplicationConfigReadFailed")
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
 fn check_accepts_inline_source_jsonl_and_emits_jsonl_stdout() {
     let output = run_edict(&jsonl([
         compiler_settings(),

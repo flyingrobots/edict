@@ -26,6 +26,7 @@ use super::goldens::{
     target_ir_goldens, target_profile_resource_goldens, AuthorityFactsGoldenMode, BundleGoldenMode,
     TargetIrGoldenMode, TargetProfileResourceGoldenMode,
 };
+use super::lawpack_goldens::{lawpack_goldens, LawpackGoldenMode};
 use super::provider_contract_pack::{
     provider_contract_pack, ProviderContractPackMode, CONTRACT_PACK_CDDL, CONTRACT_PACK_MANIFEST,
 };
@@ -69,6 +70,12 @@ fn authority_facts_goldens_match_executable_codec() {
         AuthorityFactsGoldenMode::Check,
     )
     .expect("authority-facts goldens match executable codec output");
+}
+
+#[test]
+fn lawpack_goldens_match_executable_codec() {
+    lawpack_goldens(&repo_root().expect("repo root"), LawpackGoldenMode::Check)
+        .expect("lawpack goldens match executable codec output");
 }
 
 #[test]
@@ -2010,9 +2017,10 @@ fn compiler_settings_schema_declares_jsonl_contract() {
     let record_type = properties
         .get("type")
         .unwrap_or_else(|| panic!("compiler settings schema missing `type` property"));
-    assert_eq!(
-        record_type.get("const").and_then(Value::as_str),
-        Some("compilerSettings")
+    assert!(
+        json_string_array_contains(record_type, "enum", "compilerSettings")
+            && json_string_array_contains(record_type, "enum", "settings"),
+        "compiler settings schema must declare compiler and application settings record types"
     );
     let operation = properties
         .get("operation")
@@ -2024,6 +2032,14 @@ fn compiler_settings_schema_declares_jsonl_contract() {
     assert!(
         json_string_array_contains(operation, "enum", "project"),
         "compiler settings schema must declare the `project` operation"
+    );
+    assert!(
+        json_string_array_contains(operation, "enum", "build"),
+        "compiler settings schema must declare the `build` operation"
+    );
+    assert!(
+        properties.contains_key("application"),
+        "compiler settings schema missing the application build path"
     );
     for field in ["emit", "compilerContext", "target"] {
         assert!(

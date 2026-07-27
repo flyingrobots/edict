@@ -1,0 +1,1122 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use edict_provider_host_wasmtime::{
+    ProviderComponentHost, ProviderHostLimits, ResolvedProviderComponent,
+};
+use edict_provider_schema::{ProviderArtifactSchemaRegistry, ResolvedProviderSchemaArtifact};
+use edict_syntax::{
+    bind_target_provider_manifest, compile_to_core, decode_canonical_cbor, decode_lawpack_adapter,
+    decode_lawpack_bundle, encode_canonical_cbor, encode_core_module, encode_target_ir_artifact,
+    lower_to_target_ir, parse_module, prepare_lawpack_compilation, select_provider_component,
+    validate_lawpack_dependency_graph, validate_provider_lowering_request,
+    validate_provider_verification_request, CanonicalValue, ProviderArtifact,
+    ProviderArtifactBinding, ProviderArtifactKind, ProviderArtifactRef, ProviderBoundArtifact,
+    ProviderDigest, ProviderDigestAlgorithm, ProviderInvocationKind,
+    ProviderLoweringInvocationContract, ProviderLoweringOutputKind, ProviderLoweringOutputRequest,
+    ProviderLoweringRequest, ProviderResourceRef, ProviderResponseLimits, ProviderSemanticInput,
+    ProviderSemanticInputBinding, ProviderSemanticInputKind,
+    ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
+    ProviderVerificationOutputRequest, ProviderVerificationRequest, TargetLoweringStatus,
+    TargetProviderManifest, ValidatedLawpackBundle, ValidatedTargetProviderManifest,
+    CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+    TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION, TARGET_PROVIDER_PROTOCOL_VERSION,
+};
+use serde::Deserialize;
+use sha2::{Digest as _, Sha256};
+
+const APPLICATION_SCHEMA: &str = "edict.application/v1";
+const SOURCE_DOMAIN: &str = "edict.source/v1";
+const EXPORTS_DOMAIN: &str = "edict.lawpack-exports/v1";
+const ADAPTER_DOMAIN: &str = "edict.lawpack-adapter/v1";
+const CONFIGURATION_DOMAIN: &str = "echo.operation-lowering-configuration/v1";
+const PACKAGE_ROLE: &str = "executable-operation-package.echo";
+const PACKAGE_DOMAIN: &str = "echo.operation-package/v1";
+const VERIFICATION_REPORT_ROLE: &str = "verifier-report.echo-operation";
+const VERIFICATION_REPORT_DOMAIN: &str = "echo.operation-package-verifier-report/v1";
+
+#[derive(Debug)]
+pub(crate) struct ApplicationBuildFailure {
+    pub(crate) kind: &'static str,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplicationManifest {
+    schema: String,
+    coordinate: String,
+    sources: Vec<PathBuf>,
+    lawpacks: Vec<ApplicationLawpack>,
+    target: ApplicationTarget,
+    output_directory: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplicationLawpack {
+    manifest: PathBuf,
+    exports: PathBuf,
+    adapter: PathBuf,
+    target_configuration: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplicationTarget {
+    profile: String,
+    provider_package: PathBuf,
+}
+
+struct LoadedLawpack {
+    manifest_bytes: Vec<u8>,
+    exports_bytes: Vec<u8>,
+    adapter_bytes: Vec<u8>,
+    configuration_bytes: Vec<u8>,
+    bundle: ValidatedLawpackBundle,
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the application build keeps its ordered authority-boundary crossing explicit"
+)]
+pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBuildFailure> {
+    let config_bytes = read(
+        config_path,
+        "ApplicationConfigReadFailed",
+        "application config",
+    )?;
+    let config = serde_json::from_slice::<ApplicationManifest>(&config_bytes).map_err(|error| {
+        failure(
+            "InvalidApplicationConfig",
+            format!(
+                "application config `{}` is not valid edict.application/v1 JSON: {error}",
+                config_path.display()
+            ),
+        )
+    })?;
+    validate_application_manifest(&config)?;
+    let root = config_path.parent().unwrap_or_else(|| Path::new("."));
+
+    let source_path = resolve(root, &config.sources[0]);
+    let source_bytes = read(&source_path, "ApplicationSourceReadFailed", "Edict source")?;
+    let source = std::str::from_utf8(&source_bytes).map_err(|error| {
+        failure(
+            "InvalidApplicationSource",
+            format!(
+                "Edict source `{}` is not UTF-8: {error}",
+                source_path.display()
+            ),
+        )
+    })?;
+    let module = parse_module(source).map_err(|error| {
+        failure(
+            "InvalidApplicationSource",
+            format!(
+                "Edict source `{}` did not parse: {error:?}",
+                source_path.display()
+            ),
+        )
+    })?;
+
+    let mut loaded_lawpacks = Vec::with_capacity(config.lawpacks.len());
+    for lawpack in &config.lawpacks {
+        loaded_lawpacks.push(load_lawpack(root, lawpack)?);
+    }
+    let bundles = loaded_lawpacks
+        .iter()
+        .map(|loaded| loaded.bundle.clone())
+        .collect::<Vec<_>>();
+    validate_lawpack_dependency_graph(&bundles).map_err(|failures| {
+        failure(
+            "InvalidLawpackClosure",
+            format!("application lawpack dependency closure is invalid: {failures:?}"),
+        )
+    })?;
+    let loaded = &loaded_lawpacks[0];
+
+    let provider_root = resolve(root, &config.target.provider_package);
+    let manifest_path = find_provider_manifest(&provider_root)?;
+    let provider_manifest_bytes = read(
+        &manifest_path,
+        "ProviderPackageReadFailed",
+        "provider manifest",
+    )?;
+    let provider_manifest = serde_json::from_slice::<TargetProviderManifest>(
+        &provider_manifest_bytes,
+    )
+    .map_err(|error| {
+        failure(
+            "InvalidProviderPackage",
+            format!(
+                "provider manifest `{}` is not valid typed JSON: {error}",
+                manifest_path.display()
+            ),
+        )
+    })?;
+    let provider_proof = bind_target_provider_manifest(&provider_manifest).map_err(|report| {
+        failure(
+            "InvalidProviderPackage",
+            format!("provider manifest validation failed: {report:?}"),
+        )
+    })?;
+    let target_profile_artifact = unique_artifact(
+        &provider_manifest,
+        ProviderArtifactKind::TargetProfile,
+        Some(&config.target.profile),
+    )?;
+    let target_profile_bytes = read_provider_artifact(
+        &provider_root,
+        target_profile_artifact,
+        ProviderArtifactKind::TargetProfile,
+    )?;
+    let target_profile = bound_artifact(
+        &target_profile_artifact.resource.coordinate,
+        TARGET_PROFILE_API_VERSION,
+        &target_profile_bytes,
+    )?;
+    require_manifest_identity(target_profile_artifact, &target_profile)?;
+
+    let schema_artifact = unique_artifact(
+        &provider_manifest,
+        ProviderArtifactKind::ArtifactSchema,
+        None,
+    )?;
+    let schema_bytes = read_provider_artifact(
+        &provider_root,
+        schema_artifact,
+        ProviderArtifactKind::ArtifactSchema,
+    )?;
+    let required_domains = provider_manifest
+        .schema_bindings
+        .iter()
+        .map(|binding| binding.domain.as_str());
+    let registry = ProviderArtifactSchemaRegistry::from_manifest(
+        &provider_proof,
+        [ResolvedProviderSchemaArtifact {
+            role: schema_artifact.role.clone(),
+            bytes: Arc::<[u8]>::from(schema_bytes),
+        }],
+        required_domains,
+    )
+    .map_err(|error| {
+        failure(
+            "InvalidProviderPackage",
+            format!("provider artifact-schema registry failed: {error}"),
+        )
+    })?;
+
+    let adapter = decode_lawpack_adapter(
+        &loaded.bundle,
+        &config.target.profile,
+        &loaded.adapter_bytes,
+    )
+    .map_err(|failures| {
+        failure(
+            "InvalidLawpackAdapter",
+            format!("lawpack target adapter is invalid: {failures:?}"),
+        )
+    })?;
+    if adapter.target_profile().digest_review_string()
+        != rendered_digest(&target_profile.reference.digest)
+    {
+        return Err(failure(
+            "TargetProfileMismatch",
+            "lawpack adapter target profile digest does not match the selected provider profile",
+        ));
+    }
+    validate_target_configuration_binding(&adapter, &loaded.configuration_bytes)?;
+
+    let preparation =
+        prepare_lawpack_compilation(&module, &loaded.bundle, &adapter).map_err(|failures| {
+            failure(
+                "InvalidApplicationClosure",
+                format!("source and lawpack closure do not corroborate: {failures:?}"),
+            )
+        })?;
+    let core = compile_to_core(&module, preparation.compiler_context()).map_err(|error| {
+        failure(
+            "ApplicationCompilationFailed",
+            format!("Edict application did not compile to Core: {error:?}"),
+        )
+    })?;
+    if core.coordinate != config.coordinate {
+        return Err(failure(
+            "ApplicationCoordinateMismatch",
+            format!(
+                "application config coordinate `{}` does not match source coordinate `{}`",
+                config.coordinate, core.coordinate
+            ),
+        ));
+    }
+    let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
+    if target_ir_report.status != TargetLoweringStatus::Lowered {
+        return Err(failure(
+            "TargetLoweringFailed",
+            format!(
+                "application did not lower through the selected target adapter: {:?}",
+                target_ir_report.failures
+            ),
+        ));
+    }
+    let target_ir = target_ir_report.artifact.ok_or_else(|| {
+        failure(
+            "TargetLoweringFailed",
+            "target lowering reported success without an artifact",
+        )
+    })?;
+
+    let core_bytes = encode_core_module(&core).map_err(|error| {
+        failure(
+            "ApplicationEncodingFailed",
+            format!("Core canonical encoding failed: {error}"),
+        )
+    })?;
+    let target_ir_bytes = encode_target_ir_artifact(&target_ir).map_err(|error| {
+        failure(
+            "ApplicationEncodingFailed",
+            format!("Target IR canonical encoding failed: {error}"),
+        )
+    })?;
+    let source_artifact_bytes = encode_canonical_cbor(&CanonicalValue::Bytes(source_bytes))
+        .map_err(|error| {
+            failure(
+                "ApplicationEncodingFailed",
+                format!("source canonical encoding failed: {error}"),
+            )
+        })?;
+
+    let lowerer_artifact =
+        unique_artifact(&provider_manifest, ProviderArtifactKind::Lowerer, None)?;
+    let verifier_artifact =
+        unique_artifact(&provider_manifest, ProviderArtifactKind::Verifier, None)?;
+    let lowerer_bytes = read_provider_artifact(
+        &provider_root,
+        lowerer_artifact,
+        ProviderArtifactKind::Lowerer,
+    )?;
+    let verifier_bytes = read_provider_artifact(
+        &provider_root,
+        verifier_artifact,
+        ProviderArtifactKind::Verifier,
+    )?;
+
+    let host = ProviderComponentHost::new().map_err(|error| {
+        failure(
+            "ProviderHostFailed",
+            format!("provider host configuration failed: {error}"),
+        )
+    })?;
+    let package_bytes = invoke_lowerer(
+        &host,
+        provider_proof,
+        &registry,
+        lowerer_artifact,
+        lowerer_bytes,
+        &core.coordinate,
+        &core_bytes,
+        &target_profile,
+        loaded,
+        &adapter,
+        &source_artifact_bytes,
+        &target_ir_bytes,
+    )?;
+    let report_bytes = invoke_verifier(
+        &host,
+        provider_proof,
+        &registry,
+        verifier_artifact,
+        verifier_bytes,
+        &core.coordinate,
+        &core_bytes,
+        &target_profile,
+        loaded,
+        &adapter,
+        &source_artifact_bytes,
+        &target_ir_bytes,
+        &package_bytes,
+    )?;
+    require_accepted_report(&report_bytes)?;
+
+    let output_directory = resolve(root, &config.output_directory);
+    write_outputs(&output_directory, &package_bytes, &report_bytes)
+}
+
+fn validate_application_manifest(
+    config: &ApplicationManifest,
+) -> Result<(), ApplicationBuildFailure> {
+    if config.schema != APPLICATION_SCHEMA {
+        return Err(failure(
+            "InvalidApplicationConfig",
+            format!(
+                "application schema must be `{APPLICATION_SCHEMA}`, got `{}`",
+                config.schema
+            ),
+        ));
+    }
+    if config.coordinate.is_empty()
+        || config.target.profile.is_empty()
+        || config.target.provider_package.as_os_str().is_empty()
+        || config.output_directory.as_os_str().is_empty()
+    {
+        return Err(failure(
+            "InvalidApplicationConfig",
+            "application coordinate, target profile, provider package, and output directory must be non-empty",
+        ));
+    }
+    if config.sources.len() != 1 {
+        return Err(failure(
+            "InvalidApplicationConfig",
+            "the executable-operation build currently requires exactly one Edict source",
+        ));
+    }
+    if config.lawpacks.len() != 1 {
+        return Err(failure(
+            "InvalidApplicationConfig",
+            "the executable-operation build currently requires exactly one complete root lawpack closure",
+        ));
+    }
+    Ok(())
+}
+
+fn load_lawpack(
+    root: &Path,
+    config: &ApplicationLawpack,
+) -> Result<LoadedLawpack, ApplicationBuildFailure> {
+    let manifest_bytes = read(
+        &resolve(root, &config.manifest),
+        "LawpackReadFailed",
+        "lawpack manifest",
+    )?;
+    let exports_bytes = read(
+        &resolve(root, &config.exports),
+        "LawpackReadFailed",
+        "lawpack exports",
+    )?;
+    let adapter_bytes = read(
+        &resolve(root, &config.adapter),
+        "LawpackReadFailed",
+        "lawpack target adapter",
+    )?;
+    let configuration_bytes = read(
+        &resolve(root, &config.target_configuration),
+        "LawpackReadFailed",
+        "target configuration",
+    )?;
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes).map_err(|failures| {
+        failure(
+            "InvalidLawpackClosure",
+            format!("lawpack manifest and exports are invalid: {failures:?}"),
+        )
+    })?;
+    Ok(LoadedLawpack {
+        manifest_bytes,
+        exports_bytes,
+        adapter_bytes,
+        configuration_bytes,
+        bundle,
+    })
+}
+
+fn find_provider_manifest(root: &Path) -> Result<PathBuf, ApplicationBuildFailure> {
+    let entries = fs::read_dir(root).map_err(|error| {
+        failure(
+            "ProviderPackageReadFailed",
+            format!(
+                "failed to read provider package `{}`: {error}",
+                root.display()
+            ),
+        )
+    })?;
+    let mut matches = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            failure(
+                "ProviderPackageReadFailed",
+                format!(
+                    "failed to enumerate provider package `{}`: {error}",
+                    root.display()
+                ),
+            )
+        })?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if name.starts_with("provider-manifest.") && name.ends_with(".json") {
+            matches.push(entry.path());
+        }
+    }
+    matches.sort();
+    match matches.as_slice() {
+        [path] => Ok(path.clone()),
+        _ => Err(failure(
+            "InvalidProviderPackage",
+            format!(
+                "provider package `{}` must contain exactly one provider-manifest.*.json",
+                root.display()
+            ),
+        )),
+    }
+}
+
+fn unique_artifact<'a>(
+    manifest: &'a TargetProviderManifest,
+    kind: ProviderArtifactKind,
+    coordinate: Option<&str>,
+) -> Result<&'a ProviderArtifactRef, ApplicationBuildFailure> {
+    let matches = manifest
+        .artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.artifact_kind == kind
+                && coordinate.is_none_or(|expected| artifact.resource.coordinate == expected)
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [artifact] => Ok(*artifact),
+        _ => Err(failure(
+            "InvalidProviderPackage",
+            format!(
+                "provider manifest must expose exactly one {kind:?} artifact{}",
+                coordinate.map_or(String::new(), |value| format!(" for `{value}`"))
+            ),
+        )),
+    }
+}
+
+fn read_provider_artifact(
+    root: &Path,
+    artifact: &ProviderArtifactRef,
+    kind: ProviderArtifactKind,
+) -> Result<Vec<u8>, ApplicationBuildFailure> {
+    let relative = match kind {
+        ProviderArtifactKind::Lowerer | ProviderArtifactKind::Verifier => {
+            PathBuf::from("components").join(format!("{}.component.wasm", artifact.role))
+        }
+        ProviderArtifactKind::ArtifactSchema => PathBuf::from("generated")
+            .join("primary")
+            .join(format!("{}.cddl", artifact.role)),
+        ProviderArtifactKind::TargetProfile => PathBuf::from("generated")
+            .join("primary")
+            .join(format!("{}.cbor", artifact.role)),
+        _ => {
+            return Err(failure(
+                "InvalidProviderPackage",
+                format!("unsupported provider artifact path kind {kind:?}"),
+            ));
+        }
+    };
+    read(
+        &root.join(relative),
+        "ProviderPackageReadFailed",
+        "provider artifact",
+    )
+}
+
+fn validate_target_configuration_binding(
+    adapter: &edict_syntax::ValidatedLawpackAdapter,
+    bytes: &[u8],
+) -> Result<(), ApplicationBuildFailure> {
+    let references = adapter
+        .effects()
+        .values()
+        .map(|effect| &effect.target_configuration)
+        .collect::<Vec<_>>();
+    let [reference] = references.as_slice() else {
+        return Err(failure(
+            "InvalidLawpackAdapter",
+            "the executable-operation adapter currently requires exactly one target configuration",
+        ));
+    };
+    let digest = provider_digest(CONFIGURATION_DOMAIN, bytes)?;
+    if reference.digest_review_string() != rendered_digest(&digest) {
+        return Err(failure(
+            "TargetConfigurationMismatch",
+            "target configuration bytes do not reproduce the adapter's digest-locked reference",
+        ));
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn invoke_lowerer(
+    host: &ProviderComponentHost,
+    provider_proof: ValidatedTargetProviderManifest<'_>,
+    registry: &ProviderArtifactSchemaRegistry,
+    component: &ProviderArtifactRef,
+    component_bytes: Vec<u8>,
+    coordinate: &str,
+    core_bytes: &[u8],
+    target_profile: &ProviderBoundArtifact,
+    loaded: &LoadedLawpack,
+    adapter: &edict_syntax::ValidatedLawpackAdapter,
+    source_bytes: &[u8],
+    target_ir_bytes: &[u8],
+) -> Result<Vec<u8>, ApplicationBuildFailure> {
+    let selected = select_provider_component(
+        &provider_proof,
+        &component.role,
+        ProviderInvocationKind::Lowering,
+    )
+    .map_err(|error| {
+        failure(
+            "InvalidProviderPackage",
+            format!("provider lowerer selection failed: {error}"),
+        )
+    })?;
+    let resolved = ResolvedProviderComponent::new(selected, Arc::<[u8]>::from(component_bytes));
+    let prepared = host.prepare(&resolved).map_err(|error| {
+        failure(
+            "ProviderLowererFailed",
+            format!("provider lowerer preflight failed: {error}"),
+        )
+    })?;
+
+    let core = bound_artifact(coordinate, CORE_MODULE_DIGEST_DOMAIN, core_bytes)?;
+    let semantic_inputs =
+        lowering_inputs(loaded, adapter, coordinate, source_bytes, target_ir_bytes)?;
+    let contract = lowering_contract(&core, target_profile, &semantic_inputs);
+    let request = ProviderLoweringRequest {
+        protocol_version: TARGET_PROVIDER_PROTOCOL_VERSION,
+        core,
+        target_profile: target_profile.clone(),
+        semantic_inputs,
+        requested_outputs: vec![ProviderLoweringOutputRequest {
+            role: PACKAGE_ROLE.to_owned(),
+            kind: ProviderLoweringOutputKind::GeneratedArtifact,
+            domain: PACKAGE_DOMAIN.to_owned(),
+        }],
+        limits: response_limits(),
+    };
+    let request =
+        validate_provider_lowering_request(registry, &contract, &request).map_err(|report| {
+            failure(
+                "InvalidProviderInvocation",
+                format!("provider lowering request validation failed: {report:?}"),
+            )
+        })?;
+    let outcome = host
+        .invoke_lowerer(&prepared, &request, registry, host_limits())
+        .map_err(|error| {
+            failure(
+                "ProviderLowererFailed",
+                format!("provider lowerer invocation failed: {error}"),
+            )
+        })?;
+    if let Some(refusal) = outcome.refusal() {
+        return Err(failure(
+            "ProviderLowererRefused",
+            format!("provider lowerer refused application semantics: {refusal:?}"),
+        ));
+    }
+    let response = outcome.response().ok_or_else(|| {
+        failure(
+            "ProviderLowererFailed",
+            "provider lowerer returned neither a response nor a refusal",
+        )
+    })?;
+    if !response.diagnostics.is_empty() {
+        return Err(failure(
+            "ProviderLowererFailed",
+            format!(
+                "provider lowerer returned diagnostics: {:?}",
+                response.diagnostics
+            ),
+        ));
+    }
+    let [output] = response.outputs.as_slice() else {
+        return Err(failure(
+            "ProviderLowererFailed",
+            "provider lowerer did not emit exactly one package",
+        ));
+    };
+    Ok(output.artifact.bytes.clone())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn invoke_verifier(
+    host: &ProviderComponentHost,
+    provider_proof: ValidatedTargetProviderManifest<'_>,
+    registry: &ProviderArtifactSchemaRegistry,
+    component: &ProviderArtifactRef,
+    component_bytes: Vec<u8>,
+    coordinate: &str,
+    core_bytes: &[u8],
+    target_profile: &ProviderBoundArtifact,
+    loaded: &LoadedLawpack,
+    adapter: &edict_syntax::ValidatedLawpackAdapter,
+    source_bytes: &[u8],
+    target_ir_bytes: &[u8],
+    package_bytes: &[u8],
+) -> Result<Vec<u8>, ApplicationBuildFailure> {
+    let selected = select_provider_component(
+        &provider_proof,
+        &component.role,
+        ProviderInvocationKind::Verification,
+    )
+    .map_err(|error| {
+        failure(
+            "InvalidProviderPackage",
+            format!("provider verifier selection failed: {error}"),
+        )
+    })?;
+    let resolved = ResolvedProviderComponent::new(selected, Arc::<[u8]>::from(component_bytes));
+    let prepared = host.prepare(&resolved).map_err(|error| {
+        failure(
+            "ProviderVerifierFailed",
+            format!("provider verifier preflight failed: {error}"),
+        )
+    })?;
+
+    let core = bound_artifact(coordinate, CORE_MODULE_DIGEST_DOMAIN, core_bytes)?;
+    let target_ir = bound_artifact(
+        adapter.target_ir().id.as_str(),
+        TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+        target_ir_bytes,
+    )?;
+    let semantic_inputs =
+        verification_inputs(loaded, adapter, coordinate, source_bytes, package_bytes)?;
+    let contract = verification_contract(&core, target_profile, &target_ir, &semantic_inputs);
+    let request = ProviderVerificationRequest {
+        protocol_version: TARGET_PROVIDER_PROTOCOL_VERSION,
+        core,
+        target_profile: target_profile.clone(),
+        target_ir,
+        semantic_inputs,
+        requested_outputs: vec![ProviderVerificationOutputRequest {
+            role: VERIFICATION_REPORT_ROLE.to_owned(),
+            kind: ProviderVerificationOutputKind::VerifierReport,
+            domain: VERIFICATION_REPORT_DOMAIN.to_owned(),
+        }],
+        limits: response_limits(),
+    };
+    let request = validate_provider_verification_request(registry, &contract, &request).map_err(
+        |report| {
+            failure(
+                "InvalidProviderInvocation",
+                format!("provider verification request validation failed: {report:?}"),
+            )
+        },
+    )?;
+    let outcome = host
+        .invoke_verifier(&prepared, &request, registry, host_limits())
+        .map_err(|error| {
+            failure(
+                "ProviderVerifierFailed",
+                format!("provider verifier invocation failed: {error}"),
+            )
+        })?;
+    if let Some(refusal) = outcome.refusal() {
+        return Err(failure(
+            "ProviderVerifierRefused",
+            format!("provider verifier refused application semantics: {refusal:?}"),
+        ));
+    }
+    let response = outcome.response().ok_or_else(|| {
+        failure(
+            "ProviderVerifierFailed",
+            "provider verifier returned neither a response nor a refusal",
+        )
+    })?;
+    if !response.diagnostics.is_empty() {
+        return Err(failure(
+            "ProviderVerificationRejected",
+            format!(
+                "provider verifier rejected the package: {:?}",
+                response.diagnostics
+            ),
+        ));
+    }
+    let [output] = response.outputs.as_slice() else {
+        return Err(failure(
+            "ProviderVerifierFailed",
+            "provider verifier did not emit exactly one report",
+        ));
+    };
+    Ok(output.artifact.bytes.clone())
+}
+
+fn lowering_inputs(
+    loaded: &LoadedLawpack,
+    adapter: &edict_syntax::ValidatedLawpackAdapter,
+    coordinate: &str,
+    source_bytes: &[u8],
+    target_ir_bytes: &[u8],
+) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
+    let configuration = single_configuration(adapter)?;
+    Ok(vec![
+        semantic_input(
+            "01-lawpack-adapter",
+            ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
+            &loaded.bundle.manifest().target_adapters[0].adapter.id,
+            ADAPTER_DOMAIN,
+            &loaded.adapter_bytes,
+        )?,
+        semantic_input(
+            "02-lawpack-exports",
+            ProviderSemanticInputKind::Auxiliary("lawpack-exports".to_owned()),
+            &loaded.bundle.manifest().exports.id,
+            EXPORTS_DOMAIN,
+            &loaded.exports_bytes,
+        )?,
+        semantic_input(
+            "03-lawpack",
+            ProviderSemanticInputKind::Lawpack,
+            &format!(
+                "{}@{}",
+                loaded.bundle.manifest().id,
+                loaded.bundle.manifest().version
+            ),
+            PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+            &loaded.manifest_bytes,
+        )?,
+        semantic_input(
+            "04-source",
+            ProviderSemanticInputKind::Auxiliary("edict-source".to_owned()),
+            coordinate,
+            SOURCE_DOMAIN,
+            source_bytes,
+        )?,
+        semantic_input(
+            "05-target-configuration",
+            ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
+            &configuration.id,
+            CONFIGURATION_DOMAIN,
+            &loaded.configuration_bytes,
+        )?,
+        semantic_input(
+            "06-target-ir",
+            ProviderSemanticInputKind::Auxiliary("target-ir".to_owned()),
+            &adapter.target_ir().id,
+            TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+            target_ir_bytes,
+        )?,
+    ])
+}
+
+fn verification_inputs(
+    loaded: &LoadedLawpack,
+    adapter: &edict_syntax::ValidatedLawpackAdapter,
+    coordinate: &str,
+    source_bytes: &[u8],
+    package_bytes: &[u8],
+) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
+    let configuration = single_configuration(adapter)?;
+    Ok(vec![
+        semantic_input(
+            "01-lawpack-adapter",
+            ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
+            &loaded.bundle.manifest().target_adapters[0].adapter.id,
+            ADAPTER_DOMAIN,
+            &loaded.adapter_bytes,
+        )?,
+        semantic_input(
+            "02-executable-operation-package",
+            ProviderSemanticInputKind::Auxiliary("executable-operation-package".to_owned()),
+            PACKAGE_ROLE,
+            PACKAGE_DOMAIN,
+            package_bytes,
+        )?,
+        semantic_input(
+            "03-lawpack-exports",
+            ProviderSemanticInputKind::Auxiliary("lawpack-exports".to_owned()),
+            &loaded.bundle.manifest().exports.id,
+            EXPORTS_DOMAIN,
+            &loaded.exports_bytes,
+        )?,
+        semantic_input(
+            "04-lawpack",
+            ProviderSemanticInputKind::Lawpack,
+            &format!(
+                "{}@{}",
+                loaded.bundle.manifest().id,
+                loaded.bundle.manifest().version
+            ),
+            PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+            &loaded.manifest_bytes,
+        )?,
+        semantic_input(
+            "05-source",
+            ProviderSemanticInputKind::Auxiliary("edict-source".to_owned()),
+            coordinate,
+            SOURCE_DOMAIN,
+            source_bytes,
+        )?,
+        semantic_input(
+            "06-target-configuration",
+            ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
+            &configuration.id,
+            CONFIGURATION_DOMAIN,
+            &loaded.configuration_bytes,
+        )?,
+    ])
+}
+
+fn single_configuration(
+    adapter: &edict_syntax::ValidatedLawpackAdapter,
+) -> Result<&edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    let references = adapter
+        .effects()
+        .values()
+        .map(|effect| &effect.target_configuration)
+        .collect::<Vec<_>>();
+    match references.as_slice() {
+        [reference] => Ok(reference),
+        _ => Err(failure(
+            "InvalidLawpackAdapter",
+            "the executable-operation adapter currently requires exactly one target configuration",
+        )),
+    }
+}
+
+fn semantic_input(
+    role: &str,
+    kind: ProviderSemanticInputKind,
+    coordinate: &str,
+    domain: &str,
+    bytes: &[u8],
+) -> Result<ProviderSemanticInput, ApplicationBuildFailure> {
+    Ok(ProviderSemanticInput {
+        role: role.to_owned(),
+        kind,
+        artifact: bound_artifact(coordinate, domain, bytes)?,
+    })
+}
+
+fn lowering_contract(
+    core: &ProviderBoundArtifact,
+    target_profile: &ProviderBoundArtifact,
+    inputs: &[ProviderSemanticInput],
+) -> ProviderLoweringInvocationContract {
+    ProviderLoweringInvocationContract {
+        core: artifact_binding(core),
+        target_profile: artifact_binding(target_profile),
+        semantic_inputs: input_bindings(inputs),
+    }
+}
+
+fn verification_contract(
+    core: &ProviderBoundArtifact,
+    target_profile: &ProviderBoundArtifact,
+    target_ir: &ProviderBoundArtifact,
+    inputs: &[ProviderSemanticInput],
+) -> ProviderVerificationInvocationContract {
+    ProviderVerificationInvocationContract {
+        core: artifact_binding(core),
+        target_profile: artifact_binding(target_profile),
+        target_ir: artifact_binding(target_ir),
+        semantic_inputs: input_bindings(inputs),
+    }
+}
+
+fn input_bindings(inputs: &[ProviderSemanticInput]) -> Vec<ProviderSemanticInputBinding> {
+    inputs
+        .iter()
+        .map(|input| ProviderSemanticInputBinding {
+            role: input.role.clone(),
+            kind: input.kind.clone(),
+            artifact: artifact_binding(&input.artifact),
+        })
+        .collect()
+}
+
+fn artifact_binding(bound: &ProviderBoundArtifact) -> ProviderArtifactBinding {
+    ProviderArtifactBinding {
+        reference: bound.reference.clone(),
+        domain: bound.artifact.domain.clone(),
+    }
+}
+
+fn bound_artifact(
+    coordinate: &str,
+    domain: &str,
+    bytes: &[u8],
+) -> Result<ProviderBoundArtifact, ApplicationBuildFailure> {
+    Ok(ProviderBoundArtifact {
+        reference: ProviderResourceRef {
+            coordinate: coordinate.to_owned(),
+            digest: provider_digest(domain, bytes)?,
+        },
+        artifact: ProviderArtifact {
+            domain: domain.to_owned(),
+            bytes: bytes.to_vec(),
+        },
+    })
+}
+
+fn provider_digest(domain: &str, bytes: &[u8]) -> Result<ProviderDigest, ApplicationBuildFailure> {
+    let value = decode_canonical_cbor(bytes).map_err(|error| {
+        failure(
+            "NonCanonicalApplicationArtifact",
+            format!("artifact under `{domain}` is not canonical CBOR: {error}"),
+        )
+    })?;
+    let frame = CanonicalValue::Array(vec![
+        CanonicalValue::Text(CORE_DIGEST_FRAME.to_owned()),
+        CanonicalValue::Text(domain.to_owned()),
+        value,
+    ]);
+    let frame = encode_canonical_cbor(&frame).map_err(|error| {
+        failure(
+            "ApplicationEncodingFailed",
+            format!("artifact digest frame encoding failed for `{domain}`: {error}"),
+        )
+    })?;
+    Ok(ProviderDigest {
+        algorithm: ProviderDigestAlgorithm::Sha256,
+        bytes: Sha256::digest(frame).to_vec(),
+    })
+}
+
+fn require_manifest_identity(
+    manifest_artifact: &ProviderArtifactRef,
+    bound: &ProviderBoundArtifact,
+) -> Result<(), ApplicationBuildFailure> {
+    if manifest_artifact.resource.digest.as_deref()
+        != Some(&rendered_digest(&bound.reference.digest))
+    {
+        return Err(failure(
+            "ProviderArtifactDigestMismatch",
+            format!(
+                "provider artifact `{}` bytes do not reproduce the manifest digest",
+                manifest_artifact.role
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn rendered_digest(digest: &ProviderDigest) -> String {
+    let mut value = String::from("sha256:");
+    for byte in &digest.bytes {
+        use std::fmt::Write as _;
+        let _ = write!(value, "{byte:02x}");
+    }
+    value
+}
+
+fn require_accepted_report(bytes: &[u8]) -> Result<(), ApplicationBuildFailure> {
+    let value = decode_canonical_cbor(bytes).map_err(|error| {
+        failure(
+            "ProviderVerificationRejected",
+            format!("verification report is not canonical CBOR: {error}"),
+        )
+    })?;
+    let CanonicalValue::Map(entries) = value else {
+        return Err(failure(
+            "ProviderVerificationRejected",
+            "verification report is not a canonical map",
+        ));
+    };
+    let accepted = entries.iter().any(|(key, value)| {
+        matches!(
+            (key, value),
+            (CanonicalValue::Text(key), CanonicalValue::Text(outcome))
+                if key == "outcome" && outcome == "accepted"
+        )
+    });
+    if !accepted {
+        return Err(failure(
+            "ProviderVerificationRejected",
+            "independent verifier report did not accept the emitted package",
+        ));
+    }
+    Ok(())
+}
+
+fn write_outputs(
+    directory: &Path,
+    package: &[u8],
+    report: &[u8],
+) -> Result<(), ApplicationBuildFailure> {
+    fs::create_dir_all(directory).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!(
+                "failed to create application output directory `{}`: {error}",
+                directory.display()
+            ),
+        )
+    })?;
+    let package_path = directory.join("executable-operation-package.cbor");
+    let report_path = directory.join("verification-report.cbor");
+    let package_temp = directory.join(".executable-operation-package.cbor.tmp");
+    let report_temp = directory.join(".verification-report.cbor.tmp");
+    fs::write(&package_temp, package).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!("failed to stage `{}`: {error}", package_path.display()),
+        )
+    })?;
+    fs::write(&report_temp, report).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!("failed to stage `{}`: {error}", report_path.display()),
+        )
+    })?;
+    fs::rename(&package_temp, &package_path).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!("failed to publish `{}`: {error}", package_path.display()),
+        )
+    })?;
+    fs::rename(&report_temp, &report_path).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!("failed to publish `{}`: {error}", report_path.display()),
+        )
+    })?;
+    Ok(())
+}
+
+const fn response_limits() -> ProviderResponseLimits {
+    ProviderResponseLimits {
+        max_output_count: 1,
+        max_diagnostic_count: 8,
+        max_total_response_bytes: 64 * 1024,
+    }
+}
+
+const fn host_limits() -> ProviderHostLimits {
+    ProviderHostLimits {
+        max_input_bytes: 1024 * 1024,
+        max_output_bytes: 3 * 1024 * 1024,
+        max_diagnostic_bytes: 3 * 1024 * 1024,
+        max_wasm_memory_bytes: 16 * 1024 * 1024,
+        max_table_elements: 10_000,
+        max_instances: 100,
+        max_memories: 8,
+        max_tables: 8,
+        max_wasm_fuel: 50_000_000,
+        max_hostcall_bytes: 4 * 1024 * 1024,
+        max_host_diagnostic_bytes: 512,
+    }
+}
+
+fn read(
+    path: &Path,
+    kind: &'static str,
+    subject: &str,
+) -> Result<Vec<u8>, ApplicationBuildFailure> {
+    fs::read(path).map_err(|error| {
+        failure(
+            kind,
+            format!("failed to read {subject} `{}`: {error}", path.display()),
+        )
+    })
+}
+
+fn resolve(root: &Path, path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_owned()
+    } else {
+        root.join(path)
+    }
+}
+
+fn failure(kind: &'static str, message: impl Into<String>) -> ApplicationBuildFailure {
+    ApplicationBuildFailure {
+        kind,
+        message: message.into(),
+    }
+}

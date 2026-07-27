@@ -49,6 +49,7 @@ Out of scope:
 | LAWPACKS-REQ-007 | implemented | Provider manifests model lawpacks as generated provider artifacts with digest-locked semantic source and generator provenance; Edict validates the reference/provenance envelope without owning runtime lawpack semantics. | issue #139, docs/topics/providers/test-plan.md |
 | LAWPACKS-REQ-008 | implemented | Edict validates one exact direct declarative `edict.lawpack-adapter/v1` resource selected by a loaded lawpack manifest, requires complete profile/effect/budget coverage plus one typed target-configuration resource reference per runtime effect, and corroborates every exported footprint, cost, and named-failure obligation before deriving compiler or target facts. Edict preserves but does not interpret target-owned configuration semantics. | issue #169, docs/abi/edict-lawpack-adapter.cddl |
 | LAWPACKS-REQ-009 | implemented | The standalone Hello Echo fixture pins exact canonical Core and Target IR bytes produced from the digest-locked source/lawpack/adapter closure and computes each identity with the artifact's native domain. | issue #169, fixtures/lawpack/hello-echo/README.md, xtask/src/lawpack_goldens.rs |
+| LAWPACKS-REQ-010 | implemented | The portable `causal.cell@1.createIfAbsent` capability closure is generated through the executable lawpack, adapter, compiler, and Target IR path, with exact canonical manifest, export, adapter, and target-configuration bytes and digests for external application builds. | fixtures/lawpack/causal-cell/README.md, xtask/src/lawpack_goldens.rs |
 
 ## Fixtures
 
@@ -57,6 +58,7 @@ Out of scope:
 | fixtures/lang/bounds/bounded-hello.edict | Lawpack import source fixture. | Parser preserves the `hello.optics@1` lawpack import and digest review string. |
 | fixtures/lang/effects/read-greeting.edict | Multi-import source fixture. | Parser preserves shape, lawpack, and target imports for effect-call syntax. |
 | fixtures/lawpack/hello-echo/README.md | Standalone capability fixture for the first real Edict-to-Echo crossing. | Canonical manifest, exports, and adapter load with exact digests; exact source compiles to pinned canonical Core and Target IR; `createGreeting` exposes a bounded create effect and typed `AlreadyExists` failure without GraphQL or a handwritten Echo package. |
+| fixtures/lawpack/causal-cell/README.md | Portable capability closure for external application builds. | `cargo xtask lawpack-goldens --check` reproduces the exact canonical closure after validating the bundle and adapter and compiling a source witness through Target IR. |
 
 ## Cases
 
@@ -71,6 +73,7 @@ Out of scope:
 | LAWPACKS-TP-007 | implemented | Provider provenance | LAWPACKS-REQ-007 | A provider manifest fixture can carry a generated lawpack artifact with digest-locked semantic source and generator provenance, while unlocked artifact/provenance references reject with stable provider validation failures. | generated_provider_manifest_fixture_validates, provider_manifest_rejects_unlocked_generated_artifact, provider_manifest_rejects_unlocked_generated_provenance, provider_manifest_rejects_unlocked_generator_provenance | fixtures/providers/echo-generated/provider-manifest.json, crates/edict-syntax/tests/provider.rs | Provider validation is envelope/provenance validation only; no Echo semantics are interpreted. |
 | LAWPACKS-TP-008 | implemented | Direct adapter | LAWPACKS-REQ-008 | The exact Hello Echo adapter selected by the manifest derives all compiler and Echo Target IR facts and exposes the exact target-configuration resource identity, while missing, substituted, non-canonical, incomplete, target-mismatched, import-mismatched, malformed-configuration, or obligation-mismatched adapters fail closed before trusted compiler facts exist. | hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter, lawpack_adapter_bytes_must_be_canonical_and_digest_bound, lawpack_adapter_requires_a_typed_target_configuration_reference, lawpack_adapter_selection_requires_one_exact_target_profile, lawpack_adapter_requires_complete_exported_effect_coverage, lawpack_adapter_corroborates_footprint_cost_and_failure_obligations, lawpack_compilation_requires_the_exact_digest_locked_source_import | fixtures/lawpack/hello-echo/README.md, crates/edict-syntax/tests/lawpack.rs | The positive test constructs no `CompilerContext` or `TargetIrLoweringFacts`; Echo-specific configuration interpretation remains outside Edict. |
 | LAWPACKS-TP-009 | implemented | Compiler artifacts | LAWPACKS-REQ-009 | Compiling and lowering the exact Hello Echo closure reproduces the reviewed Core and Target IR bytes and their native domain-framed identities. | hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter | fixtures/lawpack/hello-echo/create-greeting.core.cbor, fixtures/lawpack/hello-echo/create-greeting.target-ir.cbor, crates/edict-syntax/tests/lawpack.rs, xtask/src/lawpack_goldens.rs | The fixtures are outputs of the real compiler pipeline, not handwritten substitutes; `cargo xtask lawpack-goldens --check` reproduces them. |
+| LAWPACKS-TP-010 | implemented | Portable capability | LAWPACKS-REQ-010 | Generating the causal-cell closure validates its canonical lawpack and direct adapter, then compiles and lowers an Edict source witness that imports the exact generated manifest digest. | lawpack_goldens_match_executable_codec | fixtures/lawpack/causal-cell/README.md, xtask/src/lawpack_goldens.rs, xtask/src/tests.rs | The generator fails if the portable capability no longer reaches a compiler-produced Target IR artifact. |
 
 ## Determinism Obligations
 
@@ -89,5 +92,5 @@ Out of scope:
 
 - No executable target-adapter component is loaded or semantically verified by
   Edict; v1 implements only the direct declarative adapter ABI.
-- No Echo executable-operation package or structurally separate verification
-  report is emitted from the compiler-produced Target IR.
+- Runtime admission and execution of compiler-emitted packages remain outside
+  Edict.

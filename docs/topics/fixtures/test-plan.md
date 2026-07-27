@@ -33,6 +33,7 @@ Out of scope:
 | FIXTURES-REQ-006 | implemented | Reviewed Edict-owned target-profile contract resources are generated from the executable semantic model, then checked for exact canonical bytes and coordinate-framed digest stability. | fixtures/target-profile/contract-resources/README.md, xtask/src/goldens.rs |
 | FIXTURES-REQ-007 | implemented | The reviewed provider contract pack and manifest are generated from Edict-owned ABI schemas and canonical target-profile resources, then checked for exact bytes, root closure, and raw digest stability. | issue #161, docs/topics/providers/test-plan.md |
 | FIXTURES-REQ-008 | implemented | The reviewed Hello Echo lawpack manifest and export bytes, exact digests, and digest-pinned source are generated or checked through the executable lawpack loader. | issue #169, docs/topics/lawpacks/test-plan.md |
+| FIXTURES-REQ-009 | implemented | The portable causal-cell lawpack closure is generator-owned and checked as exact canonical manifest, exports, adapter, target-configuration, and digest artifacts after an executable compiler witness. | docs/topics/lawpacks/test-plan.md |
 
 ## Fixtures
 
@@ -53,6 +54,7 @@ Out of scope:
 | fixtures/provider-contracts/v1/edict-provider-contracts.cddl | Reviewed self-contained provider CDDL pack. | Exact bytes match deterministic assembly from authoritative ABI sources. |
 | fixtures/provider-contracts/v1/manifest.json | Reviewed provider contract-pack manifest. | Exact bytes and all embedded schema/resource identities match deterministic assembly. |
 | fixtures/lawpack/hello-echo/README.md | First reviewed canonical lawpack fixture and digest-pinned source. | `cargo xtask lawpack-goldens --check` reproduces exact bytes and digests; the public loader corroborates the source import digest. |
+| fixtures/lawpack/causal-cell/README.md | Portable capability closure for external Edict applications. | `cargo xtask lawpack-goldens --check` validates, compiles through, and reproduces the exact closure. |
 
 ## Cases
 
@@ -66,6 +68,7 @@ Out of scope:
 | FIXTURES-TP-006 | implemented | Golden artifact | FIXTURES-REQ-006 | All five reviewed target-profile contract-resource bytes and digests exactly match the executable semantic model. | target_profile_resource_goldens_match_executable_contract | xtask/src/goldens.rs, fixtures/target-profile/contract-resources/README.md | `cargo xtask target-profile-resource-goldens --check` covers the same artifact contract. |
 | FIXTURES-TP-007 | implemented | Golden artifact | FIXTURES-REQ-007 | Provider contract-pack CDDL and manifest fixtures exactly match executable assembly, while check mode detects drift without modifying either file. | provider_contract_pack_goldens_match_executable_contract, provider_contract_pack_check_rejects_drift_without_rewriting | xtask/src/provider_contract_pack.rs, xtask/src/tests.rs, fixtures/provider-contracts/v1/edict-provider-contracts.cddl, fixtures/provider-contracts/v1/manifest.json | `cargo xtask provider-contract-pack --check` is the focused drift gate. |
 | FIXTURES-TP-008 | implemented | Golden artifact | FIXTURES-REQ-008 | The Hello Echo lawpack loader accepts the exact checked-in manifest/export bytes, reproduces their digests, and proves the `.edict` import pins the manifest identity. | hello_echo_lawpack_bundle_loads_from_exact_canonical_resources | fixtures/lawpack/hello-echo/README.md, crates/edict-syntax/tests/lawpack.rs, xtask/src/lawpack_goldens.rs | `cargo xtask lawpack-goldens --check` is the focused drift gate. |
+| FIXTURES-TP-009 | implemented | Golden artifact | FIXTURES-REQ-009 | The causal-cell generator validates the bundle and adapter, compiles and lowers a digest-pinned Edict witness, and reproduces the exact closure bytes and digest sidecars. | lawpack_goldens_match_executable_codec | fixtures/lawpack/causal-cell/README.md, xtask/src/lawpack_goldens.rs, xtask/src/tests.rs | The fixture is a portable capability, not an exact application provider. |
 
 ## Determinism Obligations
 
