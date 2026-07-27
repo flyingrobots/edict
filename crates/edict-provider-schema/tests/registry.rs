@@ -32,6 +32,20 @@ short-child = { a: generated-artifact, kind: "short" }
 long-child = { kind: "long", payload: generated-artifact }
 "#;
 
+const REQUIRED_KEY_RECURSIVE_SCHEMA: &[u8] = br#"
+generated-artifact = closed / legacy
+closed = {
+  kind: "artifact",
+  semanticClosure: uint,
+  ? child: generated-artifact,
+}
+legacy = {
+  kind: "artifact",
+  value: uint,
+  ? child: generated-artifact,
+}
+"#;
+
 const PROVIDER_CONTRACT_SCHEMA: &[u8] =
     include_bytes!("../../../fixtures/provider-contracts/v1/edict-provider-contracts.cddl");
 const CORE_FIXTURE: &[u8] =
@@ -610,6 +624,45 @@ fn recursive_map_discriminator_dispatch_is_independent_of_encoded_key_order() {
     registry
         .validate_canonical_value("runtime.generated-artifact/v1", &alternating_arms)
         .expect("nested occurrences may select different recursive alternatives");
+}
+
+#[test]
+fn recursive_required_key_dispatch_accepts_compatible_untagged_arms() {
+    let registry = registry_with_generated_schema(REQUIRED_KEY_RECURSIVE_SCHEMA)
+        .expect("one disjoint required key must admit bounded recursive dispatch");
+    let closed = map(&[
+        ("kind", CanonicalValue::Text("artifact".to_owned())),
+        ("semanticClosure", CanonicalValue::Integer(1)),
+    ]);
+    let legacy = map(&[
+        ("kind", CanonicalValue::Text("artifact".to_owned())),
+        ("value", CanonicalValue::Integer(2)),
+    ]);
+
+    for value in [
+        closed.clone(),
+        legacy.clone(),
+        map(&[
+            ("child", legacy),
+            ("kind", CanonicalValue::Text("artifact".to_owned())),
+            ("semanticClosure", CanonicalValue::Integer(3)),
+        ]),
+        map(&[
+            ("child", closed),
+            ("kind", CanonicalValue::Text("artifact".to_owned())),
+            ("value", CanonicalValue::Integer(4)),
+        ]),
+    ] {
+        registry
+            .validate_canonical_value("runtime.generated-artifact/v1", &value)
+            .expect("required-key dispatch validates the selected recursive arm");
+    }
+}
+
+#[test]
+fn checked_target_ir_root_constructs_through_required_key_dispatch() {
+    registry_with_generated_schema_root(PROVIDER_CONTRACT_SCHEMA, "target-ir-artifact")
+        .expect("the checked Target IR compatibility union must construct");
 }
 
 #[test]
