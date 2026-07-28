@@ -1481,9 +1481,9 @@ mod tests {
     };
 
     use super::{
-        provider_schema_artifacts, selected_adapter_reference, single_unique_configuration,
-        validate_application_manifest, write_outputs, ApplicationLawpack, ApplicationManifest,
-        ApplicationTarget,
+        build_application, provider_schema_artifacts, read, selected_adapter_reference,
+        single_unique_configuration, validate_application_manifest, write_outputs,
+        ApplicationLawpack, ApplicationManifest, ApplicationTarget,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1605,6 +1605,87 @@ mod tests {
             b"previous-package"
         );
         test_ok(fs::remove_dir_all(root), "remove test-owned temp tree");
+    }
+
+    #[test]
+    fn application_artifact_reads_are_bounded_before_allocation() {
+        let root = temp_tree("bounded-read");
+        let path = root.join("oversized.cbor");
+        let file = test_ok(fs::File::create(&path), "create oversized artifact");
+        test_ok(
+            file.set_len(1024 * 1024 + 1),
+            "size oversized artifact without allocating it",
+        );
+
+        let failure = test_err(
+            read(&path, "ArtifactReadFailed", "test artifact"),
+            "oversized artifact must reject",
+        );
+
+        assert_eq!(failure.kind, "ApplicationArtifactTooLarge");
+        test_ok(fs::remove_dir_all(root), "remove bounded read temp tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn application_build_rejects_source_symlink_escape() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("source-symlink-root");
+        let outside = temp_tree("source-symlink-outside");
+        let outside_source = outside.join("operation.edict");
+        test_ok(
+            fs::write(&outside_source, "package examples.test@1;"),
+            "write external source",
+        );
+        test_ok(
+            symlink(&outside_source, root.join("operation.edict")),
+            "link source outside application root",
+        );
+        let config_path = root.join("edict.application.json");
+        let config = serde_json::json!({
+            "schema": "edict.application/v1",
+            "coordinate": "examples.test@1.operation",
+            "sources": ["operation.edict"],
+            "lawpacks": [{
+                "manifest": "lawpack/manifest.cbor",
+                "exports": "lawpack/exports.cbor",
+                "adapter": "lawpack/adapter.cbor",
+                "targetConfiguration": "lawpack/configuration.cbor"
+            }],
+            "target": {
+                "profile": "target.test@1",
+                "providerPackage": "provider"
+            },
+            "outputDirectory": ".build/application"
+        });
+        let config_bytes = test_ok(serde_json::to_vec(&config), "encode application config");
+        test_ok(
+            fs::write(&config_path, config_bytes),
+            "write application config",
+        );
+
+        let failure = test_err(
+            build_application(&config_path),
+            "source symlink outside the manifest root must reject",
+        );
+
+        assert_eq!(failure.kind, "ApplicationPathEscape");
+        test_ok(fs::remove_dir_all(root), "remove symlink root");
+        test_ok(fs::remove_dir_all(outside), "remove symlink target");
+    }
+
+    #[test]
+    fn successful_publication_leaves_no_lock_in_output_directory() {
+        let root = temp_tree("output-lock-location");
+
+        test_ok(
+            write_outputs(&root, b"package", b"report"),
+            "publish application outputs",
+        );
+
+        assert!(!root.join(".edict-application-build.lock").exists());
+        test_ok(fs::remove_dir_all(root), "remove output lock temp tree");
     }
 
     fn application_manifest(lawpack_count: usize) -> ApplicationManifest {
