@@ -178,26 +178,27 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     )?;
     require_manifest_identity(target_profile_artifact, &target_profile)?;
 
-    let schema_artifact = unique_artifact(
-        &provider_manifest,
-        ProviderArtifactKind::ArtifactSchema,
-        None,
-    )?;
-    let schema_bytes = read_provider_artifact(
-        &provider_root,
-        schema_artifact,
-        ProviderArtifactKind::ArtifactSchema,
-    )?;
+    let schema_artifacts = provider_schema_artifacts(&provider_manifest)?;
+    let resolved_schema_artifacts = schema_artifacts
+        .into_iter()
+        .map(|schema_artifact| {
+            Ok(ResolvedProviderSchemaArtifact {
+                role: schema_artifact.role.clone(),
+                bytes: Arc::<[u8]>::from(read_provider_artifact(
+                    &provider_root,
+                    schema_artifact,
+                    ProviderArtifactKind::ArtifactSchema,
+                )?),
+            })
+        })
+        .collect::<Result<Vec<_>, ApplicationBuildFailure>>()?;
     let required_domains = provider_manifest
         .schema_bindings
         .iter()
         .map(|binding| binding.domain.as_str());
     let registry = ProviderArtifactSchemaRegistry::from_manifest(
         &provider_proof,
-        [ResolvedProviderSchemaArtifact {
-            role: schema_artifact.role.clone(),
-            bytes: Arc::<[u8]>::from(schema_bytes),
-        }],
+        resolved_schema_artifacts,
         required_domains,
     )
     .map_err(|error| {
@@ -484,6 +485,16 @@ fn unique_artifact<'a>(
     }
 }
 
+fn provider_schema_artifacts(
+    manifest: &TargetProviderManifest,
+) -> Result<Vec<&ProviderArtifactRef>, ApplicationBuildFailure> {
+    Ok(vec![unique_artifact(
+        manifest,
+        ProviderArtifactKind::ArtifactSchema,
+        None,
+    )?])
+}
+
 fn read_provider_artifact(
     root: &Path,
     artifact: &ProviderArtifactRef,
@@ -517,17 +528,12 @@ fn validate_target_configuration_binding(
     adapter: &edict_syntax::ValidatedLawpackAdapter,
     bytes: &[u8],
 ) -> Result<(), ApplicationBuildFailure> {
-    let references = adapter
-        .effects()
-        .values()
-        .map(|effect| &effect.target_configuration)
-        .collect::<Vec<_>>();
-    let [reference] = references.as_slice() else {
-        return Err(failure(
-            "InvalidLawpackAdapter",
-            "the executable-operation adapter currently requires exactly one target configuration",
-        ));
-    };
+    let reference = single_unique_configuration(
+        adapter
+            .effects()
+            .values()
+            .map(|effect| &effect.target_configuration),
+    )?;
     let digest = provider_digest(CONFIGURATION_DOMAIN, bytes)?;
     if reference.digest_review_string() != rendered_digest(&digest) {
         return Err(failure(
@@ -744,11 +750,15 @@ fn lowering_inputs(
     target_ir_bytes: &[u8],
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
     let configuration = single_configuration(adapter)?;
+    let adapter_reference = selected_adapter_reference(
+        &loaded.bundle.manifest().target_adapters,
+        adapter.target_profile(),
+    )?;
     Ok(vec![
         semantic_input(
             "01-lawpack-adapter",
             ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
-            &loaded.bundle.manifest().target_adapters[0].adapter.id,
+            &adapter_reference.id,
             ADAPTER_DOMAIN,
             &loaded.adapter_bytes,
         )?,
@@ -802,11 +812,15 @@ fn verification_inputs(
     package_bytes: &[u8],
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
     let configuration = single_configuration(adapter)?;
+    let adapter_reference = selected_adapter_reference(
+        &loaded.bundle.manifest().target_adapters,
+        adapter.target_profile(),
+    )?;
     Ok(vec![
         semantic_input(
             "01-lawpack-adapter",
             ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
-            &loaded.bundle.manifest().target_adapters[0].adapter.id,
+            &adapter_reference.id,
             ADAPTER_DOMAIN,
             &loaded.adapter_bytes,
         )?,
@@ -855,11 +869,18 @@ fn verification_inputs(
 fn single_configuration(
     adapter: &edict_syntax::ValidatedLawpackAdapter,
 ) -> Result<&edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
-    let references = adapter
-        .effects()
-        .values()
-        .map(|effect| &effect.target_configuration)
-        .collect::<Vec<_>>();
+    single_unique_configuration(
+        adapter
+            .effects()
+            .values()
+            .map(|effect| &effect.target_configuration),
+    )
+}
+
+fn single_unique_configuration<'a>(
+    references: impl IntoIterator<Item = &'a edict_syntax::LawpackResourceRef>,
+) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    let references = references.into_iter().collect::<Vec<_>>();
     match references.as_slice() {
         [reference] => Ok(reference),
         _ => Err(failure(
@@ -867,6 +888,21 @@ fn single_configuration(
             "the executable-operation adapter currently requires exactly one target configuration",
         )),
     }
+}
+
+fn selected_adapter_reference<'a>(
+    adapters: &'a [edict_syntax::LawpackTargetAdapter],
+    _selected_target_profile: &edict_syntax::LawpackResourceRef,
+) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    adapters
+        .first()
+        .map(|descriptor| &descriptor.adapter)
+        .ok_or_else(|| {
+            failure(
+                "InvalidLawpackAdapter",
+                "the selected lawpack does not expose a target adapter",
+            )
+        })
 }
 
 fn semantic_input(
@@ -1118,5 +1154,197 @@ fn failure(kind: &'static str, message: impl Into<String>) -> ApplicationBuildFa
     ApplicationBuildFailure {
         kind,
         message: message.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use edict_syntax::{
+        LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef,
+        ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
+        TargetProviderManifest, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+    };
+
+    use super::{
+        provider_schema_artifacts, selected_adapter_reference, single_unique_configuration,
+        validate_application_manifest, write_outputs, ApplicationLawpack, ApplicationManifest,
+        ApplicationTarget,
+    };
+
+    const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
+    static TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn application_manifest_accepts_one_root_and_its_complete_dependency_closure() {
+        let config = application_manifest(64);
+
+        validate_application_manifest(&config)
+            .expect("one root plus a bounded dependency closure must be accepted");
+    }
+
+    #[test]
+    fn selected_adapter_reference_follows_the_selected_target_profile() {
+        let first_profile = lawpack_ref("target.first@1", 0x11);
+        let selected_profile = lawpack_ref("target.selected@1", 0x22);
+        let first = adapter_descriptor(first_profile, "adapter.first@1", 0x31);
+        let selected = adapter_descriptor(selected_profile.clone(), "adapter.selected@1", 0x32);
+        let adapters = [first, selected];
+
+        let actual =
+            selected_adapter_reference(&adapters, &selected_profile).expect("selected adapter");
+
+        assert_eq!(actual.id, "adapter.selected@1");
+    }
+
+    #[test]
+    fn repeated_effect_references_to_one_configuration_are_deduplicated() {
+        let configuration = lawpack_ref("target.configuration@1", 0x44);
+
+        let actual = single_unique_configuration([&configuration, &configuration])
+            .expect("identical effect references name one configuration");
+
+        assert_eq!(actual, &configuration);
+    }
+
+    #[test]
+    fn provider_schema_selection_loads_every_bound_role_under_bounded_stress() {
+        let mut manifest = provider_manifest_with_schema_count(32);
+        let mut state = STRESS_SEED;
+        for index in (1..manifest.artifacts.len()).rev() {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let swap_with = usize::try_from(state % u64::try_from(index + 1).unwrap()).unwrap();
+            manifest.artifacts.swap(index, swap_with);
+        }
+
+        let actual = provider_schema_artifacts(&manifest)
+            .expect("every schema role bound by the provider must be loaded");
+        let roles = actual
+            .iter()
+            .map(|artifact| artifact.role.as_str())
+            .collect::<BTreeSet<_>>();
+
+        assert_eq!(actual.len(), 32);
+        assert_eq!(roles.len(), 32);
+    }
+
+    #[test]
+    fn failed_pair_publication_preserves_the_previous_package() {
+        let root = temp_tree("pair-publication");
+        let package_path = root.join("executable-operation-package.cbor");
+        let report_path = root.join("verification-report.cbor");
+        fs::write(&package_path, b"previous-package").expect("write prior package");
+        fs::create_dir(&report_path).expect("create conflicting report directory");
+
+        let failure = write_outputs(&root, b"new-package", b"new-report")
+            .expect_err("a non-file report target must reject the pair");
+
+        assert_eq!(failure.kind, "ApplicationOutputWriteFailed");
+        assert_eq!(
+            fs::read(&package_path).expect("read preserved package"),
+            b"previous-package"
+        );
+        fs::remove_dir_all(root).expect("remove test-owned temp tree");
+    }
+
+    fn application_manifest(lawpack_count: usize) -> ApplicationManifest {
+        ApplicationManifest {
+            schema: "edict.application/v1".to_owned(),
+            coordinate: "examples.test@1.operation".to_owned(),
+            sources: vec![PathBuf::from("operation.edict")],
+            lawpacks: (0..lawpack_count)
+                .map(|index| ApplicationLawpack {
+                    manifest: PathBuf::from(format!("lawpacks/{index}/manifest.cbor")),
+                    exports: PathBuf::from(format!("lawpacks/{index}/exports.cbor")),
+                    adapter: PathBuf::from(format!("lawpacks/{index}/adapter.cbor")),
+                    target_configuration: PathBuf::from(format!(
+                        "lawpacks/{index}/configuration.cbor"
+                    )),
+                })
+                .collect(),
+            target: ApplicationTarget {
+                profile: "target.test@1".to_owned(),
+                provider_package: PathBuf::from("provider"),
+            },
+            output_directory: PathBuf::from(".build/application"),
+        }
+    }
+
+    fn lawpack_ref(id: &str, digest_byte: u8) -> LawpackResourceRef {
+        LawpackResourceRef {
+            id: id.to_owned(),
+            digest: [digest_byte; 32],
+        }
+    }
+
+    fn adapter_descriptor(
+        accepted_target_profile: LawpackResourceRef,
+        adapter_id: &str,
+        digest_byte: u8,
+    ) -> LawpackTargetAdapter {
+        LawpackTargetAdapter {
+            accepted_target_profile,
+            accepted_target_ir: lawpack_ref("target.ir/v1", digest_byte.wrapping_add(1)),
+            adapter: lawpack_ref(adapter_id, digest_byte),
+        }
+    }
+
+    fn provider_manifest_with_schema_count(count: usize) -> TargetProviderManifest {
+        let artifacts = (0..count)
+            .map(|index| schema_artifact(index))
+            .collect::<Vec<_>>();
+        let schema_bindings = (0..count)
+            .map(|index| ProviderSchemaBinding {
+                domain: format!("example.schema-{index:02}/v1"),
+                schema_role: format!("schema.example-{index:02}"),
+                format: ProviderSchemaFormat::SelfContainedCddlV1,
+                root_rule: format!("example-{index:02}"),
+            })
+            .collect();
+        TargetProviderManifest {
+            api_version: TARGET_PROVIDER_MANIFEST_API_VERSION.to_owned(),
+            provider_abi: TARGET_PROVIDER_ABI.to_owned(),
+            provider: resource("provider.example@1", 0x51),
+            artifacts,
+            schema_bindings,
+        }
+    }
+
+    fn schema_artifact(index: usize) -> ProviderArtifactRef {
+        ProviderArtifactRef {
+            role: format!("schema.example-{index:02}"),
+            artifact_kind: ProviderArtifactKind::ArtifactSchema,
+            resource: resource(
+                &format!("schema.example-{index:02}@1"),
+                u8::try_from(index).unwrap(),
+            ),
+            source: ProviderArtifactSource::Generated {
+                semantic_source: resource("source.example@1", 0x61),
+                generator: resource("generator.example@1", 0x62),
+            },
+        }
+    }
+
+    fn resource(coordinate: &str, digest_byte: u8) -> ResourceRef {
+        ResourceRef {
+            coordinate: coordinate.to_owned(),
+            digest: Some(format!("sha256:{digest_byte:02x}").repeat(32)),
+        }
+    }
+
+    fn temp_tree(name: &str) -> PathBuf {
+        let unique = TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "edict-application-build-{name}-{}-{unique}",
+            std::process::id()
+        ));
+        fs::create_dir_all(&path).expect("create test temp tree");
+        path
     }
 }

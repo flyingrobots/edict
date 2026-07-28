@@ -509,6 +509,65 @@ fn all_hash_bound_helper_and_verifier_variants_load() {
 }
 
 #[test]
+fn edict_pure_helpers_reject_effectful_and_unresolved_callees() {
+    for callee in ["hello.echo@1.createGreeting", "hello.echo@1.notExported"] {
+        let mut exports = hello_echo_exports();
+        let body = map([
+            (
+                "params",
+                CanonicalValue::Array(vec![local_ref(
+                    "arg:0",
+                    "value",
+                    "hello.echo@1.GreetingKey",
+                )]),
+            ),
+            (
+                "body",
+                map([
+                    ("locals", CanonicalValue::Array(Vec::new())),
+                    ("bindings", CanonicalValue::Array(Vec::new())),
+                    (
+                        "result",
+                        map([
+                            ("kind", text("call")),
+                            ("callee", text(callee)),
+                            ("typeArgs", CanonicalValue::Array(Vec::new())),
+                            (
+                                "args",
+                                CanonicalValue::Array(vec![map([
+                                    ("kind", text("local")),
+                                    (
+                                        "ref",
+                                        local_ref("arg:0", "value", "hello.echo@1.GreetingKey"),
+                                    ),
+                                ])]),
+                            ),
+                        ]),
+                    ),
+                ]),
+            ),
+        ]);
+        array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function(
+            "hello.echo@1.invalidCaller",
+            "edict",
+            ("body", body),
+        ));
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+
+        let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+            .expect_err("effectful or unresolved pure callee must reject");
+
+        assert_eq!(
+            failure_kinds(&failures),
+            vec![LawpackValidationFailureKind::InvalidPureFunctionBody],
+            "callee {callee}"
+        );
+    }
+}
+
+#[test]
 fn typed_digests_and_target_adapter_selectors_are_exact() {
     let exports = hello_echo_exports();
     let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
