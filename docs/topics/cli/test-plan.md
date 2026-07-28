@@ -50,7 +50,7 @@ Out of scope:
 | --- | --- | --- |
 | crates/edict-cli/tests/jsonl_cli.rs | Runtime-created JSONL requests and source files for CLI behavior. | Tests parse every stdout and stderr line as JSON objects and assert stable fields. |
 | docs/schemas/edict.compiler-settings.v1.schema.json | Stable JSON Schema for compiler settings records. | The schema contract test validates the schema identifier, required fields, supported operation values, deterministic input-expansion settings, and optional root confinement. |
-| fixtures/lawpack/hello-echo/ | Canonical Hello Echo Target IR witness and digest sidecar. | `cargo xtask lawpack-goldens --check` recompiles the digest-pinned Edict source through the generated causal-cell closure and rejects byte drift. |
+| fixtures/lawpack/hello-echo/README.md | Canonical Hello Echo Target IR witness and digest sidecar corpus. | `cargo xtask lawpack-goldens --check` recompiles the digest-pinned Edict source through the generated causal-cell closure and rejects byte drift. |
 | docs/schemas/edict.compiler-input.v1.schema.json | Stable JSON Schema for compiler input records. | The schema contract test validates the identifier, required fields, supported input kinds, and per-kind variant fields. |
 | docs/schemas/edict.cli-check-result.v1.schema.json | Stable JSON Schema for success result records. | The schema contract test validates the identifier, required fields, and pinned `command`, `type`, and `status` values. |
 | docs/schemas/edict.cli-diagnostic.v1.schema.json | Stable JSON Schema for diagnostic records. | The schema contract test validates the identifier, required fields, supported commands and stages, and optional span, line, and message fields. |
