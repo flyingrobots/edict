@@ -1552,7 +1552,10 @@ fn artifact_too_large(path: &Path, subject: &str) -> ApplicationBuildFailure {
 }
 
 fn canonical_application_root(config_path: &Path) -> Result<PathBuf, ApplicationBuildFailure> {
-    let root = config_path.parent().unwrap_or_else(|| Path::new("."));
+    let root = config_path
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
     fs::canonicalize(root).map_err(|error| {
         failure(
             "ApplicationConfigReadFailed",
@@ -1673,9 +1676,10 @@ mod tests {
     };
 
     use super::{
-        build_application, output_lock_path, provider_schema_artifacts, read,
-        selected_adapter_reference, single_unique_configuration, validate_application_manifest,
-        write_outputs, ApplicationLawpack, ApplicationManifest, ApplicationTarget,
+        build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
+        read, selected_adapter_reference, single_unique_configuration,
+        validate_application_manifest, write_outputs, ApplicationLawpack, ApplicationManifest,
+        ApplicationTarget,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1689,6 +1693,17 @@ mod tests {
             validate_application_manifest(&config),
             "one root plus a bounded dependency closure must be accepted",
         );
+    }
+
+    #[test]
+    fn relative_application_config_uses_the_current_directory_as_root() {
+        let actual = test_ok(
+            canonical_application_root(PathBuf::from("edict.application.json").as_path()),
+            "resolve relative application root",
+        );
+        let expected = test_ok(fs::canonicalize("."), "resolve current directory");
+
+        assert_eq!(actual, expected);
     }
 
     #[test]
