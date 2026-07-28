@@ -405,6 +405,16 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
             message: format!("compiler settings {field} must not be null"),
         });
     }
+    if command == COMMAND_BUILD {
+        if let Some(field) = forbidden_build_settings_field(&value) {
+            return Err(CliFailure {
+                command,
+                kind: "InvalidSettings",
+                line: Some(line),
+                message: format!("build does not accept the `{field}` setting"),
+            });
+        }
+    }
     let settings = serde_json::from_value::<CompilerSettings>(value).map_err(|err| CliFailure {
         command,
         kind: "InvalidSettings",
@@ -448,6 +458,19 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
         });
     }
     Ok(settings)
+}
+
+fn forbidden_build_settings_field(value: &Value) -> Option<&'static str> {
+    [
+        "emit",
+        "compilerContext",
+        "target",
+        "inputRoot",
+        "directoryExtensions",
+        "followSymlinks",
+    ]
+    .into_iter()
+    .find(|field| value.get(field).is_some())
 }
 
 fn null_compiler_settings_field(value: &Value) -> Option<&'static str> {

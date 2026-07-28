@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
+use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
-use std::io::{ErrorKind, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -36,6 +37,7 @@ const PACKAGE_ROLE: &str = "executable-operation-package.echo";
 const PACKAGE_DOMAIN: &str = "echo.operation-package/v1";
 const VERIFICATION_REPORT_ROLE: &str = "verifier-report.echo-operation";
 const VERIFICATION_REPORT_DOMAIN: &str = "echo.operation-package-verifier-report/v1";
+const MAX_APPLICATION_ARTIFACT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
 pub(crate) struct ApplicationBuildFailure {
@@ -108,7 +110,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         )
     })?;
     validate_application_manifest(&config)?;
-    let root = config_path.parent().unwrap_or_else(|| Path::new("."));
+    let root = canonical_application_root(config_path)?;
 
     let source = config.sources.first().ok_or_else(|| {
         failure(
@@ -116,7 +118,13 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             "the executable-operation build requires exactly one Edict source",
         )
     })?;
-    let source_path = resolve(root, source);
+    let source_path = confined_existing_path(
+        &root,
+        source,
+        "sources",
+        "ApplicationSourceReadFailed",
+        "Edict source",
+    )?;
     let source_bytes = read(&source_path, "ApplicationSourceReadFailed", "Edict source")?;
     let source = std::str::from_utf8(&source_bytes).map_err(|error| {
         failure(
@@ -139,7 +147,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
 
     let mut loaded_lawpacks = Vec::with_capacity(config.lawpacks.len());
     for lawpack in &config.lawpacks {
-        loaded_lawpacks.push(load_lawpack(root, lawpack)?);
+        loaded_lawpacks.push(load_lawpack(&root, lawpack)?);
     }
     let bundles = loaded_lawpacks
         .iter()
@@ -158,7 +166,13 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         )
     })?;
 
-    let provider_root = resolve(root, &config.target.provider_package);
+    let provider_root = confined_existing_path(
+        &root,
+        &config.target.provider_package,
+        "target.providerPackage",
+        "ProviderPackageReadFailed",
+        "provider package",
+    )?;
     let manifest_path = find_provider_manifest(&provider_root)?;
     let provider_manifest_bytes = read(
         &manifest_path,
@@ -359,7 +373,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     )?;
     require_accepted_report(&report_bytes)?;
 
-    let output_directory = resolve(root, &config.output_directory);
+    let output_directory = prepare_output_directory(&root, &config.output_directory)?;
     write_outputs(&output_directory, &package_bytes, &report_bytes)
 }
 
@@ -448,23 +462,39 @@ fn load_lawpack(
     root: &Path,
     config: &ApplicationLawpack,
 ) -> Result<LoadedLawpack, ApplicationBuildFailure> {
-    let manifest_bytes = read(
-        &resolve(root, &config.manifest),
+    let manifest_path = confined_existing_path(
+        root,
+        &config.manifest,
+        "lawpacks.manifest",
         "LawpackReadFailed",
         "lawpack manifest",
     )?;
-    let exports_bytes = read(
-        &resolve(root, &config.exports),
+    let manifest_bytes = read(&manifest_path, "LawpackReadFailed", "lawpack manifest")?;
+    let exports_path = confined_existing_path(
+        root,
+        &config.exports,
+        "lawpacks.exports",
         "LawpackReadFailed",
         "lawpack exports",
     )?;
-    let adapter_bytes = read(
-        &resolve(root, &config.adapter),
+    let exports_bytes = read(&exports_path, "LawpackReadFailed", "lawpack exports")?;
+    let adapter_path = confined_existing_path(
+        root,
+        &config.adapter,
+        "lawpacks.adapter",
         "LawpackReadFailed",
         "lawpack target adapter",
     )?;
+    let adapter_bytes = read(&adapter_path, "LawpackReadFailed", "lawpack target adapter")?;
+    let configuration_path = confined_existing_path(
+        root,
+        &config.target_configuration,
+        "lawpacks.targetConfiguration",
+        "LawpackReadFailed",
+        "target configuration",
+    )?;
     let configuration_bytes = read(
-        &resolve(root, &config.target_configuration),
+        &configuration_path,
         "LawpackReadFailed",
         "target configuration",
     )?;
@@ -512,7 +542,22 @@ fn find_provider_manifest(root: &Path) -> Result<PathBuf, ApplicationBuildFailur
     }
     matches.sort();
     match matches.as_slice() {
-        [path] => Ok(path.clone()),
+        [path] => confined_existing_path(
+            root,
+            path.strip_prefix(root).map_err(|error| {
+                failure(
+                    "ProviderPackageReadFailed",
+                    format!(
+                        "provider manifest `{}` is not beneath package root `{}`: {error}",
+                        path.display(),
+                        root.display()
+                    ),
+                )
+            })?,
+            "target.providerPackage.manifest",
+            "ProviderPackageReadFailed",
+            "provider manifest",
+        ),
         _ => Err(failure(
             "InvalidProviderPackage",
             format!(
@@ -596,11 +641,14 @@ fn read_provider_artifact(
             ));
         }
     };
-    read(
-        &root.join(relative),
+    let path = confined_existing_path(
+        root,
+        &relative,
+        "target.providerPackage.artifact",
         "ProviderPackageReadFailed",
         "provider artifact",
-    )
+    )?;
+    read(&path, "ProviderPackageReadFailed", "provider artifact")
 }
 
 fn validate_target_configuration_binding(
@@ -1158,7 +1206,7 @@ fn write_outputs(
         )
     })?;
 
-    let lock_path = directory.join(".edict-application-build.lock");
+    let lock_path = output_lock_path(directory);
     let lock = OpenOptions::new()
         .create(true)
         .truncate(false)
@@ -1293,6 +1341,20 @@ fn write_outputs(
             ),
         )
     })
+}
+
+fn output_lock_path(directory: &Path) -> PathBuf {
+    let mut name = OsString::from(".");
+    name.push(
+        directory
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("root")),
+    );
+    name.push(".edict-application-build.lock");
+    directory
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(name)
 }
 
 fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -1444,19 +1506,149 @@ fn read(
     kind: &'static str,
     subject: &str,
 ) -> Result<Vec<u8>, ApplicationBuildFailure> {
-    fs::read(path).map_err(|error| {
+    let mut file = OpenOptions::new().read(true).open(path).map_err(|error| {
         failure(
             kind,
             format!("failed to read {subject} `{}`: {error}", path.display()),
         )
+    })?;
+    let length = file
+        .metadata()
+        .map_err(|error| {
+            failure(
+                kind,
+                format!("failed to inspect {subject} `{}`: {error}", path.display()),
+            )
+        })?
+        .len();
+    if length > MAX_APPLICATION_ARTIFACT_BYTES {
+        return Err(artifact_too_large(path, subject));
+    }
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut file)
+        .take(MAX_APPLICATION_ARTIFACT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            failure(
+                kind,
+                format!("failed to read {subject} `{}`: {error}", path.display()),
+            )
+        })?;
+    if u64::try_from(bytes.len()).map_or(true, |length| length > MAX_APPLICATION_ARTIFACT_BYTES) {
+        return Err(artifact_too_large(path, subject));
+    }
+    Ok(bytes)
+}
+
+fn artifact_too_large(path: &Path, subject: &str) -> ApplicationBuildFailure {
+    failure(
+        "ApplicationArtifactTooLarge",
+        format!(
+            "{subject} `{}` exceeds the {} byte application-artifact limit",
+            path.display(),
+            MAX_APPLICATION_ARTIFACT_BYTES
+        ),
+    )
+}
+
+fn canonical_application_root(config_path: &Path) -> Result<PathBuf, ApplicationBuildFailure> {
+    let root = config_path.parent().unwrap_or_else(|| Path::new("."));
+    fs::canonicalize(root).map_err(|error| {
+        failure(
+            "ApplicationConfigReadFailed",
+            format!(
+                "failed to resolve application root `{}`: {error}",
+                root.display()
+            ),
+        )
     })
 }
 
-fn resolve(root: &Path, path: &Path) -> PathBuf {
-    if path.is_absolute() {
-        path.to_owned()
+fn confined_existing_path(
+    root: &Path,
+    relative: &Path,
+    field: &str,
+    read_failure_kind: &'static str,
+    subject: &str,
+) -> Result<PathBuf, ApplicationBuildFailure> {
+    let candidate = root.join(relative);
+    let canonical = fs::canonicalize(&candidate).map_err(|error| {
+        failure(
+            read_failure_kind,
+            format!(
+                "failed to resolve {subject} `{}`: {error}",
+                candidate.display()
+            ),
+        )
+    })?;
+    require_path_beneath_root(root, &canonical, field)?;
+    Ok(canonical)
+}
+
+fn prepare_output_directory(
+    root: &Path,
+    relative: &Path,
+) -> Result<PathBuf, ApplicationBuildFailure> {
+    let candidate = root.join(relative);
+    let mut existing_ancestor = candidate.as_path();
+    while !existing_ancestor.exists() {
+        existing_ancestor = existing_ancestor.parent().ok_or_else(|| {
+            failure(
+                "ApplicationOutputWriteFailed",
+                format!(
+                    "application output `{}` has no existing ancestor",
+                    candidate.display()
+                ),
+            )
+        })?;
+    }
+    let canonical_ancestor = fs::canonicalize(existing_ancestor).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!(
+                "failed to resolve output ancestor `{}`: {error}",
+                existing_ancestor.display()
+            ),
+        )
+    })?;
+    require_path_beneath_root(root, &canonical_ancestor, "outputDirectory")?;
+    fs::create_dir_all(&candidate).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!(
+                "failed to create application output directory `{}`: {error}",
+                candidate.display()
+            ),
+        )
+    })?;
+    let canonical = fs::canonicalize(&candidate).map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!(
+                "failed to resolve application output directory `{}`: {error}",
+                candidate.display()
+            ),
+        )
+    })?;
+    require_path_beneath_root(root, &canonical, "outputDirectory")?;
+    Ok(canonical)
+}
+
+fn require_path_beneath_root(
+    root: &Path,
+    canonical: &Path,
+    field: &str,
+) -> Result<(), ApplicationBuildFailure> {
+    if canonical.starts_with(root) {
+        Ok(())
     } else {
-        root.join(path)
+        Err(failure(
+            "ApplicationPathEscape",
+            format!(
+                "application field `{field}` resolves outside manifest root `{}`",
+                root.display()
+            ),
+        ))
     }
 }
 
@@ -1481,9 +1673,9 @@ mod tests {
     };
 
     use super::{
-        build_application, provider_schema_artifacts, read, selected_adapter_reference,
-        single_unique_configuration, validate_application_manifest, write_outputs,
-        ApplicationLawpack, ApplicationManifest, ApplicationTarget,
+        build_application, output_lock_path, provider_schema_artifacts, read,
+        selected_adapter_reference, single_unique_configuration, validate_application_manifest,
+        write_outputs, ApplicationLawpack, ApplicationManifest, ApplicationTarget,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1678,6 +1870,7 @@ mod tests {
     #[test]
     fn successful_publication_leaves_no_lock_in_output_directory() {
         let root = temp_tree("output-lock-location");
+        let lock_path = output_lock_path(&root);
 
         test_ok(
             write_outputs(&root, b"package", b"report"),
@@ -1685,6 +1878,7 @@ mod tests {
         );
 
         assert!(!root.join(".edict-application-build.lock").exists());
+        test_ok(fs::remove_file(lock_path), "remove test output lock");
         test_ok(fs::remove_dir_all(root), "remove output lock temp tree");
     }
 
