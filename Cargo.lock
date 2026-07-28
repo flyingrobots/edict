@@ -352,6 +352,8 @@ dependencies = [
 name = "edict-cli"
 version = "0.11.0-alpha.1"
 dependencies = [
+ "edict-provider-host-wasmtime",
+ "edict-provider-schema",
  "edict-syntax",
  "glob",
  "serde",

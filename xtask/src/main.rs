@@ -3,6 +3,7 @@
 
 mod contract_check;
 mod goldens;
+mod lawpack_goldens;
 mod provider_components;
 mod provider_contract_pack;
 mod provider_dependencies;
@@ -22,6 +23,7 @@ use goldens::{
     target_profile_resource_goldens, AuthorityFactsGoldenMode, BundleGoldenMode, CliGoldenMode,
     CoreGoldenMode, TargetIrGoldenMode, TargetProfileResourceGoldenMode,
 };
+use lawpack_goldens::{lawpack_goldens, LawpackGoldenMode};
 use provider_components::{provider_component_fixtures, ProviderComponentFixtureMode};
 use provider_contract_pack::{provider_contract_pack, ProviderContractPackMode};
 use provider_dependencies::provider_runtime_dependencies;
@@ -90,6 +92,7 @@ fn run() -> Result<(), String> {
             }
             target_ir_goldens(&repo_root()?, mode)
         }
+        Some("lawpack-goldens") => run_lawpack_goldens(&mut args),
         Some("release-prep") => {
             let version = args
                 .next()
@@ -128,7 +131,7 @@ fn run() -> Result<(), String> {
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
         None => Err(
-            "usage: cargo xtask <verify|contract-check|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|provider-component-fixtures|provider-contract-pack|provider-runtime-dependencies|release-prep>"
+            "usage: cargo xtask <verify|contract-check|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|lawpack-goldens|provider-component-fixtures|provider-contract-pack|provider-runtime-dependencies|release-prep>"
                 .into(),
         ),
     }
@@ -146,6 +149,18 @@ fn run_authority_facts_goldens(args: &mut impl Iterator<Item = String>) -> Resul
         ));
     }
     authority_facts_goldens(&repo_root()?, mode)
+}
+
+fn run_lawpack_goldens(args: &mut impl Iterator<Item = String>) -> Result<(), String> {
+    let mode = match args.next().as_deref() {
+        Some("--write") => LawpackGoldenMode::Write,
+        Some("--check") | None => LawpackGoldenMode::Check,
+        Some(flag) => return Err(format!("unknown lawpack-goldens flag `{flag}`")),
+    };
+    if let Some(extra) = args.next() {
+        return Err(format!("unexpected lawpack-goldens argument `{extra}`"));
+    }
+    lawpack_goldens(&repo_root()?, mode)
 }
 
 fn run_target_profile_resource_goldens(
@@ -188,6 +203,7 @@ fn verify(root: &Path) -> Result<(), String> {
     target_profile_resource_goldens(root, TargetProfileResourceGoldenMode::Check)?;
     core_goldens(root, CoreGoldenMode::Check)?;
     target_ir_goldens(root, TargetIrGoldenMode::Check)?;
+    lawpack_goldens(root, LawpackGoldenMode::Check)?;
     bundle_goldens(root, BundleGoldenMode::Check)?;
     cli_goldens(root, CliGoldenMode::Check)?;
     provider_component_fixtures(root, ProviderComponentFixtureMode::Check)?;

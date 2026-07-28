@@ -16,6 +16,8 @@ name = "edict"
 path = "src/main.rs"
 
 [dependencies]
+edict-provider-host-wasmtime = { path = "../edict-provider-host-wasmtime" }
+edict-provider-schema = { path = "../edict-provider-schema" }
 edict-syntax = { path = "../edict-syntax" }
 glob = "0.3"
 serde = { version = "1", features = ["derive"] }

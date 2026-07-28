@@ -55,6 +55,148 @@ const ECHO_TARGET_PROFILE_DIGEST: &str =
 static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
+fn build_accepts_application_request_without_compiler_input_records() {
+    let root = temp_tree("missing-build-application");
+    let application = root.join("missing-edict-application.json");
+    let output = run_edict(&jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "compilerSettings",
+        "operation": "build",
+        "application": application,
+    })]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("build failure emits a diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("ApplicationConfigReadFailed")
+    );
+    assert_status(&stderr, "error", 2);
+    fs::remove_dir_all(root).expect("remove missing application test tree");
+}
+
+#[test]
+fn build_rejects_compiler_input_records_instead_of_ignoring_them() {
+    let root = temp_tree("build-input-record");
+    let application = root.join("missing-edict-application.json");
+    let output = run_edict(&jsonl([
+        json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "build",
+            "application": application,
+        }),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "ignored.edict",
+            "source": VALID_SOURCE,
+        }),
+    ]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("build input rejection emits a diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("InvalidInputRecord")
+    );
+    assert_status(&stderr, "error", 2);
+    fs::remove_dir_all(root).expect("remove build input record test tree");
+}
+
+#[test]
+fn build_rejects_unused_directory_extension_settings() {
+    let root = temp_tree("build-directory-extensions");
+    let application = root.join("missing-edict-application.json");
+    let output = run_edict(&jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "compilerSettings",
+        "operation": "build",
+        "application": application,
+        "directoryExtensions": [".unused"],
+    })]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("unused build setting emits a diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("InvalidSettings")
+    );
+    assert_status(&stderr, "error", 2);
+    fs::remove_dir_all(root).expect("remove directory extensions test tree");
+}
+
+#[test]
+fn build_rejects_explicit_default_values_for_forbidden_settings() {
+    let root = temp_tree("build-explicit-defaults");
+    let application = root.join("missing-edict-application.json");
+
+    for (field, value) in [
+        ("emit", json!([])),
+        ("followSymlinks", json!(false)),
+        ("directoryExtensions", json!([".edict"])),
+    ] {
+        let mut settings = json!({
+            "schema": "edict.compiler.settings/v1",
+            "type": "compilerSettings",
+            "operation": "build",
+            "application": application,
+        });
+        settings[field] = value;
+        let output = run_edict(&jsonl([settings]));
+
+        assert_eq!(output.status.code(), Some(2), "field {field}");
+        assert!(output.stdout.is_empty(), "field {field}");
+        let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+        let diagnostic = stderr
+            .iter()
+            .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+            .expect("explicit forbidden build setting emits a diagnostic");
+        assert_eq!(
+            diagnostic.get("command").and_then(Value::as_str),
+            Some("build"),
+            "field {field}"
+        );
+        assert_eq!(
+            diagnostic.get("kind").and_then(Value::as_str),
+            Some("InvalidSettings"),
+            "field {field}"
+        );
+        assert_status(&stderr, "error", 2);
+    }
+
+    fs::remove_dir_all(root).expect("remove explicit defaults test tree");
+}
+
+#[test]
 fn check_accepts_inline_source_jsonl_and_emits_jsonl_stdout() {
     let output = run_edict(&jsonl([
         compiler_settings(),
@@ -1219,6 +1361,7 @@ fn projection_target_facts() -> TargetIrLoweringFacts {
         effect_lowerings: vec![TargetEffectLowering {
             effect: "target.replace".to_owned(),
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
+            failure_mappings: std::collections::BTreeMap::new(),
         }],
     }
 }

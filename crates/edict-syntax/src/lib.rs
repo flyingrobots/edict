@@ -76,6 +76,8 @@ pub mod compiler;
 pub mod contract_bundle;
 pub mod core_ir;
 pub mod highlight;
+pub mod lawpack;
+pub mod lawpack_adapter;
 pub mod lowerability;
 pub mod parser;
 pub mod provider;
@@ -105,12 +107,12 @@ pub use authority_facts::{
     AUTHORITY_FACTS_CDDL_ROOT,
 };
 pub use canonical::{
-    decode_canonical_cbor, digest_bundle_layer, digest_core_module, digest_target_ir_artifact,
-    encode_canonical_cbor, encode_core_module, encode_target_ir_artifact, BundleDigestDomain,
-    BundlePreimageComponent, BundleSourceDescriptor, CanonicalError, CanonicalErrorKind,
-    CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN, BUNDLE_SEMANTIC_DIGEST_DOMAIN,
-    CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN,
-    MAX_CANONICAL_NESTING_DEPTH, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    decode_canonical_cbor, digest_bundle_layer, digest_canonical_artifact, digest_core_module,
+    digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
+    encode_target_ir_artifact, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
+    CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN,
+    BUNDLE_SEMANTIC_DIGEST_DOMAIN, CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME,
+    CORE_MODULE_DIGEST_DOMAIN, MAX_CANONICAL_NESTING_DEPTH, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
@@ -134,6 +136,21 @@ pub use core_ir::{
     CORE_API_VERSION,
 };
 pub use highlight::{highlight_source, HighlightRole, HighlightToken};
+pub use lawpack::{
+    decode_lawpack_bundle, validate_lawpack_dependency_graph, LawpackApertureRequirement,
+    LawpackAuthorityClass, LawpackDependency, LawpackDeterminismClass, LawpackEffectFailure,
+    LawpackEffectKind, LawpackExecutableComponent, LawpackExecutionClass, LawpackExportedConstant,
+    LawpackExportedType, LawpackExports, LawpackManifest, LawpackObstruction,
+    LawpackOperationProfile, LawpackOpticTemplate, LawpackPureFunction,
+    LawpackPureFunctionImplementation, LawpackResourceRef, LawpackSemanticEffect,
+    LawpackTargetAdapter, LawpackValidationFailure, LawpackValidationFailureKind, LawpackVerifier,
+    LawpackVerifierClass, ValidatedLawpackBundle, LAWPACK_API_VERSION,
+};
+pub use lawpack_adapter::{
+    decode_lawpack_adapter, prepare_lawpack_compilation, LawpackAdapterEffect,
+    LawpackAdapterFailure, LawpackAdapterFailureKind, LawpackAdapterOperationProfile,
+    PreparedLawpackCompilation, ValidatedLawpackAdapter, LAWPACK_ADAPTER_API_VERSION,
+};
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,
     LowerabilityEffectResult, LowerabilityEffectStatus, LowerabilityFailure,

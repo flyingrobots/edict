@@ -26,6 +26,7 @@ use super::goldens::{
     target_ir_goldens, target_profile_resource_goldens, AuthorityFactsGoldenMode, BundleGoldenMode,
     TargetIrGoldenMode, TargetProfileResourceGoldenMode,
 };
+use super::lawpack_goldens::{lawpack_goldens, LawpackGoldenMode};
 use super::provider_contract_pack::{
     provider_contract_pack, ProviderContractPackMode, CONTRACT_PACK_CDDL, CONTRACT_PACK_MANIFEST,
 };
@@ -69,6 +70,12 @@ fn authority_facts_goldens_match_executable_codec() {
         AuthorityFactsGoldenMode::Check,
     )
     .expect("authority-facts goldens match executable codec output");
+}
+
+#[test]
+fn lawpack_goldens_match_executable_codec() {
+    lawpack_goldens(&repo_root().expect("repo root"), LawpackGoldenMode::Check)
+        .expect("lawpack goldens match executable codec output");
 }
 
 #[test]
@@ -130,6 +137,7 @@ fn assert_provider_contract_manifest_metadata(manifest: &Value) {
         [
             ("authority-facts", "authority-facts"),
             ("core-module", "core-module"),
+            ("lawpack-adapter", "lawpack-adapter"),
             ("lawpack-exports", "lawpack-exports"),
             ("lawpack-manifest", "lawpack-manifest"),
             ("lowering-requirements", "lowering-requirements"),
@@ -264,6 +272,7 @@ fn provider_contract_pack_check_rejects_drift_without_rewriting() {
         "docs/abi/edict-common.cddl",
         "docs/abi/edict-core.cddl",
         "docs/abi/edict-lawpack.cddl",
+        "docs/abi/edict-lawpack-adapter.cddl",
         "docs/abi/edict-target-profile.cddl",
         "docs/abi/edict-authority-facts.cddl",
         "docs/abi/edict-target-ir.cddl",
@@ -1972,6 +1981,32 @@ fn provider_runtime_dependency_boundary_is_narrow() {
         .expect("provider runtime dependency boundary remains narrow");
 }
 
+fn assert_compiler_settings_projection_properties(properties: &serde_json::Map<String, Value>) {
+    for field in ["emit", "compilerContext", "target"] {
+        assert!(
+            properties.contains_key(field),
+            "compiler settings schema missing projection field `{field}`"
+        );
+    }
+    let emit = properties
+        .get("emit")
+        .unwrap_or_else(|| panic!("compiler settings schema missing `emit` property"));
+    assert_eq!(
+        emit.get("minItems").and_then(Value::as_u64),
+        Some(1),
+        "compiler settings projection emit list must reject empty arrays"
+    );
+    let expected_emit_values = ["syntax", "diagnostics", "core", "targetIr", "digests"]
+        .into_iter()
+        .map(Value::from)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        emit.pointer("/items/enum").and_then(Value::as_array),
+        Some(&expected_emit_values),
+        "compiler settings projection emit enum is an exact ordered contract"
+    );
+}
+
 #[test]
 fn compiler_settings_schema_declares_jsonl_contract() {
     let root = repo_root().expect("repo root");
@@ -2010,41 +2045,35 @@ fn compiler_settings_schema_declares_jsonl_contract() {
         .unwrap_or_else(|| panic!("compiler settings schema missing `type` property"));
     assert_eq!(
         record_type.get("const").and_then(Value::as_str),
-        Some("compilerSettings")
+        Some("compilerSettings"),
+        "compiler settings schema must expose one record type"
     );
     let operation = properties
         .get("operation")
         .unwrap_or_else(|| panic!("compiler settings schema missing `operation` property"));
-    assert!(
-        json_string_array_contains(operation, "enum", "check"),
-        "compiler settings schema must declare the `check` operation"
-    );
-    assert!(
-        json_string_array_contains(operation, "enum", "project"),
-        "compiler settings schema must declare the `project` operation"
-    );
-    for field in ["emit", "compilerContext", "target"] {
-        assert!(
-            properties.contains_key(field),
-            "compiler settings schema missing projection field `{field}`"
-        );
-    }
-    let emit = properties
-        .get("emit")
-        .unwrap_or_else(|| panic!("compiler settings schema missing `emit` property"));
     assert_eq!(
-        emit.get("minItems").and_then(Value::as_u64),
-        Some(1),
-        "compiler settings projection emit list must reject empty arrays"
+        json_array(operation, "enum"),
+        &vec![
+            Value::String("build".to_owned()),
+            Value::String("check".to_owned()),
+            Value::String("project".to_owned()),
+        ],
+        "compiler settings schema must expose exactly the supported operations"
     );
-    for value in ["syntax", "diagnostics", "core", "targetIr", "digests"] {
-        assert!(
-            emit.pointer("/items/enum")
-                .and_then(Value::as_array)
-                .is_some_and(|values| values.iter().any(|item| item.as_str() == Some(value))),
-            "compiler settings projection emit list must declare `{value}`"
-        );
-    }
+    let application = properties
+        .get("application")
+        .unwrap_or_else(|| panic!("compiler settings schema missing `application` property"));
+    assert_eq!(
+        application.get("type").and_then(Value::as_str),
+        Some("string"),
+        "application path must be a string"
+    );
+    assert_eq!(
+        application.get("minLength").and_then(Value::as_u64),
+        Some(1),
+        "application path must be non-empty"
+    );
+    assert_compiler_settings_projection_properties(properties);
     assert_eq!(
         schema
             .pointer("/properties/target/properties/profileDigest/pattern")

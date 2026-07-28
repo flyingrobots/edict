@@ -9,13 +9,13 @@ use std::collections::BTreeMap;
 use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
-    CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CorePredicate, CoreValue,
-    GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus, LoweringRequirements,
-    NativeEffectSupport, ResourceRef, SemanticEffectRequirement, TargetEffectLowering,
-    TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure, TargetLoweringFailureKind,
-    TargetLoweringStatus, TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
-    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreNode, CorePredicate,
+    CoreValue, GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus,
+    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
+    TargetEffectLowering, TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure,
+    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, WriteClass,
+    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
+    GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -228,6 +228,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
         effect_lowerings: vec![TargetEffectLowering {
             effect: "target.replace".to_owned(),
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
+            failure_mappings: BTreeMap::new(),
         }],
     }
 }
@@ -244,6 +245,7 @@ fn gitwarp_facts() -> TargetIrLoweringFacts {
         effect_lowerings: vec![TargetEffectLowering {
             effect: "gitwarp.appendEvent".to_owned(),
             target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
+            failure_mappings: BTreeMap::new(),
         }],
     }
 }
@@ -689,10 +691,12 @@ fn unused_duplicate_effect_lowerings_do_not_reject_supported_effect() {
     facts.effect_lowerings.push(TargetEffectLowering {
         effect: "target.archive".to_owned(),
         target_intrinsic: "echo.dpo@1.archive".to_owned(),
+        failure_mappings: BTreeMap::new(),
     });
     facts.effect_lowerings.push(TargetEffectLowering {
         effect: "target.archive".to_owned(),
         target_intrinsic: "echo.dpo@1.archive.v2".to_owned(),
+        failure_mappings: BTreeMap::new(),
     });
 
     let report = lower_to_target_ir(&effectful_core(), &facts);
@@ -943,6 +947,7 @@ fn ambiguous_effect_lowering_rejects_without_artifact() {
     facts.effect_lowerings.push(TargetEffectLowering {
         effect: "target.replace".to_owned(),
         target_intrinsic: "echo.dpo@1.replace.alternate".to_owned(),
+        failure_mappings: BTreeMap::new(),
     });
 
     let report = lower_to_target_ir(&effectful_core(), &facts);
@@ -1006,6 +1011,38 @@ fn unsupported_obstruction_key_rejects_without_artifact() {
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::MissingObstruction]
     );
+}
+
+#[test]
+fn colliding_target_obstruction_mappings_reject_without_artifact() {
+    let mut core = effectful_core();
+    let CoreNode::Effect {
+        obstruction_map, ..
+    } = &mut core.intents.get_mut("t").expect("intent t").body.nodes[0]
+    else {
+        panic!("fixture begins with an effect node");
+    };
+    obstruction_map.insert(
+        "alternate".to_owned(),
+        obstruction_map
+            .get("rejected")
+            .expect("fixture declares rejected obstruction")
+            .clone(),
+    );
+    let mut facts = echo_facts();
+    facts.effect_lowerings[0]
+        .failure_mappings
+        .insert("alternate".to_owned(), "rejected".to_owned());
+
+    let report = lower_to_target_ir(&core, &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::AmbiguousObstructionMapping]
+    );
+    assert_eq!(report.failures[0].detail, "rejected");
 }
 
 #[test]

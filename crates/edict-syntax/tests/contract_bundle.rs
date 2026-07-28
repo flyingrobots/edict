@@ -373,7 +373,7 @@ mod contract_bundle_assembly {
         ContractBundleValidationFailureKind, ContractBundleValidationStatus, CoreBudget, CoreExpr,
         CoreImport, CoreImportKind, CoreValue, DigestLockedResource, ResourceRef,
         SuppliedTargetIrResource, TargetEffectLowering, TargetIrArtifact, TargetIrLoweringFacts,
-        WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+        TargetIrSemanticClosure, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
     };
 
     const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -474,6 +474,34 @@ mod contract_bundle_assembly {
         }
     }
 
+    fn assembly_from_provider_closed_target_ir_input() -> ContractBundleAssemblyFromTargetIrInput {
+        let mut input = assembly_from_target_ir_input();
+        input
+            .core_module
+            .imports
+            .retain(|import| import.kind != CoreImportKind::Lawpack);
+        input.target_ir_artifact = lower_to_target_ir(&input.core_module, &echo_facts())
+            .artifact
+            .expect("closure-free Core still lowers");
+        assert!(input.target_ir_artifact.semantic_closure.is_none());
+        input.target_ir_artifact.semantic_closure = Some(TargetIrSemanticClosure {
+            source_core: ResourceRef {
+                coordinate: input.core_module.coordinate.clone(),
+                digest: Some(
+                    digest_core_module(&input.core_module)
+                        .expect("Core digest")
+                        .to_review_string(),
+                ),
+            },
+            lawpacks: input
+                .lawpacks
+                .iter()
+                .map(DigestLockedResource::to_resource_ref)
+                .collect(),
+        });
+        input
+    }
+
     fn effectful_core_and_target_ir() -> (edict_syntax::CoreModule, TargetIrArtifact) {
         let module =
             edict_syntax::parse_module(EFFECTFUL_REPLACE).expect("effectful source parses");
@@ -512,6 +540,7 @@ mod contract_bundle_assembly {
             effect_lowerings: vec![TargetEffectLowering {
                 effect: "target.replace".to_owned(),
                 target_intrinsic: "echo.dpo@1.replace".to_owned(),
+                failure_mappings: std::collections::BTreeMap::new(),
             }],
         }
     }
@@ -696,7 +725,80 @@ mod contract_bundle_assembly {
     }
 
     #[test]
-    fn assembly_from_target_ir_rejects_unexpected_semantic_closure() {
+    fn assembly_from_target_ir_accepts_exact_provider_supplied_closure() {
+        let manifest = assemble_contract_bundle_from_target_ir(
+            assembly_from_provider_closed_target_ir_input(),
+        )
+        .expect("exact provider-supplied semantic closure assembles");
+
+        assert_eq!(
+            manifest.lawpacks,
+            vec![resource("hello.optics@1", '2').to_resource_ref()]
+        );
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_provider_closure_core_substitution() {
+        let mut input = assembly_from_provider_closed_target_ir_input();
+        input
+            .target_ir_artifact
+            .semantic_closure
+            .as_mut()
+            .expect("provider-supplied closure")
+            .source_core
+            .digest = Some(digest('e'));
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("provider closure must bind the exact supplied Core");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(
+            err.field(),
+            "target_ir_artifact.semantic_closure.source_core"
+        );
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_provider_closure_lawpack_substitution() {
+        let mut input = assembly_from_provider_closed_target_ir_input();
+        input
+            .target_ir_artifact
+            .semantic_closure
+            .as_mut()
+            .expect("provider-supplied closure")
+            .lawpacks[0]
+            .digest = Some(digest('e'));
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("provider closure lawpacks must equal explicit bundle lawpacks");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "lawpacks");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_missing_provider_closure() {
+        let mut input = assembly_from_provider_closed_target_ir_input();
+        input.target_ir_artifact.semantic_closure = None;
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("non-empty bundle lawpacks require a corroborating closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(err.field(), "lawpacks");
+    }
+
+    #[test]
+    fn assembly_from_target_ir_rejects_mismatched_provider_semantic_closure() {
         let mut input = assembly_from_target_ir_input();
         let injected_closure = input
             .target_ir_artifact
@@ -715,13 +817,16 @@ mod contract_bundle_assembly {
         input.lawpacks.clear();
 
         let err = assemble_contract_bundle_from_target_ir(input)
-            .expect_err("closure-free Core rejects an injected semantic closure");
+            .expect_err("closure-free Core rejects a mismatched provider semantic closure");
 
         assert_eq!(
             err.kind(),
             ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
         );
-        assert_eq!(err.field(), "target_ir_artifact.semantic_closure");
+        assert_eq!(
+            err.field(),
+            "target_ir_artifact.semantic_closure.source_core"
+        );
     }
 
     #[test]

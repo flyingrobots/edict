@@ -184,6 +184,32 @@ pub(crate) fn digest_canonical_value(
     Ok(bytes)
 }
 
+/// Decode canonical CBOR and compute its domain-framed SHA-256 identity.
+///
+/// This establishes canonical encoding and one shared digest frame. It does
+/// not establish the artifact's owning schema; callers must validate that
+/// separately.
+///
+/// # Errors
+///
+/// Returns an error for non-canonical CBOR, an empty domain, an unsupported
+/// value, or a value beyond the canonical nesting boundary.
+pub fn digest_canonical_artifact(domain: &str, bytes: &[u8]) -> Result<CoreDigest, CanonicalError> {
+    let value = decode_canonical_cbor(bytes)?;
+    Ok(CoreDigest::sha256(digest_canonical_value(domain, &value)?))
+}
+
+pub(crate) fn sha256_review_string(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut review = String::with_capacity(7 + bytes.len() * 2);
+    review.push_str("sha256:");
+    for byte in bytes {
+        review.push(char::from(HEX[usize::from(byte >> 4)]));
+        review.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    review
+}
+
 /// Encode a Core module as `edict.canonical-cbor/v1`.
 ///
 /// # Errors

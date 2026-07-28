@@ -572,14 +572,38 @@ fn corroborate_target_ir_semantic_closure(
         )
     })?;
 
-    match (&expected, &target_ir_artifact.semantic_closure) {
-        (None, None) => {}
-        (Some(_), None) | (None, Some(_)) => {
+    let expected_lawpacks = match (&expected, &target_ir_artifact.semantic_closure) {
+        (None, None) => Vec::new(),
+        (Some(_), None) => {
             return Err(ContractBundleAssemblyError::new(
                 ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
                 "target_ir_artifact.semantic_closure",
                 "Target IR semantic closure does not match the supplied Core module",
             ));
+        }
+        (None, Some(actual)) => {
+            // This branch may use the Target IR closure only as the expected set
+            // because the independently supplied lawpack set is corroborated
+            // below. Callers must derive `lawpacks` independently of a
+            // provider-asserted Target IR closure.
+            let expected_source_core = ResourceRef {
+                coordinate: core_module.coordinate.clone(),
+                digest: Some(
+                    digest_core_module(core_module)
+                        .map_err(|error| {
+                            ContractBundleAssemblyError::canonical("core_module", &error)
+                        })?
+                        .to_review_string(),
+                ),
+            };
+            if actual.source_core != expected_source_core {
+                return Err(ContractBundleAssemblyError::new(
+                    ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+                    "target_ir_artifact.semantic_closure.source_core",
+                    "Target IR source Core identity does not match the supplied Core module",
+                ));
+            }
+            canonical_resource_set(&actual.lawpacks)
         }
         (Some(expected), Some(actual)) => {
             if actual.source_core != expected.source_core {
@@ -598,13 +622,9 @@ fn corroborate_target_ir_semantic_closure(
                     "Target IR lawpack closure does not match the supplied Core module",
                 ));
             }
+            canonical_resource_set(&expected.lawpacks)
         }
-    }
-
-    let expected_lawpacks = expected
-        .as_ref()
-        .map(|closure| canonical_resource_set(&closure.lawpacks))
-        .unwrap_or_default();
+    };
     let supplied_lawpacks = lawpacks
         .iter()
         .map(DigestLockedResource::to_resource_ref)

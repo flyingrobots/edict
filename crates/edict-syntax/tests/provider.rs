@@ -251,6 +251,43 @@ fn provider_manifest_rejects_empty_artifact_role() {
 }
 
 #[test]
+fn provider_manifest_rejects_path_like_artifact_roles() {
+    for unsafe_role in [
+        "../outside",
+        "nested/role",
+        r"nested\role",
+        "drive:role",
+        "control\nrole",
+    ] {
+        let mut manifest = fixture_manifest();
+        let lowerer = manifest
+            .artifacts
+            .iter_mut()
+            .find(|artifact| artifact.artifact_kind == ProviderArtifactKind::Lowerer)
+            .expect("fixture should declare a lowerer");
+        lowerer.role = unsafe_role.to_owned();
+
+        let report = validate_target_provider_manifest(&manifest);
+
+        assert_eq!(
+            report.status,
+            ProviderManifestValidationStatus::Invalid,
+            "role {unsafe_role}"
+        );
+        assert_eq!(report.failures.len(), 1, "role {unsafe_role}");
+        assert_eq!(
+            report.failures[0].kind,
+            ProviderManifestValidationFailureKind::UnsafeArtifactRole,
+            "role {unsafe_role}"
+        );
+        assert_eq!(
+            report.failures[0].field, "artifacts.role",
+            "role {unsafe_role}"
+        );
+    }
+}
+
+#[test]
 fn provider_manifest_requires_schema_bindings() {
     let mut manifest = fixture_manifest();
     manifest.schema_bindings.clear();

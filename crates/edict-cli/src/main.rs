@@ -1,5 +1,7 @@
 #![deny(clippy::expect_used, clippy::unwrap_used)]
 
+mod application_build;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -23,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 const COMMAND_CHECK: &str = "check";
+const COMMAND_BUILD: &str = "build";
 const COMMAND_PROJECT: &str = "project";
 const EXIT_OK: i32 = 0;
 const EXIT_CHECK_FAILED: i32 = 1;
@@ -35,6 +38,7 @@ struct CompilerSettings {
     #[serde(rename = "type")]
     record_type: String,
     operation: Operation,
+    application: Option<PathBuf>,
     #[serde(default)]
     emit: Vec<ProjectionEmit>,
     compiler_context: Option<ProjectionCompilerContext>,
@@ -49,6 +53,7 @@ struct CompilerSettings {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 enum Operation {
+    Build,
     Check,
     Project,
 }
@@ -370,7 +375,15 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
         line: None,
         message: "request missing compiler settings record".to_owned(),
     })?;
-    if inputs.is_empty() {
+    if settings.operation == Operation::Build && !inputs.is_empty() {
+        return Err(CliFailure {
+            command: command_for_operation(settings.operation),
+            kind: "InvalidInputRecord",
+            line: None,
+            message: "build requests must not contain compiler input records".to_owned(),
+        });
+    }
+    if inputs.is_empty() && settings.operation != Operation::Build {
         return Err(CliFailure {
             command: command_for_operation(settings.operation),
             kind: "MissingInput",
@@ -392,6 +405,16 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
             message: format!("compiler settings {field} must not be null"),
         });
     }
+    if command == COMMAND_BUILD {
+        if let Some(field) = forbidden_build_settings_field(&value) {
+            return Err(CliFailure {
+                command,
+                kind: "InvalidSettings",
+                line: Some(line),
+                message: format!("build does not accept the `{field}` setting"),
+            });
+        }
+    }
     let settings = serde_json::from_value::<CompilerSettings>(value).map_err(|err| CliFailure {
         command,
         kind: "InvalidSettings",
@@ -407,12 +430,15 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
             message: "compiler settings schema field does not match the settings schema".to_owned(),
         });
     }
-    if settings.record_type != "compilerSettings" {
+    let expected_record_type = "compilerSettings";
+    if settings.record_type != expected_record_type {
         return Err(CliFailure {
             command,
             kind: "InvalidSettings",
             line: Some(line),
-            message: "compiler settings record type must be `compilerSettings`".to_owned(),
+            message: format!(
+                "compiler settings record type for `{command}` must be `{expected_record_type}`"
+            ),
         });
     }
     validate_operation_settings(&settings, line)?;
@@ -434,8 +460,21 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
     Ok(settings)
 }
 
+fn forbidden_build_settings_field(value: &Value) -> Option<&'static str> {
+    [
+        "emit",
+        "compilerContext",
+        "target",
+        "inputRoot",
+        "directoryExtensions",
+        "followSymlinks",
+    ]
+    .into_iter()
+    .find(|field| value.get(field).is_some())
+}
+
 fn null_compiler_settings_field(value: &Value) -> Option<&'static str> {
-    ["inputRoot", "compilerContext", "target"]
+    ["application", "inputRoot", "compilerContext", "target"]
         .into_iter()
         .find(|field| value.get(field).is_some_and(Value::is_null))
 }
@@ -450,6 +489,7 @@ fn settings_value_command(value: &Value) -> &'static str {
 
 fn command_for_operation(operation: Operation) -> &'static str {
     match operation {
+        Operation::Build => COMMAND_BUILD,
         Operation::Check => COMMAND_CHECK,
         Operation::Project => COMMAND_PROJECT,
     }
@@ -457,6 +497,7 @@ fn command_for_operation(operation: Operation) -> &'static str {
 
 fn command_for_operation_name(operation: &str) -> Option<&'static str> {
     match operation {
+        COMMAND_BUILD => Some(COMMAND_BUILD),
         COMMAND_CHECK => Some(COMMAND_CHECK),
         COMMAND_PROJECT => Some(COMMAND_PROJECT),
         _ => None,
@@ -465,7 +506,33 @@ fn command_for_operation_name(operation: &str) -> Option<&'static str> {
 
 fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Result<(), CliFailure> {
     match settings.operation {
+        Operation::Build => {
+            if !settings.emit.is_empty()
+                || settings.compiler_context.is_some()
+                || settings.target.is_some()
+                || settings.input_root.is_some()
+                || settings.follow_symlinks
+                || settings.directory_extensions != default_directory_extensions()
+            {
+                return Err(CliFailure {
+                    command: COMMAND_BUILD,
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message:
+                        "build accepts only the application path and directory-extension defaults"
+                            .to_owned(),
+                });
+            }
+        }
         Operation::Check => {
+            if settings.application.is_some() {
+                return Err(CliFailure {
+                    command: COMMAND_CHECK,
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "`application` is a build-only setting".to_owned(),
+                });
+            }
             if !settings.emit.is_empty()
                 || settings.compiler_context.is_some()
                 || settings.target.is_some()
@@ -480,6 +547,14 @@ fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Resu
             }
         }
         Operation::Project => {
+            if settings.application.is_some() {
+                return Err(CliFailure {
+                    command: COMMAND_PROJECT,
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "`application` is a build-only setting".to_owned(),
+                });
+            }
             if settings.emit.is_empty() {
                 return Err(CliFailure {
                     command: COMMAND_PROJECT,
@@ -663,6 +738,9 @@ fn optional_string_field(object: &serde_json::Map<String, Value>, key: &str) -> 
 
 fn run_request(request: &Request) -> Result<i32, CliFailure> {
     let command = command_for_operation(request.settings.operation);
+    if request.settings.operation == Operation::Build {
+        return run_build_request(&request.settings);
+    }
     let sources = expand_inputs(&request.settings, &request.inputs)
         .map_err(|failure| failure.with_command(command))?;
     if sources.is_empty() {
@@ -674,9 +752,31 @@ fn run_request(request: &Request) -> Result<i32, CliFailure> {
         });
     }
     match request.settings.operation {
+        Operation::Build => unreachable!("build requests return before input expansion"),
         Operation::Check => Ok(run_check_request(&sources)),
         Operation::Project => run_project_request(&request.settings, &sources),
     }
+}
+
+fn run_build_request(settings: &CompilerSettings) -> Result<i32, CliFailure> {
+    let path = settings.application.as_ref().ok_or_else(|| CliFailure {
+        command: COMMAND_BUILD,
+        kind: "InvalidSettings",
+        line: None,
+        message: "build operation requires `application`".to_owned(),
+    })?;
+    application_build::build_application(path).map_err(|failure| CliFailure {
+        command: COMMAND_BUILD,
+        kind: failure.kind,
+        line: None,
+        message: failure.message,
+    })?;
+    let mut stdout = io::stdout().lock();
+    write_record(
+        &mut stdout,
+        &status_record(COMMAND_BUILD, "ok", 1, 0, EXIT_OK),
+    );
+    Ok(EXIT_OK)
 }
 
 fn run_check_request(sources: &[SourceDocument]) -> i32 {
@@ -998,6 +1098,7 @@ fn project_target_facts(target: &ProjectionTargetSettings) -> TargetIrLoweringFa
             .map(|lowering| TargetEffectLowering {
                 effect: lowering.effect.clone(),
                 target_intrinsic: lowering.target_intrinsic.clone(),
+                failure_mappings: std::collections::BTreeMap::new(),
             })
             .collect(),
     }
@@ -1465,6 +1566,7 @@ fn target_lowering_failure_kind_name(kind: TargetLoweringFailureKind) -> &'stati
         TargetLoweringFailureKind::UnsupportedCoreNode => "UnsupportedCoreNode",
         TargetLoweringFailureKind::MissingOperationProfile => "MissingOperationProfile",
         TargetLoweringFailureKind::MissingObstruction => "MissingObstruction",
+        TargetLoweringFailureKind::AmbiguousObstructionMapping => "AmbiguousObstructionMapping",
         TargetLoweringFailureKind::MissingEffectLowering => "MissingEffectLowering",
         TargetLoweringFailureKind::AmbiguousEffectLowering => "AmbiguousEffectLowering",
         TargetLoweringFailureKind::UnsupportedLowerabilityReport => "UnsupportedLowerabilityReport",

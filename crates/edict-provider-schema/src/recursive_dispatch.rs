@@ -259,7 +259,9 @@ fn audit_choice(
         reenters |= option_reenters;
     }
     if recursive_alternatives > 1 {
-        tagged_choice(choice, rules)?;
+        if tagged_choice(choice, rules).is_none() && required_key_choice(choice, rules).is_none() {
+            return None;
+        }
         *requires_dispatch = true;
     }
     Some(reenters)
@@ -452,6 +454,13 @@ struct TaggedChoice<'a> {
     arms: BTreeMap<&'a str, &'a Node>,
 }
 
+#[derive(Debug)]
+struct RequiredKeyChoice<'a> {
+    key: String,
+    present: &'a Node,
+    absent: &'a Node,
+}
+
 fn tagged_choice<'a>(choice: &'a Choice, rules: &'a RulesByName) -> Option<TaggedChoice<'a>> {
     let first = choice.options.first()?;
     let candidates = required_text_literals(first, rules)?;
@@ -476,6 +485,56 @@ fn tagged_choice<'a>(choice: &'a Choice, rules: &'a RulesByName) -> Option<Tagge
         }
     }
     None
+}
+
+fn required_key_choice<'a>(
+    choice: &'a Choice,
+    rules: &'a RulesByName,
+) -> Option<RequiredKeyChoice<'a>> {
+    let [first, second] = choice.options.as_slice() else {
+        return None;
+    };
+    let first_keys = exact_text_map_key_requirements(first, rules)?;
+    let second_keys = exact_text_map_key_requirements(second, rules)?;
+
+    for (key, minimum) in &first_keys {
+        if *minimum > 0 && !second_keys.contains_key(key) {
+            return Some(RequiredKeyChoice {
+                key: key.clone(),
+                present: first,
+                absent: second,
+            });
+        }
+    }
+    for (key, minimum) in &second_keys {
+        if *minimum > 0 && !first_keys.contains_key(key) {
+            return Some(RequiredKeyChoice {
+                key: key.clone(),
+                present: second,
+                absent: first,
+            });
+        }
+    }
+    None
+}
+
+fn exact_text_map_key_requirements(
+    node: &Node,
+    rules: &RulesByName,
+) -> Option<BTreeMap<String, usize>> {
+    let Node::Map(map) = terminal_node(node, rules)? else {
+        return None;
+    };
+    let mut requirements = BTreeMap::new();
+    for pattern in map_patterns(&map.members, rules)? {
+        let Literal::Text(key) = exact_scalar_literal(&pattern.pair.key, rules)? else {
+            return None;
+        };
+        if requirements.insert(key.clone(), pattern.minimum).is_some() {
+            return None;
+        }
+    }
+    Some(requirements)
 }
 
 fn required_text_literals<'a>(
@@ -624,6 +683,23 @@ impl Specializer<'_> {
                 return None;
             }
             let option = dispatch.arms.get(discriminator.as_str())?;
+            return self.specialize_value(option, value, input_depth);
+        }
+        if let Some(dispatch) = required_key_choice(choice, &self.context.rules) {
+            let CanonicalValue::Map(entries) = value else {
+                return None;
+            };
+            let mut occurrences = entries.iter().filter(
+                |(key, _)| matches!(key, CanonicalValue::Text(text) if text == &dispatch.key),
+            );
+            let option = if occurrences.next().is_some() {
+                if occurrences.next().is_some() {
+                    return None;
+                }
+                dispatch.present
+            } else {
+                dispatch.absent
+            };
             return self.specialize_value(option, value, input_depth);
         }
 

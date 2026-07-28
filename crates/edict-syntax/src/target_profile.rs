@@ -5,6 +5,7 @@
 //! does not load files, lower Core, verify Target IR, or perform admission.
 
 use crate::core_ir::{ResourceRef, CORE_API_VERSION};
+use crate::lawpack_adapter::LAWPACK_ADAPTER_API_VERSION;
 
 /// Target-profile manifest ABI supported by this crate.
 pub const TARGET_PROFILE_API_VERSION: &str = "edict.target-profile/v1";
@@ -66,7 +67,7 @@ pub enum TargetProfileConformanceFailureKind {
     MissingIntrinsicNamespace,
     NonDigestLockedResource,
     UnsupportedCanonicalEncoding,
-    DeferredLawpackAdapterAbiUnsupported,
+    UnsupportedLawpackAdapterAbi,
     UnsupportedCompositeProfile,
     UnsupportedApplicationModel,
     UnsupportedReadConsistency,
@@ -155,12 +156,17 @@ pub fn validate_target_profile_manifest(
             CANONICAL_CBOR_ABI,
         );
     }
-    if !manifest.accepted_lawpack_adapter_abi.is_empty() {
+    let lawpack_adapter_abi_supported = match manifest.accepted_lawpack_adapter_abi.as_slice() {
+        [] => true,
+        [abi] => abi == LAWPACK_ADAPTER_API_VERSION,
+        _ => false,
+    };
+    if !lawpack_adapter_abi_supported {
         push_failure(
             &mut failures,
-            TargetProfileConformanceFailureKind::DeferredLawpackAdapterAbiUnsupported,
+            TargetProfileConformanceFailureKind::UnsupportedLawpackAdapterAbi,
             "accepted_lawpack_adapter_abi",
-            "empty until edict.lawpack-adapter/v1 is specified",
+            format!("empty or exactly [`{LAWPACK_ADAPTER_API_VERSION}`]"),
         );
     }
     if manifest.multi_target {

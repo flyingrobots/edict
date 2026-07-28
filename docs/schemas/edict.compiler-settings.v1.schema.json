@@ -14,7 +14,12 @@
       "const": "compilerSettings"
     },
     "operation": {
-      "enum": ["check", "project"]
+      "enum": ["build", "check", "project"]
+    },
+    "application": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to an edict.application/v1 manifest for the build operation."
     },
     "emit": {
       "type": "array",
@@ -167,26 +172,54 @@
   "allOf": [
     {
       "if": {
+        "required": ["operation"],
         "properties": {
           "operation": { "const": "check" }
         }
       },
       "then": {
         "properties": {
+          "type": { "const": "compilerSettings" },
           "emit": false,
           "compilerContext": false,
-          "target": false
+          "target": false,
+          "application": false
         }
       }
     },
     {
       "if": {
+        "required": ["operation"],
         "properties": {
           "operation": { "const": "project" }
         }
       },
       "then": {
-        "required": ["emit"]
+        "required": ["emit"],
+        "properties": {
+          "type": { "const": "compilerSettings" },
+          "application": false
+        }
+      }
+    },
+    {
+      "if": {
+        "required": ["operation"],
+        "properties": {
+          "operation": { "const": "build" }
+        }
+      },
+      "then": {
+        "required": ["application"],
+        "properties": {
+          "type": { "const": "compilerSettings" },
+          "emit": false,
+          "compilerContext": false,
+          "target": false,
+          "inputRoot": false,
+          "followSymlinks": false,
+          "directoryExtensions": false
+        }
       }
     }
   ]

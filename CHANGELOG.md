@@ -8,7 +8,52 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Changed
+
+- Rejected many-to-one target obstruction mappings before Target IR emission so
+  failure-coordinate collisions cannot silently discard an obstruction arm.
+- Hardened standalone application builds around complete lawpack dependency
+  closures, selected target-adapter identity, all provider-bound schema roles,
+  pure-helper call closure, canonical settings and application paths, mapped
+  target obstructions, exact verifier acceptance, safe provider roles, shared
+  domain-framed artifact identities, and rollback-safe package/report
+  publication.
+
 ### Added
+
+- Added the public `edict` CLI `build` operation for standalone applications.
+  A settings-only JSONL request loads one exact `edict.application/v1`
+  manifest, source, complete lawpack dependency closure, direct target adapter,
+  target configuration, selected provider profile, and checked provider
+  package. Edict compiles and lowers the real source, invokes the provider's
+  lowerer and structurally separate verifier through the capability-denied
+  Wasmtime host, and writes only the accepted provider-emitted package and
+  verification-report bytes. It does not reimplement the provider encoder or
+  execute the package.
+- Added the generator-owned portable `causal.cell@1.createIfAbsent` lawpack
+  closure for external applications. `cargo xtask lawpack-goldens` now
+  reproduces its canonical manifest, exports, direct Echo adapter, target
+  configuration, and digest sidecars only after validating the closure and
+  compiling a digest-pinned Edict witness through Target IR.
+- Added the first executable `edict.lawpack/v1` loader. Exact canonical
+  manifests and export surfaces decode into an opaque typed bundle, corroborate
+  the export digest, validate the closed verifier, helper, effect, obstruction,
+  and operation-profile shapes, and reject incomplete, substituted, or cyclic
+  dependency sets. The reviewed Hello Echo fixture includes canonical bytes,
+  exact digests, and a real `createGreeting` source import checked by
+  `cargo xtask lawpack-goldens`.
+- Added the direct declarative `edict.lawpack-adapter/v1` ABI. Exact canonical
+  adapter bytes are selected and digest-bound by a validated lawpack, must
+  completely discharge exported operation-profile, runtime-effect, footprint,
+  cost, budget, and named-failure obligations, bind each runtime effect to an
+  exact target-owned configuration resource, and derive compiler and Target IR
+  facts through the source module's exact digest-locked import. Edict preserves
+  the configuration identity without interpreting target semantics. The Hello
+  Echo source now lowers to `echo.span-ir/v1` without a caller-built
+  `CompilerContext` or `TargetIrLoweringFacts`, and its compiler-produced Core
+  and Target IR bytes are reviewed goldens. Target profiles accept only the
+  exact direct adapter ABI, and the self-contained provider contract pack
+  publishes its CDDL root.
 
 - Added `EDICT.md`, a comprehensive cited introduction and deep-dive report:
   hello-world walkthrough, feature deep dive, plain-English walkthrough with
@@ -31,13 +76,17 @@ versions still track specification maturity rather than a released product.
   repetitions still fail before a registry exists. Recursive variable
   occurrences and tagged choices use an Edict-owned specialization pass;
   tagged choices dispatch by a required literal map key without depending on
-  declaration or encoded-entry order. Construction rejects any recursive shape
-  the finite specializer cannot preserve exactly, including ambiguous map-key
-  assignment and multiple or non-final variable array members. Scalar map-key
-  predicates retain exact pinned-validator semantics, including `.regexp`.
-  Specialized values select an arm before child traversal, then cross canonical
-  encoding and the exact 50-container limit before `cddl-cat 0.7.1` validation;
-  duplicate keys and one-over-limit values return the stable schema mismatch.
+  declaration or encoded-entry order. A two-arm recursive map choice may also
+  dispatch on one exact required text key that the other closed arm cannot
+  accept, admitting the closed-versus-legacy Target IR compatibility union
+  without weakening ambiguous same-tag choices. Optional or wildcard overlap
+  still rejects. Construction rejects any recursive shape the finite
+  specializer cannot preserve exactly, including ambiguous map-key assignment
+  and multiple or non-final variable array members. Scalar map-key predicates
+  retain exact pinned-validator semantics, including `.regexp`. Specialized
+  values select an arm before child traversal, then cross canonical encoding
+  and the exact 50-container limit before `cddl-cat 0.7.1` validation; duplicate
+  keys and one-over-limit values return the stable schema mismatch.
 
 - Added a deterministic Apache-2.0 provider contract pack for runtime-owned
   generators. The checked manifest binds one self-contained CDDL document,
