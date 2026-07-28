@@ -138,12 +138,15 @@ fn hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter() {
         intent.steps[0].target_intrinsic,
         "echo.dpo@1.anchored-node-attachment-create-if-absent"
     );
-    assert_eq!(intent.steps[0].obstruction_failures, vec!["alreadyExists"]);
+    assert_eq!(
+        intent.steps[0].obstruction_failures,
+        vec!["echo.executable-operation/precondition-mismatch/v1"]
+    );
     assert!(
         intent.steps[0]
             .obstruction_arms
-            .contains_key("alreadyExists"),
-        "typed failure arm must survive lowering"
+            .contains_key("echo.executable-operation/precondition-mismatch/v1"),
+        "adapter-mapped target obstruction must survive lowering"
     );
     assert_eq!(
         encode_core_module(&core).expect("encode createGreeting Core"),

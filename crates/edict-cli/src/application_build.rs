@@ -1428,6 +1428,30 @@ mod tests {
     }
 
     #[test]
+    fn application_manifest_rejects_absolute_and_parent_traversal_paths() {
+        let mut source_escape = application_manifest(1);
+        source_escape.sources = vec![PathBuf::from("../outside.edict")];
+        let mut lawpack_escape = application_manifest(1);
+        lawpack_escape.lawpacks[0].manifest = PathBuf::from("/outside/manifest.cbor");
+        let mut provider_escape = application_manifest(1);
+        provider_escape.target.provider_package = PathBuf::from("../provider");
+        let mut output_escape = application_manifest(1);
+        output_escape.output_directory = PathBuf::from("/outside/output");
+
+        for config in [
+            source_escape,
+            lawpack_escape,
+            provider_escape,
+            output_escape,
+        ] {
+            assert!(
+                validate_application_manifest(&config).is_err(),
+                "application-owned paths must remain beneath the manifest root"
+            );
+        }
+    }
+
+    #[test]
     fn selected_adapter_reference_follows_the_selected_target_profile() {
         let first_profile = lawpack_ref("target.first@1", 0x11);
         let selected_profile = lawpack_ref("target.selected@1", 0x22);

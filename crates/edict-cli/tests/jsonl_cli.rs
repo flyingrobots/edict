@@ -56,11 +56,13 @@ static TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 #[test]
 fn build_accepts_application_request_without_compiler_input_records() {
+    let root = temp_tree("missing-build-application");
+    let application = root.join("missing-edict-application.json");
     let output = run_edict(&jsonl([json!({
         "schema": "edict.compiler.settings/v1",
-        "type": "settings",
+        "type": "compilerSettings",
         "operation": "build",
-        "application": "missing-edict-application.json",
+        "application": application,
     })]));
 
     assert_eq!(output.status.code(), Some(2));
@@ -79,6 +81,7 @@ fn build_accepts_application_request_without_compiler_input_records() {
         Some("ApplicationConfigReadFailed")
     );
     assert_status(&stderr, "error", 2);
+    fs::remove_dir_all(root).expect("remove missing application test tree");
 }
 
 #[test]
@@ -86,7 +89,7 @@ fn build_rejects_compiler_input_records_instead_of_ignoring_them() {
     let output = run_edict(&jsonl([
         json!({
             "schema": "edict.compiler.settings/v1",
-            "type": "settings",
+            "type": "compilerSettings",
             "operation": "build",
             "application": "missing-edict-application.json",
         }),
@@ -113,6 +116,30 @@ fn build_rejects_compiler_input_records_instead_of_ignoring_them() {
     assert_eq!(
         diagnostic.get("kind").and_then(Value::as_str),
         Some("InvalidInputRecord")
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
+fn build_rejects_unused_directory_extension_settings() {
+    let output = run_edict(&jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "settings",
+        "operation": "build",
+        "application": "missing-edict-application.json",
+        "directoryExtensions": [".unused"],
+    })]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("unused build setting emits a diagnostic");
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("InvalidSettings")
     );
     assert_status(&stderr, "error", 2);
 }
