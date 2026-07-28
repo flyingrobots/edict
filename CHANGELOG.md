@@ -12,8 +12,10 @@ versions still track specification maturity rather than a released product.
 
 - Hardened standalone application builds around complete lawpack dependency
   closures, selected target-adapter identity, all provider-bound schema roles,
-  pure-helper call closure, settings-only request shape, and rollback-safe
-  package/report publication.
+  pure-helper call closure, canonical settings and application paths, mapped
+  target obstructions, exact verifier acceptance, safe provider roles, shared
+  domain-framed artifact identities, and rollback-safe package/report
+  publication.
 
 ### Added
 
