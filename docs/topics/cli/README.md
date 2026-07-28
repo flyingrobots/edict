@@ -33,6 +33,34 @@ supplied dependency graph, compiles and lowers the source through the root
 lawpack's declarative target adapter, and resolves the selected provider only
 from its checked package manifest.
 
+```json
+{"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","application":"edict.application.json"}
+```
+
+The application path is resolved from the process working directory. Every
+path inside the manifest is resolved from the manifest's parent directory and
+must be non-empty, relative, and free of parent traversal. A minimal manifest
+has this shape:
+
+```json
+{
+  "schema": "edict.application/v1",
+  "coordinate": "examples.hello_echo@1",
+  "sources": ["src/hello_echo.edict"],
+  "lawpacks": [{
+    "manifest": "vendor/causal-cell/manifest.cbor",
+    "exports": "vendor/causal-cell/exports.cbor",
+    "adapter": "vendor/causal-cell/adapter.cbor",
+    "targetConfiguration": "vendor/causal-cell/echo-operation-configuration.cbor"
+  }],
+  "target": {
+    "profile": "echo.dpo@1",
+    "providerPackage": ".build/echo-provider"
+  },
+  "outputDirectory": ".build/application"
+}
+```
+
 The build invokes the provider's checked lowerer component and its structurally
 separate verifier component through the capability-denied provider host. Only
 an accepted verification result reaches the output directory. The current Echo
@@ -44,6 +72,11 @@ target writes the exact provider-emitted bytes as:
 Edict does not re-encode either artifact and does not execute the package.
 Concurrent writers are excluded, and replacement preserves the previous pair
 if either output cannot be published.
+
+Provider diagnostics are fail-closed on this first public build route: any
+provider-authored diagnostic rejects publication, independent of its severity.
+The terminal status `checked` count is `1` after a successful build because the
+request processes one application manifest and its complete referenced closure.
 [CLI-REQ-015]
 
 A `check` request accepts:
