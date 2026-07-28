@@ -9,7 +9,8 @@ use std::collections::BTreeMap;
 use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
-    CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CorePredicate, CoreValue,
+    CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreNode, CorePredicate,
+    CoreValue,
     GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus, LoweringRequirements,
     NativeEffectSupport, ResourceRef, SemanticEffectRequirement, TargetEffectLowering,
     TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure, TargetLoweringFailureKind,
@@ -1011,6 +1012,38 @@ fn unsupported_obstruction_key_rejects_without_artifact() {
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::MissingObstruction]
     );
+}
+
+#[test]
+fn colliding_target_obstruction_mappings_reject_without_artifact() {
+    let mut core = effectful_core();
+    let CoreNode::Effect {
+        obstruction_map, ..
+    } = &mut core
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .body
+        .nodes[0]
+    else {
+        panic!("fixture begins with an effect node");
+    };
+    obstruction_map.insert(
+        "alternate".to_owned(),
+        obstruction_map
+            .get("rejected")
+            .expect("fixture declares rejected obstruction")
+            .clone(),
+    );
+    let mut facts = echo_facts();
+    facts.effect_lowerings[0]
+        .failure_mappings
+        .insert("alternate".to_owned(), "rejected".to_owned());
+
+    let report = lower_to_target_ir(&core, &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
 }
 
 #[test]
