@@ -149,6 +149,7 @@ pub enum TargetLoweringFailureKind {
     UnsupportedCoreNode,
     MissingOperationProfile,
     MissingObstruction,
+    AmbiguousObstructionMapping,
     MissingEffectLowering,
     AmbiguousEffectLowering,
     UnsupportedLowerabilityReport,
@@ -683,20 +684,26 @@ fn lower_effect_node(
             });
         }
         [lowering] => {
-            let mapped_obstructions = node
-                .obstruction_map
-                .iter()
-                .map(|(failure, arm)| {
-                    (
-                        lowering
-                            .failure_mappings
-                            .get(failure)
-                            .unwrap_or(failure)
-                            .clone(),
-                        arm.clone(),
-                    )
-                })
-                .collect::<BTreeMap<_, _>>();
+            let mut mapped_obstructions = BTreeMap::new();
+            for (failure, arm) in node.obstruction_map {
+                let mapped_failure = lowering
+                    .failure_mappings
+                    .get(failure)
+                    .unwrap_or(failure)
+                    .clone();
+                if mapped_obstructions
+                    .insert(mapped_failure.clone(), arm.clone())
+                    .is_some()
+                {
+                    failures.push(TargetLoweringFailure {
+                        kind: TargetLoweringFailureKind::AmbiguousObstructionMapping,
+                        intent: Some(intent_name.to_owned()),
+                        node_index: Some(node_index),
+                        detail: mapped_failure,
+                    });
+                    return;
+                }
+            }
             let unsupported_obstructions = mapped_obstructions
                 .keys()
                 .filter(|failure| !context.obstruction_coordinates.contains(failure.as_str()))

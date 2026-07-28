@@ -252,7 +252,13 @@ fn provider_manifest_rejects_empty_artifact_role() {
 
 #[test]
 fn provider_manifest_rejects_path_like_artifact_roles() {
-    for unsafe_role in ["../outside", "nested/role", r"nested\role"] {
+    for unsafe_role in [
+        "../outside",
+        "nested/role",
+        r"nested\role",
+        "drive:role",
+        "control\nrole",
+    ] {
         let mut manifest = fixture_manifest();
         let lowerer = manifest
             .artifacts
@@ -266,6 +272,16 @@ fn provider_manifest_rejects_path_like_artifact_roles() {
         assert_eq!(
             report.status,
             ProviderManifestValidationStatus::Invalid,
+            "role {unsafe_role}"
+        );
+        assert_eq!(report.failures.len(), 1, "role {unsafe_role}");
+        assert_eq!(
+            report.failures[0].kind,
+            ProviderManifestValidationFailureKind::UnsafeArtifactRole,
+            "role {unsafe_role}"
+        );
+        assert_eq!(
+            report.failures[0].field, "artifacts.role",
             "role {unsafe_role}"
         );
     }

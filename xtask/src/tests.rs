@@ -1996,14 +1996,15 @@ fn assert_compiler_settings_projection_properties(properties: &serde_json::Map<S
         Some(1),
         "compiler settings projection emit list must reject empty arrays"
     );
-    for value in ["syntax", "diagnostics", "core", "targetIr", "digests"] {
-        assert!(
-            emit.pointer("/items/enum")
-                .and_then(Value::as_array)
-                .is_some_and(|values| values.iter().any(|item| item.as_str() == Some(value))),
-            "compiler settings projection emit list must declare `{value}`"
-        );
-    }
+    let expected_emit_values = ["syntax", "diagnostics", "core", "targetIr", "digests"]
+        .into_iter()
+        .map(Value::from)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        emit.pointer("/items/enum").and_then(Value::as_array),
+        Some(&expected_emit_values),
+        "compiler settings projection emit enum is an exact ordered contract"
+    );
 }
 
 #[test]

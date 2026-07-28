@@ -1543,6 +1543,7 @@ fn target_lowering_failure_kind_name(kind: TargetLoweringFailureKind) -> &'stati
         TargetLoweringFailureKind::UnsupportedCoreNode => "UnsupportedCoreNode",
         TargetLoweringFailureKind::MissingOperationProfile => "MissingOperationProfile",
         TargetLoweringFailureKind::MissingObstruction => "MissingObstruction",
+        TargetLoweringFailureKind::AmbiguousObstructionMapping => "AmbiguousObstructionMapping",
         TargetLoweringFailureKind::MissingEffectLowering => "MissingEffectLowering",
         TargetLoweringFailureKind::AmbiguousEffectLowering => "AmbiguousEffectLowering",
         TargetLoweringFailureKind::UnsupportedLowerabilityReport => "UnsupportedLowerabilityReport",

@@ -1686,7 +1686,10 @@ mod tests {
     fn resource(coordinate: &str, digest_byte: u8) -> ResourceRef {
         ResourceRef {
             coordinate: coordinate.to_owned(),
-            digest: Some(format!("sha256:{digest_byte:02x}").repeat(32)),
+            digest: Some(format!(
+                "sha256:{}",
+                format!("{digest_byte:02x}").repeat(32)
+            )),
         }
     }
 

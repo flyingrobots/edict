@@ -86,12 +86,14 @@ fn build_accepts_application_request_without_compiler_input_records() {
 
 #[test]
 fn build_rejects_compiler_input_records_instead_of_ignoring_them() {
+    let root = temp_tree("build-input-record");
+    let application = root.join("missing-edict-application.json");
     let output = run_edict(&jsonl([
         json!({
             "schema": "edict.compiler.settings/v1",
             "type": "compilerSettings",
             "operation": "build",
-            "application": "missing-edict-application.json",
+            "application": application,
         }),
         json!({
             "schema": "edict.compiler.input/v1",
@@ -118,15 +120,18 @@ fn build_rejects_compiler_input_records_instead_of_ignoring_them() {
         Some("InvalidInputRecord")
     );
     assert_status(&stderr, "error", 2);
+    fs::remove_dir_all(root).expect("remove build input record test tree");
 }
 
 #[test]
 fn build_rejects_unused_directory_extension_settings() {
+    let root = temp_tree("build-directory-extensions");
+    let application = root.join("missing-edict-application.json");
     let output = run_edict(&jsonl([json!({
         "schema": "edict.compiler.settings/v1",
         "type": "compilerSettings",
         "operation": "build",
-        "application": "missing-edict-application.json",
+        "application": application,
         "directoryExtensions": [".unused"],
     })]));
 
@@ -138,10 +143,15 @@ fn build_rejects_unused_directory_extension_settings() {
         .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
         .expect("unused build setting emits a diagnostic");
     assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
         diagnostic.get("kind").and_then(Value::as_str),
         Some("InvalidSettings")
     );
     assert_status(&stderr, "error", 2);
+    fs::remove_dir_all(root).expect("remove directory extensions test tree");
 }
 
 #[test]

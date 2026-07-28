@@ -10,13 +10,12 @@ use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
     CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreNode, CorePredicate,
-    CoreValue,
-    GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus, LoweringRequirements,
-    NativeEffectSupport, ResourceRef, SemanticEffectRequirement, TargetEffectLowering,
-    TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure, TargetLoweringFailureKind,
-    TargetLoweringStatus, TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE,
-    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    CoreValue, GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus,
+    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
+    TargetEffectLowering, TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure,
+    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, WriteClass,
+    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
+    GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -1019,12 +1018,7 @@ fn colliding_target_obstruction_mappings_reject_without_artifact() {
     let mut core = effectful_core();
     let CoreNode::Effect {
         obstruction_map, ..
-    } = &mut core
-        .intents
-        .get_mut("t")
-        .expect("intent t")
-        .body
-        .nodes[0]
+    } = &mut core.intents.get_mut("t").expect("intent t").body.nodes[0]
     else {
         panic!("fixture begins with an effect node");
     };
@@ -1044,6 +1038,11 @@ fn colliding_target_obstruction_mappings_reject_without_artifact() {
 
     assert_eq!(report.status, TargetLoweringStatus::Unsupported);
     assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::AmbiguousObstructionMapping]
+    );
+    assert_eq!(report.failures[0].detail, "rejected");
 }
 
 #[test]
