@@ -739,6 +739,7 @@ fn parse_exports(value: &CanonicalValue) -> Result<LawpackExports, Vec<LawpackVa
     let types = parse_array_field(&fields, "types", path, parse_exported_type)?;
     let constants = parse_array_field(&fields, "constants", path, parse_exported_constant)?;
     let pure_functions = parse_array_field(&fields, "pureFunctions", path, parse_pure_function)?;
+    validate_pure_function_callees(&pure_functions)?;
     let effects = parse_array_field(&fields, "effects", path, parse_semantic_effect)?;
     let obstructions = parse_array_field(&fields, "obstructions", path, parse_obstruction)?;
     let operation_profiles = parse_operation_profiles(
@@ -754,6 +755,78 @@ fn parse_exports(value: &CanonicalValue) -> Result<LawpackExports, Vec<LawpackVa
         obstructions,
         operation_profiles,
     })
+}
+
+fn validate_pure_function_callees(
+    pure_functions: &[LawpackPureFunction],
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    let pure_coordinates = pure_functions
+        .iter()
+        .map(|function| function.coordinate.as_str())
+        .collect::<BTreeSet<_>>();
+    for (index, function) in pure_functions.iter().enumerate() {
+        if let LawpackPureFunctionImplementation::Edict { body } = &function.implementation {
+            validate_pure_callees_in_value(
+                body,
+                &format!("exports.pureFunctions[{index}].body"),
+                &pure_coordinates,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_pure_callees_in_value(
+    value: &CanonicalValue,
+    path: &str,
+    pure_coordinates: &BTreeSet<&str>,
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    match value {
+        CanonicalValue::Array(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_pure_callees_in_value(
+                    value,
+                    &format!("{path}[{index}]"),
+                    pure_coordinates,
+                )?;
+            }
+        }
+        CanonicalValue::Map(entries) => {
+            let kind = entries.iter().find_map(|(key, value)| match (key, value) {
+                (CanonicalValue::Text(key), CanonicalValue::Text(value)) if key == "kind" => {
+                    Some(value.as_str())
+                }
+                _ => None,
+            });
+            if kind == Some("call") {
+                let callee = entries.iter().find_map(|(key, value)| match (key, value) {
+                    (CanonicalValue::Text(key), CanonicalValue::Text(value)) if key == "callee" => {
+                        Some(value.as_str())
+                    }
+                    _ => None,
+                });
+                if callee.is_some_and(|callee| !pure_coordinates.contains(callee)) {
+                    return Err(pure_body_failure(
+                        &format!("{path}.callee"),
+                        "the coordinate of an exported pure function",
+                    ));
+                }
+            }
+            for (index, (_, value)) in entries.iter().enumerate() {
+                validate_pure_callees_in_value(
+                    value,
+                    &format!("{path}.entry[{index}]"),
+                    pure_coordinates,
+                )?;
+            }
+        }
+        CanonicalValue::Null
+        | CanonicalValue::Bool(_)
+        | CanonicalValue::Integer(_)
+        | CanonicalValue::Bytes(_)
+        | CanonicalValue::Text(_) => {}
+    }
+    Ok(())
 }
 
 fn parse_array_field<T>(

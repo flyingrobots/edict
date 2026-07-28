@@ -375,6 +375,14 @@ fn parse_request(input: &str) -> Result<Request, CliFailure> {
         line: None,
         message: "request missing compiler settings record".to_owned(),
     })?;
+    if settings.operation == Operation::Build && !inputs.is_empty() {
+        return Err(CliFailure {
+            command: command_for_operation(settings.operation),
+            kind: "InvalidInputRecord",
+            line: None,
+            message: "build requests must not contain compiler input records".to_owned(),
+        });
+    }
     if inputs.is_empty() && settings.operation != Operation::Build {
         return Err(CliFailure {
             command: command_for_operation(settings.operation),

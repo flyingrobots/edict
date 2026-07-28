@@ -1,6 +1,9 @@
-use std::fs;
+use std::collections::BTreeSet;
+use std::fs::{self, OpenOptions};
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use edict_provider_host_wasmtime::{
     ProviderComponentHost, ProviderHostLimits, ResolvedProviderComponent,
@@ -372,10 +375,10 @@ fn validate_application_manifest(
             "the executable-operation build currently requires exactly one Edict source",
         ));
     }
-    if config.lawpacks.len() != 1 {
+    if config.lawpacks.is_empty() {
         return Err(failure(
             "InvalidApplicationConfig",
-            "the executable-operation build currently requires exactly one complete root lawpack closure",
+            "the executable-operation build requires one root lawpack followed by its complete dependency closure",
         ));
     }
     Ok(())
@@ -488,11 +491,27 @@ fn unique_artifact<'a>(
 fn provider_schema_artifacts(
     manifest: &TargetProviderManifest,
 ) -> Result<Vec<&ProviderArtifactRef>, ApplicationBuildFailure> {
-    Ok(vec![unique_artifact(
-        manifest,
-        ProviderArtifactKind::ArtifactSchema,
-        None,
-    )?])
+    let bound_roles = manifest
+        .schema_bindings
+        .iter()
+        .map(|binding| binding.schema_role.as_str())
+        .collect::<BTreeSet<_>>();
+    let mut artifacts = manifest
+        .artifacts
+        .iter()
+        .filter(|artifact| {
+            artifact.artifact_kind == ProviderArtifactKind::ArtifactSchema
+                && bound_roles.contains(artifact.role.as_str())
+        })
+        .collect::<Vec<_>>();
+    artifacts.sort_by(|left, right| left.role.cmp(&right.role));
+    if artifacts.len() != bound_roles.len() || artifacts.is_empty() {
+        return Err(failure(
+            "InvalidProviderPackage",
+            "provider manifest must expose every artifact schema named by its schema bindings",
+        ));
+    }
+    Ok(artifacts)
 }
 
 fn read_provider_artifact(
@@ -880,9 +899,10 @@ fn single_configuration(
 fn single_unique_configuration<'a>(
     references: impl IntoIterator<Item = &'a edict_syntax::LawpackResourceRef>,
 ) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
-    let references = references.into_iter().collect::<Vec<_>>();
-    match references.as_slice() {
-        [reference] => Ok(reference),
+    let references = references.into_iter().collect::<BTreeSet<_>>();
+    let mut references = references.into_iter();
+    match (references.next(), references.next()) {
+        (Some(reference), None) => Ok(reference),
         _ => Err(failure(
             "InvalidLawpackAdapter",
             "the executable-operation adapter currently requires exactly one target configuration",
@@ -892,17 +912,18 @@ fn single_unique_configuration<'a>(
 
 fn selected_adapter_reference<'a>(
     adapters: &'a [edict_syntax::LawpackTargetAdapter],
-    _selected_target_profile: &edict_syntax::LawpackResourceRef,
+    selected_target_profile: &edict_syntax::LawpackResourceRef,
 ) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
-    adapters
-        .first()
-        .map(|descriptor| &descriptor.adapter)
-        .ok_or_else(|| {
-            failure(
-                "InvalidLawpackAdapter",
-                "the selected lawpack does not expose a target adapter",
-            )
-        })
+    let mut matches = adapters
+        .iter()
+        .filter(|descriptor| descriptor.accepted_target_profile == *selected_target_profile);
+    match (matches.next(), matches.next()) {
+        (Some(descriptor), None) => Ok(&descriptor.adapter),
+        _ => Err(failure(
+            "InvalidLawpackAdapter",
+            "the selected target profile must identify exactly one lawpack adapter",
+        )),
+    }
 }
 
 fn semantic_input(
@@ -1060,6 +1081,10 @@ fn require_accepted_report(bytes: &[u8]) -> Result<(), ApplicationBuildFailure> 
     Ok(())
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "paired output publication keeps every rollback transition explicit"
+)]
 fn write_outputs(
     directory: &Path,
     package: &[u8],
@@ -1074,35 +1099,248 @@ fn write_outputs(
             ),
         )
     })?;
+
+    let lock_path = directory.join(".edict-application-build.lock");
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|error| {
+            failure(
+                "ApplicationOutputWriteFailed",
+                format!(
+                    "failed to open application output lock `{}`: {error}",
+                    lock_path.display()
+                ),
+            )
+        })?;
+    lock.try_lock().map_err(|error| {
+        failure(
+            "ApplicationOutputWriteFailed",
+            format!(
+                "another application build owns output directory `{}`: {error}",
+                directory.display()
+            ),
+        )
+    })?;
+
     let package_path = directory.join("executable-operation-package.cbor");
     let report_path = directory.join("verification-report.cbor");
-    let package_temp = directory.join(".executable-operation-package.cbor.tmp");
-    let report_temp = directory.join(".verification-report.cbor.tmp");
-    fs::write(&package_temp, package).map_err(|error| {
-        failure(
+    let package_existed = validate_output_target(&package_path)?;
+    let report_existed = validate_output_target(&report_path)?;
+    let transaction = create_output_transaction(directory)?;
+    let package_temp = transaction.join("new-package.cbor");
+    let report_temp = transaction.join("new-report.cbor");
+    let package_backup = transaction.join("previous-package.cbor");
+    let report_backup = transaction.join("previous-report.cbor");
+
+    if let Err(error) = fs::write(&package_temp, package) {
+        let _ = fs::remove_dir_all(&transaction);
+        return Err(failure(
             "ApplicationOutputWriteFailed",
             format!("failed to stage `{}`: {error}", package_path.display()),
-        )
-    })?;
-    fs::write(&report_temp, report).map_err(|error| {
-        failure(
+        ));
+    }
+    if let Err(error) = fs::write(&report_temp, report) {
+        let _ = fs::remove_dir_all(&transaction);
+        return Err(failure(
             "ApplicationOutputWriteFailed",
             format!("failed to stage `{}`: {error}", report_path.display()),
-        )
-    })?;
-    fs::rename(&package_temp, &package_path).map_err(|error| {
+        ));
+    }
+
+    if package_existed {
+        if let Err(error) = fs::rename(&package_path, &package_backup) {
+            let _ = fs::remove_dir_all(&transaction);
+            return Err(failure(
+                "ApplicationOutputWriteFailed",
+                format!(
+                    "failed to preserve previous output `{}`: {error}",
+                    package_path.display()
+                ),
+            ));
+        }
+    }
+    if report_existed {
+        if let Err(error) = fs::rename(&report_path, &report_backup) {
+            let rollback = restore_output(&package_backup, &package_path, package_existed);
+            if rollback.is_ok() {
+                let _ = fs::remove_dir_all(&transaction);
+            }
+            return Err(output_publication_failure(
+                &report_path,
+                &error,
+                rollback.err(),
+            ));
+        }
+    }
+
+    if let Err(error) = fs::rename(&package_temp, &package_path) {
+        let rollback = restore_previous_outputs(
+            &package_path,
+            &report_path,
+            &package_backup,
+            &report_backup,
+            package_existed,
+            report_existed,
+            false,
+        );
+        if rollback.is_ok() {
+            let _ = fs::remove_dir_all(&transaction);
+        }
+        return Err(output_publication_failure(
+            &package_path,
+            &error,
+            rollback.err(),
+        ));
+    }
+    if let Err(error) = fs::rename(&report_temp, &report_path) {
+        let rollback = restore_previous_outputs(
+            &package_path,
+            &report_path,
+            &package_backup,
+            &report_backup,
+            package_existed,
+            report_existed,
+            true,
+        );
+        if rollback.is_ok() {
+            let _ = fs::remove_dir_all(&transaction);
+        }
+        return Err(output_publication_failure(
+            &report_path,
+            &error,
+            rollback.err(),
+        ));
+    }
+
+    fs::remove_dir_all(&transaction).map_err(|error| {
         failure(
             "ApplicationOutputWriteFailed",
-            format!("failed to publish `{}`: {error}", package_path.display()),
+            format!(
+                "published application outputs but failed to remove transaction `{}`: {error}",
+                transaction.display()
+            ),
         )
-    })?;
-    fs::rename(&report_temp, &report_path).map_err(|error| {
-        failure(
+    })
+}
+
+fn validate_output_target(path: &Path) -> Result<bool, ApplicationBuildFailure> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_file() => Ok(true),
+        Ok(_) => Err(failure(
             "ApplicationOutputWriteFailed",
-            format!("failed to publish `{}`: {error}", report_path.display()),
+            format!(
+                "application output target `{}` must be absent or a regular file",
+                path.display()
+            ),
+        )),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(failure(
+            "ApplicationOutputWriteFailed",
+            format!(
+                "failed to inspect application output target `{}`: {error}",
+                path.display()
+            ),
+        )),
+    }
+}
+
+fn create_output_transaction(directory: &Path) -> Result<PathBuf, ApplicationBuildFailure> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            failure(
+                "ApplicationOutputWriteFailed",
+                format!("system clock cannot name an output transaction: {error}"),
+            )
+        })?
+        .as_nanos();
+    for attempt in 0..16 {
+        let path = directory.join(format!(
+            ".edict-application-build-{}-{timestamp}-{attempt}.transaction",
+            std::process::id()
+        ));
+        match fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+            Err(error) => {
+                return Err(failure(
+                    "ApplicationOutputWriteFailed",
+                    format!(
+                        "failed to create output transaction `{}`: {error}",
+                        path.display()
+                    ),
+                ));
+            }
+        }
+    }
+    Err(failure(
+        "ApplicationOutputWriteFailed",
+        format!(
+            "failed to allocate a unique output transaction in `{}`",
+            directory.display()
+        ),
+    ))
+}
+
+fn restore_previous_outputs(
+    package_path: &Path,
+    report_path: &Path,
+    package_backup: &Path,
+    report_backup: &Path,
+    package_existed: bool,
+    report_existed: bool,
+    package_published: bool,
+) -> Result<(), String> {
+    let mut failures = Vec::new();
+    if package_published {
+        if let Err(error) = fs::remove_file(package_path) {
+            failures.push(format!(
+                "failed to remove partial output `{}`: {error}",
+                package_path.display()
+            ));
+        }
+    }
+    if let Err(error) = restore_output(package_backup, package_path, package_existed) {
+        failures.push(error);
+    }
+    if let Err(error) = restore_output(report_backup, report_path, report_existed) {
+        failures.push(error);
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
+}
+
+fn restore_output(backup: &Path, destination: &Path, existed: bool) -> Result<(), String> {
+    if !existed {
+        return Ok(());
+    }
+    fs::rename(backup, destination).map_err(|error| {
+        format!(
+            "failed to restore previous output `{}`: {error}",
+            destination.display()
         )
-    })?;
-    Ok(())
+    })
+}
+
+fn output_publication_failure(
+    path: &Path,
+    error: &std::io::Error,
+    rollback: Option<String>,
+) -> ApplicationBuildFailure {
+    let rollback = rollback.map_or(String::new(), |message| {
+        format!("; rollback was incomplete: {message}")
+    });
+    failure(
+        "ApplicationOutputWriteFailed",
+        format!("failed to publish `{}`: {error}{rollback}", path.display()),
+    )
 }
 
 const fn response_limits() -> ProviderResponseLimits {
@@ -1183,8 +1421,10 @@ mod tests {
     fn application_manifest_accepts_one_root_and_its_complete_dependency_closure() {
         let config = application_manifest(64);
 
-        validate_application_manifest(&config)
-            .expect("one root plus a bounded dependency closure must be accepted");
+        test_ok(
+            validate_application_manifest(&config),
+            "one root plus a bounded dependency closure must be accepted",
+        );
     }
 
     #[test]
@@ -1195,8 +1435,10 @@ mod tests {
         let selected = adapter_descriptor(selected_profile.clone(), "adapter.selected@1", 0x32);
         let adapters = [first, selected];
 
-        let actual =
-            selected_adapter_reference(&adapters, &selected_profile).expect("selected adapter");
+        let actual = test_ok(
+            selected_adapter_reference(&adapters, &selected_profile),
+            "selected adapter",
+        );
 
         assert_eq!(actual.id, "adapter.selected@1");
     }
@@ -1205,8 +1447,10 @@ mod tests {
     fn repeated_effect_references_to_one_configuration_are_deduplicated() {
         let configuration = lawpack_ref("target.configuration@1", 0x44);
 
-        let actual = single_unique_configuration([&configuration, &configuration])
-            .expect("identical effect references name one configuration");
+        let actual = test_ok(
+            single_unique_configuration([&configuration, &configuration]),
+            "identical effect references name one configuration",
+        );
 
         assert_eq!(actual, &configuration);
     }
@@ -1219,12 +1463,18 @@ mod tests {
             state ^= state << 13;
             state ^= state >> 7;
             state ^= state << 17;
-            let swap_with = usize::try_from(state % u64::try_from(index + 1).unwrap()).unwrap();
+            let bound = test_ok(u64::try_from(index + 1), "stress bound fits u64");
+            let swap_with = test_ok(
+                usize::try_from(state % bound),
+                "stress permutation index fits usize",
+            );
             manifest.artifacts.swap(index, swap_with);
         }
 
-        let actual = provider_schema_artifacts(&manifest)
-            .expect("every schema role bound by the provider must be loaded");
+        let actual = test_ok(
+            provider_schema_artifacts(&manifest),
+            "every schema role bound by the provider must be loaded",
+        );
         let roles = actual
             .iter()
             .map(|artifact| artifact.role.as_str())
@@ -1239,18 +1489,26 @@ mod tests {
         let root = temp_tree("pair-publication");
         let package_path = root.join("executable-operation-package.cbor");
         let report_path = root.join("verification-report.cbor");
-        fs::write(&package_path, b"previous-package").expect("write prior package");
-        fs::create_dir(&report_path).expect("create conflicting report directory");
+        test_ok(
+            fs::write(&package_path, b"previous-package"),
+            "write prior package",
+        );
+        test_ok(
+            fs::create_dir(&report_path),
+            "create conflicting report directory",
+        );
 
-        let failure = write_outputs(&root, b"new-package", b"new-report")
-            .expect_err("a non-file report target must reject the pair");
+        let failure = test_err(
+            write_outputs(&root, b"new-package", b"new-report"),
+            "a non-file report target must reject the pair",
+        );
 
         assert_eq!(failure.kind, "ApplicationOutputWriteFailed");
         assert_eq!(
-            fs::read(&package_path).expect("read preserved package"),
+            test_ok(fs::read(&package_path), "read preserved package"),
             b"previous-package"
         );
-        fs::remove_dir_all(root).expect("remove test-owned temp tree");
+        test_ok(fs::remove_dir_all(root), "remove test-owned temp tree");
     }
 
     fn application_manifest(lawpack_count: usize) -> ApplicationManifest {
@@ -1296,9 +1554,7 @@ mod tests {
     }
 
     fn provider_manifest_with_schema_count(count: usize) -> TargetProviderManifest {
-        let artifacts = (0..count)
-            .map(|index| schema_artifact(index))
-            .collect::<Vec<_>>();
+        let artifacts = (0..count).map(schema_artifact).collect::<Vec<_>>();
         let schema_bindings = (0..count)
             .map(|index| ProviderSchemaBinding {
                 domain: format!("example.schema-{index:02}/v1"),
@@ -1322,7 +1578,7 @@ mod tests {
             artifact_kind: ProviderArtifactKind::ArtifactSchema,
             resource: resource(
                 &format!("schema.example-{index:02}@1"),
-                u8::try_from(index).unwrap(),
+                test_ok(u8::try_from(index), "schema fixture index fits u8"),
             ),
             source: ProviderArtifactSource::Generated {
                 semantic_source: resource("source.example@1", 0x61),
@@ -1344,7 +1600,21 @@ mod tests {
             "edict-application-build-{name}-{}-{unique}",
             std::process::id()
         ));
-        fs::create_dir_all(&path).expect("create test temp tree");
+        test_ok(fs::create_dir_all(&path), "create test temp tree");
         path
+    }
+
+    fn test_ok<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
+        match result {
+            Ok(value) => value,
+            Err(error) => panic!("{context}: {error:?}"),
+        }
+    }
+
+    fn test_err<T: std::fmt::Debug, E>(result: Result<T, E>, context: &str) -> E {
+        match result {
+            Ok(value) => panic!("{context}: got {value:?}"),
+            Err(error) => error,
+        }
     }
 }
