@@ -27,10 +27,11 @@ A `build` request contains one settings record and no compiler-input records.
 Its `application` field points to an `edict.application/v1` JSON manifest. The
 manifest names one exact Edict source, its complete lawpack closure, the
 selected target profile and provider package, and the output directory. The
-current executable-operation route accepts exactly one source and one root
-lawpack, validates the complete supplied dependency graph, compiles and lowers
-the source through the lawpack's declarative target adapter, and resolves the
-selected provider only from its checked package manifest.
+current executable-operation route accepts exactly one source and a non-empty
+ordered lawpack closure whose first entry is the root. It validates the complete
+supplied dependency graph, compiles and lowers the source through the root
+lawpack's declarative target adapter, and resolves the selected provider only
+from its checked package manifest.
 
 The build invokes the provider's checked lowerer component and its structurally
 separate verifier component through the capability-denied provider host. Only
@@ -41,6 +42,8 @@ target writes the exact provider-emitted bytes as:
 - `verification-report.cbor`.
 
 Edict does not re-encode either artifact and does not execute the package.
+Concurrent writers are excluded, and replacement preserves the previous pair
+if either output cannot be published.
 [CLI-REQ-015]
 
 A `check` request accepts:
