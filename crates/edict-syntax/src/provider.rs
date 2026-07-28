@@ -131,6 +131,7 @@ pub enum ProviderManifestValidationFailureKind {
     NonDigestLockedProvider,
     MissingArtifact,
     MissingRole,
+    UnsafeArtifactRole,
     DuplicateArtifactRole,
     NonDigestLockedArtifact,
     NonDigestLockedGeneratedSource,
@@ -249,6 +250,13 @@ fn check_artifacts(
                 "artifacts.role",
                 "non-empty unique artifact role",
             );
+        } else if !is_safe_artifact_role(&artifact.role) {
+            push_failure(
+                failures,
+                ProviderManifestValidationFailureKind::UnsafeArtifactRole,
+                "artifacts.role",
+                "path-neutral artifact role without separators, traversal, drive syntax, or control characters",
+            );
         } else if !roles.insert(artifact.role.as_str()) {
             push_failure(
                 failures,
@@ -329,6 +337,13 @@ fn check_artifacts(
             }
         }
     }
+}
+
+fn is_safe_artifact_role(role: &str) -> bool {
+    !role.contains("..")
+        && !role
+            .chars()
+            .any(|character| matches!(character, '/' | '\\' | ':') || character.is_control())
 }
 
 fn check_schema_bindings(

@@ -11,7 +11,7 @@
       "const": "edict.compiler.settings/v1"
     },
     "type": {
-      "enum": ["compilerSettings", "settings"]
+      "const": "compilerSettings"
     },
     "operation": {
       "enum": ["build", "check", "project"]
@@ -172,6 +172,7 @@
   "allOf": [
     {
       "if": {
+        "required": ["operation"],
         "properties": {
           "operation": { "const": "check" }
         }
@@ -188,6 +189,7 @@
     },
     {
       "if": {
+        "required": ["operation"],
         "properties": {
           "operation": { "const": "project" }
         }
@@ -202,6 +204,7 @@
     },
     {
       "if": {
+        "required": ["operation"],
         "properties": {
           "operation": { "const": "build" }
         }
@@ -209,12 +212,13 @@
       "then": {
         "required": ["application"],
         "properties": {
-          "type": { "const": "settings" },
+          "type": { "const": "compilerSettings" },
           "emit": false,
           "compilerContext": false,
           "target": false,
           "inputRoot": false,
-          "followSymlinks": false
+          "followSymlinks": false,
+          "directoryExtensions": false
         }
       }
     }

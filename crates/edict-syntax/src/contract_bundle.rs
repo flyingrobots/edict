@@ -582,6 +582,10 @@ fn corroborate_target_ir_semantic_closure(
             ));
         }
         (None, Some(actual)) => {
+            // This branch may use the Target IR closure only as the expected set
+            // because the independently supplied lawpack set is corroborated
+            // below. Callers must derive `lawpacks` independently of a
+            // provider-asserted Target IR closure.
             let expected_source_core = ResourceRef {
                 coordinate: core_module.coordinate.clone(),
                 digest: Some(

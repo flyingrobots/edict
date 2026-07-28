@@ -113,6 +113,7 @@ impl TargetIrLoweringFacts {
 pub struct TargetEffectLowering {
     pub effect: String,
     pub target_intrinsic: String,
+    pub failure_mappings: BTreeMap<String, String>,
 }
 
 fn selected_native_effect_lowerings(report: &LowerabilityReport) -> Vec<TargetEffectLowering> {
@@ -126,6 +127,7 @@ fn selected_native_effect_lowerings(report: &LowerabilityReport) -> Vec<TargetEf
             lowerings.push(TargetEffectLowering {
                 effect: effect.semantic_effect.clone(),
                 target_intrinsic: target_intrinsic.clone(),
+                failure_mappings: BTreeMap::new(),
             });
         }
     }
@@ -681,8 +683,21 @@ fn lower_effect_node(
             });
         }
         [lowering] => {
-            let unsupported_obstructions = node
+            let mapped_obstructions = node
                 .obstruction_map
+                .iter()
+                .map(|(failure, arm)| {
+                    (
+                        lowering
+                            .failure_mappings
+                            .get(failure)
+                            .unwrap_or(failure)
+                            .clone(),
+                        arm.clone(),
+                    )
+                })
+                .collect::<BTreeMap<_, _>>();
+            let unsupported_obstructions = mapped_obstructions
                 .keys()
                 .filter(|failure| !context.obstruction_coordinates.contains(failure.as_str()))
                 .cloned()
@@ -704,8 +719,8 @@ fn lower_effect_node(
                 effect: node.effect.to_owned(),
                 target_intrinsic: lowering.target_intrinsic.clone(),
                 input: node.input.clone(),
-                obstruction_failures: node.obstruction_map.keys().cloned().collect(),
-                obstruction_arms: node.obstruction_map.clone(),
+                obstruction_failures: mapped_obstructions.keys().cloned().collect(),
+                obstruction_arms: mapped_obstructions,
             });
         }
         [] => failures.push(TargetLoweringFailure {

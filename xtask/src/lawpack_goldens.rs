@@ -56,7 +56,7 @@ const CAUSAL_CELL_CONFIGURATION_DIGEST: &str =
     "fixtures/lawpack/causal-cell/echo-operation-configuration.sha256";
 const CAUSAL_CELL_EXPORTS_COORDINATE: &str = "causal.cell.exports/v1";
 const CAUSAL_CELL_ADAPTER_COORDINATE: &str = "causal.cell.echo-adapter/v1";
-const CAUSAL_CELL_CONFIGURATION_COORDINATE: &str = "causal.cell.echo-create-configuration/v1";
+const CAUSAL_CELL_CONFIGURATION_COORDINATE: &str = "echo.operation-lowering-configuration/v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LawpackGoldenMode {
@@ -96,10 +96,8 @@ fn causal_cell_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>, String
     let configuration_value = causal_cell_target_configuration();
     let configuration_bytes = encode_canonical_cbor(&configuration_value)
         .map_err(|error| format!("encode causal.cell target configuration: {error}"))?;
-    let configuration_digest = digest_value(
-        "echo.operation-lowering-configuration/v1",
-        &configuration_value,
-    )?;
+    let configuration_digest =
+        digest_value(CAUSAL_CELL_CONFIGURATION_COORDINATE, &configuration_value)?;
 
     let adapter_value = causal_cell_adapter(configuration_digest);
     let adapter_bytes = encode_canonical_cbor(&adapter_value)

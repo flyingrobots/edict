@@ -1981,6 +1981,31 @@ fn provider_runtime_dependency_boundary_is_narrow() {
         .expect("provider runtime dependency boundary remains narrow");
 }
 
+fn assert_compiler_settings_projection_properties(properties: &serde_json::Map<String, Value>) {
+    for field in ["emit", "compilerContext", "target"] {
+        assert!(
+            properties.contains_key(field),
+            "compiler settings schema missing projection field `{field}`"
+        );
+    }
+    let emit = properties
+        .get("emit")
+        .unwrap_or_else(|| panic!("compiler settings schema missing `emit` property"));
+    assert_eq!(
+        emit.get("minItems").and_then(Value::as_u64),
+        Some(1),
+        "compiler settings projection emit list must reject empty arrays"
+    );
+    for value in ["syntax", "diagnostics", "core", "targetIr", "digests"] {
+        assert!(
+            emit.pointer("/items/enum")
+                .and_then(Value::as_array)
+                .is_some_and(|values| values.iter().any(|item| item.as_str() == Some(value))),
+            "compiler settings projection emit list must declare `{value}`"
+        );
+    }
+}
+
 #[test]
 fn compiler_settings_schema_declares_jsonl_contract() {
     let root = repo_root().expect("repo root");
@@ -2017,52 +2042,37 @@ fn compiler_settings_schema_declares_jsonl_contract() {
     let record_type = properties
         .get("type")
         .unwrap_or_else(|| panic!("compiler settings schema missing `type` property"));
-    assert!(
-        json_string_array_contains(record_type, "enum", "compilerSettings")
-            && json_string_array_contains(record_type, "enum", "settings"),
-        "compiler settings schema must declare compiler and application settings record types"
+    assert_eq!(
+        record_type.get("const").and_then(Value::as_str),
+        Some("compilerSettings"),
+        "compiler settings schema must expose one record type"
     );
     let operation = properties
         .get("operation")
         .unwrap_or_else(|| panic!("compiler settings schema missing `operation` property"));
-    assert!(
-        json_string_array_contains(operation, "enum", "check"),
-        "compiler settings schema must declare the `check` operation"
-    );
-    assert!(
-        json_string_array_contains(operation, "enum", "project"),
-        "compiler settings schema must declare the `project` operation"
-    );
-    assert!(
-        json_string_array_contains(operation, "enum", "build"),
-        "compiler settings schema must declare the `build` operation"
-    );
-    assert!(
-        properties.contains_key("application"),
-        "compiler settings schema missing the application build path"
-    );
-    for field in ["emit", "compilerContext", "target"] {
-        assert!(
-            properties.contains_key(field),
-            "compiler settings schema missing projection field `{field}`"
-        );
-    }
-    let emit = properties
-        .get("emit")
-        .unwrap_or_else(|| panic!("compiler settings schema missing `emit` property"));
     assert_eq!(
-        emit.get("minItems").and_then(Value::as_u64),
-        Some(1),
-        "compiler settings projection emit list must reject empty arrays"
+        json_array(operation, "enum"),
+        &vec![
+            Value::String("build".to_owned()),
+            Value::String("check".to_owned()),
+            Value::String("project".to_owned()),
+        ],
+        "compiler settings schema must expose exactly the supported operations"
     );
-    for value in ["syntax", "diagnostics", "core", "targetIr", "digests"] {
-        assert!(
-            emit.pointer("/items/enum")
-                .and_then(Value::as_array)
-                .is_some_and(|values| values.iter().any(|item| item.as_str() == Some(value))),
-            "compiler settings projection emit list must declare `{value}`"
-        );
-    }
+    let application = properties
+        .get("application")
+        .unwrap_or_else(|| panic!("compiler settings schema missing `application` property"));
+    assert_eq!(
+        application.get("type").and_then(Value::as_str),
+        Some("string"),
+        "application path must be a string"
+    );
+    assert_eq!(
+        application.get("minLength").and_then(Value::as_u64),
+        Some(1),
+        "application path must be non-empty"
+    );
+    assert_compiler_settings_projection_properties(properties);
     assert_eq!(
         schema
             .pointer("/properties/target/properties/profileDigest/pattern")

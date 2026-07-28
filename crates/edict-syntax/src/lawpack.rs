@@ -9,7 +9,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::canonical::{
-    decode_canonical_cbor, digest_canonical_value, CanonicalErrorKind, CanonicalValue,
+    decode_canonical_cbor, digest_canonical_value, sha256_review_string, CanonicalErrorKind,
+    CanonicalValue,
 };
 use crate::core_ir::CORE_API_VERSION;
 use crate::parser::is_keyword;
@@ -1989,17 +1990,6 @@ fn ensure_allowed_fields(
     } else {
         Ok(())
     }
-}
-
-fn sha256_review_string(digest: &[u8; 32]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut review = String::with_capacity(71);
-    review.push_str("sha256:");
-    for byte in digest {
-        review.push(char::from(HEX[usize::from(byte >> 4)]));
-        review.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    review
 }
 
 fn failure(

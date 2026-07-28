@@ -540,6 +540,7 @@ mod contract_bundle_assembly {
             effect_lowerings: vec![TargetEffectLowering {
                 effect: "target.replace".to_owned(),
                 target_intrinsic: "echo.dpo@1.replace".to_owned(),
+                failure_mappings: std::collections::BTreeMap::new(),
             }],
         }
     }

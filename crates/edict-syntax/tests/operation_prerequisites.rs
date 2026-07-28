@@ -49,6 +49,7 @@ fn target_facts() -> TargetIrLoweringFacts {
         effect_lowerings: vec![TargetEffectLowering {
             effect: "sequence.splice".to_owned(),
             target_intrinsic: "echo.dpo@1.splice".to_owned(),
+            failure_mappings: std::collections::BTreeMap::new(),
         }],
     }
 }

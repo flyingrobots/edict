@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
-use std::io::ErrorKind;
-use std::path::{Path, PathBuf};
+use std::io::{ErrorKind, Write};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,29 +11,27 @@ use edict_provider_host_wasmtime::{
 use edict_provider_schema::{ProviderArtifactSchemaRegistry, ResolvedProviderSchemaArtifact};
 use edict_syntax::{
     bind_target_provider_manifest, compile_to_core, decode_canonical_cbor, decode_lawpack_adapter,
-    decode_lawpack_bundle, encode_canonical_cbor, encode_core_module, encode_target_ir_artifact,
-    lower_to_target_ir, parse_module, prepare_lawpack_compilation, select_provider_component,
-    validate_lawpack_dependency_graph, validate_provider_lowering_request,
-    validate_provider_verification_request, CanonicalValue, ProviderArtifact,
-    ProviderArtifactBinding, ProviderArtifactKind, ProviderArtifactRef, ProviderBoundArtifact,
-    ProviderDigest, ProviderDigestAlgorithm, ProviderInvocationKind,
+    decode_lawpack_bundle, digest_canonical_artifact, encode_canonical_cbor, encode_core_module,
+    encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
+    select_provider_component, validate_lawpack_dependency_graph,
+    validate_provider_lowering_request, validate_provider_verification_request, CanonicalValue,
+    ProviderArtifact, ProviderArtifactBinding, ProviderArtifactKind, ProviderArtifactRef,
+    ProviderBoundArtifact, ProviderDigest, ProviderDigestAlgorithm, ProviderInvocationKind,
     ProviderLoweringInvocationContract, ProviderLoweringOutputKind, ProviderLoweringOutputRequest,
     ProviderLoweringRequest, ProviderResourceRef, ProviderResponseLimits, ProviderSemanticInput,
     ProviderSemanticInputBinding, ProviderSemanticInputKind,
     ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
     ProviderVerificationOutputRequest, ProviderVerificationRequest, TargetLoweringStatus,
     TargetProviderManifest, ValidatedLawpackBundle, ValidatedTargetProviderManifest,
-    CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION, TARGET_PROVIDER_PROTOCOL_VERSION,
+    CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    TARGET_PROFILE_API_VERSION, TARGET_PROVIDER_PROTOCOL_VERSION,
 };
 use serde::Deserialize;
-use sha2::{Digest as _, Sha256};
 
 const APPLICATION_SCHEMA: &str = "edict.application/v1";
 const SOURCE_DOMAIN: &str = "edict.source/v1";
 const EXPORTS_DOMAIN: &str = "edict.lawpack-exports/v1";
 const ADAPTER_DOMAIN: &str = "edict.lawpack-adapter/v1";
-const CONFIGURATION_DOMAIN: &str = "echo.operation-lowering-configuration/v1";
 const PACKAGE_ROLE: &str = "executable-operation-package.echo";
 const PACKAGE_DOMAIN: &str = "echo.operation-package/v1";
 const VERIFICATION_REPORT_ROLE: &str = "verifier-report.echo-operation";
@@ -80,6 +78,16 @@ struct LoadedLawpack {
     bundle: ValidatedLawpackBundle,
 }
 
+struct ProviderInvocationContext<'a> {
+    coordinate: &'a str,
+    core_bytes: &'a [u8],
+    target_profile: &'a ProviderBoundArtifact,
+    loaded: &'a LoadedLawpack,
+    adapter: &'a edict_syntax::ValidatedLawpackAdapter,
+    source_bytes: &'a [u8],
+    target_ir_bytes: &'a [u8],
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "the application build keeps its ordered authority-boundary crossing explicit"
@@ -102,7 +110,13 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     validate_application_manifest(&config)?;
     let root = config_path.parent().unwrap_or_else(|| Path::new("."));
 
-    let source_path = resolve(root, &config.sources[0]);
+    let source = config.sources.first().ok_or_else(|| {
+        failure(
+            "InvalidApplicationConfig",
+            "the executable-operation build requires exactly one Edict source",
+        )
+    })?;
+    let source_path = resolve(root, source);
     let source_bytes = read(&source_path, "ApplicationSourceReadFailed", "Edict source")?;
     let source = std::str::from_utf8(&source_bytes).map_err(|error| {
         failure(
@@ -137,7 +151,12 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             format!("application lawpack dependency closure is invalid: {failures:?}"),
         )
     })?;
-    let loaded = &loaded_lawpacks[0];
+    let loaded = loaded_lawpacks.first().ok_or_else(|| {
+        failure(
+            "InvalidApplicationConfig",
+            "the executable-operation build requires a root lawpack",
+        )
+    })?;
 
     let provider_root = resolve(root, &config.target.provider_package);
     let manifest_path = find_provider_manifest(&provider_root)?;
@@ -312,19 +331,22 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             format!("provider host configuration failed: {error}"),
         )
     })?;
+    let invocation = ProviderInvocationContext {
+        coordinate: &core.coordinate,
+        core_bytes: &core_bytes,
+        target_profile: &target_profile,
+        loaded,
+        adapter: &adapter,
+        source_bytes: &source_artifact_bytes,
+        target_ir_bytes: &target_ir_bytes,
+    };
     let package_bytes = invoke_lowerer(
         &host,
         provider_proof,
         &registry,
         lowerer_artifact,
         lowerer_bytes,
-        &core.coordinate,
-        &core_bytes,
-        &target_profile,
-        loaded,
-        &adapter,
-        &source_artifact_bytes,
-        &target_ir_bytes,
+        &invocation,
     )?;
     let report_bytes = invoke_verifier(
         &host,
@@ -332,13 +354,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         &registry,
         verifier_artifact,
         verifier_bytes,
-        &core.coordinate,
-        &core_bytes,
-        &target_profile,
-        loaded,
-        &adapter,
-        &source_artifact_bytes,
-        &target_ir_bytes,
+        &invocation,
         &package_bytes,
     )?;
     require_accepted_report(&report_bytes)?;
@@ -379,6 +395,50 @@ fn validate_application_manifest(
         return Err(failure(
             "InvalidApplicationConfig",
             "the executable-operation build requires one root lawpack followed by its complete dependency closure",
+        ));
+    }
+    let paths = config
+        .sources
+        .iter()
+        .map(|path| ("sources", path.as_path()))
+        .chain(config.lawpacks.iter().flat_map(|lawpack| {
+            [
+                ("lawpacks.manifest", lawpack.manifest.as_path()),
+                ("lawpacks.exports", lawpack.exports.as_path()),
+                ("lawpacks.adapter", lawpack.adapter.as_path()),
+                (
+                    "lawpacks.targetConfiguration",
+                    lawpack.target_configuration.as_path(),
+                ),
+            ]
+        }))
+        .chain([
+            (
+                "target.providerPackage",
+                config.target.provider_package.as_path(),
+            ),
+            ("outputDirectory", config.output_directory.as_path()),
+        ]);
+    for (field, path) in paths {
+        validate_application_path(field, path)?;
+    }
+    Ok(())
+}
+
+fn validate_application_path(field: &str, path: &Path) -> Result<(), ApplicationBuildFailure> {
+    if path.as_os_str().is_empty()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::Prefix(_) | Component::RootDir | Component::ParentDir
+            )
+        })
+    {
+        return Err(failure(
+            "InvalidApplicationConfig",
+            format!(
+                "application field `{field}` must be a non-empty relative path without parent traversal"
+            ),
         ));
     }
     Ok(())
@@ -553,7 +613,7 @@ fn validate_target_configuration_binding(
             .values()
             .map(|effect| &effect.target_configuration),
     )?;
-    let digest = provider_digest(CONFIGURATION_DOMAIN, bytes)?;
+    let digest = provider_digest(&reference.id, bytes)?;
     if reference.digest_review_string() != rendered_digest(&digest) {
         return Err(failure(
             "TargetConfigurationMismatch",
@@ -563,20 +623,13 @@ fn validate_target_configuration_binding(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn invoke_lowerer(
     host: &ProviderComponentHost,
     provider_proof: ValidatedTargetProviderManifest<'_>,
     registry: &ProviderArtifactSchemaRegistry,
     component: &ProviderArtifactRef,
     component_bytes: Vec<u8>,
-    coordinate: &str,
-    core_bytes: &[u8],
-    target_profile: &ProviderBoundArtifact,
-    loaded: &LoadedLawpack,
-    adapter: &edict_syntax::ValidatedLawpackAdapter,
-    source_bytes: &[u8],
-    target_ir_bytes: &[u8],
+    invocation: &ProviderInvocationContext<'_>,
 ) -> Result<Vec<u8>, ApplicationBuildFailure> {
     let selected = select_provider_component(
         &provider_proof,
@@ -597,14 +650,23 @@ fn invoke_lowerer(
         )
     })?;
 
-    let core = bound_artifact(coordinate, CORE_MODULE_DIGEST_DOMAIN, core_bytes)?;
-    let semantic_inputs =
-        lowering_inputs(loaded, adapter, coordinate, source_bytes, target_ir_bytes)?;
-    let contract = lowering_contract(&core, target_profile, &semantic_inputs);
+    let core = bound_artifact(
+        invocation.coordinate,
+        CORE_MODULE_DIGEST_DOMAIN,
+        invocation.core_bytes,
+    )?;
+    let semantic_inputs = lowering_inputs(
+        invocation.loaded,
+        invocation.adapter,
+        invocation.coordinate,
+        invocation.source_bytes,
+        invocation.target_ir_bytes,
+    )?;
+    let contract = lowering_contract(&core, invocation.target_profile, &semantic_inputs);
     let request = ProviderLoweringRequest {
         protocol_version: TARGET_PROVIDER_PROTOCOL_VERSION,
         core,
-        target_profile: target_profile.clone(),
+        target_profile: invocation.target_profile.clone(),
         semantic_inputs,
         requested_outputs: vec![ProviderLoweringOutputRequest {
             role: PACKAGE_ROLE.to_owned(),
@@ -658,20 +720,13 @@ fn invoke_lowerer(
     Ok(output.artifact.bytes.clone())
 }
 
-#[allow(clippy::too_many_arguments)]
 fn invoke_verifier(
     host: &ProviderComponentHost,
     provider_proof: ValidatedTargetProviderManifest<'_>,
     registry: &ProviderArtifactSchemaRegistry,
     component: &ProviderArtifactRef,
     component_bytes: Vec<u8>,
-    coordinate: &str,
-    core_bytes: &[u8],
-    target_profile: &ProviderBoundArtifact,
-    loaded: &LoadedLawpack,
-    adapter: &edict_syntax::ValidatedLawpackAdapter,
-    source_bytes: &[u8],
-    target_ir_bytes: &[u8],
+    invocation: &ProviderInvocationContext<'_>,
     package_bytes: &[u8],
 ) -> Result<Vec<u8>, ApplicationBuildFailure> {
     let selected = select_provider_component(
@@ -693,19 +748,33 @@ fn invoke_verifier(
         )
     })?;
 
-    let core = bound_artifact(coordinate, CORE_MODULE_DIGEST_DOMAIN, core_bytes)?;
-    let target_ir = bound_artifact(
-        adapter.target_ir().id.as_str(),
-        TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
-        target_ir_bytes,
+    let core = bound_artifact(
+        invocation.coordinate,
+        CORE_MODULE_DIGEST_DOMAIN,
+        invocation.core_bytes,
     )?;
-    let semantic_inputs =
-        verification_inputs(loaded, adapter, coordinate, source_bytes, package_bytes)?;
-    let contract = verification_contract(&core, target_profile, &target_ir, &semantic_inputs);
+    let target_ir = bound_artifact(
+        invocation.adapter.target_ir().id.as_str(),
+        TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+        invocation.target_ir_bytes,
+    )?;
+    let semantic_inputs = verification_inputs(
+        invocation.loaded,
+        invocation.adapter,
+        invocation.coordinate,
+        invocation.source_bytes,
+        package_bytes,
+    )?;
+    let contract = verification_contract(
+        &core,
+        invocation.target_profile,
+        &target_ir,
+        &semantic_inputs,
+    );
     let request = ProviderVerificationRequest {
         protocol_version: TARGET_PROVIDER_PROTOCOL_VERSION,
         core,
-        target_profile: target_profile.clone(),
+        target_profile: invocation.target_profile.clone(),
         target_ir,
         semantic_inputs,
         requested_outputs: vec![ProviderVerificationOutputRequest {
@@ -810,7 +879,7 @@ fn lowering_inputs(
             "05-target-configuration",
             ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
             &configuration.id,
-            CONFIGURATION_DOMAIN,
+            &configuration.id,
             &loaded.configuration_bytes,
         )?,
         semantic_input(
@@ -879,7 +948,7 @@ fn verification_inputs(
             "06-target-configuration",
             ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
             &configuration.id,
-            CONFIGURATION_DOMAIN,
+            &configuration.id,
             &loaded.configuration_bytes,
         )?,
     ])
@@ -1002,26 +1071,15 @@ fn bound_artifact(
 }
 
 fn provider_digest(domain: &str, bytes: &[u8]) -> Result<ProviderDigest, ApplicationBuildFailure> {
-    let value = decode_canonical_cbor(bytes).map_err(|error| {
+    let digest = digest_canonical_artifact(domain, bytes).map_err(|error| {
         failure(
             "NonCanonicalApplicationArtifact",
             format!("artifact under `{domain}` is not canonical CBOR: {error}"),
         )
     })?;
-    let frame = CanonicalValue::Array(vec![
-        CanonicalValue::Text(CORE_DIGEST_FRAME.to_owned()),
-        CanonicalValue::Text(domain.to_owned()),
-        value,
-    ]);
-    let frame = encode_canonical_cbor(&frame).map_err(|error| {
-        failure(
-            "ApplicationEncodingFailed",
-            format!("artifact digest frame encoding failed for `{domain}`: {error}"),
-        )
-    })?;
     Ok(ProviderDigest {
         algorithm: ProviderDigestAlgorithm::Sha256,
-        bytes: Sha256::digest(frame).to_vec(),
+        bytes: digest.bytes().to_vec(),
     })
 }
 
@@ -1065,13 +1123,13 @@ fn require_accepted_report(bytes: &[u8]) -> Result<(), ApplicationBuildFailure> 
             "verification report is not a canonical map",
         ));
     };
-    let accepted = entries.iter().any(|(key, value)| {
-        matches!(
-            (key, value),
-            (CanonicalValue::Text(key), CanonicalValue::Text(outcome))
-                if key == "outcome" && outcome == "accepted"
-        )
-    });
+    let mut outcomes = entries
+        .iter()
+        .filter(|(key, _)| matches!(key, CanonicalValue::Text(key) if key == "outcome"));
+    let accepted = matches!(
+        (outcomes.next(), outcomes.next()),
+        (Some((_, CanonicalValue::Text(outcome))), None) if outcome == "accepted"
+    );
     if !accepted {
         return Err(failure(
             "ProviderVerificationRejected",
@@ -1136,14 +1194,14 @@ fn write_outputs(
     let package_backup = transaction.join("previous-package.cbor");
     let report_backup = transaction.join("previous-report.cbor");
 
-    if let Err(error) = fs::write(&package_temp, package) {
+    if let Err(error) = write_synced(&package_temp, package) {
         let _ = fs::remove_dir_all(&transaction);
         return Err(failure(
             "ApplicationOutputWriteFailed",
             format!("failed to stage `{}`: {error}", package_path.display()),
         ));
     }
-    if let Err(error) = fs::write(&report_temp, report) {
+    if let Err(error) = write_synced(&report_temp, report) {
         let _ = fs::remove_dir_all(&transaction);
         return Err(failure(
             "ApplicationOutputWriteFailed",
@@ -1177,40 +1235,50 @@ fn write_outputs(
         }
     }
 
-    if let Err(error) = fs::rename(&package_temp, &package_path) {
-        let rollback = restore_previous_outputs(
-            &package_path,
-            &report_path,
-            &package_backup,
-            &report_backup,
-            package_existed,
-            report_existed,
-            false,
-        );
+    if let Err(error) = fs::rename(&report_temp, &report_path) {
+        let rollback = restore_previous_outputs(&[
+            OutputRecovery {
+                destination: &package_path,
+                backup: &package_backup,
+                existed: package_existed,
+                published: false,
+            },
+            OutputRecovery {
+                destination: &report_path,
+                backup: &report_backup,
+                existed: report_existed,
+                published: false,
+            },
+        ]);
         if rollback.is_ok() {
             let _ = fs::remove_dir_all(&transaction);
         }
         return Err(output_publication_failure(
-            &package_path,
+            &report_path,
             &error,
             rollback.err(),
         ));
     }
-    if let Err(error) = fs::rename(&report_temp, &report_path) {
-        let rollback = restore_previous_outputs(
-            &package_path,
-            &report_path,
-            &package_backup,
-            &report_backup,
-            package_existed,
-            report_existed,
-            true,
-        );
+    if let Err(error) = fs::rename(&package_temp, &package_path) {
+        let rollback = restore_previous_outputs(&[
+            OutputRecovery {
+                destination: &package_path,
+                backup: &package_backup,
+                existed: package_existed,
+                published: false,
+            },
+            OutputRecovery {
+                destination: &report_path,
+                backup: &report_backup,
+                existed: report_existed,
+                published: true,
+            },
+        ]);
         if rollback.is_ok() {
             let _ = fs::remove_dir_all(&transaction);
         }
         return Err(output_publication_failure(
-            &report_path,
+            &package_path,
             &error,
             rollback.err(),
         ));
@@ -1225,6 +1293,12 @@ fn write_outputs(
             ),
         )
     })
+}
+
+fn write_synced(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()
 }
 
 fn validate_output_target(path: &Path) -> Result<bool, ApplicationBuildFailure> {
@@ -1286,29 +1360,27 @@ fn create_output_transaction(directory: &Path) -> Result<PathBuf, ApplicationBui
     ))
 }
 
-fn restore_previous_outputs(
-    package_path: &Path,
-    report_path: &Path,
-    package_backup: &Path,
-    report_backup: &Path,
-    package_existed: bool,
-    report_existed: bool,
-    package_published: bool,
-) -> Result<(), String> {
+struct OutputRecovery<'a> {
+    destination: &'a Path,
+    backup: &'a Path,
+    existed: bool,
+    published: bool,
+}
+
+fn restore_previous_outputs(outputs: &[OutputRecovery<'_>; 2]) -> Result<(), String> {
     let mut failures = Vec::new();
-    if package_published {
-        if let Err(error) = fs::remove_file(package_path) {
+    for output in outputs.iter().filter(|output| output.published) {
+        if let Err(error) = fs::remove_file(output.destination) {
             failures.push(format!(
                 "failed to remove partial output `{}`: {error}",
-                package_path.display()
+                output.destination.display()
             ));
         }
     }
-    if let Err(error) = restore_output(package_backup, package_path, package_existed) {
-        failures.push(error);
-    }
-    if let Err(error) = restore_output(report_backup, report_path, report_existed) {
-        failures.push(error);
+    for output in outputs {
+        if let Err(error) = restore_output(output.backup, output.destination, output.existed) {
+            failures.push(error);
+        }
     }
     if failures.is_empty() {
         Ok(())

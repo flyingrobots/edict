@@ -228,6 +228,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
         effect_lowerings: vec![TargetEffectLowering {
             effect: "target.replace".to_owned(),
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
+            failure_mappings: BTreeMap::new(),
         }],
     }
 }
@@ -244,6 +245,7 @@ fn gitwarp_facts() -> TargetIrLoweringFacts {
         effect_lowerings: vec![TargetEffectLowering {
             effect: "gitwarp.appendEvent".to_owned(),
             target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
+            failure_mappings: BTreeMap::new(),
         }],
     }
 }
@@ -689,10 +691,12 @@ fn unused_duplicate_effect_lowerings_do_not_reject_supported_effect() {
     facts.effect_lowerings.push(TargetEffectLowering {
         effect: "target.archive".to_owned(),
         target_intrinsic: "echo.dpo@1.archive".to_owned(),
+        failure_mappings: BTreeMap::new(),
     });
     facts.effect_lowerings.push(TargetEffectLowering {
         effect: "target.archive".to_owned(),
         target_intrinsic: "echo.dpo@1.archive.v2".to_owned(),
+        failure_mappings: BTreeMap::new(),
     });
 
     let report = lower_to_target_ir(&effectful_core(), &facts);
@@ -943,6 +947,7 @@ fn ambiguous_effect_lowering_rejects_without_artifact() {
     facts.effect_lowerings.push(TargetEffectLowering {
         effect: "target.replace".to_owned(),
         target_intrinsic: "echo.dpo@1.replace.alternate".to_owned(),
+        failure_mappings: BTreeMap::new(),
     });
 
     let report = lower_to_target_ir(&effectful_core(), &facts);

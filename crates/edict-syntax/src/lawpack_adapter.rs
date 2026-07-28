@@ -7,10 +7,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use sha2::{Digest, Sha256};
-
 use crate::ast::{ImportKind, Module};
-use crate::canonical::{decode_canonical_cbor, encode_canonical_cbor, CanonicalValue};
+use crate::canonical::{
+    decode_canonical_cbor, digest_canonical_value, sha256_review_string, CanonicalValue,
+};
 use crate::compiler::CompilerContext;
 use crate::core_ir::{CoreBudget, ResourceRef};
 use crate::lawpack::{
@@ -23,7 +23,6 @@ use crate::target_ir::{TargetEffectLowering, TargetIrLoweringFacts};
 /// Canonical direct lawpack-adapter ABI supported by this crate.
 pub const LAWPACK_ADAPTER_API_VERSION: &str = "edict.lawpack-adapter/v1";
 
-const DIGEST_FRAME: &str = "edict.digest/v1";
 const ADAPTER_PATH: &str = "<lawpack-adapter-cbor>";
 
 /// Stable direct-adapter failure classifications.
@@ -232,10 +231,11 @@ pub fn prepare_lawpack_compilation(
         let local_effect = local_coordinate(&alias, &prefix, coordinate)?;
         compiler_context = compiler_context
             .with_effect_write_class(local_effect.clone(), effect.write_class.clone());
-        obstruction_coordinates.extend(effect.failure_mappings.keys().cloned());
+        obstruction_coordinates.extend(effect.failure_mappings.values().cloned());
         effect_lowerings.push(TargetEffectLowering {
             effect: local_effect,
             target_intrinsic: effect.target_intrinsic.clone(),
+            failure_mappings: effect.failure_mappings.clone(),
         });
     }
 
@@ -362,7 +362,10 @@ fn parse_effects(
                     required(&fields, "targetConfiguration", &path)?,
                     &format!("{path}.targetConfiguration"),
                 )?,
-                write_class: parse_write_class(&required_text(&fields, "writeClass", &path)?)?,
+                write_class: parse_write_class(
+                    &required_text(&fields, "writeClass", &path)?,
+                    &format!("{path}.writeClass"),
+                )?,
                 footprint_obligation: required_nonempty_text(
                     &fields,
                     "footprintObligation",
@@ -524,6 +527,18 @@ fn validate_effect(
             "exact exported named-failure set",
         )));
     }
+    let target_failures = effect
+        .failure_mappings
+        .values()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if target_failures.len() != effect.failure_mappings.len() {
+        return Err(one(failure(
+            LawpackAdapterFailureKind::FailureMappingMismatch,
+            format!("{path}.failureMappings"),
+            "unique target obstruction coordinates",
+        )));
+    }
     Ok(())
 }
 
@@ -636,7 +651,7 @@ fn exact_keys<'a>(
     Ok(())
 }
 
-fn parse_write_class(value: &str) -> Result<WriteClass, Vec<LawpackAdapterFailure>> {
+fn parse_write_class(value: &str, path: &str) -> Result<WriteClass, Vec<LawpackAdapterFailure>> {
     match value {
         "none" => Ok(WriteClass::None),
         "read" => Ok(WriteClass::Read),
@@ -648,7 +663,7 @@ fn parse_write_class(value: &str) -> Result<WriteClass, Vec<LawpackAdapterFailur
         "custom" => Ok(WriteClass::Custom("custom".to_owned())),
         _ => Err(one(failure(
             LawpackAdapterFailureKind::InvalidWriteClass,
-            "adapter.effectImplementations.writeClass",
+            path,
             "v1 authority write class",
         ))),
     }
@@ -707,19 +722,13 @@ fn digest_value(
     domain: &str,
     value: &CanonicalValue,
 ) -> Result<[u8; 32], Vec<LawpackAdapterFailure>> {
-    let framed = CanonicalValue::Array(vec![
-        CanonicalValue::Text(DIGEST_FRAME.to_owned()),
-        CanonicalValue::Text(domain.to_owned()),
-        value.clone(),
-    ]);
-    let bytes = encode_canonical_cbor(&framed).map_err(|_| {
+    digest_canonical_value(domain, value).map_err(|_| {
         one(failure(
             LawpackAdapterFailureKind::InvalidShape,
             ADAPTER_PATH,
             "canonically encodable adapter digest frame",
         ))
-    })?;
-    Ok(Sha256::digest(bytes).into())
+    })
 }
 
 fn closed_map<'a>(
@@ -872,16 +881,6 @@ fn text_array(
         .enumerate()
         .map(|(index, value)| nonempty_text(value, &format!("{path}[{index}]")))
         .collect()
-}
-
-fn sha256_review_string(digest: &[u8; 32]) -> String {
-    let mut output = String::with_capacity(71);
-    output.push_str("sha256:");
-    for byte in digest {
-        use std::fmt::Write;
-        write!(output, "{byte:02x}").expect("writing to String cannot fail");
-    }
-    output
 }
 
 fn failure(

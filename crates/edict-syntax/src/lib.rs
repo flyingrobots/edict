@@ -107,12 +107,12 @@ pub use authority_facts::{
     AUTHORITY_FACTS_CDDL_ROOT,
 };
 pub use canonical::{
-    decode_canonical_cbor, digest_bundle_layer, digest_core_module, digest_target_ir_artifact,
-    encode_canonical_cbor, encode_core_module, encode_target_ir_artifact, BundleDigestDomain,
-    BundlePreimageComponent, BundleSourceDescriptor, CanonicalError, CanonicalErrorKind,
-    CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN, BUNDLE_SEMANTIC_DIGEST_DOMAIN,
-    CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME, CORE_MODULE_DIGEST_DOMAIN,
-    MAX_CANONICAL_NESTING_DEPTH, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    decode_canonical_cbor, digest_bundle_layer, digest_canonical_artifact, digest_core_module,
+    digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
+    encode_target_ir_artifact, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
+    CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN,
+    BUNDLE_SEMANTIC_DIGEST_DOMAIN, CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME,
+    CORE_MODULE_DIGEST_DOMAIN, MAX_CANONICAL_NESTING_DEPTH, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,

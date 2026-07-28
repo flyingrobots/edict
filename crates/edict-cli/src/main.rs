@@ -420,11 +420,7 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
             message: "compiler settings schema field does not match the settings schema".to_owned(),
         });
     }
-    let expected_record_type = if settings.operation == Operation::Build {
-        "settings"
-    } else {
-        "compilerSettings"
-    };
+    let expected_record_type = "compilerSettings";
     if settings.record_type != expected_record_type {
         return Err(CliFailure {
             command,
@@ -488,19 +484,12 @@ fn command_for_operation_name(operation: &str) -> Option<&'static str> {
 fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Result<(), CliFailure> {
     match settings.operation {
         Operation::Build => {
-            if settings.application.is_none() {
-                return Err(CliFailure {
-                    command: COMMAND_BUILD,
-                    kind: "InvalidSettings",
-                    line: Some(line),
-                    message: "build operation requires `application`".to_owned(),
-                });
-            }
             if !settings.emit.is_empty()
                 || settings.compiler_context.is_some()
                 || settings.target.is_some()
                 || settings.input_root.is_some()
                 || settings.follow_symlinks
+                || settings.directory_extensions != default_directory_extensions()
             {
                 return Err(CliFailure {
                     command: COMMAND_BUILD,
@@ -513,8 +502,15 @@ fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Resu
             }
         }
         Operation::Check => {
-            if settings.application.is_some()
-                || !settings.emit.is_empty()
+            if settings.application.is_some() {
+                return Err(CliFailure {
+                    command: COMMAND_CHECK,
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "`application` is a build-only setting".to_owned(),
+                });
+            }
+            if !settings.emit.is_empty()
                 || settings.compiler_context.is_some()
                 || settings.target.is_some()
             {
@@ -1079,6 +1075,7 @@ fn project_target_facts(target: &ProjectionTargetSettings) -> TargetIrLoweringFa
             .map(|lowering| TargetEffectLowering {
                 effect: lowering.effect.clone(),
                 target_intrinsic: lowering.target_intrinsic.clone(),
+                failure_mappings: std::collections::BTreeMap::new(),
             })
             .collect(),
     }

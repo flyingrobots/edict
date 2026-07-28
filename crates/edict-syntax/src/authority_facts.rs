@@ -13,8 +13,8 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::canonical::{
-    decode_canonical_cbor, digest_canonical_value, encode_canonical_cbor, CanonicalErrorKind,
-    CanonicalValue,
+    decode_canonical_cbor, digest_canonical_value, encode_canonical_cbor, sha256_review_string,
+    CanonicalErrorKind, CanonicalValue,
 };
 use crate::compiler::CompilerContext;
 use crate::core_ir::{is_sha256_review_digest, CoreBudget};
@@ -644,17 +644,6 @@ fn parse_canonical_digest(
     }
 
     Ok(sha256_review_string(bytes))
-}
-
-fn sha256_review_string(bytes: &[u8]) -> String {
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut review = String::with_capacity(7 + bytes.len() * 2);
-    review.push_str("sha256:");
-    for byte in bytes {
-        review.push(char::from(HEX[usize::from(byte >> 4)]));
-        review.push(char::from(HEX[usize::from(byte & 0x0f)]));
-    }
-    review
 }
 
 fn non_digest_failure(coordinate: &str) -> AuthorityFactsLoadFailure {

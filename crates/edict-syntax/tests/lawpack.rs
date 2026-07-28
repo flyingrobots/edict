@@ -224,6 +224,27 @@ fn lawpack_adapter_requires_a_typed_target_configuration_reference() {
 }
 
 #[test]
+fn lawpack_adapter_rejects_an_undeclared_write_class_at_the_effect_path() {
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let effect = first_map_value_mut(field_mut(&mut adapter, "effectImplementations"));
+    replace_field(effect, "writeClass", text("modify"));
+    let bundle = bundle_with_adapter(&adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode adapter");
+
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect_err("undeclared write class must reject");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::InvalidWriteClass]
+    );
+    assert_eq!(
+        failures[0].path,
+        "adapter.effectImplementations.hello.echo@1.createGreeting.writeClass"
+    );
+}
+
+#[test]
 fn lawpack_adapter_selection_requires_one_exact_target_profile() {
     let bundle =
         decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");

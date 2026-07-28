@@ -124,7 +124,7 @@ fn build_rejects_compiler_input_records_instead_of_ignoring_them() {
 fn build_rejects_unused_directory_extension_settings() {
     let output = run_edict(&jsonl([json!({
         "schema": "edict.compiler.settings/v1",
-        "type": "settings",
+        "type": "compilerSettings",
         "operation": "build",
         "application": "missing-edict-application.json",
         "directoryExtensions": [".unused"],
@@ -1309,6 +1309,7 @@ fn projection_target_facts() -> TargetIrLoweringFacts {
         effect_lowerings: vec![TargetEffectLowering {
             effect: "target.replace".to_owned(),
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
+            failure_mappings: std::collections::BTreeMap::new(),
         }],
     }
 }

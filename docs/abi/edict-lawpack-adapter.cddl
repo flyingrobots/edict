@@ -44,6 +44,6 @@ lawpack-adapter-budget = {
 }
 
 lawpack-adapter-write-class = "none" / "read" / "create" / "ensure" /
-                              "append" / "modify" / "delete"
+                              "append" / "replace" / "delete" / "custom"
 
 ; failure-ident is defined in edict-common.cddl.
