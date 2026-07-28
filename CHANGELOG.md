@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Rejected many-to-one target obstruction mappings before Target IR emission so
+  failure-coordinate collisions cannot silently discard an obstruction arm.
 - Hardened standalone application builds around complete lawpack dependency
   closures, selected target-adapter identity, all provider-bound schema roles,
   pure-helper call closure, canonical settings and application paths, mapped
