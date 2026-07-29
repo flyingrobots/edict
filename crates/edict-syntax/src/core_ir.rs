@@ -11,6 +11,9 @@ use serde::{Deserialize, Serialize};
 /// The Core ABI identifier emitted by this crate.
 pub const CORE_API_VERSION: &str = "edict.core/v1";
 
+/// Compiler-owned local identity for the single application intent input.
+pub(crate) const CORE_APPLICATION_INPUT_LOCAL_ID: &str = "arg.0";
+
 /// A lowered in-memory Core module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreModule {

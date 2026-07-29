@@ -12,12 +12,13 @@ use edict_provider_schema::{
 };
 use edict_syntax::{
     canonical_target_profile_contract_resources, compile_to_core, decode_canonical_cbor,
-    digest_target_profile_contract_resource, encode_core_module, encode_target_ir_artifact,
-    parse_module, CanonicalValue, CompilerContext, CoreBudget, CoreExpr, CoreObstructionReason,
-    CorePredicate, CoreValue, ProviderArtifactSchemaValidationErrorKind, ResourceRef,
-    TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement,
-    TargetIrSemanticClosure, TargetProfileContractResource, WriteClass,
-    AUTHORITY_FACTS_API_VERSION, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+    digest_target_profile_contract_resource, encode_core_module, encode_result_projection,
+    encode_target_ir_artifact, parse_module, CanonicalValue, CompilerContext, CoreBudget, CoreExpr,
+    CoreObstructionReason, CorePredicate, CoreValue, ProviderArtifactSchemaValidationErrorKind,
+    ResourceRef, ResultProjection, ResultProjectionExpr, ResultProjectionSource, TargetIrArtifact,
+    TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure,
+    TargetProfileContractResource, WriteClass, AUTHORITY_FACTS_API_VERSION,
+    CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN, RESULT_PROJECTION_DIGEST_DOMAIN,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
 };
 use sha2::{Digest, Sha256};
@@ -28,6 +29,8 @@ const LAWPACK_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-lawpack.cddl
 const LAWPACK_ADAPTER_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-lawpack-adapter.cddl");
 const TARGET_PROFILE_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-target-profile.cddl");
 const AUTHORITY_FACTS_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-authority-facts.cddl");
+const RESULT_PROJECTION_CDDL: &[u8] =
+    include_bytes!("../../../docs/abi/edict-result-projection.cddl");
 const TARGET_IR_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-target-ir.cddl");
 const CORE_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/core/canonical/bounded-hello.core.cbor");
@@ -40,13 +43,16 @@ const ALTERNATE_TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor");
 const LAWPACK_ADAPTER_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor");
+const RESULT_PROJECTION_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.cbor");
 const OPERATION_SOURCE: &str =
     include_str!("../../../fixtures/lang/operations/explicit-basis-u64.edict");
-const EXPECTED_DOMAIN_BINDINGS: [(&str, &str); 6] = [
+const EXPECTED_DOMAIN_BINDINGS: [(&str, &str); 7] = [
     (AUTHORITY_FACTS_API_VERSION, "authority-facts"),
     (CORE_MODULE_DIGEST_DOMAIN, "core-module"),
     (PROVIDER_LAWPACK_ARTIFACT_DOMAIN, "lawpack-manifest"),
     ("edict.lowering-requirements/v1", "lowering-requirements"),
+    (RESULT_PROJECTION_DIGEST_DOMAIN, "result-projection"),
     (TARGET_IR_ARTIFACT_DIGEST_DOMAIN, "target-ir-artifact"),
     (TARGET_PROFILE_API_VERSION, "target-profile-manifest"),
 ];
@@ -71,8 +77,8 @@ fn contract_pack_is_self_contained_and_repeatable() {
         PROVIDER_CONTRACT_PACK_COORDINATE
     );
     assert_eq!(forward.manifest().license, PROVIDER_CONTRACT_PACK_LICENSE);
-    assert_eq!(forward.manifest().contracts.len(), 10);
-    assert_eq!(forward.manifest().domains.len(), 6);
+    assert_eq!(forward.manifest().contracts.len(), 11);
+    assert_eq!(forward.manifest().domains.len(), 7);
     assert_eq!(forward.manifest().resources.len(), 5);
     assert!(forward
         .cddl_bytes()
@@ -269,6 +275,97 @@ fn target_ir_root_matches_reference_encoder() {
     assert_eq!(
         pack.validate_domain("runtime.unknown/v1", &invalid),
         Err(ProviderArtifactSchemaValidationErrorKind::UnsupportedDomain)
+    );
+}
+
+#[test]
+fn result_projection_root_matches_reference_encoder() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    let projection =
+        decode_canonical_cbor(RESULT_PROJECTION_FIXTURE).expect("projection fixture is canonical");
+    pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &projection)
+        .expect("projection fixture satisfies the compiler-owned root");
+
+    let mut missing_output_bound = projection;
+    remove_map_field(&mut missing_output_bound, "maxOutputBytes");
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &missing_output_bound),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+}
+
+#[test]
+fn result_projection_root_enforces_decoder_path_limit() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    let mut projection = representative_result_projection();
+    *projection_path_mut(&mut projection) = array(
+        (0..edict_syntax::MAX_RESULT_PROJECTION_PATH_SEGMENTS)
+            .map(|index| text(&format!("segment{index:02}")))
+            .collect(),
+    );
+
+    pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &projection)
+        .expect("the decoder's exact path-segment limit satisfies the published root");
+
+    let CanonicalValue::Array(path) = projection_path_mut(&mut projection) else {
+        panic!("projection path must be an array");
+    };
+    path.push(text("segment32"));
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &projection),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "the published root must reject one more segment than the decoder permits"
+    );
+}
+
+#[test]
+fn result_projection_root_enforces_output_and_record_node_limits() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+
+    let mut zero_output_bound = representative_result_projection();
+    *map_value_mut(&mut zero_output_bound, "maxOutputBytes") = CanonicalValue::Integer(0);
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &zero_output_bound),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "the published root must reject the decoder's zero output bound"
+    );
+
+    let mut boundary = representative_result_projection();
+    let expression = map_value_mut(&mut boundary, "expression");
+    let fields = map_value_mut(expression, "fields");
+    *fields = CanonicalValue::Map(
+        (0..(edict_syntax::MAX_RESULT_PROJECTION_NODES - 1))
+            .map(|index| {
+                (
+                    text(&format!("field{index:03}")),
+                    map(vec![
+                        ("kind", text("source")),
+                        ("source", map(vec![("kind", text("applicationInput"))])),
+                        ("path", array(Vec::new())),
+                    ]),
+                )
+            })
+            .collect(),
+    );
+    pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &boundary)
+        .expect("the root record plus 255 source nodes satisfies the decoder limit");
+
+    let fields = map_value_mut(map_value_mut(&mut boundary, "expression"), "fields");
+    let CanonicalValue::Map(entries) = fields else {
+        panic!("projection record fields must be a map");
+    };
+    entries.push((
+        text("field255"),
+        map(vec![
+            ("kind", text("source")),
+            ("source", map(vec![("kind", text("applicationInput"))])),
+            ("path", array(Vec::new())),
+        ]),
+    ));
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &boundary),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "the published root must reject one more field than the flat record node limit permits"
     );
 }
 
@@ -518,6 +615,7 @@ fn input_with(
         lawpack_adapter_cddl: LAWPACK_ADAPTER_CDDL,
         target_profile_cddl: TARGET_PROFILE_CDDL,
         authority_facts_cddl: AUTHORITY_FACTS_CDDL,
+        result_projection_cddl: RESULT_PROJECTION_CDDL,
         target_ir_cddl,
         contract_resources: resources,
     }
@@ -571,6 +669,7 @@ fn representative_contract_instances() -> Vec<(&'static str, CanonicalValue)> {
         ("lawpack-exports", lawpack_exports()),
         ("lawpack-manifest", lawpack_manifest()),
         ("lowering-requirements", lowering_requirements()),
+        ("result-projection", representative_result_projection()),
         (
             "target-ir-artifact",
             decode_canonical_cbor(TARGET_IR_FIXTURE).expect("Target IR fixture is canonical"),
@@ -582,6 +681,26 @@ fn representative_contract_instances() -> Vec<(&'static str, CanonicalValue)> {
             operation_profiles_document(),
         ),
     ]
+}
+
+fn representative_result_projection() -> CanonicalValue {
+    let projection = ResultProjection {
+        api_version: edict_syntax::RESULT_PROJECTION_API_VERSION.to_owned(),
+        operation_coordinate: "example.application@1.create".to_owned(),
+        output_type: "example.application@1.Created".to_owned(),
+        max_output_bytes: 512,
+        expression: ResultProjectionExpr::Record {
+            fields: BTreeMap::from([(
+                "value".to_owned(),
+                ResultProjectionExpr::Source {
+                    source: ResultProjectionSource::ApplicationInput,
+                    path: vec!["value".to_owned()],
+                },
+            )]),
+        },
+    };
+    let bytes = encode_result_projection(&projection).expect("representative projection encodes");
+    decode_canonical_cbor(&bytes).expect("representative projection is canonical")
 }
 
 fn encoded_target_ir_with_requirements() -> CanonicalValue {
@@ -807,6 +926,19 @@ fn map_value_mut<'a>(value: &'a mut CanonicalValue, field: &str) -> &'a mut Cano
         .iter_mut()
         .find_map(|(key, value)| (key == &text(field)).then_some(value))
         .unwrap_or_else(|| panic!("missing map field {field}"))
+}
+
+fn projection_path_mut(projection: &mut CanonicalValue) -> &mut CanonicalValue {
+    let expression = map_value_mut(projection, "expression");
+    let fields = map_value_mut(expression, "fields");
+    let CanonicalValue::Map(fields) = fields else {
+        panic!("projection record fields must be a map");
+    };
+    let source = &mut fields
+        .first_mut()
+        .expect("representative projection has one field")
+        .1;
+    map_value_mut(source, "path")
 }
 
 fn remove_map_field(value: &mut CanonicalValue, field: &str) {

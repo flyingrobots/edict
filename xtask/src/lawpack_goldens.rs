@@ -32,6 +32,10 @@ const CREATE_GREETING_TARGET_IR_CBOR: &str =
     "fixtures/lawpack/hello-echo/create-greeting.target-ir.cbor";
 const CREATE_GREETING_TARGET_IR_DIGEST: &str =
     "fixtures/lawpack/hello-echo/create-greeting.target-ir.sha256";
+const CREATE_GREETING_RESULT_PROJECTION_CBOR: &str =
+    "fixtures/lawpack/hello-echo/create-greeting.result-projection.cbor";
+const CREATE_GREETING_RESULT_PROJECTION_DIGEST: &str =
+    "fixtures/lawpack/hello-echo/create-greeting.result-projection.sha256";
 const ADAPTER_COORDINATE: &str = "hello.echo.echo-dpo-adapter/v1";
 const TARGET_CONFIGURATION_COORDINATE: &str = "hello.echo.echo-operation-configuration/v1";
 const ECHO_TARGET_PROFILE_DIGEST: [u8; 32] = [
@@ -455,6 +459,13 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             target_ir_report.status
         ));
     }
+    let result_projection = target_ir_report
+        .result_projections
+        .get("createGreeting")
+        .cloned()
+        .ok_or_else(|| {
+            "lower Hello Echo Target IR: lowered report omitted result projection".to_owned()
+        })?;
     let target_ir = target_ir_report
         .artifact
         .ok_or_else(|| "lower Hello Echo Target IR: lowered report omitted artifact".to_owned())?;
@@ -466,6 +477,7 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             .map_err(|error| format!("digest Hello Echo Target IR: {error}"))?
             .to_review_string()
     );
+    let result_projection_digest = format!("{}\n", result_projection.digest().to_review_string());
     let manifest_digest = format!("{}\n", bundle.manifest_digest_review_string());
     let exports_digest = format!("{}\n", bundle.manifest().exports.digest_review_string());
     let adapter_digest = format!("{}\n", sha256_review_string(&adapter_digest));
@@ -490,6 +502,14 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
         (
             CREATE_GREETING_TARGET_IR_DIGEST,
             target_ir_digest.into_bytes(),
+        ),
+        (
+            CREATE_GREETING_RESULT_PROJECTION_CBOR,
+            result_projection.canonical_bytes().to_vec(),
+        ),
+        (
+            CREATE_GREETING_RESULT_PROJECTION_DIGEST,
+            result_projection_digest.into_bytes(),
         ),
     ])
 }

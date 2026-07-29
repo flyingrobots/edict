@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Hardened result-projection admission with immutable emitted artifacts,
+  bounded recursive decoding, shared compiler input identity, reuse of the
+  compiler-computed semantic closure, and provider-schema parity for positive
+  output bounds, flat-record size, and source-path depth.
 - Rejected many-to-one target obstruction mappings before Target IR emission so
   failure-coordinate collisions cannot silently discard an obstruction arm.
 - Hardened standalone application builds around complete lawpack dependency
@@ -21,6 +25,17 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the compiler-owned `edict.result-projection/v1` artifact for preserving
+  typed application results across the Echo target boundary. The bounded,
+  canonical projection names only declared application input and
+  capability-step result paths; an independent verifier reconstructs the
+  authored Core result and requires exact Core, Target IR, semantic-closure,
+  schema, and digest agreement. Target lowering separates admitted projections
+  from explicit per-intent projection failures without narrowing general Target
+  IR support. The application build requires one projection, independently
+  verifies it, and binds the same artifact into both provider closures. The
+  provider contract pack publishes its CDDL root, and the Hello Echo lawpack
+  generator owns reviewed projection bytes and identity fixtures.
 - Added the public `edict` CLI `build` operation for standalone applications.
   A settings-only JSONL request loads one exact `edict.application/v1`
   manifest, source, complete lawpack dependency closure, direct target adapter,

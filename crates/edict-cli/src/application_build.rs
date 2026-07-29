@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::fs::{self, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
@@ -15,17 +15,19 @@ use edict_syntax::{
     decode_lawpack_bundle, digest_canonical_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     select_provider_component, validate_lawpack_dependency_graph,
-    validate_provider_lowering_request, validate_provider_verification_request, CanonicalValue,
-    ProviderArtifact, ProviderArtifactBinding, ProviderArtifactKind, ProviderArtifactRef,
-    ProviderBoundArtifact, ProviderDigest, ProviderDigestAlgorithm, ProviderInvocationKind,
-    ProviderLoweringInvocationContract, ProviderLoweringOutputKind, ProviderLoweringOutputRequest,
-    ProviderLoweringRequest, ProviderResourceRef, ProviderResponseLimits, ProviderSemanticInput,
+    validate_provider_lowering_request, validate_provider_verification_request,
+    verify_result_projection, CanonicalValue, ProviderArtifact, ProviderArtifactBinding,
+    ProviderArtifactKind, ProviderArtifactRef, ProviderBoundArtifact, ProviderDigest,
+    ProviderDigestAlgorithm, ProviderInvocationKind, ProviderLoweringInvocationContract,
+    ProviderLoweringOutputKind, ProviderLoweringOutputRequest, ProviderLoweringRequest,
+    ProviderResourceRef, ProviderResponseLimits, ProviderSemanticInput,
     ProviderSemanticInputBinding, ProviderSemanticInputKind,
     ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
-    ProviderVerificationOutputRequest, ProviderVerificationRequest, TargetLoweringStatus,
-    TargetProviderManifest, ValidatedLawpackBundle, ValidatedTargetProviderManifest,
-    CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
-    TARGET_PROFILE_API_VERSION, TARGET_PROVIDER_PROTOCOL_VERSION,
+    ProviderVerificationOutputRequest, ProviderVerificationRequest, ResultProjectionArtifact,
+    TargetLoweringStatus, TargetProviderManifest, ValidatedLawpackBundle,
+    ValidatedTargetProviderManifest, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+    RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
+    TARGET_PROVIDER_PROTOCOL_VERSION,
 };
 use serde::Deserialize;
 
@@ -37,6 +39,7 @@ const PACKAGE_ROLE: &str = "executable-operation-package.echo";
 const PACKAGE_DOMAIN: &str = "echo.operation-package/v1";
 const VERIFICATION_REPORT_ROLE: &str = "verifier-report.echo-operation";
 const VERIFICATION_REPORT_DOMAIN: &str = "echo.operation-package-verifier-report/v1";
+const RESULT_PROJECTION_ROLE: &str = "07-result-projection";
 const MAX_APPLICATION_ARTIFACT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
@@ -88,6 +91,7 @@ struct ProviderInvocationContext<'a> {
     adapter: &'a edict_syntax::ValidatedLawpackAdapter,
     source_bytes: &'a [u8],
     target_ir_bytes: &'a [u8],
+    result_projection: &'a ResultProjectionArtifact,
 }
 
 #[allow(
@@ -297,10 +301,27 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             ),
         ));
     }
+    let (result_intent, result_projection) = single_result_projection(
+        &target_ir_report.result_projections,
+        &target_ir_report.result_projection_failures,
+    )?;
     let target_ir = target_ir_report.artifact.ok_or_else(|| {
         failure(
             "TargetLoweringFailed",
             "target lowering reported success without an artifact",
+        )
+    })?;
+    verify_result_projection(
+        &core,
+        &target_ir,
+        result_intent,
+        result_projection.canonical_bytes(),
+        result_projection.digest(),
+    )
+    .map_err(|error| {
+        failure(
+            "ResultProjectionVerificationFailed",
+            format!("compiler result projection failed independent verification: {error}"),
         )
     })?;
 
@@ -353,6 +374,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         adapter: &adapter,
         source_bytes: &source_artifact_bytes,
         target_ir_bytes: &target_ir_bytes,
+        result_projection,
     };
     let package_bytes = invoke_lowerer(
         &host,
@@ -709,6 +731,7 @@ fn invoke_lowerer(
         invocation.coordinate,
         invocation.source_bytes,
         invocation.target_ir_bytes,
+        invocation.result_projection,
     )?;
     let contract = lowering_contract(&core, invocation.target_profile, &semantic_inputs);
     let request = ProviderLoweringRequest {
@@ -812,6 +835,7 @@ fn invoke_verifier(
         invocation.coordinate,
         invocation.source_bytes,
         package_bytes,
+        invocation.result_projection,
     )?;
     let contract = verification_contract(
         &core,
@@ -884,60 +908,64 @@ fn lowering_inputs(
     coordinate: &str,
     source_bytes: &[u8],
     target_ir_bytes: &[u8],
+    result_projection: &ResultProjectionArtifact,
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
     let configuration = single_configuration(adapter)?;
     let adapter_reference = selected_adapter_reference(
         &loaded.bundle.manifest().target_adapters,
         adapter.target_profile(),
     )?;
-    Ok(vec![
-        semantic_input(
-            "01-lawpack-adapter",
-            ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
-            &adapter_reference.id,
-            ADAPTER_DOMAIN,
-            &loaded.adapter_bytes,
-        )?,
-        semantic_input(
-            "02-lawpack-exports",
-            ProviderSemanticInputKind::Auxiliary("lawpack-exports".to_owned()),
-            &loaded.bundle.manifest().exports.id,
-            EXPORTS_DOMAIN,
-            &loaded.exports_bytes,
-        )?,
-        semantic_input(
-            "03-lawpack",
-            ProviderSemanticInputKind::Lawpack,
-            &format!(
-                "{}@{}",
-                loaded.bundle.manifest().id,
-                loaded.bundle.manifest().version
-            ),
-            PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
-            &loaded.manifest_bytes,
-        )?,
-        semantic_input(
-            "04-source",
-            ProviderSemanticInputKind::Auxiliary("edict-source".to_owned()),
-            coordinate,
-            SOURCE_DOMAIN,
-            source_bytes,
-        )?,
-        semantic_input(
-            "05-target-configuration",
-            ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
-            &configuration.id,
-            &configuration.id,
-            &loaded.configuration_bytes,
-        )?,
-        semantic_input(
-            "06-target-ir",
-            ProviderSemanticInputKind::Auxiliary("target-ir".to_owned()),
-            &adapter.target_ir().id,
-            TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
-            target_ir_bytes,
-        )?,
-    ])
+    with_result_projection_input(
+        vec![
+            semantic_input(
+                "01-lawpack-adapter",
+                ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
+                &adapter_reference.id,
+                ADAPTER_DOMAIN,
+                &loaded.adapter_bytes,
+            )?,
+            semantic_input(
+                "02-lawpack-exports",
+                ProviderSemanticInputKind::Auxiliary("lawpack-exports".to_owned()),
+                &loaded.bundle.manifest().exports.id,
+                EXPORTS_DOMAIN,
+                &loaded.exports_bytes,
+            )?,
+            semantic_input(
+                "03-lawpack",
+                ProviderSemanticInputKind::Lawpack,
+                &format!(
+                    "{}@{}",
+                    loaded.bundle.manifest().id,
+                    loaded.bundle.manifest().version
+                ),
+                PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+                &loaded.manifest_bytes,
+            )?,
+            semantic_input(
+                "04-source",
+                ProviderSemanticInputKind::Auxiliary("edict-source".to_owned()),
+                coordinate,
+                SOURCE_DOMAIN,
+                source_bytes,
+            )?,
+            semantic_input(
+                "05-target-configuration",
+                ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
+                &configuration.id,
+                &configuration.id,
+                &loaded.configuration_bytes,
+            )?,
+            semantic_input(
+                "06-target-ir",
+                ProviderSemanticInputKind::Auxiliary("target-ir".to_owned()),
+                &adapter.target_ir().id,
+                TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+                target_ir_bytes,
+            )?,
+        ],
+        result_projection,
+    )
 }
 
 fn verification_inputs(
@@ -946,60 +974,64 @@ fn verification_inputs(
     coordinate: &str,
     source_bytes: &[u8],
     package_bytes: &[u8],
+    result_projection: &ResultProjectionArtifact,
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
     let configuration = single_configuration(adapter)?;
     let adapter_reference = selected_adapter_reference(
         &loaded.bundle.manifest().target_adapters,
         adapter.target_profile(),
     )?;
-    Ok(vec![
-        semantic_input(
-            "01-lawpack-adapter",
-            ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
-            &adapter_reference.id,
-            ADAPTER_DOMAIN,
-            &loaded.adapter_bytes,
-        )?,
-        semantic_input(
-            "02-executable-operation-package",
-            ProviderSemanticInputKind::Auxiliary("executable-operation-package".to_owned()),
-            PACKAGE_ROLE,
-            PACKAGE_DOMAIN,
-            package_bytes,
-        )?,
-        semantic_input(
-            "03-lawpack-exports",
-            ProviderSemanticInputKind::Auxiliary("lawpack-exports".to_owned()),
-            &loaded.bundle.manifest().exports.id,
-            EXPORTS_DOMAIN,
-            &loaded.exports_bytes,
-        )?,
-        semantic_input(
-            "04-lawpack",
-            ProviderSemanticInputKind::Lawpack,
-            &format!(
-                "{}@{}",
-                loaded.bundle.manifest().id,
-                loaded.bundle.manifest().version
-            ),
-            PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
-            &loaded.manifest_bytes,
-        )?,
-        semantic_input(
-            "05-source",
-            ProviderSemanticInputKind::Auxiliary("edict-source".to_owned()),
-            coordinate,
-            SOURCE_DOMAIN,
-            source_bytes,
-        )?,
-        semantic_input(
-            "06-target-configuration",
-            ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
-            &configuration.id,
-            &configuration.id,
-            &loaded.configuration_bytes,
-        )?,
-    ])
+    with_result_projection_input(
+        vec![
+            semantic_input(
+                "01-lawpack-adapter",
+                ProviderSemanticInputKind::Auxiliary("lawpack-adapter".to_owned()),
+                &adapter_reference.id,
+                ADAPTER_DOMAIN,
+                &loaded.adapter_bytes,
+            )?,
+            semantic_input(
+                "02-executable-operation-package",
+                ProviderSemanticInputKind::Auxiliary("executable-operation-package".to_owned()),
+                PACKAGE_ROLE,
+                PACKAGE_DOMAIN,
+                package_bytes,
+            )?,
+            semantic_input(
+                "03-lawpack-exports",
+                ProviderSemanticInputKind::Auxiliary("lawpack-exports".to_owned()),
+                &loaded.bundle.manifest().exports.id,
+                EXPORTS_DOMAIN,
+                &loaded.exports_bytes,
+            )?,
+            semantic_input(
+                "04-lawpack",
+                ProviderSemanticInputKind::Lawpack,
+                &format!(
+                    "{}@{}",
+                    loaded.bundle.manifest().id,
+                    loaded.bundle.manifest().version
+                ),
+                PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+                &loaded.manifest_bytes,
+            )?,
+            semantic_input(
+                "05-source",
+                ProviderSemanticInputKind::Auxiliary("edict-source".to_owned()),
+                coordinate,
+                SOURCE_DOMAIN,
+                source_bytes,
+            )?,
+            semantic_input(
+                "06-target-configuration",
+                ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned()),
+                &configuration.id,
+                &configuration.id,
+                &loaded.configuration_bytes,
+            )?,
+        ],
+        result_projection,
+    )
 }
 
 fn single_configuration(
@@ -1011,6 +1043,26 @@ fn single_configuration(
             .values()
             .map(|effect| &effect.target_configuration),
     )
+}
+
+fn single_result_projection<'a>(
+    projections: &'a BTreeMap<String, ResultProjectionArtifact>,
+    failures: &BTreeMap<String, edict_syntax::ResultProjectionFailure>,
+) -> Result<(&'a str, &'a ResultProjectionArtifact), ApplicationBuildFailure> {
+    if !failures.is_empty() {
+        return Err(failure(
+            "ResultProjectionUnavailable",
+            format!("application result projection failed closed: {failures:?}"),
+        ));
+    }
+    let mut projections = projections.iter();
+    match (projections.next(), projections.next()) {
+        (Some((intent, projection)), None) => Ok((intent.as_str(), projection)),
+        _ => Err(failure(
+            "ResultProjectionUnavailable",
+            "the executable-operation build requires exactly one compiler result projection",
+        )),
+    }
 }
 
 fn single_unique_configuration<'a>(
@@ -1055,6 +1107,27 @@ fn semantic_input(
         kind,
         artifact: bound_artifact(coordinate, domain, bytes)?,
     })
+}
+
+fn with_result_projection_input(
+    mut inputs: Vec<ProviderSemanticInput>,
+    projection: &ResultProjectionArtifact,
+) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
+    let input = semantic_input(
+        RESULT_PROJECTION_ROLE,
+        ProviderSemanticInputKind::Auxiliary("result-projection".to_owned()),
+        &projection.projection().operation_coordinate,
+        RESULT_PROJECTION_DIGEST_DOMAIN,
+        projection.canonical_bytes(),
+    )?;
+    if input.artifact.reference.digest.bytes != projection.digest().bytes() {
+        return Err(failure(
+            "ResultProjectionDigestMismatch",
+            "provider input does not preserve the compiler result projection identity",
+        ));
+    }
+    inputs.push(input);
+    Ok(inputs)
 }
 
 fn lowering_contract(
@@ -1664,22 +1737,25 @@ fn failure(kind: &'static str, message: impl Into<String>) -> ApplicationBuildFa
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use edict_syntax::{
-        LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef,
-        ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
-        TargetProviderManifest, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+        compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, decode_result_projection,
+        lower_to_target_ir, parse_module, prepare_lawpack_compilation, LawpackResourceRef,
+        LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource,
+        ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef, ResultProjectionArtifact,
+        TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI,
+        TARGET_PROVIDER_MANIFEST_API_VERSION,
     };
 
     use super::{
         build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
-        read, selected_adapter_reference, single_unique_configuration,
-        validate_application_manifest, write_outputs, ApplicationLawpack, ApplicationManifest,
-        ApplicationTarget,
+        read, selected_adapter_reference, single_result_projection, single_unique_configuration,
+        validate_application_manifest, with_result_projection_input, write_outputs,
+        ApplicationLawpack, ApplicationManifest, ApplicationTarget, RESULT_PROJECTION_ROLE,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1759,6 +1835,75 @@ mod tests {
     }
 
     #[test]
+    fn compiler_result_projection_is_bound_into_the_provider_closure() {
+        let projection = result_projection_artifact();
+        let bytes = projection.canonical_bytes().to_vec();
+        let input = test_ok(
+            with_result_projection_input(Vec::new(), &projection),
+            "bind compiler result projection",
+        );
+
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0].role, RESULT_PROJECTION_ROLE);
+        assert_eq!(
+            input[0].kind,
+            edict_syntax::ProviderSemanticInputKind::Auxiliary("result-projection".to_owned())
+        );
+        assert_eq!(
+            input[0].artifact.reference.coordinate,
+            "examples.hello_echo@1.createGreeting"
+        );
+        assert_eq!(
+            input[0].artifact.artifact.domain,
+            RESULT_PROJECTION_DIGEST_DOMAIN
+        );
+        assert_eq!(input[0].artifact.artifact.bytes, bytes);
+    }
+
+    #[test]
+    fn application_build_requires_one_projection_and_no_projection_failures() {
+        let projection = result_projection_artifact();
+        let empty = BTreeMap::new();
+        let no_failures = BTreeMap::new();
+        assert_eq!(
+            test_err(
+                single_result_projection(&empty, &no_failures),
+                "an application build without a projection must reject",
+            )
+            .kind,
+            "ResultProjectionUnavailable"
+        );
+
+        let multiple = BTreeMap::from([
+            ("first".to_owned(), projection.clone()),
+            ("second".to_owned(), projection.clone()),
+        ]);
+        assert_eq!(
+            test_err(
+                single_result_projection(&multiple, &no_failures),
+                "an application build with multiple projections must reject",
+            )
+            .kind,
+            "ResultProjectionUnavailable"
+        );
+
+        let admitted = BTreeMap::from([("createGreeting".to_owned(), projection)]);
+        let projection_failure = test_err(
+            decode_result_projection(&[]),
+            "empty projection bytes must reject",
+        );
+        let failures = BTreeMap::from([("createGreeting".to_owned(), projection_failure)]);
+        assert_eq!(
+            test_err(
+                single_result_projection(&admitted, &failures),
+                "a recorded projection failure must reject the application build",
+            )
+            .kind,
+            "ResultProjectionUnavailable"
+        );
+    }
+
+    #[test]
     fn provider_schema_selection_loads_every_bound_role_under_bounded_stress() {
         let mut manifest = provider_manifest_with_schema_count(32);
         let mut state = STRESS_SEED;
@@ -1785,6 +1930,38 @@ mod tests {
 
         assert_eq!(actual.len(), 32);
         assert_eq!(roles.len(), 32);
+    }
+
+    fn result_projection_artifact() -> ResultProjectionArtifact {
+        let manifest =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+        let exports =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+        let adapter =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+        let source = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+        let bundle = test_ok(
+            decode_lawpack_bundle(manifest, exports),
+            "decode Hello Echo lawpack",
+        );
+        let adapter = test_ok(
+            decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter),
+            "decode Hello Echo adapter",
+        );
+        let module = test_ok(parse_module(source), "parse Hello Echo source");
+        let preparation = test_ok(
+            prepare_lawpack_compilation(&module, &bundle, &adapter),
+            "prepare Hello Echo compilation",
+        );
+        let core = test_ok(
+            compile_to_core(&module, preparation.compiler_context()),
+            "compile Hello Echo Core",
+        );
+        let mut report = lower_to_target_ir(&core, preparation.target_ir_facts());
+        match report.result_projections.remove("createGreeting") {
+            Some(projection) => projection,
+            None => panic!("Hello Echo lowering emits its result projection"),
+        }
     }
 
     #[test]

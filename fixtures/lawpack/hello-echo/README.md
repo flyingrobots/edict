@@ -25,6 +25,11 @@ a fake transport, or a handwritten Echo executable package.
   artifact lowered from that exact Core module.
 - `create-greeting.target-ir.sha256` is its
   `edict.target-ir.artifact/v1` domain-framed identity.
+- `create-greeting.result-projection.cbor` is the canonical
+  `edict.result-projection/v1` assembly of the authored success value from
+  declared application input and the capability-step result.
+- `create-greeting.result-projection.sha256` is its
+  `edict.result-projection.artifact/v1` domain-framed identity.
 
 Regenerate only through:
 
@@ -41,7 +46,8 @@ cargo xtask lawpack-goldens --check
 The loader validates the manifest, exports, and exact direct adapter. The
 compiler derives Core and `echo.span-ir/v1` facts from that closure without a
 handwritten compiler context. The golden command compiles and lowers the source
-before reproducing the reviewed Core and Target IR bytes and identities. This
-fixture does not yet emit an Echo executable package or execute an Echo Action.
-Edict corroborates the target-configuration reference but deliberately leaves
-its Echo-specific semantics to the Echo-owned target provider.
+before reproducing the reviewed Core, Target IR, and result-projection bytes
+and identities. This fixture does not yet bind the projected result during
+Echo execution. Edict corroborates the target-configuration reference but
+deliberately leaves its Echo-specific semantics and runtime evaluation to the
+Echo-owned target provider.

@@ -13,6 +13,8 @@ use crate::core_ir::{
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
+use crate::result_projection::emit_result_projection_with_closure;
+use crate::{ResultProjectionArtifact, ResultProjectionFailure};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
 pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
@@ -171,8 +173,17 @@ pub struct TargetLoweringFailure {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetLoweringReport {
+    /// Overall Target IR lowering status.
     pub status: TargetLoweringStatus,
+    /// Target IR artifact when general target lowering succeeds.
     pub artifact: Option<TargetIrArtifact>,
+    /// Compiler-owned result projection per supported intent. This map may be
+    /// empty even when `status` is `Lowered`; callers own admission cardinality.
+    pub result_projections: BTreeMap<String, ResultProjectionArtifact>,
+    /// Per-intent result-projection refusals. This map may be non-empty while
+    /// `status` is `Lowered` and general `failures` remains empty.
+    pub result_projection_failures: BTreeMap<String, ResultProjectionFailure>,
+    /// General target-lowering failures.
     pub failures: Vec<TargetLoweringFailure>,
 }
 
@@ -278,20 +289,57 @@ pub fn lower_to_target_ir(
     }
 
     if failures.is_empty() {
+        let artifact = TargetIrArtifact {
+            domain: facts.target_ir_domain.clone(),
+            target_profile: facts.target_profile.clone(),
+            source_core_coordinate: core.coordinate.clone(),
+            semantic_closure,
+            intents,
+        };
+        let (result_projections, result_projection_failures) =
+            if let Some(expected_semantic_closure) = artifact.semantic_closure.as_ref() {
+                lower_result_projections(core, &artifact, expected_semantic_closure)
+            } else {
+                (BTreeMap::new(), BTreeMap::new())
+            };
         TargetLoweringReport {
             status: TargetLoweringStatus::Lowered,
-            artifact: Some(TargetIrArtifact {
-                domain: facts.target_ir_domain.clone(),
-                target_profile: facts.target_profile.clone(),
-                source_core_coordinate: core.coordinate.clone(),
-                semantic_closure,
-                intents,
-            }),
+            artifact: Some(artifact),
+            result_projections,
+            result_projection_failures,
             failures,
         }
     } else {
         unsupported(failures)
     }
+}
+
+fn lower_result_projections(
+    core: &CoreModule,
+    target_ir: &TargetIrArtifact,
+    expected_semantic_closure: &TargetIrSemanticClosure,
+) -> (
+    BTreeMap<String, ResultProjectionArtifact>,
+    BTreeMap<String, ResultProjectionFailure>,
+) {
+    let mut projections = BTreeMap::new();
+    let mut failures = BTreeMap::new();
+    for intent_name in target_ir.intents.keys() {
+        match emit_result_projection_with_closure(
+            core,
+            target_ir,
+            intent_name,
+            expected_semantic_closure,
+        ) {
+            Ok(projection) => {
+                projections.insert(intent_name.clone(), projection);
+            }
+            Err(failure) => {
+                failures.insert(intent_name.clone(), failure);
+            }
+        }
+    }
+    (projections, failures)
 }
 
 pub(crate) fn semantic_closure_for_core(
@@ -759,6 +807,8 @@ fn unsupported(failures: Vec<TargetLoweringFailure>) -> TargetLoweringReport {
     TargetLoweringReport {
         status: TargetLoweringStatus::Unsupported,
         artifact: None,
+        result_projections: BTreeMap::new(),
+        result_projection_failures: BTreeMap::new(),
         failures,
     }
 }

@@ -83,6 +83,7 @@ pub mod parser;
 pub mod provider;
 pub mod provider_invocation;
 pub mod provider_lowering;
+pub mod result_projection;
 pub mod semantic;
 pub mod target_ir;
 pub mod target_profile;
@@ -194,6 +195,15 @@ pub use provider_lowering::{
     lower_with_builtin_lowerer, BuiltinLowererCompatibilityFailure,
     BuiltinLowererCompatibilityFailureKind, BuiltinLowererRequest, BuiltinLoweringResult,
     BuiltinTargetLowerer,
+};
+pub use result_projection::{
+    decode_result_projection, digest_result_projection, emit_result_projection,
+    encode_result_projection, verify_result_projection, ResultProjection, ResultProjectionArtifact,
+    ResultProjectionExpr, ResultProjectionFailure, ResultProjectionFailureKind,
+    ResultProjectionSource, VerifiedResultProjection, MAX_RESULT_PROJECTION_ARTIFACT_BYTES,
+    MAX_RESULT_PROJECTION_NODES, MAX_RESULT_PROJECTION_PATH_SEGMENTS,
+    MAX_RESULT_PROJECTION_TEXT_BYTES, RESULT_PROJECTION_API_VERSION, RESULT_PROJECTION_CDDL_ROOT,
+    RESULT_PROJECTION_DIGEST_DOMAIN,
 };
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{

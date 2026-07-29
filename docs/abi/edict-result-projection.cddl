@@ -1,0 +1,37 @@
+; SPDX-License-Identifier: Apache-2.0
+; edict-result-projection.cddl
+; Canonical schema for compiler-owned application-result projections.
+; Authoritative byte encoding: edict.canonical-cbor/v1.
+
+result-projection = {
+  schema: "edict.result-projection/v1",
+  operationCoordinate: bounded-projection-text,
+  outputType: bounded-projection-text,
+  maxOutputBytes: uint .gt 0,
+  expression: result-projection-expr,
+}
+
+result-projection-expr = result-projection-record / result-projection-source
+
+result-projection-record = {
+  kind: "record",
+  ; The root record counts as one of the Rust decoder's 256 expression nodes.
+  ; Nested aggregate node count remains an authoritative decoder check.
+  fields: { 0*255 bounded-projection-text => result-projection-expr },
+}
+
+result-projection-source = {
+  kind: "source",
+  source: result-projection-source-kind,
+  ; Matches MAX_RESULT_PROJECTION_PATH_SEGMENTS in edict-syntax.
+  path: [0*32 bounded-projection-text],
+}
+
+result-projection-source-kind =
+  { kind: "applicationInput" } /
+  {
+    kind: "capabilityResult",
+    stepId: bounded-projection-text,
+  }
+
+bounded-projection-text = tstr .size (1..1024)
