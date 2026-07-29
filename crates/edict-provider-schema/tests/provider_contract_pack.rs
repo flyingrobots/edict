@@ -18,7 +18,7 @@ use edict_syntax::{
     TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement,
     TargetIrSemanticClosure, TargetProfileContractResource, WriteClass,
     AUTHORITY_FACTS_API_VERSION, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
+    RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -269,6 +269,15 @@ fn target_ir_root_matches_reference_encoder() {
     assert_eq!(
         pack.validate_domain("runtime.unknown/v1", &invalid),
         Err(ProviderArtifactSchemaValidationErrorKind::UnsupportedDomain)
+    );
+}
+
+#[test]
+fn result_projection_root_matches_reference_encoder() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    assert!(
+        pack.supports_domain(RESULT_PROJECTION_DIGEST_DOMAIN),
+        "provider contract pack must publish the compiler-owned projection domain"
     );
 }
 
