@@ -7,7 +7,6 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use crate::digest_core_module;
 use crate::{
     decode_canonical_cbor, digest_canonical_artifact, encode_canonical_cbor, CanonicalValue,
     CoreDigest, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreType, LocalRef, TargetIrArtifact,
@@ -380,26 +379,19 @@ fn validate_projection_basis(
             intent_name,
         ));
     }
-    let expected_core_digest = digest_core_module(core)
-        .map_err(|error| {
+    let expected_semantic_closure =
+        crate::target_ir::semantic_closure_for_core(core).map_err(|error| {
             failure(
                 ResultProjectionFailureKind::CoreTargetMismatch,
-                error.to_string(),
+                format!("{error:?}"),
             )
-        })?
-        .to_review_string();
-    let Some(semantic_closure) = &target_ir.semantic_closure else {
-        return Err(failure(
-            ResultProjectionFailureKind::CoreTargetMismatch,
-            format!("{intent_name}.semanticClosure"),
-        ));
-    };
-    if semantic_closure.source_core.coordinate != core.coordinate
-        || semantic_closure.source_core.digest.as_deref() != Some(expected_core_digest.as_str())
+        })?;
+    if expected_semantic_closure.is_none()
+        || expected_semantic_closure.as_ref() != target_ir.semantic_closure.as_ref()
     {
         return Err(failure(
             ResultProjectionFailureKind::CoreTargetMismatch,
-            format!("{intent_name}.semanticClosure.sourceCore"),
+            format!("{intent_name}.semanticClosure"),
         ));
     }
     if core_intent.body.result != target_intent.result {
