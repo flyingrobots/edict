@@ -1737,13 +1737,14 @@ fn failure(kind: &'static str, message: impl Into<String>) -> ApplicationBuildFa
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use edict_syntax::{
-        decode_result_projection, digest_canonical_artifact, LawpackResourceRef,
+        compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, decode_result_projection,
+        lower_to_target_ir, parse_module, prepare_lawpack_compilation, LawpackResourceRef,
         LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource,
         ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef, ResultProjectionArtifact,
         TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI,
@@ -1752,7 +1753,7 @@ mod tests {
 
     use super::{
         build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
-        read, selected_adapter_reference, single_unique_configuration,
+        read, selected_adapter_reference, single_result_projection, single_unique_configuration,
         validate_application_manifest, with_result_projection_input, write_outputs,
         ApplicationLawpack, ApplicationManifest, ApplicationTarget, RESULT_PROJECTION_ROLE,
     };
@@ -1835,27 +1836,10 @@ mod tests {
 
     #[test]
     fn compiler_result_projection_is_bound_into_the_provider_closure() {
-        let bytes = include_bytes!(
-            "../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.cbor"
-        )
-        .to_vec();
-        let projection = test_ok(
-            decode_result_projection(&bytes),
-            "decode result projection fixture",
-        );
-        let digest = test_ok(
-            digest_canonical_artifact(RESULT_PROJECTION_DIGEST_DOMAIN, &bytes),
-            "digest result projection fixture",
-        );
+        let projection = result_projection_artifact();
+        let bytes = projection.canonical_bytes.clone();
         let input = test_ok(
-            with_result_projection_input(
-                Vec::new(),
-                &ResultProjectionArtifact {
-                    projection,
-                    canonical_bytes: bytes.clone(),
-                    digest,
-                },
-            ),
+            with_result_projection_input(Vec::new(), &projection),
             "bind compiler result projection",
         );
 
@@ -1874,6 +1858,41 @@ mod tests {
             RESULT_PROJECTION_DIGEST_DOMAIN
         );
         assert_eq!(input[0].artifact.artifact.bytes, bytes);
+    }
+
+    #[test]
+    fn application_build_requires_one_projection_and_no_projection_failures() {
+        let projection = result_projection_artifact();
+        let empty = BTreeMap::new();
+        let no_failures = BTreeMap::new();
+        assert_eq!(
+            single_result_projection(&empty, &no_failures)
+                .expect_err("an application build without a projection must reject")
+                .kind,
+            "ResultProjectionUnavailable"
+        );
+
+        let multiple = BTreeMap::from([
+            ("first".to_owned(), projection.clone()),
+            ("second".to_owned(), projection.clone()),
+        ]);
+        assert_eq!(
+            single_result_projection(&multiple, &no_failures)
+                .expect_err("an application build with multiple projections must reject")
+                .kind,
+            "ResultProjectionUnavailable"
+        );
+
+        let admitted = BTreeMap::from([("createGreeting".to_owned(), projection)]);
+        let projection_failure =
+            decode_result_projection(&[]).expect_err("empty projection bytes must reject");
+        let failures = BTreeMap::from([("createGreeting".to_owned(), projection_failure)]);
+        assert_eq!(
+            single_result_projection(&admitted, &failures)
+                .expect_err("a recorded projection failure must reject the application build")
+                .kind,
+            "ResultProjectionUnavailable"
+        );
     }
 
     #[test]
@@ -1903,6 +1922,38 @@ mod tests {
 
         assert_eq!(actual.len(), 32);
         assert_eq!(roles.len(), 32);
+    }
+
+    fn result_projection_artifact() -> ResultProjectionArtifact {
+        let manifest =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+        let exports =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+        let adapter =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+        let source = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+        let bundle = test_ok(
+            decode_lawpack_bundle(manifest, exports),
+            "decode Hello Echo lawpack",
+        );
+        let adapter = test_ok(
+            decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter),
+            "decode Hello Echo adapter",
+        );
+        let module = test_ok(parse_module(source), "parse Hello Echo source");
+        let preparation = test_ok(
+            prepare_lawpack_compilation(&module, &bundle, &adapter),
+            "prepare Hello Echo compilation",
+        );
+        let core = test_ok(
+            compile_to_core(&module, preparation.compiler_context()),
+            "compile Hello Echo Core",
+        );
+        let mut report = lower_to_target_ir(&core, preparation.target_ir_facts());
+        report
+            .result_projections
+            .remove("createGreeting")
+            .expect("Hello Echo lowering emits its result projection")
     }
 
     #[test]

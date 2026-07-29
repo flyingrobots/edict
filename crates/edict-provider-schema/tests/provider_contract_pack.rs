@@ -319,6 +319,57 @@ fn result_projection_root_enforces_decoder_path_limit() {
 }
 
 #[test]
+fn result_projection_root_enforces_output_and_record_node_limits() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+
+    let mut zero_output_bound = representative_result_projection();
+    *map_value_mut(&mut zero_output_bound, "maxOutputBytes") = CanonicalValue::Integer(0);
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &zero_output_bound),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "the published root must reject the decoder's zero output bound"
+    );
+
+    let mut boundary = representative_result_projection();
+    let expression = map_value_mut(&mut boundary, "expression");
+    let fields = map_value_mut(expression, "fields");
+    *fields = CanonicalValue::Map(
+        (0..(edict_syntax::MAX_RESULT_PROJECTION_NODES - 1))
+            .map(|index| {
+                (
+                    text(&format!("field{index:03}")),
+                    map(vec![
+                        ("kind", text("source")),
+                        ("source", map(vec![("kind", text("applicationInput"))])),
+                        ("path", array(Vec::new())),
+                    ]),
+                )
+            })
+            .collect(),
+    );
+    pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &boundary)
+        .expect("the root record plus 255 source nodes satisfies the decoder limit");
+
+    let fields = map_value_mut(map_value_mut(&mut boundary, "expression"), "fields");
+    let CanonicalValue::Map(entries) = fields else {
+        panic!("projection record fields must be a map");
+    };
+    entries.push((
+        text("field255"),
+        map(vec![
+            ("kind", text("source")),
+            ("source", map(vec![("kind", text("applicationInput"))])),
+            ("path", array(Vec::new())),
+        ]),
+    ));
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &boundary),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "the published root must reject one more field than the flat record node limit permits"
+    );
+}
+
+#[test]
 fn core_root_accepts_reference_encoded_operation_basis() {
     let context = CompilerContext::new()
         .with_operation_profile("sequence.splice", "continuum.profile.write/v1")

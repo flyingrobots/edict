@@ -127,6 +127,16 @@ fn remove_canonical_field(value: &mut CanonicalValue, field: &str) {
     entries.retain(|(key, _)| key != &CanonicalValue::Text(field.to_owned()));
 }
 
+fn canonical_field_mut<'a>(value: &'a mut CanonicalValue, field: &str) -> &'a mut CanonicalValue {
+    let CanonicalValue::Map(entries) = value else {
+        panic!("canonical projection root is a map");
+    };
+    entries
+        .iter_mut()
+        .find_map(|(key, value)| (key == &CanonicalValue::Text(field.to_owned())).then_some(value))
+        .unwrap_or_else(|| panic!("missing canonical field {field}"))
+}
+
 #[test]
 fn exact_core_and_target_ir_emit_the_typed_hello_echo_projection() {
     let (core, target) = hello_echo();
@@ -457,9 +467,110 @@ fn path_text_artifact_and_structure_bounds_fail_closed() {
 }
 
 #[test]
-fn canonical_encoding_is_insertion_order_independent_for_fixed_seed_cases() {
-    let expected =
-        encode_result_projection(&projection_with_fields(32)).expect("encode ordered projection");
+fn hostile_decoded_values_fail_closed_before_semantic_admission() {
+    let mut empty_text = projection_with_fields(1);
+    empty_text.operation_coordinate.clear();
+    assert_eq!(
+        encode_result_projection(&empty_text)
+            .expect_err("empty required text must reject")
+            .kind(),
+        ResultProjectionFailureKind::InvalidCanonicalArtifact
+    );
+
+    let bytes =
+        encode_result_projection(&projection_with_fields(1)).expect("encode bounded projection");
+    let mut zero_output_bound = decode_canonical_cbor(&bytes).expect("decode projection value");
+    *canonical_field_mut(&mut zero_output_bound, "maxOutputBytes") = CanonicalValue::Integer(0);
+    let zero_output_bytes =
+        encode_canonical_cbor(&zero_output_bound).expect("encode hostile canonical value");
+    assert_eq!(
+        decode_result_projection(&zero_output_bytes)
+            .expect_err("decoded zero output bound must reject")
+            .kind(),
+        ResultProjectionFailureKind::InvalidOutputBound
+    );
+}
+
+#[test]
+fn unknown_steps_and_invalid_application_input_bindings_fail_closed() {
+    let (core, target) = hello_echo();
+    let artifact =
+        emit_result_projection(&core, &target, "createGreeting").expect("emit projection");
+    let mut unknown_step = artifact.projection.clone();
+    let ResultProjectionExpr::Record { fields } = &mut unknown_step.expression else {
+        panic!("Hello Echo projection is a record");
+    };
+    let ResultProjectionExpr::Source { source, .. } =
+        fields.get_mut("key").expect("Hello Echo key projection")
+    else {
+        panic!("Hello Echo key projection is a source");
+    };
+    *source = ResultProjectionSource::CapabilityResult {
+        step_id: "createGreeting.step.missing".to_owned(),
+    };
+    let unknown_step_bytes =
+        encode_result_projection(&unknown_step).expect("encode hostile step projection");
+    let unknown_step_digest =
+        digest_result_projection(&unknown_step).expect("digest hostile step projection");
+    assert_eq!(
+        verify_result_projection(
+            &core,
+            &target,
+            "createGreeting",
+            &unknown_step_bytes,
+            unknown_step_digest,
+        )
+        .expect_err("unknown capability step must reject")
+        .kind(),
+        ResultProjectionFailureKind::UnknownCapabilityStep
+    );
+
+    let (mut missing_core, mut missing_target) = hello_echo();
+    missing_core
+        .intents
+        .get_mut("createGreeting")
+        .expect("Core intent")
+        .body
+        .locals
+        .retain(|local| local.id != "arg.0");
+    repin_target_core(&missing_core, &mut missing_target);
+    assert_eq!(
+        emit_result_projection(&missing_core, &missing_target, "createGreeting")
+            .expect_err("missing application input binding must reject")
+            .kind(),
+        ResultProjectionFailureKind::InvalidApplicationInput
+    );
+
+    let (mut duplicate_core, mut duplicate_target) = hello_echo();
+    let duplicate_input = duplicate_core.intents["createGreeting"].body.locals[0].clone();
+    duplicate_core
+        .intents
+        .get_mut("createGreeting")
+        .expect("Core intent")
+        .body
+        .locals
+        .push(duplicate_input);
+    repin_target_core(&duplicate_core, &mut duplicate_target);
+    assert_eq!(
+        emit_result_projection(&duplicate_core, &duplicate_target, "createGreeting")
+            .expect_err("duplicate application input binding must reject")
+            .kind(),
+        ResultProjectionFailureKind::InvalidApplicationInput
+    );
+}
+
+#[test]
+fn canonical_maps_are_insertion_order_independent_for_fixed_seed_cases() {
+    let entries = (0..32)
+        .map(|index| {
+            (
+                CanonicalValue::Text(format!("field{index:04}")),
+                CanonicalValue::Integer(i128::from(index)),
+            )
+        })
+        .collect::<Vec<_>>();
+    let expected = encode_canonical_cbor(&CanonicalValue::Map(entries.clone()))
+        .expect("encode ordered canonical map");
     let mut state = PROPERTY_SEED;
 
     for _case in 0..64 {
@@ -472,22 +583,14 @@ fn canonical_encoding_is_insertion_order_independent_for_fixed_seed_cases() {
                 .expect("selected index");
             indexes.swap(index, selected);
         }
-        let mut fields = BTreeMap::new();
-        for index in indexes {
-            fields.insert(
-                format!("field{index:04}"),
-                ResultProjectionExpr::Source {
-                    source: ResultProjectionSource::ApplicationInput,
-                    path: vec![format!("source{index:04}")],
-                },
-            );
-        }
-        let candidate = ResultProjection {
-            expression: ResultProjectionExpr::Record { fields },
-            ..projection_with_fields(0)
-        };
+        let candidate = CanonicalValue::Map(
+            indexes
+                .into_iter()
+                .map(|index| entries[index].clone())
+                .collect(),
+        );
         assert_eq!(
-            encode_result_projection(&candidate).expect("encode property candidate"),
+            encode_canonical_cbor(&candidate).expect("encode property candidate"),
             expected
         );
     }
