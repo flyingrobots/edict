@@ -67,11 +67,22 @@ segments per source, 1,024 UTF-8 bytes per coordinate or field string, and
 65,536 canonical bytes. A zero output bound and every one-over-limit value
 reject before admission. [RESULT-PROJ-REQ-004]
 
+`ResultProjection` is an untrusted candidate value so callers can submit
+hostile values to the encoder and verifier. A `ResultProjectionArtifact` can
+only be constructed by the compiler-owned emitter and exposes its accepted
+projection, canonical bytes, and identity through read-only accessors. Safe
+callers therefore cannot detach the artifact bytes from their digest after
+emission. [RESULT-PROJ-REQ-003] [RESULT-PROJ-REQ-006]
+
 `encode_result_projection` emits `edict.canonical-cbor/v1` bytes.
 `digest_result_projection` frames those exact bytes under
 `edict.result-projection.artifact/v1`. The generated provider contract pack
 publishes the `result-projection` CDDL root and the matching artifact-domain
-binding. The reviewed Hello Echo bytes and digest under
+binding. The root mirrors positive output bounds, bounded text, the 32-segment
+path ceiling, and the maximum 255 children of a flat root record. Aggregate
+recursive node count and encoded artifact bytes remain authoritative decoder
+checks because CDDL cannot express either whole-value total. The reviewed Hello
+Echo bytes and digest under
 `fixtures/lawpack/hello-echo/` are reproduced only by
 `cargo xtask lawpack-goldens`. [RESULT-PROJ-REQ-003]
 
