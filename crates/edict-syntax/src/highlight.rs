@@ -117,6 +117,7 @@ fn is_highlight_keyword(text: &str) -> bool {
             | "where"
             | "let"
             | "return"
+            | "request"
             | "require"
             | "guarantee"
             | "assert"

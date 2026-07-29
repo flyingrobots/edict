@@ -52,6 +52,7 @@ Out of scope:
 | COREIR-REQ-017 | implemented | Canonical encoding and decoding accept values through the public `MAX_CANONICAL_NESTING_DEPTH` of 128 nested containers and reject the next level with stable `CanonicalErrorKind::NestingLimitExceeded`, without changing canonical Core bytes or digests below the limit. | issue #146, crates/edict-syntax/src/canonical.rs |
 | COREIR-REQ-018 | implemented | A Core intent may bind one optional typed basis expression. The expression participates in canonical bytes and digest when present, while the absent representation preserves existing `basis none` Core bytes. | docs/SPEC_edict-language-v1.md, docs/abi/edict-core.cddl |
 | COREIR-REQ-019 | implemented | Core integer type and value identity preserves exact supported width and signedness, and canonical encoding rejects values outside the declared integer domain. | docs/SPEC_edict-language-v1.md, EDICT-LANG-INTLIT-001 |
+| COREIR-REQ-020 | implemented | Core represents typed external-action requests as deterministic non-callable data and requires each request operation to remain in the exact digest-locked capability-import closure before canonical identity exists. | issue #172, docs/abi/edict-core.cddl |
 
 ## Fixtures
 
@@ -59,6 +60,7 @@ Out of scope:
 | --- | --- | --- |
 | docs/abi/edict-core.cddl | Normative Core semantic schema. | Required semantic declarations exist and forbidden byte/hash freeze fields are absent. |
 | fixtures/lang/bounds/bounded-hello.edict | Initial pure local-record source-to-Core fixture. | Compiled Core module canonicalizes deterministically and produces the reviewed Core golden artifacts. |
+| fixtures/lang/external-actions/workspace-snapshot.edict | Typed external-request source-to-Core fixture. | Compiled Core preserves the complete request and exact capability closure in generated canonical bytes. |
 | fixtures/core/schema/accepted/core-module-minimal.fields | Accepted Core module field-shape fixture. | Required `core-module` fields are present and no unknown fields appear. |
 | fixtures/core/schema/accepted/core-intent-minimal.fields | Accepted Core intent field-shape fixture. | Required `core-intent` fields are present and no unknown fields appear. |
 | fixtures/core/schema/accepted/core-fn-body-minimal.fields | Accepted pure Core function body field-shape fixture. | Required `core-fn-body` fields are present and no unknown fields appear. |
@@ -68,6 +70,8 @@ Out of scope:
 | fixtures/core/schema/rejected/core-fn-body-effect-node-field.fields | Rejected pure Core function body field-shape fixture. | Effect-capable `nodes` field rejects as non-Core helper body shape. |
 | fixtures/core/canonical/bounded-hello.core.cbor | Reviewed canonical Core byte fixture for the initial pure local-record source fixture. | Executable Core encoding exactly matches the checked-in byte fixture. |
 | fixtures/core/canonical/bounded-hello.core.sha256 | Exact reviewed Core module digest for the initial pure local-record source fixture. | Domain-separated executable Core digest exactly matches the checked-in review rendering. |
+| fixtures/core/canonical/workspace-snapshot.core.cbor | Reviewed canonical Core byte fixture for the typed workspace-snapshot request. | `cargo xtask core-goldens --check` compares the checked-in bytes to executable regeneration. |
+| fixtures/core/canonical/workspace-snapshot.core.sha256 | Exact reviewed Core module digest for the typed workspace-snapshot request. | `cargo xtask core-goldens --check` compares the checked-in review digest to executable regeneration. |
 
 ## Test Cases
 
@@ -100,6 +104,7 @@ Out of scope:
 | COREIR-TP-025 | implemented | Canonical validation | COREIR-REQ-017 | Encoding and decoding accept exactly 128 nested empty arrays or maps and reject the 129th container even when it has no child value that would otherwise cross the depth guard. | canonical_nesting_limit_counts_empty_terminal_containers | crates/edict-syntax/src/canonical.rs | Code Lawyer regression for PR #150; prevents empty terminal containers from bypassing the public container-count bound. |
 | COREIR-TP-026 | implemented | Canonical encoding | COREIR-REQ-012, COREIR-REQ-014, COREIR-REQ-018 | Adding or changing an explicit Core basis expression changes canonical Core bytes and digest; the reference-encoded operation Core satisfies the published schema, while omitting basis retains the reviewed `basis none` golden bytes and digest. | explicit_basis_and_semantic_input_mutations_move_target_identity, core_root_accepts_reference_encoded_operation_basis, reviewed_core_golden_bytes_match_executable_encoder, reviewed_core_digest_matches_exact_fixture | fixtures/lang/operations/explicit-basis-u64.edict, fixtures/core/canonical/bounded-hello.core.cbor | Proves basis is semantic while retaining provider-v1 compatibility. |
 | COREIR-TP-027 | implemented | Canonical validation | COREIR-REQ-012, COREIR-REQ-019 | `U64::MAX` and the signed fixed-width minima canonicalize under their exact declared domains; an out-of-range value or a value incompatible with its declared width rejects before canonical identity exists, and the reference-encoded exact-width operation satisfies the published schema. | operation_prerequisite_fixture_preserves_fixed_width_basis_and_lawpack_closure, signed_fixed_width_minima_preserve_exact_domains, out_of_range_u64_and_cross_width_values_reject_before_core, canonical_core_rejects_values_outside_their_declared_integer_domain, core_root_accepts_reference_encoded_operation_basis | fixtures/lang/operations/explicit-basis-u64.edict | Prevents host-width and GraphQL-width narrowing from entering Core. |
+| COREIR-TP-028 | implemented | External request | COREIR-REQ-012, COREIR-REQ-014, COREIR-REQ-020 | Request fields survive canonical Core encoding, repeated compilation is byte-identical, authority mutations move Core and Target identity, removing the exact capability import makes the artifact unencodable, and the owner-generated request golden reproduces exact bytes and digest. | workspace_observation_request_compiles_as_non_callable_data, request_artifacts_are_reproducible, every_request_authority_field_moves_core_and_target_identity, request_operation_must_remain_in_core_and_target_capability_closure, core_goldens_match_executable_encoder | crates/edict-syntax/tests/external_action_requests.rs, fixtures/core/canonical/workspace-snapshot.core.cbor, fixtures/core/canonical/workspace-snapshot.core.sha256 | Request construction performs no external effect. |
 
 ## Determinism Obligations
 

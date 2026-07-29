@@ -1339,7 +1339,8 @@ package-decl    = "package" , package-ref , ";" ;
 import-decl     = shape-import
                 | lawpack-import
                 | target-import
-                | core-import ;
+                | core-import
+                | capability-import ;
 
 shape-import    = "use" , "shape" , string-lit , digest-clause? ,
                   "as" , ident , ";" ;
@@ -1349,6 +1350,8 @@ target-import   = "use" , "target" , package-ref , digest-clause? ,
                   "as" , ident , ";" ;
 core-import     = "use" , "core" , package-ref , digest-clause? ,
                   "as" , ident , ";" ;
+capability-import = "use" , "capability" , package-ref , digest-clause ,
+                    "as" , ident , ";" ;
 digest-clause   = "digest" , digest-lit ;
 
 declaration     = type-decl
@@ -1383,6 +1386,7 @@ type-ref        = qual-ident , type-args?
                 | "Bytes" , bytes-refine?
                 | "Option" , "<" , type-ref , ">"
                 | "CapabilityRef" , "<" , type-ref , ">"
+                | "ExternalActionRequest" , "<" , type-ref , ">"
                 | "List" , "<" , type-ref , "," , "max" , "=" , bound-ref , ">"
                 | "Map" , "<" , type-ref , "," , type-ref , "," ,
                   "max" , "=" , bound-ref , ">" ;
@@ -1420,6 +1424,7 @@ param           = ident , ":" , type-ref ;
 block           = "{" , statement* , "}" ;
 
 statement       = let-stmt
+                | external-action-request-stmt
                 | assert-stmt
                 | require-stmt
                 | guarantee-stmt
@@ -1433,6 +1438,19 @@ let-stmt        = "let" , ident , type-annotation? , "=" ,
                   let-rhs , effect-else-clause? , ";" ;
 let-rhs         = expr | effect-branch-expr ;
 type-annotation = ":" , type-ref ;
+external-action-request-stmt =
+                  "request" , ident , ":" ,
+                  "ExternalActionRequest" , "<" , type-ref , ">" , "=" ,
+                  call-expr ,
+                  "input" , "schema" , digest-locked-package-ref ,
+                  "settlement" , "schema" , digest-locked-package-ref ,
+                  "authority" , expr ,
+                  "basis" , expr ,
+                  "budget" ,
+                    "maxSettlementBytes" , expr ,
+                    "maxAttempts" , expr ,
+                  "reconcile" , digest-locked-package-ref , ";" ;
+digest-locked-package-ref = package-ref , digest-clause ;
 assert-stmt     = "assert" , predicate , ";" ;
 require-stmt    = "require" , predicate , obstruction-clause , ";" ;
 guarantee-stmt  = "guarantee" , predicate , obstruction-clause? , ";" ;
@@ -1927,6 +1945,41 @@ diagnostic that the compiler can force authors to handle.
 
 `hash` is a source-level helper, not the artifact hash primitive. The label must
 be a string literal so digest domains are stable and reviewable.
+
+## External-Action Requests
+
+Edict expresses an external boundary crossing as deterministic data, not as an
+effect performed by the compiler, lowerer, provider, or model
+(`EDICT-LANG-EXTERNAL-REQUEST-001`).
+
+A `use capability` import binds one digest-locked, domain-specific external
+operation family. Its alias is legal only as the single-argument operation call
+inside an `external-action-request-stmt`. It is not a semantic-effect import and
+cannot be invoked from `let` or effect-statement position. Raw filesystem,
+process, network, Git, GitHub, model, and shell operation families are not
+requestable language capabilities.
+
+Every request carries:
+
+- an input value and its exact schema;
+- an exact settlement schema;
+- runtime-valued authority scope and basis expressions;
+- runtime-valued maximum settlement bytes and attempt bounds;
+- an exact reconciliation law;
+- a typed `ExternalActionRequest<Settlement>` result.
+
+Core and Target IR preserve the request as a separate node/collection with
+fixed `awaitingSettlement` and `schemaRequired` posture. The exact operation
+resource remains in the digest-bound capability closure. Target lowering must
+not translate the request into a callable target intrinsic or provider import.
+
+Execution is outside Edict. Echo admits a durable request before an authorized
+adapter touches the world, admits a schema-valid settlement afterward, and
+resumes deterministic interpretation from history. Waiting is explicit program
+state keyed by request identity; no native stack, continuation, callback, or
+`async` host frame is serialized. Runtime path, ref, basis, budget, adapter, and
+settlement checks fail closed at Echo admission rather than pretending dynamic
+facts are compile-time properties.
 
 ## Effects And Footprints
 

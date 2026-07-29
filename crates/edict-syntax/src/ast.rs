@@ -29,7 +29,7 @@ pub enum ImportKind {
     Lawpack,
     Target,
     Core,
-    /// `use capability ... as ...` — present in product sketches; rejected by v1.
+    /// Digest-bound external operation family available only to `request`.
     Capability,
 }
 
@@ -44,6 +44,14 @@ pub struct Import {
     /// Optional `digest "..."` clause (required for a locked bundle).
     pub digest: Option<String>,
     pub alias: String,
+    pub span: Span,
+}
+
+/// A digest-locked package resource carried by source syntax.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DigestLockedPackageRef {
+    pub package: PackageRef,
+    pub digest: String,
     pub span: Span,
 }
 
@@ -203,6 +211,20 @@ pub enum Stmt {
     Effect {
         call: Expr,
         els: Option<ObstructionHandler>,
+        span: Span,
+    },
+    /// Construct one typed external-action request value without performing it.
+    ExternalActionRequest {
+        name: String,
+        request_type: TypeRef,
+        operation: Expr,
+        input_schema: DigestLockedPackageRef,
+        settlement_schema: DigestLockedPackageRef,
+        authority_scope: Box<Expr>,
+        basis: Box<Expr>,
+        max_settlement_bytes: Box<Expr>,
+        max_attempts: Box<Expr>,
+        reconciliation_law: DigestLockedPackageRef,
         span: Span,
     },
     /// `require predicate else <arm>;` (always carries `else`).

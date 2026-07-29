@@ -14,9 +14,10 @@ use edict_syntax::{
     canonical_target_profile_contract_resources, compile_to_core, decode_canonical_cbor,
     digest_target_profile_contract_resource, encode_core_module, encode_result_projection,
     encode_target_ir_artifact, parse_module, CanonicalValue, CompilerContext, CoreBudget, CoreExpr,
-    CoreObstructionReason, CorePredicate, CoreValue, ProviderArtifactSchemaValidationErrorKind,
-    ResourceRef, ResultProjection, ResultProjectionExpr, ResultProjectionSource, TargetIrArtifact,
-    TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure,
+    CoreExternalActionBudget, CoreObstructionReason, CorePredicate, CoreValue, LocalRef,
+    ProviderArtifactSchemaValidationErrorKind, ResourceRef, ResultProjection, ResultProjectionExpr,
+    ResultProjectionSource, TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent,
+    TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure,
     TargetProfileContractResource, WriteClass, AUTHORITY_FACTS_API_VERSION,
     CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN, RESULT_PROJECTION_DIGEST_DOMAIN,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
@@ -34,6 +35,8 @@ const RESULT_PROJECTION_CDDL: &[u8] =
 const TARGET_IR_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-target-ir.cddl");
 const CORE_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/core/canonical/bounded-hello.core.cbor");
+const EXTERNAL_REQUEST_CORE_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/core/canonical/workspace-snapshot.core.cbor");
 const AUTHORITY_FACTS_FIXTURE: &[u8] = include_bytes!(
     "../../../fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor"
 );
@@ -41,6 +44,8 @@ const TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.cbor");
 const ALTERNATE_TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor");
+const EXTERNAL_REQUEST_TARGET_IR_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor");
 const LAWPACK_ADAPTER_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor");
 const RESULT_PROJECTION_FIXTURE: &[u8] =
@@ -186,9 +191,23 @@ fn every_published_root_validates_reference_and_rejects_mutation() {
 }
 
 #[test]
+fn core_root_matches_reference_encoder() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    for fixture in [CORE_FIXTURE, EXTERNAL_REQUEST_CORE_FIXTURE] {
+        let value = decode_canonical_cbor(fixture).expect("reviewed Core is canonical");
+        pack.validate_domain(CORE_MODULE_DIGEST_DOMAIN, &value)
+            .expect("reviewed Core satisfies the Edict-owned root");
+    }
+}
+
+#[test]
 fn target_ir_root_matches_reference_encoder() {
     let pack = assemble(canonical_target_profile_contract_resources());
-    for fixture in [TARGET_IR_FIXTURE, ALTERNATE_TARGET_IR_FIXTURE] {
+    for fixture in [
+        TARGET_IR_FIXTURE,
+        ALTERNATE_TARGET_IR_FIXTURE,
+        EXTERNAL_REQUEST_TARGET_IR_FIXTURE,
+    ] {
         let value = decode_canonical_cbor(fixture).expect("reviewed Target IR is canonical");
         pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &value)
             .expect("reviewed Target IR satisfies the Edict-owned root");
@@ -196,6 +215,17 @@ fn target_ir_root_matches_reference_encoder() {
     let encoded_requirements = encoded_target_ir_with_requirements();
     pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &encoded_requirements)
         .expect("encoder output with both requirement dispositions satisfies the root");
+
+    let encoded_request = encoded_target_ir_with_external_request();
+    pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &encoded_request)
+        .expect("encoder output with an external request satisfies the closed root");
+    let mut request_without_closure = encoded_request;
+    remove_map_field(&mut request_without_closure, "semanticClosure");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &request_without_closure),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "external requests cannot validate through the legacy closure-free root"
+    );
 
     let mut missing_semantic_closure = encoded_target_ir_with_coordinate("example.target@1");
     remove_map_field(&mut missing_semantic_closure, "semanticClosure");
@@ -708,6 +738,66 @@ fn encoded_target_ir_with_requirements() -> CanonicalValue {
 }
 
 fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
+    encode_target_ir_value(&representative_target_ir(coordinate))
+}
+
+fn encoded_target_ir_with_external_request() -> CanonicalValue {
+    let mut artifact = representative_target_ir("example.target-profile@1");
+    let operation = ResourceRef {
+        coordinate: "workspace.snapshot.observe@1".to_owned(),
+        digest: Some(format!("sha256:{}", "4".repeat(64))),
+    };
+    artifact
+        .semantic_closure
+        .as_mut()
+        .expect("representative Target IR is closed")
+        .capabilities
+        .push(operation.clone());
+    artifact
+        .intents
+        .get_mut("apply")
+        .expect("representative intent")
+        .external_action_requests
+        .push(TargetIrExternalActionRequest {
+            id: "apply.request.0".to_owned(),
+            binding: LocalRef {
+                id: "local.0".to_owned(),
+                alpha_name: "$local0".to_owned(),
+                ty: "edict.external-action.request/v1<Bytes<max=64>>".to_owned(),
+            },
+            operation,
+            input_type: "Bytes<max=32>".to_owned(),
+            settlement_type: "Bytes<max=64>".to_owned(),
+            input_schema: ResourceRef {
+                coordinate: "workspace.snapshot.input@1".to_owned(),
+                digest: Some(format!("sha256:{}", "5".repeat(64))),
+            },
+            settlement_schema: ResourceRef {
+                coordinate: "workspace.snapshot.settlement@1".to_owned(),
+                digest: Some(format!("sha256:{}", "6".repeat(64))),
+            },
+            input: CoreExpr::Const(CoreValue::Bytes(vec![1, 2, 3])),
+            authority_scope: CoreExpr::Const(CoreValue::Bytes(vec![4, 5])),
+            basis: CoreExpr::Const(CoreValue::Bytes(vec![6, 7])),
+            budget: CoreExternalActionBudget {
+                max_settlement_bytes: CoreExpr::Const(CoreValue::Int {
+                    width: "U64".to_owned(),
+                    value: "64".to_owned(),
+                }),
+                max_attempts: CoreExpr::Const(CoreValue::Int {
+                    width: "U32".to_owned(),
+                    value: "3".to_owned(),
+                }),
+            },
+            reconciliation_law: ResourceRef {
+                coordinate: "workspace.snapshot.reconcile@1".to_owned(),
+                digest: Some(format!("sha256:{}", "7".repeat(64))),
+            },
+        });
+    encode_target_ir_value(&artifact)
+}
+
+fn representative_target_ir(coordinate: &str) -> TargetIrArtifact {
     let terminal_reason = CoreObstructionReason {
         kind: "example.Terminal".to_owned(),
         payload: BTreeMap::from([(
@@ -722,7 +812,7 @@ fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
             CoreExpr::Const(CoreValue::String("preserved".to_owned())),
         )]),
     };
-    let artifact = TargetIrArtifact {
+    TargetIrArtifact {
         domain: "example.target-ir/v1".to_owned(),
         target_profile: ResourceRef {
             coordinate: coordinate.to_owned(),
@@ -738,6 +828,7 @@ fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
                 coordinate: "example.lawpack@1".to_owned(),
                 digest: Some(format!("sha256:{}", "3".repeat(64))),
             }],
+            capabilities: Vec::new(),
         }),
         intents: BTreeMap::from([(
             "apply".to_owned(),
@@ -769,11 +860,15 @@ fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
                     },
                 ],
                 steps: Vec::new(),
+                external_action_requests: Vec::new(),
                 result: CoreExpr::Const(CoreValue::Null),
             },
         )]),
-    };
-    let bytes = encode_target_ir_artifact(&artifact).expect("representative Target IR encodes");
+    }
+}
+
+fn encode_target_ir_value(artifact: &TargetIrArtifact) -> CanonicalValue {
+    let bytes = encode_target_ir_artifact(artifact).expect("representative Target IR encodes");
     decode_canonical_cbor(&bytes).expect("encoded representative Target IR is canonical")
 }
 

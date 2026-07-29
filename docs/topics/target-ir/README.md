@@ -14,8 +14,8 @@ The current target IR implementation is deliberately narrow:
 - selected target profile: `echo.dpo@1` or `gitwarp.ref_crdt@1`;
 - selected Target IR artifact domain: `echo.span-ir/v1` or
   `gitwarp.commit-reducer-ir/v1`;
-- selected source/Core shape: the first supported effectful Core effect node
-  and Echo `require` guard requirements;
+- selected source/Core shape: the first supported effectful Core effect node,
+  Echo `require` guard requirements, and typed external-action request data;
 - selected outcome: a deterministic target-owned review artifact with canonical
   `edict.canonical-cbor/v1` bytes and a reviewed
   `edict.target-ir.artifact/v1` digest;
@@ -24,7 +24,7 @@ The current target IR implementation is deliberately narrow:
 
 The `edict_syntax` crate exposes `lower_to_target_ir`,
 `TargetIrLoweringFacts`, `TargetLoweringReport`, `TargetIrArtifact`,
-`TargetIrSemanticClosure`,
+`TargetIrSemanticClosure`, `TargetIrExternalActionRequest`,
 `encode_target_ir_artifact`, `digest_target_ir_artifact`, and stable
 `TargetLoweringFailureKind` values. The lowerer consumes an already-built
 `CoreModule` and explicit target-lowering facts supplied by the caller. It does
@@ -80,6 +80,12 @@ becomes a deterministic Target IR step that records:
 - the structured Core input expression;
 - sorted obstruction failure keys and their structured obstruction arm values.
 
+Each supported Core external-action request instead becomes one
+`externalActionRequests` entry. It preserves the operation, input and settlement
+types, schemas, input, scope, basis, budgets, reconciliation law, compiler-owned
+binding, deterministic request id, and fixed awaiting-settlement posture. It
+does not emit a target step or target intrinsic.
+
 For the supported Echo slice, each supported Core `require` node before any
 target step becomes a deterministic Target IR requirement that records:
 
@@ -107,14 +113,15 @@ expression for the supported slice. This records authored basis, preconditions,
 evaluation limits, guard dispositions, and success-output semantics without
 resolving a runtime basis, executing Echo, or admitting a bundle.
 
-When any intent has an explicit basis or the Core module imports a lawpack, the
-artifact carries a `TargetIrSemanticClosure`. The closure binds the exact
-canonical Core coordinate/digest and a coordinate-keyed, lowercase
-digest-locked lawpack set. Equivalent lawpack order and duplicate identical
-references canonicalize to the same Target IR identity; conflicting resources,
-an empty source Core coordinate, an unidentifiable Core, or a basis-bearing
-artifact without its closure rejects before Target IR identity exists.
-[TIR-REQ-015]
+When any intent has an explicit basis, the Core module imports a lawpack, or the
+Core module imports a requestable capability, the artifact carries a
+`TargetIrSemanticClosure`. The closure binds the exact canonical Core
+coordinate/digest plus coordinate-keyed, lowercase digest-locked lawpack and
+capability sets. Equivalent resource order and duplicate identical references
+canonicalize to the same Target IR identity. Conflicting resources, an empty
+source Core coordinate, an unidentifiable Core, a basis-bearing artifact without
+its closure, or a request operation absent from the capability closure rejects
+before Target IR identity exists. [TIR-REQ-015] [TIR-REQ-017]
 
 Canonical Target IR uses an intentional artifact-envelope value model rather
 than Rust struct serialization. The reviewed digest is SHA-256 over canonical
@@ -128,10 +135,11 @@ The canonical value includes the artifact's own domain, digest-locked target
 profile resource, non-empty source Core coordinate, optional semantic closure,
 sorted intent map, optional explicit basis expressions, input constraints, Core
 evaluation budget, source-ordered requirements, requirement predicates and
-failure dispositions, source-ordered target steps, sorted obstruction failure
-keys and arms, and structured Core result expression. Target profile and
-semantic-closure digests are strict artifact references: missing digests and
-non-lowercase `sha256:<64 hex>` review strings reject before hashing.
+failure dispositions, source-ordered target steps, source-ordered external
+requests, sorted obstruction failure keys and arms, and structured Core result
+expression. Target profile and semantic-closure digests are strict artifact
+references: missing digests and non-lowercase `sha256:<64 hex>` review strings
+reject before hashing.
 
 Reviewed Echo and git-warp Target IR byte/digest goldens live under
 `fixtures/target-ir/canonical/`. `cargo xtask target-ir-goldens --check`
@@ -173,14 +181,15 @@ with an unsupported ABI rejects with
 floating imports rejects with `TargetLoweringFailureKind::UndigestedCoreImport`.
 Supplying unsupported Core capability flags rejects with
 `TargetLoweringFailureKind::UnsupportedCoreCapability`. Supplying Core nodes
-outside the supported effect and Echo requirement shapes rejects with
+outside the supported effect, external-request, and Echo requirement shapes
+rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Supplying a target-specific
 Core feature that the selected target does not support rejects with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`. Missing or ambiguous
 effect lowering facts, non-Echo target intrinsics, missing operation-profile
 support, and obstruction keys absent from the selected target facts also reject
-before any artifact is emitted. A Core intent with no target-owned requirements
-or steps, or a Core module with no intents, rejects with
+before any artifact is emitted. A Core intent with no target-owned requirements,
+steps, or external requests, or a Core module with no intents, rejects with
 `TargetLoweringFailureKind::NoTargetSteps`. Duplicate target-lowering facts are
 ambiguous only when they match an effect used by the Core module being lowered;
 unrelated duplicate facts do not block the supported artifact.
@@ -196,6 +205,7 @@ The following are not implemented by this slice:
 - git-warp runtime execution, commit object creation, and CRDT reducer
   verification;
 - Echo runtime receipts for first-class resumable obstruction strands;
+- Echo request admission, adapter execution, and settlement resumption;
 - additional target profiles beyond Echo and git-warp;
 - v2 chained or composite adapter resolution.
 

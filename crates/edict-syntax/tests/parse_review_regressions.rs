@@ -5,7 +5,9 @@
 
 mod common;
 use common::{body, intent_of};
-use edict_syntax::ast::{BinOp, BoundRef, Decl, Expr, RequireElseArm, Stmt, TypeExpr, TypeRef};
+use edict_syntax::ast::{
+    BinOp, BoundRef, Decl, Expr, ImportKind, RequireElseArm, Stmt, TypeExpr, TypeRef,
+};
 use edict_syntax::token::IntSuffix;
 use edict_syntax::{parse_module, ParseErrorKind};
 
@@ -61,11 +63,11 @@ fn reserved_keywords_are_rejected_as_import_aliases() {
 }
 
 #[test]
-fn capability_imports_are_rejected_in_v1() {
-    reject_kind(
-        "package a.b@1;\nuse capability c.d@1 as c;",
-        ParseErrorKind::UnsupportedSyntax,
-    );
+fn capability_imports_parse_as_external_operation_references() {
+    let source = format!("package a.b@1;\nuse capability c.d@1 digest \"{ZERO_DIGEST}\" as c;");
+    let module = parse_module(&source).expect("capability import parses");
+    assert_eq!(module.imports[0].kind, ImportKind::Capability);
+    assert_eq!(module.imports[0].digest.as_deref(), Some(ZERO_DIGEST));
 }
 
 #[test]

@@ -49,6 +49,36 @@ intent replaceThing(input: Input)
 }
 "#;
 
+const EXTERNAL_REQUEST_SOURCE: &str = r#"package demo.external_request@1;
+
+use capability workspace.snapshot.observe@1 digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" as snapshot;
+
+type Input = {
+  payload: Bytes<max=1024>,
+  scope: Bytes<max=32>,
+  basis: Bytes<max=32>,
+  maxSettlementBytes: U64,
+  maxAttempts: U32,
+};
+
+intent observe(input: Input)
+  returns ExternalActionRequest<Bytes<max=65536>>
+  profile hello.readOnly
+  basis input.basis
+  budget <= hello.tinyBudget
+{
+  request pending: ExternalActionRequest<Bytes<max=65536>> =
+    snapshot(input.payload)
+    input schema workspace.snapshot.input@1 digest "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    settlement schema workspace.snapshot.settlement@1 digest "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    authority input.scope
+    basis input.basis
+    budget maxSettlementBytes input.maxSettlementBytes maxAttempts input.maxAttempts
+    reconcile workspace.snapshot.reconcile@1 digest "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+  return pending;
+}
+"#;
+
 const ECHO_TARGET_PROFILE_DIGEST: &str =
     "sha256:1111111111111111111111111111111111111111111111111111111111111111";
 
@@ -243,6 +273,100 @@ fn project_accepts_dirty_source_and_emits_syntax_core_target_ir_projection() {
     assert_empty_projection_diagnostics(&stdout);
     assert_available_core_projection(&stdout, &expected_core_digest);
     assert_available_target_ir_projection(&stdout, &expected_target_digest);
+}
+
+#[test]
+fn project_exposes_external_requests_as_non_callable_review_data() {
+    let output = run_edict(&jsonl([
+        projection_settings(["diagnostics", "core", "targetIr"]),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/external-request.edict",
+            "source": EXTERNAL_REQUEST_SOURCE,
+        }),
+    ]));
+
+    let stdout = assert_successful_projection_output(&output);
+    assert_empty_projection_diagnostics(&stdout);
+
+    let core = record_of_type(&stdout, "core");
+    assert_eq!(core.get("state").and_then(Value::as_str), Some("available"));
+    assert_eq!(
+        core.pointer("/review/intents/observe/body/nodes/0/kind")
+            .and_then(Value::as_str),
+        Some("externalActionRequest")
+    );
+    assert_eq!(
+        core.pointer("/review/intents/observe/body/nodes/0/operation/coordinate")
+            .and_then(Value::as_str),
+        Some("workspace.snapshot.observe@1")
+    );
+    assert_external_request_review(
+        core.pointer("/review/intents/observe/body/nodes/0")
+            .expect("Core request review exists"),
+    );
+
+    let target = record_of_type(&stdout, "targetIr");
+    assert_eq!(
+        target.get("state").and_then(Value::as_str),
+        Some("available")
+    );
+    assert_eq!(
+        target
+            .pointer("/review/semanticClosure/capabilities/0/coordinate")
+            .and_then(Value::as_str),
+        Some("workspace.snapshot.observe@1")
+    );
+    assert_eq!(
+        target
+            .pointer("/review/intents/observe/externalActionRequests/0/operation/coordinate")
+            .and_then(Value::as_str),
+        Some("workspace.snapshot.observe@1")
+    );
+    assert_external_request_review(
+        target
+            .pointer("/review/intents/observe/externalActionRequests/0")
+            .expect("Target IR request review exists"),
+    );
+    assert_eq!(
+        target
+            .pointer("/review/intents/observe/steps")
+            .and_then(Value::as_array)
+            .map(Vec::len),
+        Some(0)
+    );
+}
+
+fn assert_external_request_review(request: &Value) {
+    for (pointer, expected) in [
+        ("/operation/coordinate", "workspace.snapshot.observe@1"),
+        ("/inputType", "Bytes<max=1024>"),
+        ("/settlementType", "Bytes<max=65536>"),
+        ("/inputSchema/coordinate", "workspace.snapshot.input@1"),
+        (
+            "/settlementSchema/coordinate",
+            "workspace.snapshot.settlement@1",
+        ),
+        ("/input/field", "payload"),
+        ("/authorityScope/field", "scope"),
+        ("/basis/field", "basis"),
+        ("/budget/maxSettlementBytes/field", "maxSettlementBytes"),
+        ("/budget/maxAttempts/field", "maxAttempts"),
+        (
+            "/reconciliationLaw/coordinate",
+            "workspace.snapshot.reconcile@1",
+        ),
+        ("/state", "awaitingSettlement"),
+        ("/settlementAdmission", "schemaRequired"),
+    ] {
+        assert_eq!(
+            request.pointer(pointer).and_then(Value::as_str),
+            Some(expected),
+            "{pointer}"
+        );
+    }
 }
 
 #[test]
@@ -1048,7 +1172,10 @@ fn projection_settings<const N: usize>(emit: [&str; N]) -> Value {
             "coordinate": "echo.dpo@1",
             "profileDigest": ECHO_TARGET_PROFILE_DIGEST,
             "irDomain": "echo.span-ir/v1",
-            "operationProfiles": ["continuum.profile.write/v1"],
+            "operationProfiles": [
+                "continuum.profile.read-only/v1",
+                "continuum.profile.write/v1"
+            ],
             "obstructionCoordinates": ["rejected"],
             "effectLowerings": [
                 {
@@ -1356,7 +1483,10 @@ fn projection_target_facts() -> TargetIrLoweringFacts {
             digest: Some(ECHO_TARGET_PROFILE_DIGEST.to_owned()),
         },
         target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
-        operation_profiles: vec!["continuum.profile.write/v1".to_owned()],
+        operation_profiles: vec![
+            "continuum.profile.read-only/v1".to_owned(),
+            "continuum.profile.write/v1".to_owned(),
+        ],
         obstruction_coordinates: vec!["rejected".to_owned()],
         effect_lowerings: vec![TargetEffectLowering {
             effect: "target.replace".to_owned(),

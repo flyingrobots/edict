@@ -39,6 +39,7 @@ pub enum CoreImportKind {
     Lawpack,
     Target,
     Core,
+    Capability,
 }
 
 impl CoreImportKind {
@@ -48,6 +49,7 @@ impl CoreImportKind {
             Self::Lawpack => "lawpack",
             Self::Target => "target",
             Self::Core => "core",
+            Self::Capability => "capability",
         }
     }
 }
@@ -146,6 +148,9 @@ pub enum CoreType {
     },
     CapabilityRef {
         item: String,
+    },
+    ExternalActionRequest {
+        settlement: String,
     },
 }
 
@@ -276,6 +281,26 @@ pub enum CoreNode {
         input: CoreExpr,
         obstruction_map: BTreeMap<String, CoreObstructionArm>,
     },
+    ExternalActionRequest {
+        binding: LocalRef,
+        operation: ResourceRef,
+        input_type: String,
+        settlement_type: String,
+        input_schema: ResourceRef,
+        settlement_schema: ResourceRef,
+        input: CoreExpr,
+        authority_scope: Box<CoreExpr>,
+        basis: Box<CoreExpr>,
+        budget: Box<CoreExternalActionBudget>,
+        reconciliation_law: ResourceRef,
+    },
+}
+
+/// Runtime-valued bounds carried by a typed external-action request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreExternalActionBudget {
+    pub max_settlement_bytes: CoreExpr,
+    pub max_attempts: CoreExpr,
 }
 
 /// Core disposition for a failed `require` predicate.

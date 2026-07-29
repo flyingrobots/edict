@@ -22,9 +22,9 @@ use wit_parser::{
 
 use super::contract_check::{check_links, check_topic, contract_check};
 use super::goldens::{
-    authority_facts_goldens, bundle_goldens, cli_binary_path_from_cargo_metadata,
+    authority_facts_goldens, bundle_goldens, cli_binary_path_from_cargo_metadata, core_goldens,
     target_ir_goldens, target_profile_resource_goldens, AuthorityFactsGoldenMode, BundleGoldenMode,
-    TargetIrGoldenMode, TargetProfileResourceGoldenMode,
+    CoreGoldenMode, TargetIrGoldenMode, TargetProfileResourceGoldenMode,
 };
 use super::lawpack_goldens::{lawpack_goldens, LawpackGoldenMode};
 use super::provider_contract_pack::{
@@ -55,6 +55,12 @@ fn contract_graph_is_valid() {
 fn bundle_digest_goldens_match_assembly() {
     bundle_goldens(&repo_root().expect("repo root"), BundleGoldenMode::Check)
         .expect("bundle digest goldens match assembly output");
+}
+
+#[test]
+fn core_goldens_match_executable_encoder() {
+    core_goldens(&repo_root().expect("repo root"), CoreGoldenMode::Check)
+        .expect("Core goldens match executable encoder output");
 }
 
 #[test]
@@ -1031,7 +1037,7 @@ fn textmate_grammar_covers_public_highlight_roles() {
     let type_regex = textmate_repository_match(&grammar, "types");
     let identifier_regex = textmate_repository_match(&grammar, "identifiers");
     let source = "package use type enum variant intent returns profile implements basis \
-            footprint budget where let return require guarantee assert if then else for in \
+            footprint budget where let return request require guarantee assert if then else for in \
             bounded yield match shape lawpack target core capability as digest fn const true \
             false HelloInput input = == != < <= > >= + - * / % ! && || => -> :: ... ; : , . @ \
             ( ) { } [ ] \"text\" 123";

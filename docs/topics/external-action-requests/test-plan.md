@@ -1,0 +1,81 @@
+# External-Action Requests Test Plan
+
+Status: current verification design for issue #172.
+
+## Scope
+
+In scope:
+
+- digest-locked `capability` imports that name requestable external operation
+  families;
+- source-authored external-action request declarations;
+- deterministic Core and Target IR representation of request data;
+- package-closure binding for operation, schema, and reconciliation resources;
+- explicit awaiting-settlement and schema-admission posture;
+- compile-time denial of undeclared or directly callable operation families;
+- omission of filesystem, process, network, Git, GitHub, model, and shell
+  authority from compiler and provider interfaces.
+
+Out of scope:
+
+- performing external actions;
+- adapter selection or authorization;
+- live path, ref, basis, budget, or settlement admission;
+- stack suspension, continuations, or `async` host frames;
+- general-purpose effects or ambient I/O.
+
+## Requirements
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| EXTREQ-REQ-001 | implemented | Source syntax binds each requestable operation through one digest-locked `capability` import and carries exact input-schema, settlement-schema, authority-scope, basis, budget, input, and reconciliation-law values. | issue #172 |
+| EXTREQ-REQ-002 | implemented | Core represents external-action requests as data with compiler-owned binding identity, typed input and settlement coordinates, explicit `awaitingSettlement` state, and required schema admission. | issue #172 |
+| EXTREQ-REQ-003 | implemented | Target IR preserves external-action requests separately from callable target steps and target intrinsics. | issue #172 |
+| EXTREQ-REQ-004 | implemented | Core and Target IR semantic closure bind the exact capability resource; undeclared operations, floating capability imports, empty request resource coordinates, and duplicate Target request identities fail closed. | issue #172 |
+| EXTREQ-REQ-005 | implemented | Equivalent admitted source and compiler facts produce byte-identical Core and Target IR; every request authority or meaning mutation moves the corresponding digest. | issue #172 |
+| EXTREQ-REQ-006 | implemented | Runtime-valued authority scope, basis, and budget expressions survive compilation for Echo admission; Edict performs no external action while compiling or lowering them. | issue #172 |
+| EXTREQ-REQ-007 | implemented | The request-family allowlist contains only the domain-specific `workspace` root; raw filesystem, process, network, Git, GitHub, model, shell, case-variant, abbreviation, and unregistered roots are outside the requestable capability vocabulary. | issue #172 |
+| EXTREQ-REQ-008 | implemented | Request construction remains bounded under a fixed-seed mutation corpus and a 64-request stress module. | issue #172 |
+
+## Fixtures
+
+| Fixture | Purpose | Oracle |
+| --- | --- | --- |
+| In-test `workspace.snapshot.observe@1` source | First bounded read-only external request. | Public parser, compiler, canonical encoders, and Target IR lowerer preserve the exact request contract. |
+| Fixed seed `0x4558_5452_4551_0001` | Determinism and mutation corpus. | Repeated compilation is byte-identical and distinct capability identities produce distinct Core identities. |
+| 64-request generated module | Bounded stress case. | All 64 requests survive Core and Target IR without becoming callable steps. |
+
+## Cases
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| EXTREQ-TP-001 | implemented | Golden path | EXTREQ-REQ-001, EXTREQ-REQ-002, EXTREQ-REQ-003 | One workspace observation request parses, compiles, and lowers with exact structured fields, awaiting posture, and zero callable target steps. | workspace_observation_request_compiles_as_non_callable_data | crates/edict-syntax/tests/external_action_requests.rs | The target owns later admission and execution. |
+| EXTREQ-TP-002 | implemented | Closure guard | EXTREQ-REQ-004 | Missing operation imports and floating capability digests reject during compilation; removing the exact capability from an already constructed Core or Target artifact rejects during canonical encoding. | undeclared_or_floating_operation_families_fail_closed, request_operation_must_remain_in_core_and_target_capability_closure | crates/edict-syntax/tests/external_action_requests.rs | A source alias is not authority by itself. |
+| EXTREQ-TP-003 | implemented | Authority guard | EXTREQ-REQ-003, EXTREQ-REQ-007 | Direct invocation or obstruction-position use of a capability import fails; case variants, abbreviations, unregistered roots, and raw ambient operation families reject with stable compiler kinds. | capability_import_cannot_be_called_as_an_effect, capability_import_cannot_be_used_as_an_obstruction_coordinate, ambient_operation_families_are_not_requestable | crates/edict-syntax/tests/external_action_requests.rs | Request authority and performance authority remain distinct. |
+| EXTREQ-TP-004 | implemented | Dynamic boundary | EXTREQ-REQ-006 | Scope, basis, maximum settlement bytes, and attempt count remain Core expressions sourced from admitted input. | dynamic_admission_values_survive_without_compile_time_execution | crates/edict-syntax/tests/external_action_requests.rs | Echo owns value-instance admission. |
+| EXTREQ-TP-005 | implemented | Determinism | EXTREQ-REQ-005 | Repeated compilation and lowering produce identical canonical bytes and digests. | request_artifacts_are_reproducible | crates/edict-syntax/tests/external_action_requests.rs | No clock, randomness, filesystem, or network input enters the compiler. |
+| EXTREQ-TP-006 | implemented | Mutation sensitivity | EXTREQ-REQ-005 | Operation, input schema, settlement schema, authority scope, basis, both budget fields, input, and reconciliation mutations move both Core and Target IR identity. | every_request_authority_field_moves_core_and_target_identity | crates/edict-syntax/tests/external_action_requests.rs | Each field is request-authoritative. |
+| EXTREQ-TP-007 | implemented | Property | EXTREQ-REQ-005, EXTREQ-REQ-008 | A fixed-seed 32-case capability-digest corpus is reproducible and collision-free within the corpus. | fixed_seed_request_identity_corpus_is_deterministic | crates/edict-syntax/tests/external_action_requests.rs | Seed is recorded in the fixture table. |
+| EXTREQ-TP-008 | implemented | Stress | EXTREQ-REQ-008 | A generated module with 64 request declarations emits 64 Core requests and 64 Target IR requests with zero callable steps. | sixty_four_requests_remain_bounded_non_callable_data | crates/edict-syntax/tests/external_action_requests.rs | Bound is fixed for CI. |
+| EXTREQ-TP-009 | implemented | Closure guard | EXTREQ-REQ-004 | Canonical Core and Target IR encoding reject request operations removed from their exact capability closure. | request_operation_must_remain_in_core_and_target_capability_closure | crates/edict-syntax/tests/external_action_requests.rs | Manual artifact construction cannot bypass compiler-owned closure. |
+| EXTREQ-TP-010 | implemented | Bundle boundary | EXTREQ-REQ-004 | Contract-bundle assembly rejects a digest-locked Target IR capability absent from the supplied Core closure. | assembly_from_target_ir_rejects_artifact_capability_substitution | crates/edict-syntax/tests/contract_bundle.rs | A self-consistent target artifact cannot substitute source-owned request authority. |
+| EXTREQ-TP-011 | implemented | Public projection | EXTREQ-REQ-002, EXTREQ-REQ-003, EXTREQ-REQ-004 | The public CLI review projection carries the complete Core and Target IR request, exact capability closure, awaiting-settlement posture, and no callable target step. | project_exposes_external_requests_as_non_callable_review_data | crates/edict-cli/tests/jsonl_cli.rs | Projection is review data, not execution authority. |
+| EXTREQ-TP-012 | implemented | Canonical identity guard | EXTREQ-REQ-004 | Canonical Core encoding rejects empty request schema or reconciliation coordinates, and canonical Target IR encoding rejects duplicate request ids within one intent. | request_resource_coordinates_must_be_nonempty, duplicate_target_request_ids_reject_before_identity | crates/edict-syntax/tests/external_action_requests.rs | Waiting and settlement identity cannot be ambiguous or anonymous. |
+| EXTREQ-TP-013 | implemented | Tooling guard | EXTREQ-REQ-001 | A non-call request operation has its own stable parser kind, and `request` is highlighted as a keyword. | non_call_request_operation_has_a_request_specific_parse_kind, request_statement_introducer_is_highlighted_as_a_keyword | crates/edict-syntax/tests/external_action_requests.rs, crates/edict-syntax/tests/highlighting.rs | Request syntax remains distinct from semantic effect syntax. |
+| EXTREQ-TP-014 | implemented | Golden artifact | EXTREQ-REQ-002, EXTREQ-REQ-003, EXTREQ-REQ-004, EXTREQ-REQ-005 | The checked workspace-snapshot source reproduces exact compiler-owned Core and Target IR canonical bytes and domain-framed digests. | core_goldens_match_executable_encoder, target_ir_goldens_match_executable_encoder | fixtures/lang/external-actions/workspace-snapshot.edict, fixtures/core/canonical/workspace-snapshot.core.cbor, fixtures/core/canonical/workspace-snapshot.core.sha256, fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor, fixtures/target-ir/canonical/workspace-snapshot.target-ir.sha256 | Generated only through the owning xtask commands. |
+
+## Determinism Obligations
+
+- Tests use no filesystem discovery, network access, clock, environment, or
+  randomness.
+- The property corpus uses the recorded fixed seed and a local deterministic
+  generator.
+- Canonical comparisons assert decoded structured fields and exact bytes, not
+  diagnostics or log text.
+- Stress cardinality is fixed at 64.
+
+## Open Gaps
+
+- Echo admission of compiler-emitted request values.
+- A concrete workspace-observation adapter and settlement witness.
+- Basis-bound validated patch application.

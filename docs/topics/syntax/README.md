@@ -36,8 +36,9 @@ programs, prove bounds, or itself lower to Core IR. [SYNTAX-REQ-001]
 - A module starts with one `package` declaration, then zero or more imports, then
   declarations. Package and import versions preserve source-significant version
   spelling, including `_beta` style labels. [SYNTAX-REQ-002]
-- Supported imports are `shape`, `lawpack`, `target`, and `core`; `capability`
-  import syntax is rejected in minimal-v1. Digest clauses accept only
+- Supported imports are `shape`, `lawpack`, `target`, `core`, and `capability`.
+  A capability import names a digest-bound external operation family for
+  `request`; it is not a callable effect import. Digest clauses accept only
   `sha256:` plus 64 hex characters. [SYNTAX-REQ-003]
 - Type declarations parse record types, refined `String`, max-only `Bytes`,
   `Option`, `CapabilityRef`, bounded `List`, bounded `Map`, enum declarations,
@@ -47,9 +48,11 @@ programs, prove bounds, or itself lower to Core IR. [SYNTAX-REQ-001]
 - Intent declarations parse parameters, return type, clause surface, statement
   blocks, and expression bodies. Clause requiredness is semantic validation, not
   parser validation. [SYNTAX-REQ-006]
-- Statements parse `let`, `return`, `require`, `guarantee`, `assert`, effect
-  call statements, `if` / `else if` / `else`, and bounded `for`. Effect
-  positions must be calls. [SYNTAX-REQ-007]
+- Statements parse `let`, `request`, `return`, `require`, `guarantee`, `assert`,
+  effect call statements, `if` / `else if` / `else`, and bounded `for`.
+  External-action requests carry exact schemas, scope, basis, budgets, and
+  reconciliation law. Effect and request operation positions must be calls.
+  [SYNTAX-REQ-007]
 - Expressions parse the full Phase 1 precedence chain, calls, type-calls, field
   access, record literals, booleans, digest literals, pure ternary
   `if ... then ... else`, branch-yield conditional effects in `let` right-hand

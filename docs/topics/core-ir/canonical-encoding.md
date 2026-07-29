@@ -174,7 +174,9 @@ public digest function and reviewed digest contract remain unchanged.
 The reviewed Core fixture pair is:
 
 - [`fixtures/core/canonical/bounded-hello.core.cbor`](../../../fixtures/core/canonical/bounded-hello.core.cbor);
-- [`fixtures/core/canonical/bounded-hello.core.sha256`](../../../fixtures/core/canonical/bounded-hello.core.sha256).
+- [`fixtures/core/canonical/bounded-hello.core.sha256`](../../../fixtures/core/canonical/bounded-hello.core.sha256);
+- [`fixtures/core/canonical/workspace-snapshot.core.cbor`](../../../fixtures/core/canonical/workspace-snapshot.core.cbor);
+- [`fixtures/core/canonical/workspace-snapshot.core.sha256`](../../../fixtures/core/canonical/workspace-snapshot.core.sha256).
 
 Both are generated from
 [`fixtures/lang/bounds/bounded-hello.edict`](../../../fixtures/lang/bounds/bounded-hello.edict)

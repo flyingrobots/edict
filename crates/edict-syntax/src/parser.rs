@@ -4,10 +4,11 @@
 //! text so they remain usable as member names after `.`.
 
 use crate::ast::{
-    BinOp, Block, BoundRef, ContinueObstructedArm, Decl, ElseClause, EnumDecl, Expr,
-    FieldConstraint, FieldDecl, Import, ImportKind, IntentClause, IntentDecl, MatchArm, Module,
-    ObstructionArm, ObstructionHandler, ObstructionTarget, PackageRef, Param, RecordEntry,
-    RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp, VariantCase, YieldBlock,
+    BinOp, Block, BoundRef, ContinueObstructedArm, Decl, DigestLockedPackageRef, ElseClause,
+    EnumDecl, Expr, FieldConstraint, FieldDecl, Import, ImportKind, IntentClause, IntentDecl,
+    MatchArm, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, PackageRef, Param,
+    RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp,
+    VariantCase, YieldBlock,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -31,6 +32,7 @@ pub enum ParseErrorKind {
     MissingRequiredField,
     DuplicateField,
     NonCallEffect,
+    NonCallExternalActionOperation,
     ReturnInYieldBlock,
     InvalidTypeCall,
 }
@@ -63,6 +65,7 @@ impl ParseErrorKind {
             ParseErrorKind::MissingRequiredField => "MissingRequiredField",
             ParseErrorKind::DuplicateField => "DuplicateField",
             ParseErrorKind::NonCallEffect => "NonCallEffect",
+            ParseErrorKind::NonCallExternalActionOperation => "NonCallExternalActionOperation",
             ParseErrorKind::ReturnInYieldBlock => "ReturnInYieldBlock",
             ParseErrorKind::InvalidTypeCall => "InvalidTypeCall",
         }
@@ -135,6 +138,7 @@ pub(crate) fn is_keyword(s: &str) -> bool {
             | "budget"
             | "where"
             | "let"
+            | "request"
             | "return"
             | "require"
             | "guarantee"
@@ -190,6 +194,7 @@ fn stmt_contains_return(stmt: &Stmt) -> bool {
         Stmt::For { body, .. } => block_contains_return(body),
         Stmt::Let { .. }
         | Stmt::Effect { .. }
+        | Stmt::ExternalActionRequest { .. }
         | Stmt::Require { .. }
         | Stmt::Guarantee { .. }
         | Stmt::Assert { .. } => false,
@@ -487,12 +492,9 @@ impl Parser {
         } else if self.eat_kw("core") {
             ImportKind::Core
         } else if self.eat_kw("capability") {
-            return self.err_kind(
-                ParseErrorKind::UnsupportedSyntax,
-                "`use capability` is not accepted in Edict v1",
-            );
+            ImportKind::Capability
         } else {
-            return self.err("expected import kind (shape|lawpack|target|core)");
+            return self.err("expected import kind (shape|lawpack|target|core|capability)");
         };
 
         let (package, shape_path) = if kind == ImportKind::Shape {
@@ -893,6 +895,8 @@ impl Parser {
                 els,
                 span: Span::new(start, self.prev_end()),
             })
+        } else if self.eat_kw("request") {
+            self.external_action_request_stmt(start)
         } else if self.eat_kw("return") {
             let value = self.expr()?;
             self.expect(&TokenKind::Semi)?;
@@ -951,6 +955,63 @@ impl Parser {
                 span: Span::new(start, self.prev_end()),
             })
         }
+    }
+
+    fn external_action_request_stmt(&mut self, start: usize) -> Result<Stmt, ParseError> {
+        let name = self.binder()?;
+        self.expect(&TokenKind::Colon)?;
+        let request_type = self.type_ref()?;
+        self.expect(&TokenKind::Eq)?;
+        let operation = self.expr()?;
+        if !is_call_expr(&operation) {
+            return self.err_kind(
+                ParseErrorKind::NonCallExternalActionOperation,
+                "external-action request operation must be a call expression",
+            );
+        }
+        self.expect_kw("input")?;
+        self.expect_kw("schema")?;
+        let input_schema = self.digest_locked_package_ref()?;
+        self.expect_kw("settlement")?;
+        self.expect_kw("schema")?;
+        let settlement_schema = self.digest_locked_package_ref()?;
+        self.expect_kw("authority")?;
+        let authority_scope = self.expr()?;
+        self.expect_kw("basis")?;
+        let basis = self.expr()?;
+        self.expect_kw("budget")?;
+        self.expect_kw("maxSettlementBytes")?;
+        let max_settlement_bytes = self.expr()?;
+        self.expect_kw("maxAttempts")?;
+        let max_attempts = self.expr()?;
+        self.expect_kw("reconcile")?;
+        let reconciliation_law = self.digest_locked_package_ref()?;
+        self.expect(&TokenKind::Semi)?;
+        Ok(Stmt::ExternalActionRequest {
+            name,
+            request_type,
+            operation,
+            input_schema,
+            settlement_schema,
+            authority_scope: Box::new(authority_scope),
+            basis: Box::new(basis),
+            max_settlement_bytes: Box::new(max_settlement_bytes),
+            max_attempts: Box::new(max_attempts),
+            reconciliation_law,
+            span: Span::new(start, self.prev_end()),
+        })
+    }
+
+    fn digest_locked_package_ref(&mut self) -> Result<DigestLockedPackageRef, ParseError> {
+        let start = self.peek_span().start;
+        let package = self.package_ref()?;
+        self.expect_kw("digest")?;
+        let digest = self.digest_lit()?;
+        Ok(DigestLockedPackageRef {
+            package,
+            digest,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     /// The right-hand side of a `let`: either an ordinary expression, or the
@@ -1621,6 +1682,10 @@ mod parse_error_kind_codes {
             (ParseErrorKind::MissingRequiredField, "MissingRequiredField"),
             (ParseErrorKind::DuplicateField, "DuplicateField"),
             (ParseErrorKind::NonCallEffect, "NonCallEffect"),
+            (
+                ParseErrorKind::NonCallExternalActionOperation,
+                "NonCallExternalActionOperation",
+            ),
             (ParseErrorKind::ReturnInYieldBlock, "ReturnInYieldBlock"),
             (ParseErrorKind::InvalidTypeCall, "InvalidTypeCall"),
         ];

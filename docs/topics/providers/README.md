@@ -128,6 +128,11 @@ callable or unknown import. The generated component's exact type-only
 conveys types rather than a host capability. No WASI linker or callable host
 function is installed.
 
+Source `use capability` declarations establish digest-locked module-import
+closure resources. Core external-action request nodes carry the canonical
+request fields. Both pass through Core and Target IR without becoming component
+imports, host functions, or provider-owned execution authority.
+
 The host owns one immutable Wasmtime engine and creates a fresh store for every
 invocation. The prepared component, opaque validated request proof, and concrete
 schema registry must share one manifest and validator authority, and a prepared

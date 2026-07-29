@@ -17,9 +17,9 @@ use edict_syntax::{
     CoreBudget, CoreExpr, CoreImport, CoreIntent, CoreNode, CoreObstructionArm,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, CoreValue,
     HighlightRole, InputConstraint, InputConstraintSource, ParseError, ResourceRef, SemanticError,
-    Span, TargetEffectLowering, TargetIrArtifact, TargetIrIntent, TargetIrLoweringFacts,
-    TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
-    TargetLoweringFailure, TargetLoweringFailureKind, WriteClass,
+    Span, TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent,
+    TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure,
+    TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind, WriteClass,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1189,6 +1189,7 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::TypeMismatch => "TypeMismatch",
         CompilerErrorKind::ExpectedPredicate => "ExpectedPredicate",
         CompilerErrorKind::ProfileEffectMismatch => "ProfileEffectMismatch",
+        CompilerErrorKind::UnrequestableExternalOperation => "UnrequestableExternalOperation",
         CompilerErrorKind::DuplicateObstructionFailure => "DuplicateObstructionFailure",
         CompilerErrorKind::DuplicateObstructionPayloadField => "DuplicateObstructionPayloadField",
     }
@@ -1261,6 +1262,11 @@ fn target_ir_semantic_closure_review(closure: &TargetIrSemanticClosure) -> Value
             .iter()
             .map(resource_ref_review)
             .collect::<Vec<_>>(),
+        "capabilities": closure
+            .capabilities
+            .iter()
+            .map(resource_ref_review)
+            .collect::<Vec<_>>(),
     })
 }
 
@@ -1279,6 +1285,11 @@ fn target_ir_intent_review(intent: &TargetIrIntent) -> Value {
             .map(target_ir_requirement_review)
             .collect::<Vec<_>>(),
         "steps": intent.steps.iter().map(target_ir_step_review).collect::<Vec<_>>(),
+        "externalActionRequests": intent
+            .external_action_requests
+            .iter()
+            .map(target_ir_external_action_request_review)
+            .collect::<Vec<_>>(),
         "result": core_expr_review(&intent.result),
     });
     insert_optional_review_field(
@@ -1331,6 +1342,28 @@ fn target_ir_step_review(step: &TargetIrStep) -> Value {
     })
 }
 
+fn target_ir_external_action_request_review(request: &TargetIrExternalActionRequest) -> Value {
+    json!({
+        "id": request.id,
+        "binding": local_ref_review(&request.binding),
+        "operation": resource_ref_review(&request.operation),
+        "inputType": request.input_type,
+        "settlementType": request.settlement_type,
+        "inputSchema": resource_ref_review(&request.input_schema),
+        "settlementSchema": resource_ref_review(&request.settlement_schema),
+        "input": core_expr_review(&request.input),
+        "authorityScope": core_expr_review(&request.authority_scope),
+        "basis": core_expr_review(&request.basis),
+        "budget": {
+            "maxSettlementBytes": core_expr_review(&request.budget.max_settlement_bytes),
+            "maxAttempts": core_expr_review(&request.budget.max_attempts),
+        },
+        "reconciliationLaw": resource_ref_review(&request.reconciliation_law),
+        "state": "awaitingSettlement",
+        "settlementAdmission": "schemaRequired",
+    })
+}
+
 fn core_import_review(import: &CoreImport) -> Value {
     json!({
         "kind": import.kind.as_str(),
@@ -1362,6 +1395,9 @@ fn core_type_review(ty: &CoreType) -> Value {
             json!({ "kind": "map", "key": key, "value": value, "max": max })
         }
         CoreType::CapabilityRef { item } => json!({ "kind": "capabilityRef", "item": item }),
+        CoreType::ExternalActionRequest { settlement } => {
+            json!({ "kind": "externalActionRequest", "settlement": settlement })
+        }
     }
 }
 
@@ -1422,6 +1458,37 @@ fn core_node_review(node: &CoreNode) -> Value {
                 .iter()
                 .map(|(name, arm)| (name.clone(), obstruction_arm_review(arm)))
                 .collect::<BTreeMap<_, _>>(),
+        }),
+        CoreNode::ExternalActionRequest {
+            binding,
+            operation,
+            input_type,
+            settlement_type,
+            input_schema,
+            settlement_schema,
+            input,
+            authority_scope,
+            basis,
+            budget,
+            reconciliation_law,
+        } => json!({
+            "kind": "externalActionRequest",
+            "binding": local_ref_review(binding),
+            "operation": resource_ref_review(operation),
+            "inputType": input_type,
+            "settlementType": settlement_type,
+            "inputSchema": resource_ref_review(input_schema),
+            "settlementSchema": resource_ref_review(settlement_schema),
+            "input": core_expr_review(input),
+            "authorityScope": core_expr_review(authority_scope),
+            "basis": core_expr_review(basis),
+            "budget": {
+                "maxSettlementBytes": core_expr_review(&budget.max_settlement_bytes),
+                "maxAttempts": core_expr_review(&budget.max_attempts),
+            },
+            "reconciliationLaw": resource_ref_review(reconciliation_law),
+            "state": "awaitingSettlement",
+            "settlementAdmission": "schemaRequired",
         }),
     }
 }

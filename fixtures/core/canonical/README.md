@@ -3,7 +3,7 @@
 This directory contains reviewed Core artifact fixtures generated from the
 executable compiler and canonical encoder.
 
-## Current Fixture
+## Current Fixtures
 
 `bounded-hello` is generated from
 [`fixtures/lang/bounds/bounded-hello.edict`](../../lang/bounds/bounded-hello.edict)
@@ -19,6 +19,12 @@ Artifacts:
   compiled Core module.
 - `bounded-hello.core.sha256`: review rendering of the
   `edict.core.module/v1` digest.
+
+`workspace-snapshot` is generated from
+[`fixtures/lang/external-actions/workspace-snapshot.edict`](../../lang/external-actions/workspace-snapshot.edict)
+using the deterministic `workspace.read` profile and `workspace.tiny` budget
+facts. Its `.core.cbor` and `.core.sha256` files bind every external-request
+field and exact capability closure into reviewed Core identity.
 
 The digest preimage is the canonical CBOR encoding of:
 

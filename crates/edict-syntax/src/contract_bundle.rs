@@ -603,6 +603,13 @@ fn corroborate_target_ir_semantic_closure(
                     "Target IR source Core identity does not match the supplied Core module",
                 ));
             }
+            if !actual.capabilities.is_empty() {
+                return Err(ContractBundleAssemblyError::new(
+                    ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+                    "target_ir_artifact.semantic_closure.capabilities",
+                    "Target IR capability closure does not match the supplied Core module",
+                ));
+            }
             canonical_resource_set(&actual.lawpacks)
         }
         (Some(expected), Some(actual)) => {
@@ -613,15 +620,18 @@ fn corroborate_target_ir_semantic_closure(
                     "Target IR source Core identity does not match the supplied Core module",
                 ));
             }
-            if canonical_resource_set(&actual.lawpacks)
-                != canonical_resource_set(&expected.lawpacks)
-            {
-                return Err(ContractBundleAssemblyError::new(
-                    ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
-                    "target_ir_artifact.semantic_closure.lawpacks",
-                    "Target IR lawpack closure does not match the supplied Core module",
-                ));
-            }
+            require_matching_resource_set(
+                &actual.lawpacks,
+                &expected.lawpacks,
+                "target_ir_artifact.semantic_closure.lawpacks",
+                "Target IR lawpack closure does not match the supplied Core module",
+            )?;
+            require_matching_resource_set(
+                &actual.capabilities,
+                &expected.capabilities,
+                "target_ir_artifact.semantic_closure.capabilities",
+                "Target IR capability closure does not match the supplied Core module",
+            )?;
             canonical_resource_set(&expected.lawpacks)
         }
     };
@@ -657,6 +667,22 @@ fn canonical_resource_set(resources: &[ResourceRef]) -> Vec<(String, Option<Stri
     resources.sort();
     resources.dedup();
     resources
+}
+
+fn require_matching_resource_set(
+    actual: &[ResourceRef],
+    expected: &[ResourceRef],
+    field: &'static str,
+    message: &'static str,
+) -> Result<(), ContractBundleAssemblyError> {
+    if canonical_resource_set(actual) != canonical_resource_set(expected) {
+        return Err(ContractBundleAssemblyError::new(
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+            field,
+            message,
+        ));
+    }
+    Ok(())
 }
 
 fn target_profile_from_target_ir_artifact(

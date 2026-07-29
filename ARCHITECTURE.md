@@ -36,7 +36,8 @@ exports:
 - source/surface semantic validation;
 - compiler context facts and authority-fact loading;
 - source-to-Core compiler spine for the current supported subset;
-- Core IR data structures;
+- Core IR data structures, including non-callable typed external-action request
+  values;
 - depth-bounded canonical-CBOR encoding/decoding plus canonical Core, Target IR,
   bundle-layer encoders and digest helpers;
 - target-profile conformance checks;
@@ -64,15 +65,15 @@ Module map:
 | `ast` | Source-level syntax tree types. |
 | `semantic` | Surface validation that does not require import resolution or target facts. |
 | `authority_facts` | File-backed compiler context facts for profiles, budgets, write classes, and source identity. |
-| `compiler` | Resolve, type-check, and lower the supported source subset to Core IR. |
-| `core_ir` | Runtime-neutral Core module, intent, expression, budget, import, and obstruction data. |
+| `compiler` | Resolve, type-check, and lower the supported source subset to Core IR, including typed external-action request construction without execution authority. |
+| `core_ir` | Runtime-neutral Core module, intent, expression, budget, import, obstruction, and external-action request data. |
 | `canonical` | Canonical value model, depth-bounded canonical CBOR encoder/decoder, digest frames, and reviewed golden digest helpers. |
 | `target_profile` | Runtime-neutral target-profile manifest conformance. |
 | `lowerability` | Checks whether Core requirements can be satisfied natively, by a direct adapter, or not at all. |
 | `provider` | Runtime-neutral provider manifest and generated/component provenance envelope validation. |
 | `provider_invocation` | Pure host-contract, explicitly injected owning-schema, WIT-shaped request/result, canonical artifact, limit, and sealed output-manifest validation. |
 | `provider_lowering` | Explicit in-process compatibility adapters over the current built-in target lowerers. |
-| `target_ir` | Current Echo and git-warp Target IR artifact construction from Core plus lowering facts. |
+| `target_ir` | Current Echo and git-warp Target IR artifact construction from Core plus lowering facts, preserving external requests outside callable target steps. |
 | `contract_bundle` | Participant-neutral bundle assembly, bundle digest preimages, validation, and assurance evidence binding. |
 | `admission` | Edict-owned Gate C request/receipt shape and binding validation without participant policy execution. |
 | `highlight` | Lexical highlight roles consumed by editor tooling. |
@@ -171,7 +172,7 @@ source text
   -> semantic surface validation
   -> compiler context facts
   -> compiler spine
-  -> Core IR
+  -> Core IR (including typed external-action request data)
   -> canonical Core bytes and digest
   -> lowerability + target facts
   -> direct lowering or built-in lowerer compatibility adapter
@@ -220,6 +221,8 @@ Use these rules when placing new code:
 This workspace does not yet implement:
 
 - target runtime execution;
+- external-action request admission, adapter execution, or settlement
+  resumption;
 - participant admission execution;
 - participant policy evaluation;
 - trusted lawpack or target-profile authorship;

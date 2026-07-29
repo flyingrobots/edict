@@ -102,7 +102,7 @@ core-module = {
 }
 
 core-import = {
-  kind: "lawpack" / "target" / "core",
+  kind: "lawpack" / "target" / "core" / "capability",
   ref: resource-ref,
   ? alias: tstr,
 }
@@ -111,7 +111,7 @@ core-import = {
 
 core-type = core-scalar-type / core-record-type / core-variant-type /
             core-option-type / core-list-type / core-map-type /
-            core-capability-ref-type
+            core-capability-ref-type / core-external-action-request-type
 
 core-scalar-type = core-bool-type / core-int-type / core-string-type /
                    core-bytes-type / core-unit-type
@@ -159,6 +159,10 @@ core-map-type = {
 core-capability-ref-type = {
   kind: "CapabilityRef",
   item: core-type-ref,
+}
+core-external-action-request-type = {
+  kind: "ExternalActionRequest",
+  settlement: core-type-ref,
 }
 
 ; core-type-ref is defined in edict-common.cddl and assembled with this schema.
@@ -324,7 +328,8 @@ core-block = {
   result: core-expr,
 }
 
-core-node = let-node / require-node / effect-node / guard-node / branch-node /
+core-node = let-node / require-node / effect-node /
+            external-action-request-node / guard-node / branch-node /
             for-node / match-node / proof-obligation-node
 
 let-node = {
@@ -357,6 +362,26 @@ effect-node = {
   effect: tstr,
   input: core-expr,
   obstructionMap: { * failure-ident => obstruction-arm },
+}
+external-action-request-node = {
+  kind: "externalActionRequest",
+  binding: local-ref,
+  operation: resource-ref,
+  inputType: core-type-ref,
+  settlementType: core-type-ref,
+  inputSchema: resource-ref,
+  settlementSchema: resource-ref,
+  input: core-expr,
+  authorityScope: core-expr,
+  basis: core-expr,
+  budget: external-action-budget,
+  reconciliationLaw: resource-ref,
+  state: "awaitingSettlement",
+  settlementAdmission: "schemaRequired",
+}
+external-action-budget = {
+  maxSettlementBytes: core-expr,
+  maxAttempts: core-expr,
 }
 obstruction-arm = {
   binder: local-ref,
@@ -872,11 +897,13 @@ target-ir-legacy-artifact = {
 target-ir-semantic-closure = {
   sourceCore: target-ir-resource-ref,
   lawpacks: [* target-ir-resource-ref],
+  ? capabilities: [* target-ir-resource-ref],
 }
 
 target-ir-intent = {
   target-ir-intent-common,
   ? basis: core-expr,
+  ? externalActionRequests: [* target-ir-external-action-request],
 }
 
 target-ir-legacy-intent = {
@@ -906,4 +933,21 @@ target-ir-step = {
   input: core-expr,
   obstructionFailures: [* failure-ident],
   obstructionArms: { * failure-ident => obstruction-arm },
+}
+
+target-ir-external-action-request = {
+  id: tstr,
+  binding: local-ref,
+  operation: target-ir-resource-ref,
+  inputType: core-type-ref,
+  settlementType: core-type-ref,
+  inputSchema: target-ir-resource-ref,
+  settlementSchema: target-ir-resource-ref,
+  input: core-expr,
+  authorityScope: core-expr,
+  basis: core-expr,
+  budget: external-action-budget,
+  reconciliationLaw: target-ir-resource-ref,
+  state: "awaitingSettlement",
+  settlementAdmission: "schemaRequired",
 }

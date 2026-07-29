@@ -13,12 +13,13 @@ use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
     is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBudget,
-    CoreExpr, CoreImport, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CorePredicate,
-    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
+    CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule,
+    CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint,
+    InputConstraintSource, LocalRef, ResourceRef,
 };
 use crate::target_ir::{
-    TargetIrArtifact, TargetIrIntent, TargetIrRequireFailure, TargetIrRequirement,
-    TargetIrSemanticClosure, TargetIrStep,
+    TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrRequireFailure,
+    TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
 };
 
 /// Canonical encoding profile for Core artifacts.
@@ -492,16 +493,42 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
             "Target IR source Core coordinate is empty",
         ));
     }
+    let has_external_action_requests = artifact
+        .intents
+        .values()
+        .any(|intent| !intent.external_action_requests.is_empty());
     if artifact.semantic_closure.is_none()
-        && artifact
+        && (artifact
             .intents
             .values()
             .any(|intent| intent.basis.is_some())
+            || has_external_action_requests)
     {
         return Err(CanonicalError::new(
             CanonicalErrorKind::UnsupportedValue,
-            "basis-bearing Target IR requires a semantic closure",
+            "basis- or external-action-bearing Target IR requires a semantic closure",
         ));
+    }
+    if let Some(closure) = &artifact.semantic_closure {
+        for request in artifact
+            .intents
+            .values()
+            .flat_map(|intent| &intent.external_action_requests)
+        {
+            if !closure
+                .capabilities
+                .iter()
+                .any(|capability| capability == &request.operation)
+            {
+                return Err(CanonicalError::new(
+                    CanonicalErrorKind::UnsupportedValue,
+                    format!(
+                        "Target IR request operation `{}` is absent from the capability closure",
+                        request.operation.coordinate
+                    ),
+                ));
+            }
+        }
     }
     let mut entries = vec![
         ("kind", text("targetIrArtifact")),
@@ -542,23 +569,9 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
 fn target_ir_semantic_closure_value(
     closure: &TargetIrSemanticClosure,
 ) -> Result<CanonicalValue, CanonicalError> {
-    let mut lawpacks = BTreeMap::<&str, &ResourceRef>::new();
-    for resource in &closure.lawpacks {
-        if let Some(prior) = lawpacks.get(resource.coordinate.as_str()) {
-            if *prior != resource {
-                return Err(CanonicalError::new(
-                    CanonicalErrorKind::UnsupportedValue,
-                    format!(
-                        "Target IR lawpack coordinate `{}` is bound to conflicting resources",
-                        resource.coordinate
-                    ),
-                ));
-            }
-        } else {
-            lawpacks.insert(resource.coordinate.as_str(), resource);
-        }
-    }
-    Ok(map([
+    let lawpacks = target_ir_resource_set(&closure.lawpacks, "lawpack")?;
+    let capabilities = target_ir_resource_set(&closure.capabilities, "capability")?;
+    let mut entries = vec![
         (
             "sourceCore",
             target_ir_resource_ref_value(&closure.source_core)?,
@@ -567,7 +580,37 @@ fn target_ir_semantic_closure_value(
             "lawpacks",
             sorted_array_results(lawpacks.into_values().map(target_ir_resource_ref_value))?,
         ),
-    ]))
+    ];
+    if !capabilities.is_empty() {
+        entries.push((
+            "capabilities",
+            sorted_array_results(capabilities.into_values().map(target_ir_resource_ref_value))?,
+        ));
+    }
+    Ok(map(entries))
+}
+
+fn target_ir_resource_set<'a>(
+    resources: &'a [ResourceRef],
+    field_name: &str,
+) -> Result<BTreeMap<&'a str, &'a ResourceRef>, CanonicalError> {
+    let mut indexed = BTreeMap::new();
+    for resource in resources {
+        if let Some(prior) = indexed.get(resource.coordinate.as_str()) {
+            if *prior != resource {
+                return Err(CanonicalError::new(
+                    CanonicalErrorKind::UnsupportedValue,
+                    format!(
+                        "Target IR {field_name} coordinate `{}` is bound to conflicting resources",
+                        resource.coordinate
+                    ),
+                ));
+            }
+        } else {
+            indexed.insert(resource.coordinate.as_str(), resource);
+        }
+    }
+    Ok(indexed)
 }
 
 fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
@@ -596,6 +639,18 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
 }
 
 fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+    let mut request_ids = BTreeSet::new();
+    for request in &intent.external_action_requests {
+        if !request_ids.insert(request.id.as_str()) {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                format!(
+                    "Target IR external-action request id `{}` is duplicated",
+                    request.id
+                ),
+            ));
+        }
+    }
     let mut entries = vec![
         ("operationProfile", text(&intent.operation_profile)),
         (
@@ -619,7 +674,51 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
     if let Some(basis) = &intent.basis {
         entries.push(("basis", core_expr_value(basis)?));
     }
+    if !intent.external_action_requests.is_empty() {
+        entries.push((
+            "externalActionRequests",
+            array_results(
+                intent
+                    .external_action_requests
+                    .iter()
+                    .map(target_ir_external_action_request_value),
+            )?,
+        ));
+    }
     Ok(map(entries))
+}
+
+fn target_ir_external_action_request_value(
+    request: &TargetIrExternalActionRequest,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("id", text(&request.id)),
+        ("binding", local_ref_value(&request.binding)),
+        (
+            "operation",
+            target_ir_resource_ref_value(&request.operation)?,
+        ),
+        ("inputType", text(&request.input_type)),
+        ("settlementType", text(&request.settlement_type)),
+        (
+            "inputSchema",
+            target_ir_resource_ref_value(&request.input_schema)?,
+        ),
+        (
+            "settlementSchema",
+            target_ir_resource_ref_value(&request.settlement_schema)?,
+        ),
+        ("input", core_expr_value(&request.input)?),
+        ("authorityScope", core_expr_value(&request.authority_scope)?),
+        ("basis", core_expr_value(&request.basis)?),
+        ("budget", external_action_budget_value(&request.budget)?),
+        (
+            "reconciliationLaw",
+            target_ir_resource_ref_value(&request.reconciliation_law)?,
+        ),
+        ("state", text("awaitingSettlement")),
+        ("settlementAdmission", text("schemaRequired")),
+    ]))
 }
 
 fn target_ir_requirement_value(
@@ -673,6 +772,31 @@ fn target_ir_step_value(step: &TargetIrStep) -> Result<CanonicalValue, Canonical
 }
 
 fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalError> {
+    let capability_imports = module
+        .imports
+        .iter()
+        .filter(|import| import.kind == CoreImportKind::Capability)
+        .map(|import| &import.resource)
+        .collect::<Vec<_>>();
+    for request in module
+        .intents
+        .values()
+        .flat_map(|intent| &intent.body.nodes)
+        .filter_map(|node| match node {
+            CoreNode::ExternalActionRequest { operation, .. } => Some(operation),
+            CoreNode::Let { .. } | CoreNode::Require { .. } | CoreNode::Effect { .. } => None,
+        })
+    {
+        if !capability_imports.contains(&request) {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                format!(
+                    "Core request operation `{}` is absent from the capability imports",
+                    request.coordinate
+                ),
+            ));
+        }
+    }
     Ok(map([
         ("apiVersion", text(&module.api_version)),
         ("coordinate", text(&module.coordinate)),
@@ -713,6 +837,12 @@ fn core_import_value(import: &CoreImport) -> Result<CanonicalValue, CanonicalErr
 }
 
 fn resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
+    if resource.coordinate.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "Core resource coordinate is empty",
+        ));
+    }
     let mut entries = vec![("id", text(&resource.coordinate))];
     let Some(digest) = &resource.digest else {
         return Err(CanonicalError::new(
@@ -807,6 +937,10 @@ fn core_type_value(ty: &CoreType) -> CanonicalValue {
         CoreType::CapabilityRef { item } => {
             map([("kind", text("CapabilityRef")), ("item", text(item))])
         }
+        CoreType::ExternalActionRequest { settlement } => map([
+            ("kind", text("ExternalActionRequest")),
+            ("settlement", text(settlement)),
+        ]),
     }
 }
 
@@ -900,7 +1034,47 @@ fn core_node_value(node: &CoreNode) -> Result<CanonicalValue, CanonicalError> {
                 }))?,
             ),
         ])),
+        CoreNode::ExternalActionRequest {
+            binding,
+            operation,
+            input_type,
+            settlement_type,
+            input_schema,
+            settlement_schema,
+            input,
+            authority_scope,
+            basis,
+            budget,
+            reconciliation_law,
+        } => Ok(map([
+            ("kind", text("externalActionRequest")),
+            ("binding", local_ref_value(binding)),
+            ("operation", resource_ref_value(operation)?),
+            ("inputType", text(input_type)),
+            ("settlementType", text(settlement_type)),
+            ("inputSchema", resource_ref_value(input_schema)?),
+            ("settlementSchema", resource_ref_value(settlement_schema)?),
+            ("input", core_expr_value(input)?),
+            ("authorityScope", core_expr_value(authority_scope)?),
+            ("basis", core_expr_value(basis)?),
+            ("budget", external_action_budget_value(budget)?),
+            ("reconciliationLaw", resource_ref_value(reconciliation_law)?),
+            ("state", text("awaitingSettlement")),
+            ("settlementAdmission", text("schemaRequired")),
+        ])),
     }
+}
+
+fn external_action_budget_value(
+    budget: &CoreExternalActionBudget,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        (
+            "maxSettlementBytes",
+            core_expr_value(&budget.max_settlement_bytes)?,
+        ),
+        ("maxAttempts", core_expr_value(&budget.max_attempts)?),
+    ]))
 }
 
 fn core_require_failure_arm_value(
