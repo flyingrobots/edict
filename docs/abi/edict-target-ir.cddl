@@ -47,6 +47,7 @@ target-ir-semantic-closure = {
 target-ir-intent = {
   target-ir-intent-common,
   ? basis: core-expr,
+  ? externalActionRequests: [* target-ir-external-action-request],
 }
 
 target-ir-legacy-intent = {
@@ -59,7 +60,6 @@ target-ir-intent-common = (
   coreEvaluationBudget: core-budget,
   requirements: [* target-ir-requirement],
   steps: [* target-ir-step],
-  ? externalActionRequests: [* target-ir-external-action-request],
   result: core-expr,
 )
 
