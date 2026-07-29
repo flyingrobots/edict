@@ -12,6 +12,7 @@ const LAWPACK_CDDL: &str = "docs/abi/edict-lawpack.cddl";
 const LAWPACK_ADAPTER_CDDL: &str = "docs/abi/edict-lawpack-adapter.cddl";
 const TARGET_PROFILE_CDDL: &str = "docs/abi/edict-target-profile.cddl";
 const AUTHORITY_FACTS_CDDL: &str = "docs/abi/edict-authority-facts.cddl";
+const RESULT_PROJECTION_CDDL: &str = "docs/abi/edict-result-projection.cddl";
 const TARGET_IR_CDDL: &str = "docs/abi/edict-target-ir.cddl";
 
 pub(crate) const CONTRACT_PACK_CDDL: &str =
@@ -34,6 +35,7 @@ pub(crate) fn provider_contract_pack(
     let lawpack_adapter_cddl = read(root, LAWPACK_ADAPTER_CDDL)?;
     let target_profile_cddl = read(root, TARGET_PROFILE_CDDL)?;
     let authority_facts_cddl = read(root, AUTHORITY_FACTS_CDDL)?;
+    let result_projection_cddl = read(root, RESULT_PROJECTION_CDDL)?;
     let target_ir_cddl = read(root, TARGET_IR_CDDL)?;
     let pack = assemble_provider_contract_pack(ProviderContractPackInput {
         common_cddl: &common_cddl,
@@ -42,6 +44,7 @@ pub(crate) fn provider_contract_pack(
         lawpack_adapter_cddl: &lawpack_adapter_cddl,
         target_profile_cddl: &target_profile_cddl,
         authority_facts_cddl: &authority_facts_cddl,
+        result_projection_cddl: &result_projection_cddl,
         target_ir_cddl: &target_ir_cddl,
         contract_resources: canonical_target_profile_contract_resources(),
     })

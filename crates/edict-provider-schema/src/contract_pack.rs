@@ -12,7 +12,8 @@ use edict_syntax::{
     ProviderArtifactSchemaValidationErrorKind, TargetProfileContractResource,
     TargetProfileContractResourceFailureKind, TargetProfileContractResourceProvenance,
     AUTHORITY_FACTS_API_VERSION, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
+    RESULT_PROJECTION_CDDL_ROOT, RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    TARGET_PROFILE_API_VERSION,
 };
 use sha2::{Digest, Sha256};
 
@@ -32,13 +33,14 @@ const PACK_HEADER: &str = "; SPDX-License-Identifier: Apache-2.0\n\
 ; edict-provider-contracts.cddl\n\
 ; Generated from Edict-owned ABI fragments. DO NOT EDIT.\n";
 
-const CONTRACT_BINDINGS: [(&str, &str); 10] = [
+const CONTRACT_BINDINGS: [(&str, &str); 11] = [
     ("authority-facts", "authority-facts"),
     ("core-module", "core-module"),
     ("lawpack-adapter", "lawpack-adapter"),
     ("lawpack-exports", "lawpack-exports"),
     ("lawpack-manifest", "lawpack-manifest"),
     ("lowering-requirements", "lowering-requirements"),
+    ("result-projection", RESULT_PROJECTION_CDDL_ROOT),
     ("target-ir-artifact", TARGET_IR_ARTIFACT_CDDL_ROOT),
     ("target-profile-intrinsics", "intrinsics-document"),
     ("target-profile-manifest", "target-profile-manifest"),
@@ -48,11 +50,12 @@ const CONTRACT_BINDINGS: [(&str, &str); 10] = [
     ),
 ];
 
-const DOMAIN_BINDINGS: [(&str, &str); 6] = [
+const DOMAIN_BINDINGS: [(&str, &str); 7] = [
     (AUTHORITY_FACTS_API_VERSION, "authority-facts"),
     (CORE_MODULE_DIGEST_DOMAIN, "core-module"),
     (PROVIDER_LAWPACK_ARTIFACT_DOMAIN, "lawpack-manifest"),
     ("edict.lowering-requirements/v1", "lowering-requirements"),
+    (RESULT_PROJECTION_DIGEST_DOMAIN, RESULT_PROJECTION_CDDL_ROOT),
     (
         TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
         TARGET_IR_ARTIFACT_CDDL_ROOT,
@@ -72,6 +75,7 @@ pub struct ProviderContractPackInput<'a> {
     pub lawpack_adapter_cddl: &'a [u8],
     pub target_profile_cddl: &'a [u8],
     pub authority_facts_cddl: &'a [u8],
+    pub result_projection_cddl: &'a [u8],
     pub target_ir_cddl: &'a [u8],
     pub contract_resources: Vec<TargetProfileContractResource>,
 }
@@ -296,6 +300,7 @@ pub fn assemble_provider_contract_pack(
         lawpack_adapter_cddl,
         target_profile_cddl,
         authority_facts_cddl,
+        result_projection_cddl,
         target_ir_cddl,
         contract_resources,
     } = input;
@@ -306,6 +311,7 @@ pub fn assemble_provider_contract_pack(
         ("edict-lawpack-adapter.cddl", lawpack_adapter_cddl),
         ("edict-target-profile.cddl", target_profile_cddl),
         ("edict-authority-facts.cddl", authority_facts_cddl),
+        ("edict-result-projection.cddl", result_projection_cddl),
         ("edict-target-ir.cddl", target_ir_cddl),
     ];
     let mut failures = validate_fragments(&fragments);

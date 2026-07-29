@@ -3,11 +3,13 @@
 use std::collections::BTreeMap;
 
 use edict_syntax::{
-    decode_lawpack_adapter, decode_lawpack_bundle, decode_result_projection,
-    digest_result_projection, emit_result_projection, encode_result_projection, lower_to_target_ir,
-    parse_module, prepare_lawpack_compilation, verify_result_projection, CoreExpr, CoreModule,
-    LocalRef, ResultProjection, ResultProjectionExpr, ResultProjectionFailureKind,
-    ResultProjectionSource, TargetIrArtifact, TargetLoweringStatus, MAX_RESULT_PROJECTION_NODES,
+    decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle, decode_result_projection,
+    digest_core_module, digest_result_projection, emit_result_projection, encode_canonical_cbor,
+    encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
+    verify_result_projection, CanonicalValue, CoreExpr, CoreModule, LocalRef, ResultProjection,
+    ResultProjectionExpr, ResultProjectionFailureKind, ResultProjectionSource, TargetIrArtifact,
+    TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
+    MAX_RESULT_PROJECTION_PATH_SEGMENTS, MAX_RESULT_PROJECTION_TEXT_BYTES,
     RESULT_PROJECTION_API_VERSION,
 };
 
@@ -15,6 +17,10 @@ const MANIFEST_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-ec
 const EXPORTS_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor");
 const ADAPTER_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor");
 const SOURCE: &str = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+const PROJECTION_BYTES: &[u8] =
+    include_bytes!("../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.cbor");
+const PROJECTION_DIGEST: &str =
+    include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.sha256");
 const PROPERTY_SEED: u64 = 0x1730_5eed_cafe_babe;
 
 fn hello_echo() -> (CoreModule, TargetIrArtifact) {
@@ -87,6 +93,27 @@ fn mutate_results(core: &mut CoreModule, target: &mut TargetIrArtifact, expressi
         .get_mut("createGreeting")
         .expect("Target IR intent")
         .result = expression;
+    repin_target_core(core, target);
+}
+
+fn repin_target_core(core: &CoreModule, target: &mut TargetIrArtifact) {
+    target
+        .semantic_closure
+        .as_mut()
+        .expect("semantic closure")
+        .source_core
+        .digest = Some(
+        digest_core_module(core)
+            .expect("digest mutated Core")
+            .to_review_string(),
+    );
+}
+
+fn remove_canonical_field(value: &mut CanonicalValue, field: &str) {
+    let CanonicalValue::Map(entries) = value else {
+        panic!("canonical projection root is a map");
+    };
+    entries.retain(|(key, _)| key != &CanonicalValue::Text(field.to_owned()));
 }
 
 #[test]
@@ -107,7 +134,7 @@ fn exact_core_and_target_ir_emit_the_typed_hello_echo_projection() {
         artifact.projection.output_type,
         "examples.hello_echo@1.GreetingCreated"
     );
-    assert_eq!(artifact.projection.max_output_bytes, 2_048);
+    assert_eq!(artifact.projection.max_output_bytes, 512);
     assert_eq!(artifact.projection.expression, expected_expression());
     assert_eq!(
         decode_result_projection(&artifact.canonical_bytes).expect("decode emitted projection"),
@@ -117,6 +144,8 @@ fn exact_core_and_target_ir_emit_the_typed_hello_echo_projection() {
         digest_result_projection(&artifact.projection).expect("digest projection"),
         artifact.digest
     );
+    assert_eq!(artifact.canonical_bytes, PROJECTION_BYTES);
+    assert_eq!(artifact.digest.to_review_string(), PROJECTION_DIGEST.trim());
 }
 
 #[test]
@@ -157,6 +186,24 @@ fn mutated_target_result_fails_closed() {
     assert_eq!(
         failure.kind(),
         ResultProjectionFailureKind::TargetResultMismatch
+    );
+}
+
+#[test]
+fn mutated_target_core_closure_fails_closed() {
+    let (core, mut target) = hello_echo();
+    target
+        .semantic_closure
+        .as_mut()
+        .expect("semantic closure")
+        .source_core
+        .digest = Some(format!("sha256:{}", "0".repeat(64)));
+
+    let failure = emit_result_projection(&core, &target, "createGreeting")
+        .expect_err("mutated source Core identity must reject");
+    assert_eq!(
+        failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
     );
 }
 
@@ -227,6 +274,7 @@ fn incomplete_output_and_zero_output_bound_fail_closed() {
         .expect("Target intent")
         .core_evaluation_budget
         .max_output_bytes = 0;
+    repin_target_core(&core, &mut target);
     let unbounded = emit_result_projection(&core, &target, "createGreeting")
         .expect_err("zero output bound must reject");
     assert_eq!(
@@ -283,6 +331,50 @@ fn projection_node_limit_accepts_the_boundary_and_rejects_the_next_node() {
     assert_eq!(
         failure.kind(),
         ResultProjectionFailureKind::ProjectionLimitExceeded
+    );
+}
+
+#[test]
+fn path_text_artifact_and_structure_bounds_fail_closed() {
+    let mut path_projection = projection_with_fields(1);
+    path_projection.expression = ResultProjectionExpr::Source {
+        source: ResultProjectionSource::ApplicationInput,
+        path: vec!["field".to_owned(); MAX_RESULT_PROJECTION_PATH_SEGMENTS + 1],
+    };
+    assert_eq!(
+        encode_result_projection(&path_projection)
+            .expect_err("overlong source path must reject")
+            .kind(),
+        ResultProjectionFailureKind::ProjectionLimitExceeded
+    );
+
+    let mut text_projection = projection_with_fields(1);
+    text_projection.operation_coordinate = "x".repeat(MAX_RESULT_PROJECTION_TEXT_BYTES + 1);
+    assert_eq!(
+        encode_result_projection(&text_projection)
+            .expect_err("overlong coordinate must reject")
+            .kind(),
+        ResultProjectionFailureKind::ProjectionLimitExceeded
+    );
+
+    assert_eq!(
+        decode_result_projection(&vec![0; MAX_RESULT_PROJECTION_ARTIFACT_BYTES + 1])
+            .expect_err("oversized artifact must reject before decoding")
+            .kind(),
+        ResultProjectionFailureKind::ProjectionLimitExceeded
+    );
+
+    let bytes =
+        encode_result_projection(&projection_with_fields(1)).expect("encode complete projection");
+    let mut incomplete = decode_canonical_cbor(&bytes).expect("decode projection value");
+    remove_canonical_field(&mut incomplete, "outputType");
+    let incomplete_bytes =
+        encode_canonical_cbor(&incomplete).expect("encode incomplete canonical value");
+    assert_eq!(
+        decode_result_projection(&incomplete_bytes)
+            .expect_err("incomplete projection must reject")
+            .kind(),
+        ResultProjectionFailureKind::InvalidCanonicalArtifact
     );
 }
 

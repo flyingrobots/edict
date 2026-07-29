@@ -141,6 +141,7 @@ fn assert_provider_contract_manifest_metadata(manifest: &Value) {
             ("lawpack-exports", "lawpack-exports"),
             ("lawpack-manifest", "lawpack-manifest"),
             ("lowering-requirements", "lowering-requirements"),
+            ("result-projection", "result-projection"),
             ("target-ir-artifact", "target-ir-artifact"),
             ("target-profile-intrinsics", "intrinsics-document"),
             ("target-profile-manifest", "target-profile-manifest"),
@@ -173,6 +174,10 @@ fn assert_provider_contract_manifest_metadata(manifest: &Value) {
             (CORE_MODULE_DIGEST_DOMAIN, "core-module"),
             (PROVIDER_LAWPACK_ARTIFACT_DOMAIN, "lawpack-manifest"),
             ("edict.lowering-requirements/v1", "lowering-requirements"),
+            (
+                edict_syntax::RESULT_PROJECTION_DIGEST_DOMAIN,
+                "result-projection"
+            ),
             (TARGET_IR_ARTIFACT_DIGEST_DOMAIN, "target-ir-artifact"),
             (TARGET_PROFILE_API_VERSION, "target-profile-manifest"),
         ]
@@ -275,6 +280,7 @@ fn provider_contract_pack_check_rejects_drift_without_rewriting() {
         "docs/abi/edict-lawpack-adapter.cddl",
         "docs/abi/edict-target-profile.cddl",
         "docs/abi/edict-authority-facts.cddl",
+        "docs/abi/edict-result-projection.cddl",
         "docs/abi/edict-target-ir.cddl",
     ] {
         let destination = root.join(relative);

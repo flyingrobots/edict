@@ -4,7 +4,7 @@ use std::path::Path;
 
 use edict_syntax::{
     compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, digest_core_module,
-    digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
+    digest_target_ir_artifact, emit_result_projection, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     CanonicalValue, TargetLoweringStatus,
 };
@@ -32,6 +32,10 @@ const CREATE_GREETING_TARGET_IR_CBOR: &str =
     "fixtures/lawpack/hello-echo/create-greeting.target-ir.cbor";
 const CREATE_GREETING_TARGET_IR_DIGEST: &str =
     "fixtures/lawpack/hello-echo/create-greeting.target-ir.sha256";
+const CREATE_GREETING_RESULT_PROJECTION_CBOR: &str =
+    "fixtures/lawpack/hello-echo/create-greeting.result-projection.cbor";
+const CREATE_GREETING_RESULT_PROJECTION_DIGEST: &str =
+    "fixtures/lawpack/hello-echo/create-greeting.result-projection.sha256";
 const ADAPTER_COORDINATE: &str = "hello.echo.echo-dpo-adapter/v1";
 const TARGET_CONFIGURATION_COORDINATE: &str = "hello.echo.echo-operation-configuration/v1";
 const ECHO_TARGET_PROFILE_DIGEST: [u8; 32] = [
@@ -466,6 +470,9 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             .map_err(|error| format!("digest Hello Echo Target IR: {error}"))?
             .to_review_string()
     );
+    let result_projection = emit_result_projection(&core, &target_ir, "createGreeting")
+        .map_err(|error| format!("emit Hello Echo result projection: {error}"))?;
+    let result_projection_digest = format!("{}\n", result_projection.digest.to_review_string());
     let manifest_digest = format!("{}\n", bundle.manifest_digest_review_string());
     let exports_digest = format!("{}\n", bundle.manifest().exports.digest_review_string());
     let adapter_digest = format!("{}\n", sha256_review_string(&adapter_digest));
@@ -490,6 +497,14 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
         (
             CREATE_GREETING_TARGET_IR_DIGEST,
             target_ir_digest.into_bytes(),
+        ),
+        (
+            CREATE_GREETING_RESULT_PROJECTION_CBOR,
+            result_projection.canonical_bytes,
+        ),
+        (
+            CREATE_GREETING_RESULT_PROJECTION_DIGEST,
+            result_projection_digest.into_bytes(),
         ),
     ])
 }

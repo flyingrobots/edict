@@ -789,6 +789,42 @@ authority-budget-fact = {
 authority-write-class = "none" / "read" / "create" / "ensure" / "append" /
                         "replace" / "delete" / "custom"
 
+; --- edict-result-projection.cddl ---
+; SPDX-License-Identifier: Apache-2.0
+; edict-result-projection.cddl
+; Canonical schema for compiler-owned application-result projections.
+; Authoritative byte encoding: edict.canonical-cbor/v1.
+
+result-projection = {
+  schema: "edict.result-projection/v1",
+  operationCoordinate: bounded-projection-text,
+  outputType: bounded-projection-text,
+  maxOutputBytes: uint .gt 0,
+  expression: result-projection-expr,
+}
+
+result-projection-expr = result-projection-record / result-projection-source
+
+result-projection-record = {
+  kind: "record",
+  fields: { * bounded-projection-text => result-projection-expr },
+}
+
+result-projection-source = {
+  kind: "source",
+  source: result-projection-source-kind,
+  path: [* bounded-projection-text],
+}
+
+result-projection-source-kind =
+  { kind: "applicationInput" } /
+  {
+    kind: "capabilityResult",
+    stepId: bounded-projection-text,
+  }
+
+bounded-projection-text = tstr .size (1..1024)
+
 ; --- edict-target-ir.cddl ---
 ; SPDX-License-Identifier: Apache-2.0
 ; edict-target-ir.cddl
