@@ -42,6 +42,7 @@ pub enum CompilerErrorKind {
     TypeMismatch,
     ExpectedPredicate,
     ProfileEffectMismatch,
+    UnrequestableExternalOperation,
     DuplicateObstructionFailure,
     DuplicateObstructionPayloadField,
 }
@@ -203,7 +204,7 @@ pub fn resolve_module(
 ) -> Result<ResolvedModule, Vec<CompilerError>> {
     let mut errors = Vec::new();
     let coordinate = package_coordinate(&module.package.path, &module.package.version);
-    let imports = resolve_imports(&module.imports, &mut errors);
+    let imports = resolve_imports(&module.imports);
     let mut types = Vec::new();
     let mut intents = Vec::new();
 
@@ -283,7 +284,7 @@ pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>>
     })
 }
 
-fn resolve_imports(imports: &[Import], _errors: &mut Vec<CompilerError>) -> Vec<CoreImport> {
+fn resolve_imports(imports: &[Import]) -> Vec<CoreImport> {
     let mut out = Vec::new();
     for import in imports {
         let Some(kind) = core_import_kind(import.kind) else {
@@ -895,12 +896,12 @@ impl<'a> TypeChecker<'a> {
         else {
             return;
         };
-        if ambient_operation_family(&operation_resource.coordinate) {
+        if !requestable_operation_family(&operation_resource.coordinate) {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
-                CompilerErrorKind::UnsupportedSourceShape,
+                CompilerErrorKind::UnrequestableExternalOperation,
                 format!(
-                    "ambient operation family `{}` is not requestable",
+                    "external operation family `{}` is not requestable",
                     operation_resource.coordinate
                 ),
                 span,
@@ -998,6 +999,11 @@ impl<'a> TypeChecker<'a> {
             .find(|import| {
                 import.kind == CoreImportKind::Capability
                     && import.alias.as_deref() == Some(alias.as_str())
+                    && import
+                        .resource
+                        .digest
+                        .as_deref()
+                        .is_some_and(is_lowercase_sha256_review_digest)
             })
             .map(|import| import.resource.clone())
         else {
@@ -1089,6 +1095,9 @@ impl<'a> TypeChecker<'a> {
         target: &ObstructionTarget,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
     ) -> Option<CoreObstructionReason> {
+        if self.reject_capability_obstruction_root(&target.coordinate, target.span) {
+            return None;
+        }
         let payload = match &target.payload {
             Some(Expr::Record { entries, .. }) => {
                 self.check_reason_payload(entries, env, ReasonPayloadMode::PreserveReasonField)?
@@ -1126,6 +1135,15 @@ impl<'a> TypeChecker<'a> {
             return None;
         };
         if let Some(root) = plain_path_root(reason) {
+            if self.capability_import_alias(root) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "capability imports are legal only as request operations",
+                    span,
+                ));
+                return None;
+            }
             if env.contains_key(root) {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -1520,6 +1538,9 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_obstruction_target(&mut self, target: &ObstructionTarget) -> Option<CoreExpr> {
+        if self.reject_capability_obstruction_root(&target.coordinate, target.span) {
+            return None;
+        }
         if target.payload.is_some() {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -1533,6 +1554,29 @@ impl<'a> TypeChecker<'a> {
             callee: path_key(&target.coordinate),
             type_args: Vec::new(),
             args: Vec::new(),
+        })
+    }
+
+    fn reject_capability_obstruction_root(&mut self, coordinate: &[String], span: Span) -> bool {
+        if coordinate
+            .first()
+            .is_some_and(|root| self.capability_import_alias(root))
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "capability imports are legal only as request operations",
+                span,
+            ));
+            true
+        } else {
+            false
+        }
+    }
+
+    fn capability_import_alias(&self, alias: &str) -> bool {
+        self.resolved.imports.iter().any(|import| {
+            import.kind == CoreImportKind::Capability && import.alias.as_deref() == Some(alias)
         })
     }
 
@@ -1666,11 +1710,12 @@ impl<'a> TypeChecker<'a> {
                 max_attempts,
                 ..
             } => {
-                self.check_known_effect_profiles(intent, operation)
-                    && self.check_known_effect_profiles(intent, authority_scope)
-                    && self.check_known_effect_profiles(intent, basis)
-                    && self.check_known_effect_profiles(intent, max_settlement_bytes)
-                    && self.check_known_effect_profiles(intent, max_attempts)
+                let mut accepted = self.check_known_effect_profiles(intent, operation);
+                accepted &= self.check_known_effect_profiles(intent, authority_scope);
+                accepted &= self.check_known_effect_profiles(intent, basis);
+                accepted &= self.check_known_effect_profiles(intent, max_settlement_bytes);
+                accepted &= self.check_known_effect_profiles(intent, max_attempts);
+                accepted
             }
             Stmt::Require { predicate, .. }
             | Stmt::Guarantee { predicate, .. }
@@ -2137,13 +2182,11 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
     }
 }
 
-fn ambient_operation_family(coordinate: &str) -> bool {
-    coordinate.split(['.', '@']).next().is_some_and(|root| {
-        matches!(
-            root,
-            "filesystem" | "process" | "network" | "git" | "github" | "model" | "shell"
-        )
-    })
+fn requestable_operation_family(coordinate: &str) -> bool {
+    coordinate
+        .split(['.', '@'])
+        .next()
+        .is_some_and(|root| root.eq_ignore_ascii_case("workspace"))
 }
 
 fn comparable(left: &TypeShape, right: &TypeShape) -> bool {

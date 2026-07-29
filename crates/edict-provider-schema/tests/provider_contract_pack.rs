@@ -35,6 +35,8 @@ const RESULT_PROJECTION_CDDL: &[u8] =
 const TARGET_IR_CDDL: &[u8] = include_bytes!("../../../docs/abi/edict-target-ir.cddl");
 const CORE_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/core/canonical/bounded-hello.core.cbor");
+const EXTERNAL_REQUEST_CORE_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/core/canonical/workspace-snapshot.core.cbor");
 const AUTHORITY_FACTS_FIXTURE: &[u8] = include_bytes!(
     "../../../fixtures/authority-facts/canonical/example-effectful.authority-facts.cbor"
 );
@@ -42,6 +44,8 @@ const TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/echo-effectful.target-ir.cbor");
 const ALTERNATE_TARGET_IR_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor");
+const EXTERNAL_REQUEST_TARGET_IR_FIXTURE: &[u8] =
+    include_bytes!("../../../fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor");
 const LAWPACK_ADAPTER_FIXTURE: &[u8] =
     include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor");
 const RESULT_PROJECTION_FIXTURE: &[u8] =
@@ -187,9 +191,23 @@ fn every_published_root_validates_reference_and_rejects_mutation() {
 }
 
 #[test]
+fn core_root_matches_reference_encoder() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    for fixture in [CORE_FIXTURE, EXTERNAL_REQUEST_CORE_FIXTURE] {
+        let value = decode_canonical_cbor(fixture).expect("reviewed Core is canonical");
+        pack.validate_domain(CORE_MODULE_DIGEST_DOMAIN, &value)
+            .expect("reviewed Core satisfies the Edict-owned root");
+    }
+}
+
+#[test]
 fn target_ir_root_matches_reference_encoder() {
     let pack = assemble(canonical_target_profile_contract_resources());
-    for fixture in [TARGET_IR_FIXTURE, ALTERNATE_TARGET_IR_FIXTURE] {
+    for fixture in [
+        TARGET_IR_FIXTURE,
+        ALTERNATE_TARGET_IR_FIXTURE,
+        EXTERNAL_REQUEST_TARGET_IR_FIXTURE,
+    ] {
         let value = decode_canonical_cbor(fixture).expect("reviewed Target IR is canonical");
         pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &value)
             .expect("reviewed Target IR satisfies the Edict-owned root");

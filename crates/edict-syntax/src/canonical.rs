@@ -569,38 +569,8 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
 fn target_ir_semantic_closure_value(
     closure: &TargetIrSemanticClosure,
 ) -> Result<CanonicalValue, CanonicalError> {
-    let mut lawpacks = BTreeMap::<&str, &ResourceRef>::new();
-    for resource in &closure.lawpacks {
-        if let Some(prior) = lawpacks.get(resource.coordinate.as_str()) {
-            if *prior != resource {
-                return Err(CanonicalError::new(
-                    CanonicalErrorKind::UnsupportedValue,
-                    format!(
-                        "Target IR lawpack coordinate `{}` is bound to conflicting resources",
-                        resource.coordinate
-                    ),
-                ));
-            }
-        } else {
-            lawpacks.insert(resource.coordinate.as_str(), resource);
-        }
-    }
-    let mut capabilities = BTreeMap::<&str, &ResourceRef>::new();
-    for resource in &closure.capabilities {
-        if let Some(prior) = capabilities.get(resource.coordinate.as_str()) {
-            if *prior != resource {
-                return Err(CanonicalError::new(
-                    CanonicalErrorKind::UnsupportedValue,
-                    format!(
-                        "Target IR capability coordinate `{}` is bound to conflicting resources",
-                        resource.coordinate
-                    ),
-                ));
-            }
-        } else {
-            capabilities.insert(resource.coordinate.as_str(), resource);
-        }
-    }
+    let lawpacks = target_ir_resource_set(&closure.lawpacks, "lawpack")?;
+    let capabilities = target_ir_resource_set(&closure.capabilities, "capability")?;
     let mut entries = vec![
         (
             "sourceCore",
@@ -618,6 +588,29 @@ fn target_ir_semantic_closure_value(
         ));
     }
     Ok(map(entries))
+}
+
+fn target_ir_resource_set<'a>(
+    resources: &'a [ResourceRef],
+    field_name: &str,
+) -> Result<BTreeMap<&'a str, &'a ResourceRef>, CanonicalError> {
+    let mut indexed = BTreeMap::new();
+    for resource in resources {
+        if let Some(prior) = indexed.get(resource.coordinate.as_str()) {
+            if *prior != resource {
+                return Err(CanonicalError::new(
+                    CanonicalErrorKind::UnsupportedValue,
+                    format!(
+                        "Target IR {field_name} coordinate `{}` is bound to conflicting resources",
+                        resource.coordinate
+                    ),
+                ));
+            }
+        } else {
+            indexed.insert(resource.coordinate.as_str(), resource);
+        }
+    }
+    Ok(indexed)
 }
 
 fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
@@ -646,6 +639,18 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
 }
 
 fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+    let mut request_ids = BTreeSet::new();
+    for request in &intent.external_action_requests {
+        if !request_ids.insert(request.id.as_str()) {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                format!(
+                    "Target IR external-action request id `{}` is duplicated",
+                    request.id
+                ),
+            ));
+        }
+    }
     let mut entries = vec![
         ("operationProfile", text(&intent.operation_profile)),
         (
@@ -832,6 +837,12 @@ fn core_import_value(import: &CoreImport) -> Result<CanonicalValue, CanonicalErr
 }
 
 fn resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue, CanonicalError> {
+    if resource.coordinate.is_empty() {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "Core resource coordinate is empty",
+        ));
+    }
     let mut entries = vec![("id", text(&resource.coordinate))];
     let Some(digest) = &resource.digest else {
         return Err(CanonicalError::new(

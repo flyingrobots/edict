@@ -1189,6 +1189,7 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::TypeMismatch => "TypeMismatch",
         CompilerErrorKind::ExpectedPredicate => "ExpectedPredicate",
         CompilerErrorKind::ProfileEffectMismatch => "ProfileEffectMismatch",
+        CompilerErrorKind::UnrequestableExternalOperation => "UnrequestableExternalOperation",
         CompilerErrorKind::DuplicateObstructionFailure => "DuplicateObstructionFailure",
         CompilerErrorKind::DuplicateObstructionPayloadField => "DuplicateObstructionPayloadField",
     }

@@ -364,76 +364,8 @@ fn lower_result_projections(
 pub(crate) fn semantic_closure_for_core(
     core: &CoreModule,
 ) -> Result<Option<TargetIrSemanticClosure>, TargetLoweringFailure> {
-    let mut lawpacks = BTreeMap::<String, ResourceRef>::new();
-    let mut capabilities = BTreeMap::<String, ResourceRef>::new();
-    for resource in core
-        .imports
-        .iter()
-        .filter(|import| import.kind == CoreImportKind::Lawpack)
-        .map(|import| &import.resource)
-    {
-        if !resource
-            .digest
-            .as_deref()
-            .is_some_and(is_lowercase_sha256_review_digest)
-        {
-            return Err(TargetLoweringFailure {
-                kind: TargetLoweringFailureKind::UndigestedCoreImport,
-                intent: None,
-                node_index: None,
-                detail: resource.coordinate.clone(),
-            });
-        }
-        if let Some(prior) = lawpacks.get(&resource.coordinate) {
-            if prior != resource {
-                return Err(TargetLoweringFailure {
-                    kind: TargetLoweringFailureKind::InvalidCoreIdentity,
-                    intent: None,
-                    node_index: None,
-                    detail: format!(
-                        "lawpack coordinate `{}` is bound to conflicting resources",
-                        resource.coordinate
-                    ),
-                });
-            }
-        } else {
-            lawpacks.insert(resource.coordinate.clone(), resource.clone());
-        }
-    }
-    for resource in core
-        .imports
-        .iter()
-        .filter(|import| import.kind == CoreImportKind::Capability)
-        .map(|import| &import.resource)
-    {
-        if !resource
-            .digest
-            .as_deref()
-            .is_some_and(is_lowercase_sha256_review_digest)
-        {
-            return Err(TargetLoweringFailure {
-                kind: TargetLoweringFailureKind::UndigestedCoreImport,
-                intent: None,
-                node_index: None,
-                detail: resource.coordinate.clone(),
-            });
-        }
-        if let Some(prior) = capabilities.get(&resource.coordinate) {
-            if prior != resource {
-                return Err(TargetLoweringFailure {
-                    kind: TargetLoweringFailureKind::InvalidCoreIdentity,
-                    intent: None,
-                    node_index: None,
-                    detail: format!(
-                        "capability coordinate `{}` is bound to conflicting resources",
-                        resource.coordinate
-                    ),
-                });
-            }
-        } else {
-            capabilities.insert(resource.coordinate.clone(), resource.clone());
-        }
-    }
+    let lawpacks = digest_locked_import_set(core, CoreImportKind::Lawpack, "lawpack")?;
+    let capabilities = digest_locked_import_set(core, CoreImportKind::Capability, "capability")?;
     let has_explicit_basis = core.intents.values().any(|intent| intent.basis.is_some());
     if !has_explicit_basis && lawpacks.is_empty() && capabilities.is_empty() {
         return Ok(None);
@@ -453,6 +385,49 @@ pub(crate) fn semantic_closure_for_core(
         lawpacks: lawpacks.into_values().collect(),
         capabilities: capabilities.into_values().collect(),
     }))
+}
+
+fn digest_locked_import_set(
+    core: &CoreModule,
+    kind: CoreImportKind,
+    field_name: &str,
+) -> Result<BTreeMap<String, ResourceRef>, TargetLoweringFailure> {
+    let mut resources = BTreeMap::new();
+    for resource in core
+        .imports
+        .iter()
+        .filter(|import| import.kind == kind)
+        .map(|import| &import.resource)
+    {
+        if !resource
+            .digest
+            .as_deref()
+            .is_some_and(is_lowercase_sha256_review_digest)
+        {
+            return Err(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UndigestedCoreImport,
+                intent: None,
+                node_index: None,
+                detail: resource.coordinate.clone(),
+            });
+        }
+        if let Some(prior) = resources.get(&resource.coordinate) {
+            if prior != resource {
+                return Err(TargetLoweringFailure {
+                    kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+                    intent: None,
+                    node_index: None,
+                    detail: format!(
+                        "{field_name} coordinate `{}` is bound to conflicting resources",
+                        resource.coordinate
+                    ),
+                });
+            }
+        } else {
+            resources.insert(resource.coordinate.clone(), resource.clone());
+        }
+    }
+    Ok(resources)
 }
 
 fn validate_target_selection(

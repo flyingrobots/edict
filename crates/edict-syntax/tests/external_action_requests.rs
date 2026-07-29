@@ -8,8 +8,8 @@ use std::{collections::BTreeSet, fmt::Write as _};
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, CanonicalValue, CompilerContext,
-    CompilerErrorKind, CoreBudget, ResourceRef, TargetIrLoweringFacts, TargetLoweringStatus,
-    WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    CompilerErrorKind, CoreBudget, CoreNode, ResourceRef, TargetIrLoweringFacts,
+    TargetLoweringStatus, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
 };
 
 const OPERATION_DIGEST: char = 'a';
@@ -92,6 +92,7 @@ type ObserveInput = {{
   maxSettlementBytes: U64,
   alternateMaxSettlementBytes: U64,
   maxAttempts: U32,
+  alternateMaxAttempts: U32,
 }};
 
 intent observe(input: ObserveInput) returns ExternalActionRequest<Bytes<max=65536>>
@@ -242,12 +243,11 @@ fn undeclared_or_floating_operation_families_fail_closed() {
     let floating =
         baseline_source().replace(&format!(" digest \"{}\"", digest(OPERATION_DIGEST)), "");
     let module = parse_module(&floating).expect("floating capability source parses");
-    let core = compile_to_core(&module, &context()).expect("floating source reaches Core");
     assert_eq!(
-        encode_core_module(&core)
-            .expect_err("floating operation cannot become canonical")
-            .kind(),
-        edict_syntax::CanonicalErrorKind::UnresolvedDigest
+        compile_to_core(&module, &context())
+            .expect_err("floating operation rejects during compilation")[0]
+            .kind,
+        CompilerErrorKind::MissingContextFact
     );
 }
 
@@ -271,6 +271,65 @@ fn request_operation_must_remain_in_core_and_target_capability_closure() {
     assert_eq!(
         encode_target_ir_artifact(&target)
             .expect_err("Target IR request without capability closure rejects")
+            .kind(),
+        edict_syntax::CanonicalErrorKind::UnsupportedValue
+    );
+}
+
+#[test]
+fn request_resource_coordinates_must_be_nonempty() {
+    let core = compile_source(&baseline_source());
+
+    for field in ["inputSchema", "settlementSchema", "reconciliationLaw"] {
+        let mut changed = core.clone();
+        let request = changed
+            .intents
+            .get_mut("observe")
+            .expect("observe intent exists")
+            .body
+            .nodes
+            .first_mut()
+            .expect("request node exists");
+        let CoreNode::ExternalActionRequest {
+            input_schema,
+            settlement_schema,
+            reconciliation_law,
+            ..
+        } = request
+        else {
+            panic!("first node is an external-action request");
+        };
+        match field {
+            "inputSchema" => input_schema.coordinate.clear(),
+            "settlementSchema" => settlement_schema.coordinate.clear(),
+            "reconciliationLaw" => reconciliation_law.coordinate.clear(),
+            _ => unreachable!("bounded field corpus"),
+        }
+
+        assert_eq!(
+            encode_core_module(&changed)
+                .expect_err("empty request resource coordinate rejects")
+                .kind(),
+            edict_syntax::CanonicalErrorKind::UnsupportedValue,
+            "{field}"
+        );
+    }
+}
+
+#[test]
+fn duplicate_target_request_ids_reject_before_identity() {
+    let (_, mut target) = lower_source(&baseline_source());
+    let intent = target
+        .intents
+        .get_mut("observe")
+        .expect("observe intent exists");
+    intent
+        .external_action_requests
+        .push(intent.external_action_requests[0].clone());
+
+    assert_eq!(
+        encode_target_ir_artifact(&target)
+            .expect_err("duplicate target request ids reject")
             .kind(),
         edict_syntax::CanonicalErrorKind::UnsupportedValue
     );
@@ -303,15 +362,59 @@ intent observe(input: Input) returns Bytes<max=65536>
 }
 
 #[test]
+fn capability_import_cannot_be_used_as_an_obstruction_coordinate() {
+    let require_source = baseline_source().replace(
+        "{\n  request pending:",
+        "{\n  require false else snapshot;\n  request pending:",
+    );
+    let module = parse_module(&require_source).expect("capability-require source parses");
+    let errors = compile_to_core(&module, &context())
+        .expect_err("capability alias in obstruction position rejects");
+    assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape);
+
+    let effect_source = format!(
+        r#"package examples.obstruction_alias@1;
+use capability workspace.snapshot.observe@1 digest "{}" as snapshot;
+type Input = {{ payload: Bytes<max=1024>, }};
+type Output = {{ payload: Bytes<max=1024>, }};
+intent observe(input: Input) returns Output
+  profile workspace.read
+  basis none
+  budget <= workspace.tiny {{
+  let output: Output = target.read(input.payload)
+    else {{ rejected(reason) => snapshot }};
+  return output;
+}}
+"#,
+        digest(OPERATION_DIGEST)
+    );
+    let module = parse_module(&effect_source).expect("capability-effect-obstruction source parses");
+    let effect_context = context()
+        .with_operation_profile_write_classes("workspace.read", [WriteClass::Read])
+        .with_effect_write_class("target.read", WriteClass::Read);
+    let errors = compile_to_core(&module, &effect_context)
+        .expect_err("capability alias in effect obstruction position rejects");
+    assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape);
+}
+
+#[test]
 fn ambient_operation_families_are_not_requestable() {
     for coordinate in [
         "filesystem.read@1",
+        "Filesystem.read@1",
         "process.spawn@1",
         "network.fetch@1",
+        "NETWORK.fetch@1",
         "git.push@1",
         "github.open_pull_request@1",
         "model.invoke@1",
         "shell.command@1",
+        "fs.read@1",
+        "net.fetch@1",
+        "http.get@1",
+        "exec.command@1",
+        "gh.open_pull_request@1",
+        "calendar.observe@1",
     ] {
         let source = request_source(&RequestSource {
             capability_coordinate: coordinate,
@@ -331,10 +434,17 @@ fn ambient_operation_families_are_not_requestable() {
             compile_to_core(&module, &context()).expect_err("ambient operation family rejects");
         assert_eq!(
             errors[0].kind,
-            CompilerErrorKind::UnsupportedSourceShape,
+            CompilerErrorKind::UnrequestableExternalOperation,
             "{coordinate}"
         );
     }
+}
+
+#[test]
+fn non_call_request_operation_has_a_request_specific_parse_kind() {
+    let source = baseline_source().replace("snapshot(input.payload)", "input.payload");
+    let error = parse_module(&source).expect_err("non-call request operation rejects");
+    assert_eq!(error.kind.code(), "NonCallExternalActionOperation");
 }
 
 #[test]
@@ -373,9 +483,12 @@ fn request_artifacts_are_reproducible() {
 }
 
 #[test]
-fn every_request_authority_field_moves_core_identity() {
+fn every_request_authority_field_moves_core_and_target_identity() {
     let baseline = baseline_source();
-    let baseline_digest = digest_core_module(&compile_source(&baseline)).expect("baseline digest");
+    let (baseline_core, baseline_target) = lower_source(&baseline);
+    let baseline_core_digest = digest_core_module(&baseline_core).expect("baseline Core digest");
+    let baseline_target_bytes =
+        encode_target_ir_artifact(&baseline_target).expect("baseline Target IR");
     let mutations = [
         baseline.replace(&digest(OPERATION_DIGEST), &digest('1')),
         baseline.replace(&digest(INPUT_SCHEMA_DIGEST), &digest('2')),
@@ -387,15 +500,24 @@ fn every_request_authority_field_moves_core_identity() {
             "maxSettlementBytes input.alternateMaxSettlementBytes",
         ),
         baseline.replace(
+            "maxAttempts input.maxAttempts",
+            "maxAttempts input.alternateMaxAttempts",
+        ),
+        baseline.replace(
             "snapshot(input.payload)",
             "snapshot(input.alternatePayload)",
         ),
         baseline.replace(&digest(RECONCILIATION_DIGEST), &digest('4')),
     ];
     for mutation in mutations {
+        let (mutated_core, mutated_target) = lower_source(&mutation);
         assert_ne!(
-            digest_core_module(&compile_source(&mutation)).expect("mutated digest"),
-            baseline_digest
+            digest_core_module(&mutated_core).expect("mutated Core digest"),
+            baseline_core_digest
+        );
+        assert_ne!(
+            encode_target_ir_artifact(&mutated_target).expect("mutated Target IR"),
+            baseline_target_bytes
         );
     }
 }

@@ -1267,9 +1267,9 @@ intent <name>(input: <Type>)
 
 | Family | Codes |
 | --- | --- |
-| Parser (19) | `Lex`, `ExpectedToken`, `ExpectedKeyword`, `ExpectedIdentifier`, `ExpectedExpression`, `InvalidInteger`, `InvalidDigest`, `InvalidVersion`, `ReservedKeyword`, `UnsupportedSyntax`, `InvalidName`, `EmptyEnum`, `EmptyObstructionMap`, `EmptyMatch`, `MissingRequiredField`, `DuplicateField`, `NonCallEffect`, `ReturnInYieldBlock`, `InvalidTypeCall` |
+| Parser (20) | `Lex`, `ExpectedToken`, `ExpectedKeyword`, `ExpectedIdentifier`, `ExpectedExpression`, `InvalidInteger`, `InvalidDigest`, `InvalidVersion`, `ReservedKeyword`, `UnsupportedSyntax`, `InvalidName`, `EmptyEnum`, `EmptyObstructionMap`, `EmptyMatch`, `MissingRequiredField`, `DuplicateField`, `NonCallEffect`, `NonCallExternalActionOperation`, `ReturnInYieldBlock`, `InvalidTypeCall` |
 | Semantic (7) | `UnboundedScalar`, `MissingOperationMode`, `MissingBudget`, `MissingBasis`, `DuplicateIntentClause`, `DuplicateName`, `ShadowedName` |
-| Compiler (10) | `SurfaceValidation`, `MissingContextFact`, `UnsupportedSourceShape`, `UnresolvedType`, `UnknownField`, `TypeMismatch`, `ExpectedPredicate`, `ProfileEffectMismatch`, `DuplicateObstructionFailure`, `DuplicateObstructionPayloadField` |
+| Compiler (11) | `SurfaceValidation`, `MissingContextFact`, `UnsupportedSourceShape`, `UnresolvedType`, `UnknownField`, `TypeMismatch`, `ExpectedPredicate`, `ProfileEffectMismatch`, `UnrequestableExternalOperation`, `DuplicateObstructionFailure`, `DuplicateObstructionPayloadField` |
 | CLI exit codes | `0` ok · `1` compiler/validation diagnostics · `2` invalid CLI input |
 
 ### D.5 Digest domains

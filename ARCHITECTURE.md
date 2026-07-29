@@ -172,8 +172,7 @@ source text
   -> semantic surface validation
   -> compiler context facts
   -> compiler spine
-  -> Core IR
-     -> typed external-action request data
+  -> Core IR (including typed external-action request data)
   -> canonical Core bytes and digest
   -> lowerability + target facts
   -> direct lowering or built-in lowerer compatibility adapter

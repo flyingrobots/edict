@@ -69,8 +69,11 @@ participates in canonical identity. [EXTREQ-REQ-005]
 Request authority is not performance authority:
 
 - a capability alias cannot be invoked as an ordinary semantic effect;
-- raw `filesystem`, `process`, `network`, `git`, `github`, `model`, and `shell`
-  operation families are rejected;
+- the current request-family allowlist contains only the domain-specific
+  `workspace` root used by `workspace.snapshot.observe@1`;
+- raw `filesystem`, `process`, `network`, Git, GitHub, `model`, and `shell`
+  operation families, case variants, abbreviations, and unregistered roots are
+  rejected with `UnrequestableExternalOperation`;
 - compiling and lowering perform no I/O;
 - the compiler/provider component interface gains no callable import;
 - dynamic path, ref, basis, budget, adapter, and settlement constraints remain

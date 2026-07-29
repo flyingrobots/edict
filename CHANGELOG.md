@@ -29,9 +29,13 @@ versions still track specification maturity rather than a released product.
   authority to Edict. Digest-locked capability imports and `request` statements
   preserve exact operation, schema, scope, basis, budget, input, reconciliation,
   and awaiting-settlement data through canonical Core and Target IR. Operation
-  families remain bound in the semantic capability closure, raw ambient
-  filesystem/process/network/Git/GitHub/model/shell families reject, target
-  steps remain non-callable, and the provider seam gains no host import.
+  families remain bound in the semantic capability closure and the current
+  allowlist admits only the domain-specific `workspace` root. Floating
+  capabilities, empty request resources, duplicate request ids, capability
+  aliases outside request position, and raw ambient operation families reject
+  with stable kinds. Target steps remain non-callable, the provider seam gains
+  no host import, and checked Core/Target request goldens bind the complete
+  public request identity.
 - Added the compiler-owned `edict.result-projection/v1` artifact for preserving
   typed application results across the Echo target boundary. The bounded,
   canonical projection names only declared application input and

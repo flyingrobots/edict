@@ -50,3 +50,11 @@ fn highlight_source_emits_editor_roles_for_fixture() {
     assert_eq!(find_role(src, &tokens, "<="), HighlightRole::Operator);
     assert_eq!(find_role(src, &tokens, ";"), HighlightRole::Punctuation);
 }
+
+#[test]
+fn request_statement_introducer_is_highlighted_as_a_keyword() {
+    let src = "request pending: ExternalActionRequest<Bytes<max=1>> = snapshot(input);";
+    let tokens = highlight_source(src).expect("request source highlights");
+
+    assert_eq!(find_role(src, &tokens, "request"), HighlightRole::Keyword);
+}

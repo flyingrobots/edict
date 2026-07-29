@@ -581,7 +581,8 @@ What exists today:
 - Reference `edict.canonical-cbor/v1` Core encoder and canonical byte validation
   path for the current in-memory Core module model
 - Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for
-  the initial pure local-record Core artifact
+  the initial pure local-record Core artifact and typed workspace-snapshot
+  external request
 - Typed v1 target-profile manifest conformance for runtime-neutral profile
   validation, including `echo.dpo@1` and `kv.transactional@1` shaped profiles
 - Typed v1 lowerability checks for `LoweringRequirements` against explicit
@@ -608,8 +609,8 @@ What exists today:
   through the binary
 - Published `v0.11.0-alpha.1` release notes for contract-bundle assembly and
   canonical Target IR artifact bytes/digests: semantic/release bundle digest
-  goldens, Echo/git-warp Target IR byte/digest goldens, and computed
-  `targetIrDigest` bundle assembly from real `TargetIrArtifact` values
+  goldens, Echo/git-warp/workspace-request Target IR byte/digest goldens, and
+  computed `targetIrDigest` bundle assembly from real `TargetIrArtifact` values
 - Published `v0.8.0-alpha.1` release notes for the minimal effectful
   compiler-spine alpha
 - Published `v0.7.0-alpha.1` release notes for the file-backed

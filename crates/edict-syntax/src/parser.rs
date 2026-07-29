@@ -32,6 +32,7 @@ pub enum ParseErrorKind {
     MissingRequiredField,
     DuplicateField,
     NonCallEffect,
+    NonCallExternalActionOperation,
     ReturnInYieldBlock,
     InvalidTypeCall,
 }
@@ -64,6 +65,7 @@ impl ParseErrorKind {
             ParseErrorKind::MissingRequiredField => "MissingRequiredField",
             ParseErrorKind::DuplicateField => "DuplicateField",
             ParseErrorKind::NonCallEffect => "NonCallEffect",
+            ParseErrorKind::NonCallExternalActionOperation => "NonCallExternalActionOperation",
             ParseErrorKind::ReturnInYieldBlock => "ReturnInYieldBlock",
             ParseErrorKind::InvalidTypeCall => "InvalidTypeCall",
         }
@@ -963,7 +965,7 @@ impl Parser {
         let operation = self.expr()?;
         if !is_call_expr(&operation) {
             return self.err_kind(
-                ParseErrorKind::NonCallEffect,
+                ParseErrorKind::NonCallExternalActionOperation,
                 "external-action request operation must be a call expression",
             );
         }
@@ -1680,6 +1682,10 @@ mod parse_error_kind_codes {
             (ParseErrorKind::MissingRequiredField, "MissingRequiredField"),
             (ParseErrorKind::DuplicateField, "DuplicateField"),
             (ParseErrorKind::NonCallEffect, "NonCallEffect"),
+            (
+                ParseErrorKind::NonCallExternalActionOperation,
+                "NonCallExternalActionOperation",
+            ),
             (ParseErrorKind::ReturnInYieldBlock, "ReturnInYieldBlock"),
             (ParseErrorKind::InvalidTypeCall, "InvalidTypeCall"),
         ];

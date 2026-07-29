@@ -303,6 +303,10 @@ fn project_exposes_external_requests_as_non_callable_review_data() {
             .and_then(Value::as_str),
         Some("workspace.snapshot.observe@1")
     );
+    assert_external_request_review(
+        core.pointer("/review/intents/observe/body/nodes/0")
+            .expect("Core request review exists"),
+    );
 
     let target = record_of_type(&stdout, "targetIr");
     assert_eq!(
@@ -321,11 +325,10 @@ fn project_exposes_external_requests_as_non_callable_review_data() {
             .and_then(Value::as_str),
         Some("workspace.snapshot.observe@1")
     );
-    assert_eq!(
+    assert_external_request_review(
         target
-            .pointer("/review/intents/observe/externalActionRequests/0/state")
-            .and_then(Value::as_str),
-        Some("awaitingSettlement")
+            .pointer("/review/intents/observe/externalActionRequests/0")
+            .expect("Target IR request review exists"),
     );
     assert_eq!(
         target
@@ -334,6 +337,36 @@ fn project_exposes_external_requests_as_non_callable_review_data() {
             .map(Vec::len),
         Some(0)
     );
+}
+
+fn assert_external_request_review(request: &Value) {
+    for (pointer, expected) in [
+        ("/operation/coordinate", "workspace.snapshot.observe@1"),
+        ("/inputType", "Bytes<max=1024>"),
+        ("/settlementType", "Bytes<max=65536>"),
+        ("/inputSchema/coordinate", "workspace.snapshot.input@1"),
+        (
+            "/settlementSchema/coordinate",
+            "workspace.snapshot.settlement@1",
+        ),
+        ("/input/field", "payload"),
+        ("/authorityScope/field", "scope"),
+        ("/basis/field", "basis"),
+        ("/budget/maxSettlementBytes/field", "maxSettlementBytes"),
+        ("/budget/maxAttempts/field", "maxAttempts"),
+        (
+            "/reconciliationLaw/coordinate",
+            "workspace.snapshot.reconcile@1",
+        ),
+        ("/state", "awaitingSettlement"),
+        ("/settlementAdmission", "schemaRequired"),
+    ] {
+        assert_eq!(
+            request.pointer(pointer).and_then(Value::as_str),
+            Some(expected),
+            "{pointer}"
+        );
+    }
 }
 
 #[test]

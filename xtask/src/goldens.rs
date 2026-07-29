@@ -129,11 +129,18 @@ struct CoreGoldenCase {
     digest: &'static str,
 }
 
-const CORE_GOLDEN_CASES: &[CoreGoldenCase] = &[CoreGoldenCase {
-    source: "fixtures/lang/bounds/bounded-hello.edict",
-    bytes: "fixtures/core/canonical/bounded-hello.core.cbor",
-    digest: "fixtures/core/canonical/bounded-hello.core.sha256",
-}];
+const CORE_GOLDEN_CASES: &[CoreGoldenCase] = &[
+    CoreGoldenCase {
+        source: "fixtures/lang/bounds/bounded-hello.edict",
+        bytes: "fixtures/core/canonical/bounded-hello.core.cbor",
+        digest: "fixtures/core/canonical/bounded-hello.core.sha256",
+    },
+    CoreGoldenCase {
+        source: "fixtures/lang/external-actions/workspace-snapshot.edict",
+        bytes: "fixtures/core/canonical/workspace-snapshot.core.cbor",
+        digest: "fixtures/core/canonical/workspace-snapshot.core.sha256",
+    },
+];
 
 pub(crate) fn core_goldens(root: &Path, mode: CoreGoldenMode) -> Result<(), String> {
     for case in CORE_GOLDEN_CASES {
@@ -181,12 +188,21 @@ fn check_or_write_core_golden(
 fn core_golden_context() -> CompilerContext {
     CompilerContext::new()
         .with_operation_profile("hello.readOnly", "continuum.profile.read-only/v1")
+        .with_operation_profile("workspace.read", "continuum.profile.read-only/v1")
         .with_budget(
             "hello.tinyBudget",
             CoreBudget {
                 max_steps: 64,
                 max_allocated_bytes: 4096,
                 max_output_bytes: 1024,
+            },
+        )
+        .with_budget(
+            "workspace.tiny",
+            CoreBudget {
+                max_steps: 512,
+                max_allocated_bytes: 256 * 1024,
+                max_output_bytes: 128 * 1024,
             },
         )
 }
@@ -201,6 +217,7 @@ pub(crate) enum TargetIrGoldenMode {
 enum TargetIrGoldenKind {
     Echo,
     Gitwarp,
+    ExternalRequest,
 }
 
 #[derive(Debug)]
@@ -220,6 +237,11 @@ const TARGET_IR_GOLDEN_CASES: &[TargetIrGoldenCase] = &[
         kind: TargetIrGoldenKind::Gitwarp,
         bytes: "fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor",
         digest: "fixtures/target-ir/canonical/gitwarp-append.target-ir.sha256",
+    },
+    TargetIrGoldenCase {
+        kind: TargetIrGoldenKind::ExternalRequest,
+        bytes: "fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor",
+        digest: "fixtures/target-ir/canonical/workspace-snapshot.target-ir.sha256",
     },
 ];
 
@@ -249,6 +271,9 @@ const TARGET_IR_GITWARP_SOURCE: &str = "package a.git@1;\n\
         else { conflict(reason) => domain.MergeConflict };\n\
       return { id: receipt.id };\n\
     }";
+
+const TARGET_IR_EXTERNAL_REQUEST_SOURCE: &str =
+    include_str!("../../fixtures/lang/external-actions/workspace-snapshot.edict");
 
 pub(crate) fn target_ir_goldens(root: &Path, mode: TargetIrGoldenMode) -> Result<(), String> {
     for case in TARGET_IR_GOLDEN_CASES {
@@ -302,6 +327,11 @@ fn target_ir_golden_artifact(case: &TargetIrGoldenCase) -> Result<TargetIrArtifa
             target_ir_gitwarp_context(),
             target_ir_gitwarp_facts(),
         ),
+        TargetIrGoldenKind::ExternalRequest => (
+            TARGET_IR_EXTERNAL_REQUEST_SOURCE,
+            target_ir_external_request_context(),
+            target_ir_external_request_facts(),
+        ),
     };
     let module = parse_module(source)
         .map_err(|err| format!("parse {:?} Target IR golden source: {err}", case.kind))?;
@@ -346,6 +376,19 @@ fn target_ir_gitwarp_context() -> CompilerContext {
         )
 }
 
+fn target_ir_external_request_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("workspace.read", "continuum.profile.read-only/v1")
+        .with_budget(
+            "workspace.tiny",
+            CoreBudget {
+                max_steps: 512,
+                max_allocated_bytes: 256 * 1024,
+                max_output_bytes: 128 * 1024,
+            },
+        )
+}
+
 fn target_ir_echo_facts() -> TargetIrLoweringFacts {
     TargetIrLoweringFacts {
         target_profile: ResourceRef {
@@ -377,6 +420,19 @@ fn target_ir_gitwarp_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+    }
+}
+
+fn target_ir_external_request_facts() -> TargetIrLoweringFacts {
+    TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: ECHO_DPO_TARGET_PROFILE.to_owned(),
+            digest: Some(digest_text('3')),
+        },
+        target_ir_domain: ECHO_SPAN_IR_DOMAIN.to_owned(),
+        operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
+        obstruction_coordinates: Vec::new(),
+        effect_lowerings: Vec::new(),
     }
 }
 
