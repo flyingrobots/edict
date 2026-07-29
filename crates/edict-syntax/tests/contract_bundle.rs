@@ -852,6 +852,30 @@ mod contract_bundle_assembly {
     }
 
     #[test]
+    fn assembly_from_target_ir_rejects_artifact_capability_substitution() {
+        let mut input = assembly_from_target_ir_input();
+        input
+            .target_ir_artifact
+            .semantic_closure
+            .as_mut()
+            .expect("lawpack-bearing fixture has a closure")
+            .capabilities
+            .push(digest_locked("workspace.snapshot.observe@1", 'e'));
+
+        let err = assemble_contract_bundle_from_target_ir(input)
+            .expect_err("artifact capabilities must equal the supplied Core closure");
+
+        assert_eq!(
+            err.kind(),
+            ContractBundleAssemblyErrorKind::TargetIrSourceMismatch
+        );
+        assert_eq!(
+            err.field(),
+            "target_ir_artifact.semantic_closure.capabilities"
+        );
+    }
+
+    #[test]
     fn assembly_from_target_ir_preserves_canonical_core_failure() {
         let mut input = assembly_from_target_ir_input();
         input

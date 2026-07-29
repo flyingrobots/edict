@@ -58,6 +58,7 @@ Out of scope:
 | EXTREQ-TP-007 | implemented | Property | EXTREQ-REQ-005, EXTREQ-REQ-008 | A fixed-seed 32-case capability-digest corpus is reproducible and collision-free within the corpus. | fixed_seed_request_identity_corpus_is_deterministic | crates/edict-syntax/tests/external_action_requests.rs | Seed is recorded in the fixture table. |
 | EXTREQ-TP-008 | implemented | Stress | EXTREQ-REQ-008 | A generated module with 64 request declarations emits 64 Core requests and 64 Target IR requests with zero callable steps. | sixty_four_requests_remain_bounded_non_callable_data | crates/edict-syntax/tests/external_action_requests.rs | Bound is fixed for CI. |
 | EXTREQ-TP-009 | implemented | Closure guard | EXTREQ-REQ-004 | Canonical Core and Target IR encoding reject request operations removed from their exact capability closure. | request_operation_must_remain_in_core_and_target_capability_closure | crates/edict-syntax/tests/external_action_requests.rs | Manual artifact construction cannot bypass compiler-owned closure. |
+| EXTREQ-TP-010 | implemented | Bundle boundary | EXTREQ-REQ-004 | Contract-bundle assembly rejects a digest-locked Target IR capability absent from the supplied Core closure. | assembly_from_target_ir_rejects_artifact_capability_substitution | crates/edict-syntax/tests/contract_bundle.rs | A self-consistent target artifact cannot substitute source-owned request authority. |
 
 ## Determinism Obligations
 
