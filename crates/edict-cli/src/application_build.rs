@@ -1866,9 +1866,11 @@ mod tests {
         let empty = BTreeMap::new();
         let no_failures = BTreeMap::new();
         assert_eq!(
-            single_result_projection(&empty, &no_failures)
-                .expect_err("an application build without a projection must reject")
-                .kind,
+            test_err(
+                single_result_projection(&empty, &no_failures),
+                "an application build without a projection must reject",
+            )
+            .kind,
             "ResultProjectionUnavailable"
         );
 
@@ -1877,20 +1879,26 @@ mod tests {
             ("second".to_owned(), projection.clone()),
         ]);
         assert_eq!(
-            single_result_projection(&multiple, &no_failures)
-                .expect_err("an application build with multiple projections must reject")
-                .kind,
+            test_err(
+                single_result_projection(&multiple, &no_failures),
+                "an application build with multiple projections must reject",
+            )
+            .kind,
             "ResultProjectionUnavailable"
         );
 
         let admitted = BTreeMap::from([("createGreeting".to_owned(), projection)]);
-        let projection_failure =
-            decode_result_projection(&[]).expect_err("empty projection bytes must reject");
+        let projection_failure = test_err(
+            decode_result_projection(&[]),
+            "empty projection bytes must reject",
+        );
         let failures = BTreeMap::from([("createGreeting".to_owned(), projection_failure)]);
         assert_eq!(
-            single_result_projection(&admitted, &failures)
-                .expect_err("a recorded projection failure must reject the application build")
-                .kind,
+            test_err(
+                single_result_projection(&admitted, &failures),
+                "a recorded projection failure must reject the application build",
+            )
+            .kind,
             "ResultProjectionUnavailable"
         );
     }
@@ -1950,10 +1958,10 @@ mod tests {
             "compile Hello Echo Core",
         );
         let mut report = lower_to_target_ir(&core, preparation.target_ir_facts());
-        report
-            .result_projections
-            .remove("createGreeting")
-            .expect("Hello Echo lowering emits its result projection")
+        match report.result_projections.remove("createGreeting") {
+            Some(projection) => projection,
+            None => panic!("Hello Echo lowering emits its result projection"),
+        }
     }
 
     #[test]
