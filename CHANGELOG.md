@@ -21,6 +21,14 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the compiler-owned `edict.result-projection/v1` artifact for preserving
+  typed application results across the Echo target boundary. The bounded,
+  canonical projection names only declared application input and
+  capability-step result paths; an independent verifier reconstructs the
+  authored Core result and requires exact Core, Target IR, semantic-closure,
+  schema, and digest agreement. The provider contract pack publishes its CDDL
+  root, and the Hello Echo lawpack generator owns reviewed projection bytes and
+  identity fixtures.
 - Added the public `edict` CLI `build` operation for standalone applications.
   A settings-only JSONL request loads one exact `edict.application/v1`
   manifest, source, complete lawpack dependency closure, direct target adapter,
