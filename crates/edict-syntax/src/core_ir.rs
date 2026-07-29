@@ -289,9 +289,9 @@ pub enum CoreNode {
         input_schema: ResourceRef,
         settlement_schema: ResourceRef,
         input: CoreExpr,
-        authority_scope: CoreExpr,
-        basis: CoreExpr,
-        budget: CoreExternalActionBudget,
+        authority_scope: Box<CoreExpr>,
+        basis: Box<CoreExpr>,
+        budget: Box<CoreExternalActionBudget>,
         reconciliation_law: ResourceRef,
     },
 }

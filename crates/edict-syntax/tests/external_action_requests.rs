@@ -3,7 +3,7 @@
 //! The tests use only public compiler surfaces so the first failure is the
 //! absence of request syntax/semantics, not a test compile error.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, fmt::Write as _};
 
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_core_module,
@@ -49,19 +49,34 @@ fn target_facts() -> TargetIrLoweringFacts {
     }
 }
 
-fn request_source(
-    capability_coordinate: &str,
-    operation_alias: &str,
-    operation_digest: &str,
-    input_schema_digest: &str,
-    settlement_schema_digest: &str,
-    input_expr: &str,
-    authority_expr: &str,
-    basis_expr: &str,
-    max_settlement_bytes: &str,
-    max_attempts: &str,
-    reconciliation_digest: &str,
-) -> String {
+struct RequestSource<'a> {
+    capability_coordinate: &'a str,
+    operation_alias: &'a str,
+    operation_digest: &'a str,
+    input_schema_digest: &'a str,
+    settlement_schema_digest: &'a str,
+    input_expr: &'a str,
+    authority_expr: &'a str,
+    basis_expr: &'a str,
+    max_settlement_bytes: &'a str,
+    max_attempts: &'a str,
+    reconciliation_digest: &'a str,
+}
+
+fn request_source(request: &RequestSource<'_>) -> String {
+    let RequestSource {
+        capability_coordinate,
+        operation_alias,
+        operation_digest,
+        input_schema_digest,
+        settlement_schema_digest,
+        input_expr,
+        authority_expr,
+        basis_expr,
+        max_settlement_bytes,
+        max_attempts,
+        reconciliation_digest,
+    } = request;
     format!(
         r#"package examples.workspace_observer@1;
 
@@ -99,19 +114,19 @@ intent observe(input: ObserveInput) returns ExternalActionRequest<Bytes<max=6553
 }
 
 fn baseline_source() -> String {
-    request_source(
-        "workspace.snapshot.observe@1",
-        "snapshot",
-        &digest(OPERATION_DIGEST),
-        &digest(INPUT_SCHEMA_DIGEST),
-        &digest(SETTLEMENT_SCHEMA_DIGEST),
-        "input.payload",
-        "input.scope",
-        "input.basis",
-        "input.maxSettlementBytes",
-        "input.maxAttempts",
-        &digest(RECONCILIATION_DIGEST),
-    )
+    request_source(&RequestSource {
+        capability_coordinate: "workspace.snapshot.observe@1",
+        operation_alias: "snapshot",
+        operation_digest: &digest(OPERATION_DIGEST),
+        input_schema_digest: &digest(INPUT_SCHEMA_DIGEST),
+        settlement_schema_digest: &digest(SETTLEMENT_SCHEMA_DIGEST),
+        input_expr: "input.payload",
+        authority_expr: "input.scope",
+        basis_expr: "input.basis",
+        max_settlement_bytes: "input.maxSettlementBytes",
+        max_attempts: "input.maxAttempts",
+        reconciliation_digest: &digest(RECONCILIATION_DIGEST),
+    })
 }
 
 fn compile_source(source: &str) -> edict_syntax::CoreModule {
@@ -298,19 +313,19 @@ fn ambient_operation_families_are_not_requestable() {
         "model.invoke@1",
         "shell.command@1",
     ] {
-        let source = request_source(
-            coordinate,
-            "snapshot",
-            &digest(OPERATION_DIGEST),
-            &digest(INPUT_SCHEMA_DIGEST),
-            &digest(SETTLEMENT_SCHEMA_DIGEST),
-            "input.payload",
-            "input.scope",
-            "input.basis",
-            "input.maxSettlementBytes",
-            "input.maxAttempts",
-            &digest(RECONCILIATION_DIGEST),
-        );
+        let source = request_source(&RequestSource {
+            capability_coordinate: coordinate,
+            operation_alias: "snapshot",
+            operation_digest: &digest(OPERATION_DIGEST),
+            input_schema_digest: &digest(INPUT_SCHEMA_DIGEST),
+            settlement_schema_digest: &digest(SETTLEMENT_SCHEMA_DIGEST),
+            input_expr: "input.payload",
+            authority_expr: "input.scope",
+            basis_expr: "input.basis",
+            max_settlement_bytes: "input.maxSettlementBytes",
+            max_attempts: "input.maxAttempts",
+            reconciliation_digest: &digest(RECONCILIATION_DIGEST),
+        });
         let module = parse_module(&source).expect("ambient-family source parses structurally");
         let errors =
             compile_to_core(&module, &context()).expect_err("ambient operation family rejects");
@@ -396,19 +411,19 @@ fn fixed_seed_request_identity_corpus_is_deterministic() {
         let mut hex = format!("{state:016x}");
         hex = hex.repeat(4);
         let operation_digest = format!("sha256:{hex}");
-        let source = request_source(
-            "workspace.snapshot.observe@1",
-            "snapshot",
-            &operation_digest,
-            &digest(INPUT_SCHEMA_DIGEST),
-            &digest(SETTLEMENT_SCHEMA_DIGEST),
-            "input.payload",
-            "input.scope",
-            "input.basis",
-            "input.maxSettlementBytes",
-            "input.maxAttempts",
-            &digest(RECONCILIATION_DIGEST),
-        );
+        let source = request_source(&RequestSource {
+            capability_coordinate: "workspace.snapshot.observe@1",
+            operation_alias: "snapshot",
+            operation_digest: &operation_digest,
+            input_schema_digest: &digest(INPUT_SCHEMA_DIGEST),
+            settlement_schema_digest: &digest(SETTLEMENT_SCHEMA_DIGEST),
+            input_expr: "input.payload",
+            authority_expr: "input.scope",
+            basis_expr: "input.basis",
+            max_settlement_bytes: "input.maxSettlementBytes",
+            max_attempts: "input.maxAttempts",
+            reconciliation_digest: &digest(RECONCILIATION_DIGEST),
+        });
         let first = digest_core_module(&compile_source(&source)).expect("first property digest");
         let second = digest_core_module(&compile_source(&source)).expect("second property digest");
         assert_eq!(first, second);
@@ -421,7 +436,8 @@ fn fixed_seed_request_identity_corpus_is_deterministic() {
 fn sixty_four_requests_remain_bounded_non_callable_data() {
     let mut requests = String::new();
     for index in 0..64 {
-        requests.push_str(&format!(
+        write!(
+            requests,
             r#"  request pending{index}: ExternalActionRequest<Bytes<max=65536>> =
     snapshot(input.payload)
     input schema workspace.snapshot.input@1 digest "{}"
@@ -434,7 +450,8 @@ fn sixty_four_requests_remain_bounded_non_callable_data() {
             digest(INPUT_SCHEMA_DIGEST),
             digest(SETTLEMENT_SCHEMA_DIGEST),
             digest(RECONCILIATION_DIGEST),
-        ));
+        )
+        .expect("writing to a String cannot fail");
     }
     let source = format!(
         r#"package examples.workspace_stress@1;

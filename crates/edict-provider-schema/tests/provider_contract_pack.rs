@@ -720,7 +720,7 @@ fn encoded_target_ir_with_requirements() -> CanonicalValue {
 }
 
 fn encoded_target_ir_with_coordinate(coordinate: &str) -> CanonicalValue {
-    encode_target_ir_value(representative_target_ir(coordinate))
+    encode_target_ir_value(&representative_target_ir(coordinate))
 }
 
 fn encoded_target_ir_with_external_request() -> CanonicalValue {
@@ -776,7 +776,7 @@ fn encoded_target_ir_with_external_request() -> CanonicalValue {
                 digest: Some(format!("sha256:{}", "7".repeat(64))),
             },
         });
-    encode_target_ir_value(artifact)
+    encode_target_ir_value(&artifact)
 }
 
 fn representative_target_ir(coordinate: &str) -> TargetIrArtifact {
@@ -849,8 +849,8 @@ fn representative_target_ir(coordinate: &str) -> TargetIrArtifact {
     }
 }
 
-fn encode_target_ir_value(artifact: TargetIrArtifact) -> CanonicalValue {
-    let bytes = encode_target_ir_artifact(&artifact).expect("representative Target IR encodes");
+fn encode_target_ir_value(artifact: &TargetIrArtifact) -> CanonicalValue {
+    let bytes = encode_target_ir_artifact(artifact).expect("representative Target IR encodes");
     decode_canonical_cbor(&bytes).expect("encoded representative Target IR is canonical")
 }
 

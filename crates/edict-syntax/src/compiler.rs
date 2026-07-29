@@ -945,12 +945,12 @@ impl<'a> TypeChecker<'a> {
             input_schema,
             settlement_schema,
             input: input.expr,
-            authority_scope: authority_scope.expr,
-            basis: basis.expr,
-            budget: CoreExternalActionBudget {
+            authority_scope: Box::new(authority_scope.expr),
+            basis: Box::new(basis.expr),
+            budget: Box::new(CoreExternalActionBudget {
                 max_settlement_bytes: max_settlement_bytes.expr,
                 max_attempts: max_attempts.expr,
-            },
+            }),
             reconciliation_law,
         });
         locals.push(local.clone());

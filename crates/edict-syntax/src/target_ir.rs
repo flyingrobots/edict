@@ -659,9 +659,9 @@ fn lower_node(
                 input_schema: input_schema.clone(),
                 settlement_schema: settlement_schema.clone(),
                 input: input.clone(),
-                authority_scope: authority_scope.clone(),
-                basis: basis.clone(),
-                budget: budget.clone(),
+                authority_scope: authority_scope.as_ref().clone(),
+                basis: basis.as_ref().clone(),
+                budget: budget.as_ref().clone(),
                 reconciliation_law: reconciliation_law.clone(),
             }),
         CoreNode::Let { .. } => failures.push(TargetLoweringFailure {

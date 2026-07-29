@@ -782,10 +782,7 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
             CoreNode::Let { .. } | CoreNode::Require { .. } | CoreNode::Effect { .. } => None,
         })
     {
-        if !capability_imports
-            .iter()
-            .any(|capability| *capability == request)
-        {
+        if !capability_imports.contains(&request) {
             return Err(CanonicalError::new(
                 CanonicalErrorKind::UnsupportedValue,
                 format!(
