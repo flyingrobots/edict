@@ -26,8 +26,11 @@ versions still track specification maturity rather than a released product.
   canonical projection names only declared application input and
   capability-step result paths; an independent verifier reconstructs the
   authored Core result and requires exact Core, Target IR, semantic-closure,
-  schema, and digest agreement. The provider contract pack publishes its CDDL
-  root, and the Hello Echo lawpack generator owns reviewed projection bytes and
+  schema, and digest agreement. Target lowering returns one projection per
+  closed intent and fails as a whole when projection is unsupported. The
+  application build independently verifies and binds the same artifact into
+  both provider closures. The provider contract pack publishes its CDDL root,
+  and the Hello Echo lawpack generator owns reviewed projection bytes and
   identity fixtures.
 - Added the public `edict` CLI `build` operation for standalone applications.
   A settings-only JSONL request loads one exact `edict.application/v1`
