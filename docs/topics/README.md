@@ -52,6 +52,9 @@ cargo xtask verify
 - [Developer Tooling](./developer-tooling/README.md): editor-facing source
   highlighting roles, Tree-sitter grammar source, TextMate grammar scopes, and
   fixture-backed tooling behavior.
+- [External-Action Requests](./external-action-requests/README.md):
+  deterministic typed requests for Echo-coordinated external effects, with
+  digest-locked capability closure and no ambient execution authority.
 - [Fixtures](./fixtures/README.md): shared executable fixture corpus and
   reviewed Core golden artifact contract.
 - [Lawpacks](./lawpacks/README.md): lawpack import, direct-adapter, bundle

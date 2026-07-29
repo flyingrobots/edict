@@ -723,6 +723,33 @@ Edict owns deterministic validation of fact provenance, digest binding, review
 references, and artifact shape. Continuum and participants own trust policy,
 identity, delegation, revocation, and acceptance decisions.
 
+## Parallel Integration Track: Typed External Requests
+
+Milestone: `Typed External Requests` (#17)
+
+Primary issue: #172
+
+Roadmap label: `roadmap-a1`
+
+This cross-repository track follows Echo's durable external-action protocol and
+precedes Hello Echo's first bounded workspace observation:
+
+```text
+Echo #694 durable request and settlement protocol
+  -> Edict #172 typed request values
+  -> Hello Echo #10 observed workspace settlement proof
+```
+
+Edict owns deterministic request construction, exact operation/schema/law
+identity, capability closure, and non-callable Core/Target IR representation.
+Echo owns request admission, durability, adapter coordination, settlement,
+recovery, and replay. Adapters alone own external authority.
+
+The milestone closes when request source, Core, Target IR, canonical identity,
+negative authority cases, and provider-seam non-authority are implemented and
+validated. It does not add direct I/O, general algebraic effects, native stack
+suspension, writable model authority, or the autonomous delivery loop.
+
 ## v2-design - Future Design Track
 
 Milestone: `v2-design`
@@ -762,6 +789,7 @@ Milestones:
 - `v0.13.0-alpha.1`: planned, issues TBD
 - `v0.14.0-alpha.1`: planned, issues TBD
 - `v0.15.0-alpha.1`: planned, issues TBD
+- `Typed External Requests`: #172
 - `v2-design`: #4
 
 Alpha-train release labels:

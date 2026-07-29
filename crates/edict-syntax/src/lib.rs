@@ -332,4 +332,7 @@ mod topic_shelf_doctests {
 
     #[doc = include_str!("../../../docs/topics/developer-tooling/README.md")]
     pub struct DeveloperToolingTopicDocs;
+
+    #[doc = include_str!("../../../docs/topics/external-action-requests/README.md")]
+    pub struct ExternalActionRequestsTopicDocs;
 }

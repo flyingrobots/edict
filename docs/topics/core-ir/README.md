@@ -38,11 +38,12 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   capabilities. Imports are digest-locked `resource-ref` values, but the Core
   module does not contain its own self-hash field. [COREIR-REQ-001]
   [COREIR-REQ-007]
-- Core types cover bounded scalars, records, variants, options, lists, maps, and
-  capability references. Runtime-sized collections remain explicitly bounded at
-  the Core schema boundary. Integer type and value identity retains exact width
-  and signedness, and byte payloads carry an explicit maximum. [COREIR-REQ-002]
-  [COREIR-REQ-019]
+- Core types cover bounded scalars, records, variants, options, lists, maps,
+  capability references, and typed external-action requests. Runtime-sized
+  collections remain explicitly bounded at the Core schema boundary. Integer
+  type and value identity retains exact width and signedness, and byte payloads
+  carry an explicit maximum. [COREIR-REQ-002] [COREIR-REQ-019]
+  [COREIR-REQ-020]
 - Core expressions and predicates are separate schema families. Expressions
   compute values; predicates express boolean obligations and input constraints.
   [COREIR-REQ-003]
@@ -54,6 +55,11 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   deterministic obstruction map. They also represent `require` nodes with
   distinct terminal and preserved-obstruction failure arms. [COREIR-REQ-015]
   [COREIR-REQ-016]
+- External-action requests are distinct Core nodes, not semantic effects. They
+  bind exact operation, schema, scope, basis, budget, and reconciliation data
+  plus fixed awaiting-settlement posture. Canonical encoding requires the
+  operation resource to remain in the module's capability imports.
+  [COREIR-REQ-020]
 - Local references are alpha-stable: each `local-ref` carries a compiler-owned
   `id`, normalized `alphaName`, and type reference. Source binder spelling is
   not identity. [COREIR-REQ-005]
@@ -95,6 +101,9 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   sensitivity, and source alpha-renaming invariance. [COREIR-REQ-005]
   [COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014] [COREIR-REQ-015]
   [COREIR-REQ-016] [COREIR-REQ-017]
+- External request coverage proves byte reproducibility, mutation sensitivity,
+  exact capability closure, a fixed-seed 32-case identity corpus, and a bounded
+  64-request module. [COREIR-REQ-020]
 
 ## Deferred
 

@@ -575,6 +575,9 @@ What exists today:
   `let ... = effect(arg) else { failure(binder) => Obstruction }` source shape
   lowers through file-backed authority facts into typed Core with a semantic
   effect node and deterministic obstruction map
+- Typed external-action request construction: digest-locked operation families,
+  schemas, scope, basis, budgets, and reconciliation law lower as non-callable
+  Core and Target IR data with exact capability closure
 - Reference `edict.canonical-cbor/v1` Core encoder and canonical byte validation
   path for the current in-memory Core module model
 - Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for
@@ -638,6 +641,8 @@ What doesn't exist yet:
   participant acceptance policy
 - Target-runtime execution, Echo verifier reports, git-warp commit object
   creation, or git-warp CRDT reducer verification
+- External-action admission, adapter execution, settlement witnessing, or
+  settlement-driven resumption
 - Canonical bytes for full `ContractBundleManifest` values
 - Full admission execution tooling
 - Participant policy evaluation, capability delegation, and revocation logic

@@ -29,11 +29,11 @@ Out of scope:
 | --- | --- | --- | --- |
 | SYNTAX-REQ-001 | implemented | `parse_module` returns source AST only; later phases own semantic validation and lowering. | crates/edict-syntax/src/lib.rs |
 | SYNTAX-REQ-002 | implemented | Module/package/import coordinates parse and preserve source-significant version spelling. | docs/SPEC_edict-language-v1.md |
-| SYNTAX-REQ-003 | implemented | Imports parse supported kinds, validate digest literals, and reject minimal-v1 unsupported `capability`. | docs/SPEC_edict-language-v1.md |
+| SYNTAX-REQ-003 | implemented | Imports parse supported kinds, including digest-bound external-operation `capability` references, and validate digest literals. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-004 | implemented | Type declarations parse Phase 1 type surface and reject empty enum declarations. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-005 | implemented | Integer suffixes remain source-significant in expression literals and static bounds. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-006 | implemented | Intent declaration syntax parses parameters, return type, clauses, and blocks; semantic requiredness is deferred. | docs/SPEC_edict-language-v1.md |
-| SYNTAX-REQ-007 | implemented | Statement syntax includes effect call positions, guards, control flow, and bounded loops. | docs/SPEC_edict-language-v1.md |
+| SYNTAX-REQ-007 | implemented | Statement syntax includes external-action requests, effect call positions, guards, control flow, and bounded loops. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-008 | implemented | Expression syntax includes precedence, records, literals, conditionals, variants, and match. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-009 | implemented | Reserved keywords reject in bare-name positions while remaining legal after `.`. | docs/SPEC_edict-language-v1.md |
 | SYNTAX-REQ-010 | implemented | Negative tests assert stable error kinds, not diagnostic prose or incidental output. | crates/edict-syntax/src/parser.rs |
@@ -56,7 +56,7 @@ Out of scope:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | SYNTAX-TP-001 | implemented | Golden path | SYNTAX-REQ-001 | Public API returns a `Module` with expected package/declaration shape. | bounded_hello_parses | fixtures/lang/bounds/bounded-hello.edict | Source AST, not Core IR. |
 | SYNTAX-TP-002 | implemented | Golden path | SYNTAX-REQ-002 | Exact version strings match source spelling. | multi_part_package_version, package_versions_preserve_underscores, import_versions_preserve_underscore_labels | - | Covers `_beta` labels. |
-| SYNTAX-TP-003 | implemented | Error handling | SYNTAX-REQ-003 | Invalid digest and unsupported import syntax produce stable error kinds. | import_digest_literals_are_validated, capability_imports_are_rejected_in_v1 | - | Digest oracle is fixed `sha256:` length/hex rule. |
+| SYNTAX-TP-003 | implemented | Import boundary | SYNTAX-REQ-003 | Invalid digests reject with a stable error kind, while a digest-bound capability import preserves its distinct AST kind and digest. | import_digest_literals_are_validated, capability_imports_parse_as_external_operation_references | - | Capability import is request authority, not performance authority. |
 | SYNTAX-TP-004 | implemented | Golden path | SYNTAX-REQ-004 | Type AST nodes match expected records, bytes, variants, enums, and bounds. | bounded_hello_parses, bytes_accept_coordinate_bounds, enum_decl_parses, variant_type_with_and_without_payloads_parses | fixtures/lang/bounds/bounded-hello.edict | Structural AST equality. |
 | SYNTAX-TP-005 | implemented | Error handling | SYNTAX-REQ-004 | Empty enums reject with `ParseErrorKind::EmptyEnum`. | empty_enum_and_empty_obstruction_maps_reject | - | Parser-level syntactic emptiness. |
 | SYNTAX-TP-006 | implemented | Edge case | SYNTAX-REQ-005 | Integer suffix is preserved in `Expr::Int` and `BoundRef::Int`. | typed_integer_suffix, bound_integer_suffixes_are_preserved | - | Source-significant suffix oracle. |
@@ -77,6 +77,7 @@ Out of scope:
 | SYNTAX-TP-021 | implemented | Semantic validation | SYNTAX-REQ-011 | The source/surface validator returns stable diagnostic kinds for context-free source errors and accepts unresolved downstream facts. | validate_module_remains_surface_stage_compatibility_alias, surface_validation_defers_import_and_name_resolution, surface_validation_defers_contextual_typing_and_loop_bound_proof, surface_validation_defers_obstruction_exhaustiveness | - | Owned by the semantic-validation shelf. |
 | SYNTAX-TP-022 | planned | Golden artifact | SYNTAX-REQ-012 | Full source lowering emits byte-stable canonical artifacts. | - | - | Initial Core golden artifacts exist in the Core IR shelf; full source-language coverage remains planned. |
 | SYNTAX-TP-023 | implemented | Syntax guard | SYNTAX-REQ-013 | `else continue obstructed { reason: ... }` parses as a distinct require-else arm, while `else continueInObstructedStrand(...)` remains a terminal obstruction target. | continue_obstructed_source_arm_parses, helper_shaped_continue_in_obstructed_strand_is_terminal, stale_basis_obstruction_strand_fixture_parses | crates/edict-syntax/tests/parse_review_regressions.rs, fixtures/obstruction-strands/v0/stale-basis/source.edict | Prevents hidden control-flow semantics in ordinary obstruction constructors. |
+| SYNTAX-TP-024 | implemented | Golden path | SYNTAX-REQ-003, SYNTAX-REQ-007 | A request statement parses its typed binding, single operation call, schemas, authority scope, basis, two budgets, and reconciliation resource before source-to-Core compilation. | workspace_observation_request_compiles_as_non_callable_data | crates/edict-syntax/tests/external_action_requests.rs | Execution and settlement remain outside the parser. |
 
 ## Determinism Obligations
 
