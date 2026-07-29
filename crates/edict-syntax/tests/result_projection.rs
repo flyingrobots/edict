@@ -8,9 +8,10 @@ use edict_syntax::{
     encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     verify_result_projection, CanonicalValue, CoreExpr, CoreModule, LocalRef, ResultProjection,
     ResultProjectionExpr, ResultProjectionFailureKind, ResultProjectionSource, TargetIrArtifact,
-    TargetLoweringReport, TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES,
-    MAX_RESULT_PROJECTION_NODES, MAX_RESULT_PROJECTION_PATH_SEGMENTS,
-    MAX_RESULT_PROJECTION_TEXT_BYTES, RESULT_PROJECTION_API_VERSION,
+    TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringReport, TargetLoweringStatus,
+    MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
+    MAX_RESULT_PROJECTION_PATH_SEGMENTS, MAX_RESULT_PROJECTION_TEXT_BYTES,
+    RESULT_PROJECTION_API_VERSION,
 };
 
 const MANIFEST_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor");
@@ -23,7 +24,7 @@ const PROJECTION_DIGEST: &str =
     include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.sha256");
 const PROPERTY_SEED: u64 = 0x1730_5eed_cafe_babe;
 
-fn hello_echo_lowering() -> (CoreModule, TargetLoweringReport) {
+fn hello_echo_core_and_facts() -> (CoreModule, TargetIrLoweringFacts) {
     let bundle =
         decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
     let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES)
@@ -33,7 +34,12 @@ fn hello_echo_lowering() -> (CoreModule, TargetLoweringReport) {
         .expect("prepare Hello Echo compilation");
     let core = edict_syntax::compile_to_core(&module, preparation.compiler_context())
         .expect("compile Hello Echo Core");
-    let target = lower_to_target_ir(&core, preparation.target_ir_facts());
+    (core, preparation.target_ir_facts().clone())
+}
+
+fn hello_echo_lowering() -> (CoreModule, TargetLoweringReport) {
+    let (core, facts) = hello_echo_core_and_facts();
+    let target = lower_to_target_ir(&core, &facts);
     assert_eq!(target.status, TargetLoweringStatus::Lowered);
     (core, target)
 }
@@ -175,6 +181,31 @@ fn echo_target_lowering_emits_the_verified_result_projection() {
         projection.digest,
     )
     .expect("independent verifier reconstructs the lowerer output");
+}
+
+#[test]
+fn target_lowering_rejects_an_unsupported_result_projection() {
+    let (mut core, facts) = hello_echo_core_and_facts();
+    core.intents
+        .get_mut("createGreeting")
+        .expect("Core intent")
+        .body
+        .result = CoreExpr::Call {
+        callee: "examples.hidden@1.callback".to_owned(),
+        type_args: Vec::new(),
+        args: Vec::new(),
+    };
+
+    let report = lower_to_target_ir(&core, &facts);
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert!(report.result_projections.is_empty());
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(
+        report.failures[0].kind,
+        TargetLoweringFailureKind::UnsupportedResultProjection
+    );
 }
 
 #[test]

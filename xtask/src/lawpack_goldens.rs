@@ -4,7 +4,7 @@ use std::path::Path;
 
 use edict_syntax::{
     compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, digest_core_module,
-    digest_target_ir_artifact, emit_result_projection, encode_canonical_cbor, encode_core_module,
+    digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     CanonicalValue, TargetLoweringStatus,
 };
@@ -459,6 +459,13 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             target_ir_report.status
         ));
     }
+    let result_projection = target_ir_report
+        .result_projections
+        .get("createGreeting")
+        .cloned()
+        .ok_or_else(|| {
+            "lower Hello Echo Target IR: lowered report omitted result projection".to_owned()
+        })?;
     let target_ir = target_ir_report
         .artifact
         .ok_or_else(|| "lower Hello Echo Target IR: lowered report omitted artifact".to_owned())?;
@@ -470,8 +477,6 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             .map_err(|error| format!("digest Hello Echo Target IR: {error}"))?
             .to_review_string()
     );
-    let result_projection = emit_result_projection(&core, &target_ir, "createGreeting")
-        .map_err(|error| format!("emit Hello Echo result projection: {error}"))?;
     let result_projection_digest = format!("{}\n", result_projection.digest.to_review_string());
     let manifest_digest = format!("{}\n", bundle.manifest_digest_review_string());
     let exports_digest = format!("{}\n", bundle.manifest().exports.digest_review_string());

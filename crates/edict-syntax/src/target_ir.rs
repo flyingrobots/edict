@@ -13,7 +13,7 @@ use crate::core_ir::{
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
-use crate::ResultProjectionArtifact;
+use crate::{emit_result_projection, ResultProjectionArtifact};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
 pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
@@ -159,6 +159,7 @@ pub enum TargetLoweringFailureKind {
     UnsupportedCoreCapability,
     UndigestedCoreImport,
     InvalidCoreIdentity,
+    UnsupportedResultProjection,
     NoTargetSteps,
 }
 
@@ -280,21 +281,51 @@ pub fn lower_to_target_ir(
     }
 
     if failures.is_empty() {
+        let artifact = TargetIrArtifact {
+            domain: facts.target_ir_domain.clone(),
+            target_profile: facts.target_profile.clone(),
+            source_core_coordinate: core.coordinate.clone(),
+            semantic_closure,
+            intents,
+        };
+        let result_projections = match lower_result_projections(core, &artifact) {
+            Ok(result_projections) => result_projections,
+            Err(failures) => return unsupported(failures),
+        };
         TargetLoweringReport {
             status: TargetLoweringStatus::Lowered,
-            artifact: Some(TargetIrArtifact {
-                domain: facts.target_ir_domain.clone(),
-                target_profile: facts.target_profile.clone(),
-                source_core_coordinate: core.coordinate.clone(),
-                semantic_closure,
-                intents,
-            }),
-            result_projections: BTreeMap::new(),
+            artifact: Some(artifact),
+            result_projections,
             failures,
         }
     } else {
         unsupported(failures)
     }
+}
+
+fn lower_result_projections(
+    core: &CoreModule,
+    target_ir: &TargetIrArtifact,
+) -> Result<BTreeMap<String, ResultProjectionArtifact>, Vec<TargetLoweringFailure>> {
+    if target_ir.semantic_closure.is_none() {
+        return Ok(BTreeMap::new());
+    }
+
+    target_ir
+        .intents
+        .keys()
+        .map(|intent_name| {
+            emit_result_projection(core, target_ir, intent_name)
+                .map(|projection| (intent_name.clone(), projection))
+                .map_err(|failure| TargetLoweringFailure {
+                    kind: TargetLoweringFailureKind::UnsupportedResultProjection,
+                    intent: Some(intent_name.clone()),
+                    node_index: None,
+                    detail: format!("{:?}: {}", failure.kind(), failure.subject()),
+                })
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()
+        .map_err(|failure| vec![failure])
 }
 
 pub(crate) fn semantic_closure_for_core(
