@@ -21,7 +21,7 @@ result-projection-record = {
 result-projection-source = {
   kind: "source",
   source: result-projection-source-kind,
-  path: [* bounded-projection-text],
+  path: [0*32 bounded-projection-text],
 }
 
 result-projection-source-kind =
