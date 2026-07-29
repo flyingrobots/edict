@@ -268,6 +268,24 @@ fn mutated_target_core_closure_fails_closed() {
 }
 
 #[test]
+fn mutated_target_lawpack_closure_fails_closed() {
+    let (core, mut target) = hello_echo();
+    target
+        .semantic_closure
+        .as_mut()
+        .expect("semantic closure")
+        .lawpacks[0]
+        .digest = Some(format!("sha256:{}", "0".repeat(64)));
+
+    let failure = emit_result_projection(&core, &target, "createGreeting")
+        .expect_err("mutated lawpack closure must reject");
+    assert_eq!(
+        failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+}
+
+#[test]
 fn undeclared_locals_and_unsupported_calls_fail_closed() {
     let (mut core, mut target) = hello_echo();
     mutate_results(
