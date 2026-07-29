@@ -498,6 +498,7 @@ mod contract_bundle_assembly {
                 .iter()
                 .map(DigestLockedResource::to_resource_ref)
                 .collect(),
+            capabilities: Vec::new(),
         });
         input
     }

@@ -131,10 +131,10 @@ pub use contract_bundle::{
     SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
-    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
-    CORE_API_VERSION,
+    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
+    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
+    CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, InputConstraint,
+    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
 };
 pub use highlight::{highlight_source, HighlightRole, HighlightToken};
 pub use lawpack::{
@@ -207,10 +207,10 @@ pub use result_projection::{
 };
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{
-    lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrIntent,
-    TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure,
-    TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind, TargetLoweringReport,
-    TargetLoweringStatus, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest,
+    TargetIrIntent, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrRequirement,
+    TargetIrSemanticClosure, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
+    TargetLoweringReport, TargetLoweringStatus, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
     GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 pub use target_profile::{

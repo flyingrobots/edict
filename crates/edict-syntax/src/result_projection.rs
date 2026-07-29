@@ -519,7 +519,9 @@ fn resolve_capability_sources(
                 input,
                 ..
             } => Some((binding, effect, input)),
-            CoreNode::Let { .. } | CoreNode::Require { .. } => None,
+            CoreNode::Let { .. }
+            | CoreNode::Require { .. }
+            | CoreNode::ExternalActionRequest { .. } => None,
         })
         .collect::<Vec<_>>();
     if core_effects.len() != target_intent.steps.len() {
@@ -818,6 +820,10 @@ fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize
         | (CoreType::CapabilityRef { item: left }, CoreType::CapabilityRef { item: right }) => {
             types_are_compatible(core, left, right, depth + 1)
         }
+        (
+            CoreType::ExternalActionRequest { settlement: left },
+            CoreType::ExternalActionRequest { settlement: right },
+        ) => types_are_compatible(core, left, right, depth + 1),
         (
             CoreType::List {
                 item: left,

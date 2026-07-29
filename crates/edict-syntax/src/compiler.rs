@@ -6,15 +6,17 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    BinOp, Block, BoundRef, Decl, ElseClause, Expr, FieldDecl, Import, ImportKind, IntentClause,
-    IntentDecl, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, RecordEntry,
-    RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp, YieldBlock,
+    BinOp, Block, BoundRef, Decl, DigestLockedPackageRef, ElseClause, Expr, FieldDecl, Import,
+    ImportKind, IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler,
+    ObstructionTarget, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
+    TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
-    parse_core_integer, CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind,
-    CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
+    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBudget,
+    CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule,
+    CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
+    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
+    CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -281,18 +283,10 @@ pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>>
     })
 }
 
-fn resolve_imports(imports: &[Import], errors: &mut Vec<CompilerError>) -> Vec<CoreImport> {
+fn resolve_imports(imports: &[Import], _errors: &mut Vec<CompilerError>) -> Vec<CoreImport> {
     let mut out = Vec::new();
     for import in imports {
         let Some(kind) = core_import_kind(import.kind) else {
-            if import.kind == ImportKind::Capability {
-                errors.push(error(
-                    CompilerStage::Resolve,
-                    CompilerErrorKind::UnsupportedSourceShape,
-                    "capability imports are not supported by the v1 compiler spine",
-                    import.span,
-                ));
-            }
             continue;
         };
         let Some(package) = &import.package else {
@@ -315,7 +309,8 @@ fn core_import_kind(kind: ImportKind) -> Option<CoreImportKind> {
         ImportKind::Lawpack => Some(CoreImportKind::Lawpack),
         ImportKind::Target => Some(CoreImportKind::Target),
         ImportKind::Core => Some(CoreImportKind::Core),
-        ImportKind::Shape | ImportKind::Capability => None,
+        ImportKind::Capability => Some(CoreImportKind::Capability),
+        ImportKind::Shape => None,
     }
 }
 
@@ -394,6 +389,7 @@ enum TypeKind {
     String { max: u64, canonical: String },
     Bytes { max: u64 },
     Record(BTreeMap<String, TypeShape>),
+    ExternalActionRequest { settlement: Box<TypeShape> },
 }
 
 impl TypeShape {
@@ -414,6 +410,19 @@ impl TypeShape {
                     .map(|(name, shape)| (name.clone(), shape.coord.clone()))
                     .collect(),
             },
+            TypeKind::ExternalActionRequest { settlement } => CoreType::ExternalActionRequest {
+                settlement: settlement.coord.clone(),
+            },
+        }
+    }
+
+    fn value_type_coord(&self) -> String {
+        match &self.kind {
+            TypeKind::Bool => "Bool".to_owned(),
+            TypeKind::Int { width } => width.clone(),
+            TypeKind::String { max, canonical } => string_type_coord(*max, canonical),
+            TypeKind::Bytes { max } => bytes_type_coord(*max),
+            TypeKind::Record(_) | TypeKind::ExternalActionRequest { .. } => self.coord.clone(),
         }
     }
 }
@@ -563,6 +572,17 @@ impl<'a> TypeChecker<'a> {
                     ));
                     None
                 }
+            }
+            TypeRef::Named { path, args }
+                if path.as_slice() == ["ExternalActionRequest"] && args.len() == 1 =>
+            {
+                let settlement = self.type_ref_shape(&args[0], span, None)?;
+                Some(TypeShape {
+                    coord: format!("edict.external-action.request/v1<{}>", settlement.coord),
+                    kind: TypeKind::ExternalActionRequest {
+                        settlement: Box::new(settlement),
+                    },
+                })
             }
             TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span, coord_hint),
             TypeRef::BytesTy(Some(bound)) => self.bytes_shape(bound, span, coord_hint),
@@ -801,6 +821,34 @@ impl<'a> TypeChecker<'a> {
                     self.unsupported_stmt(*span, "effect statement");
                 }
             }
+            Stmt::ExternalActionRequest {
+                name,
+                request_type,
+                operation,
+                input_schema,
+                settlement_schema,
+                authority_scope,
+                basis,
+                max_settlement_bytes,
+                max_attempts,
+                reconciliation_law,
+                span,
+            } => self.check_external_action_request(
+                name,
+                request_type,
+                operation,
+                input_schema,
+                settlement_schema,
+                authority_scope,
+                basis,
+                max_settlement_bytes,
+                max_attempts,
+                reconciliation_law,
+                *span,
+                env,
+                locals,
+                state,
+            ),
             Stmt::Require { predicate, arm, .. } => {
                 self.check_require_stmt(predicate, arm, env, state);
             }
@@ -809,6 +857,187 @@ impl<'a> TypeChecker<'a> {
             | Stmt::If { span, .. }
             | Stmt::For { span, .. } => self.unsupported_stmt(*span, "statement"),
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_external_action_request(
+        &mut self,
+        name: &str,
+        request_type: &TypeRef,
+        operation: &Expr,
+        input_schema: &DigestLockedPackageRef,
+        settlement_schema: &DigestLockedPackageRef,
+        authority_scope: &Expr,
+        basis: &Expr,
+        max_settlement_bytes: &Expr,
+        max_attempts: &Expr,
+        reconciliation_law: &DigestLockedPackageRef,
+        span: Span,
+        env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
+        locals: &mut Vec<LocalRef>,
+        state: &mut BodyState,
+    ) {
+        let Some(request_shape) = self.type_ref_shape(request_type, span, None) else {
+            return;
+        };
+        let TypeKind::ExternalActionRequest { settlement } = &request_shape.kind else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "request binding type must be ExternalActionRequest<Settlement>",
+                span,
+            ));
+            return;
+        };
+        let settlement_type = settlement.coord.clone();
+        let Some((operation_resource, input)) =
+            self.check_external_action_operation(operation, env, span)
+        else {
+            return;
+        };
+        if ambient_operation_family(&operation_resource.coordinate) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                format!(
+                    "ambient operation family `{}` is not requestable",
+                    operation_resource.coordinate
+                ),
+                span,
+            ));
+            return;
+        }
+        let Some(authority_scope) = self.check_expr(authority_scope, env) else {
+            return;
+        };
+        let Some(basis) = self.check_expr(basis, env) else {
+            return;
+        };
+        let settlement_budget_shape = integer_shape("U64");
+        let Some(max_settlement_bytes) = self.check_expr_with_expected(
+            max_settlement_bytes,
+            env,
+            Some(&settlement_budget_shape),
+        ) else {
+            return;
+        };
+        let attempt_budget_shape = integer_shape("U32");
+        let Some(max_attempts) =
+            self.check_expr_with_expected(max_attempts, env, Some(&attempt_budget_shape))
+        else {
+            return;
+        };
+        let Some(input_schema) = self.request_resource(input_schema) else {
+            return;
+        };
+        let Some(settlement_schema) = self.request_resource(settlement_schema) else {
+            return;
+        };
+        let Some(reconciliation_law) = self.request_resource(reconciliation_law) else {
+            return;
+        };
+        let local = next_local(&mut state.local_index, request_shape.coord.clone());
+        state.nodes.push(CoreNode::ExternalActionRequest {
+            binding: local.clone(),
+            operation: operation_resource,
+            input_type: input.ty.value_type_coord(),
+            settlement_type,
+            input_schema,
+            settlement_schema,
+            input: input.expr,
+            authority_scope: authority_scope.expr,
+            basis: basis.expr,
+            budget: CoreExternalActionBudget {
+                max_settlement_bytes: max_settlement_bytes.expr,
+                max_attempts: max_attempts.expr,
+            },
+            reconciliation_law,
+        });
+        locals.push(local.clone());
+        env.insert(name.to_owned(), (local, request_shape));
+    }
+
+    fn check_external_action_operation(
+        &mut self,
+        operation: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<(ResourceRef, TypedValue)> {
+        let Expr::Call {
+            callee,
+            type_args,
+            args,
+            ..
+        } = operation
+        else {
+            self.unsupported_stmt(span, "external-action request operation");
+            return None;
+        };
+        if !type_args.is_empty() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "external-action request operation does not accept type arguments",
+                span,
+            ));
+            return None;
+        }
+        let Expr::Ident { name: alias, .. } = callee.as_ref() else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "external-action request operation must name one capability import alias",
+                span,
+            ));
+            return None;
+        };
+        let Some(operation_resource) = self
+            .resolved
+            .imports
+            .iter()
+            .find(|import| {
+                import.kind == CoreImportKind::Capability
+                    && import.alias.as_deref() == Some(alias.as_str())
+            })
+            .map(|import| import.resource.clone())
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "external-action operation `{alias}` has no digest-locked capability import"
+                ),
+                span,
+            ));
+            return None;
+        };
+        let [input] = args.as_slice() else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "external-action request operation accepts exactly one input value",
+                span,
+            ));
+            return None;
+        };
+        let input = self.check_expr(input, env)?;
+        Some((operation_resource, input))
+    }
+
+    fn request_resource(&mut self, resource: &DigestLockedPackageRef) -> Option<ResourceRef> {
+        if !is_lowercase_sha256_review_digest(&resource.digest) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "external-action resource digest must use lowercase sha256 review rendering",
+                resource.span,
+            ));
+            return None;
+        }
+        Some(ResourceRef {
+            coordinate: package_coordinate(&resource.package.path, &resource.package.version),
+            digest: Some(resource.digest.clone()),
+        })
     }
 
     fn check_require_stmt(
@@ -1404,6 +1633,20 @@ impl<'a> TypeChecker<'a> {
                 }
             }
             Stmt::Effect { call, span, .. } => self.check_effect_profile(intent, call, *span),
+            Stmt::ExternalActionRequest {
+                operation,
+                authority_scope,
+                basis,
+                max_settlement_bytes,
+                max_attempts,
+                ..
+            } => {
+                self.check_known_effect_profiles(intent, operation)
+                    && self.check_known_effect_profiles(intent, authority_scope)
+                    && self.check_known_effect_profiles(intent, basis)
+                    && self.check_known_effect_profiles(intent, max_settlement_bytes)
+                    && self.check_known_effect_profiles(intent, max_attempts)
+            }
             Stmt::Require { predicate, .. }
             | Stmt::Guarantee { predicate, .. }
             | Stmt::Assert { predicate, .. } => self.check_known_effect_profiles(intent, predicate),
@@ -1859,8 +2102,23 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
         (TypeKind::Bool, TypeKind::Bool) => true,
         (TypeKind::Int { width: expected }, TypeKind::Int { width: actual }) => expected == actual,
         (TypeKind::Bytes { max: expected }, TypeKind::Bytes { max: actual }) => actual <= expected,
+        (
+            TypeKind::ExternalActionRequest {
+                settlement: expected,
+            },
+            TypeKind::ExternalActionRequest { settlement: actual },
+        ) => compatible(expected, actual),
         _ => false,
     }
+}
+
+fn ambient_operation_family(coordinate: &str) -> bool {
+    coordinate.split(['.', '@']).next().is_some_and(|root| {
+        matches!(
+            root,
+            "filesystem" | "process" | "network" | "git" | "github" | "model" | "shell"
+        )
+    })
 }
 
 fn comparable(left: &TypeShape, right: &TypeShape) -> bool {

@@ -193,10 +193,21 @@ fn workspace_observation_request_compiles_as_non_callable_data() {
 
     let target_bytes = encode_target_ir_artifact(&target).expect("Target IR encodes");
     let target_value = decode_canonical_cbor(&target_bytes).expect("Target IR CBOR");
+    let closure = map_field(&target_value, "semanticClosure");
+    let capabilities = array_field(closure, "capabilities");
+    assert_eq!(capabilities.len(), 1);
+    assert_eq!(
+        text_field(&capabilities[0], "id"),
+        "workspace.snapshot.observe@1"
+    );
     let intent = map_field(map_field(&target_value, "intents"), "observe");
     assert_eq!(array_field(intent, "steps"), []);
     let requests = array_field(intent, "externalActionRequests");
     assert_eq!(requests.len(), 1);
+    assert_eq!(
+        text_field(map_field(&requests[0], "operation"), "id"),
+        "workspace.snapshot.observe@1"
+    );
     assert_eq!(
         text_field(&requests[0], "settlementAdmission"),
         "schemaRequired"
@@ -222,6 +233,31 @@ fn undeclared_or_floating_operation_families_fail_closed() {
             .expect_err("floating operation cannot become canonical")
             .kind(),
         edict_syntax::CanonicalErrorKind::UnresolvedDigest
+    );
+}
+
+#[test]
+fn request_operation_must_remain_in_core_and_target_capability_closure() {
+    let (mut core, mut target) = lower_source(&baseline_source());
+    core.imports.clear();
+    assert_eq!(
+        encode_core_module(&core)
+            .expect_err("Core request without capability import rejects")
+            .kind(),
+        edict_syntax::CanonicalErrorKind::UnsupportedValue
+    );
+
+    target
+        .semantic_closure
+        .as_mut()
+        .expect("request-bearing Target IR has a closure")
+        .capabilities
+        .clear();
+    assert_eq!(
+        encode_target_ir_artifact(&target)
+            .expect_err("Target IR request without capability closure rejects")
+            .kind(),
+        edict_syntax::CanonicalErrorKind::UnsupportedValue
     );
 }
 

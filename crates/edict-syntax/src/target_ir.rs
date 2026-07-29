@@ -7,9 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, CoreBudget, CoreExpr, CoreImportKind, CoreIntent,
-    CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION,
+    is_lowercase_sha256_review_digest, CoreBudget, CoreExpr, CoreExternalActionBudget,
+    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
+    CorePredicate, CoreRequireFailureArm, InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION,
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
@@ -203,6 +203,7 @@ pub struct TargetIrArtifact {
 pub struct TargetIrSemanticClosure {
     pub source_core: ResourceRef,
     pub lawpacks: Vec<ResourceRef>,
+    pub capabilities: Vec<ResourceRef>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +214,7 @@ pub struct TargetIrIntent {
     pub core_evaluation_budget: CoreBudget,
     pub requirements: Vec<TargetIrRequirement>,
     pub steps: Vec<TargetIrStep>,
+    pub external_action_requests: Vec<TargetIrExternalActionRequest>,
     pub result: CoreExpr,
 }
 
@@ -238,6 +240,23 @@ pub struct TargetIrStep {
     pub input: CoreExpr,
     pub obstruction_failures: Vec<String>,
     pub obstruction_arms: BTreeMap<String, CoreObstructionArm>,
+}
+
+/// A deterministic external-action request preserved as data for Echo admission.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetIrExternalActionRequest {
+    pub id: String,
+    pub binding: LocalRef,
+    pub operation: ResourceRef,
+    pub input_type: String,
+    pub settlement_type: String,
+    pub input_schema: ResourceRef,
+    pub settlement_schema: ResourceRef,
+    pub input: CoreExpr,
+    pub authority_scope: CoreExpr,
+    pub basis: CoreExpr,
+    pub budget: CoreExternalActionBudget,
+    pub reconciliation_law: ResourceRef,
 }
 
 #[must_use]
@@ -346,6 +365,7 @@ pub(crate) fn semantic_closure_for_core(
     core: &CoreModule,
 ) -> Result<Option<TargetIrSemanticClosure>, TargetLoweringFailure> {
     let mut lawpacks = BTreeMap::<String, ResourceRef>::new();
+    let mut capabilities = BTreeMap::<String, ResourceRef>::new();
     for resource in core
         .imports
         .iter()
@@ -380,8 +400,42 @@ pub(crate) fn semantic_closure_for_core(
             lawpacks.insert(resource.coordinate.clone(), resource.clone());
         }
     }
+    for resource in core
+        .imports
+        .iter()
+        .filter(|import| import.kind == CoreImportKind::Capability)
+        .map(|import| &import.resource)
+    {
+        if !resource
+            .digest
+            .as_deref()
+            .is_some_and(is_lowercase_sha256_review_digest)
+        {
+            return Err(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UndigestedCoreImport,
+                intent: None,
+                node_index: None,
+                detail: resource.coordinate.clone(),
+            });
+        }
+        if let Some(prior) = capabilities.get(&resource.coordinate) {
+            if prior != resource {
+                return Err(TargetLoweringFailure {
+                    kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+                    intent: None,
+                    node_index: None,
+                    detail: format!(
+                        "capability coordinate `{}` is bound to conflicting resources",
+                        resource.coordinate
+                    ),
+                });
+            }
+        } else {
+            capabilities.insert(resource.coordinate.clone(), resource.clone());
+        }
+    }
     let has_explicit_basis = core.intents.values().any(|intent| intent.basis.is_some());
-    if !has_explicit_basis && lawpacks.is_empty() {
+    if !has_explicit_basis && lawpacks.is_empty() && capabilities.is_empty() {
         return Ok(None);
     }
 
@@ -397,6 +451,7 @@ pub(crate) fn semantic_closure_for_core(
             digest: Some(digest.to_review_string()),
         },
         lawpacks: lawpacks.into_values().collect(),
+        capabilities: capabilities.into_values().collect(),
     }))
 }
 
@@ -505,7 +560,11 @@ fn lower_intent(
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
         lower_node(intent_name, node_index, node, context, &mut state, failures);
     }
-    if state.requirements.is_empty() && state.steps.is_empty() && intent.body.nodes.is_empty() {
+    if state.requirements.is_empty()
+        && state.steps.is_empty()
+        && state.external_action_requests.is_empty()
+        && intent.body.nodes.is_empty()
+    {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::NoTargetSteps,
             intent: Some(intent_name.to_owned()),
@@ -521,6 +580,7 @@ fn lower_intent(
         core_evaluation_budget: intent.core_evaluation_budget.clone(),
         requirements: state.requirements,
         steps: state.steps,
+        external_action_requests: state.external_action_requests,
         result: intent.body.result.clone(),
     }
 }
@@ -535,6 +595,7 @@ struct TargetLoweringContext<'a> {
 struct IntentLoweringState {
     requirements: Vec<TargetIrRequirement>,
     steps: Vec<TargetIrStep>,
+    external_action_requests: Vec<TargetIrExternalActionRequest>,
     step_outputs: BTreeSet<String>,
 }
 
@@ -571,6 +632,38 @@ fn lower_node(
                 state.step_outputs.insert(binding.id.clone());
             }
         }
+        CoreNode::ExternalActionRequest {
+            binding,
+            operation,
+            input_type,
+            settlement_type,
+            input_schema,
+            settlement_schema,
+            input,
+            authority_scope,
+            basis,
+            budget,
+            reconciliation_law,
+        } => state
+            .external_action_requests
+            .push(TargetIrExternalActionRequest {
+                id: format!(
+                    "{}.request.{}",
+                    intent_name,
+                    state.external_action_requests.len()
+                ),
+                binding: binding.clone(),
+                operation: operation.clone(),
+                input_type: input_type.clone(),
+                settlement_type: settlement_type.clone(),
+                input_schema: input_schema.clone(),
+                settlement_schema: settlement_schema.clone(),
+                input: input.clone(),
+                authority_scope: authority_scope.clone(),
+                basis: basis.clone(),
+                budget: budget.clone(),
+                reconciliation_law: reconciliation_law.clone(),
+            }),
         CoreNode::Let { .. } => failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedCoreNode,
             intent: Some(intent_name.to_owned()),

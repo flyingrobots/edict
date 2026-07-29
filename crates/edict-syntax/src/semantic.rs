@@ -366,6 +366,25 @@ fn validate_stmt(stmt: &Stmt, names: &mut NameEnv, errors: &mut Vec<SemanticErro
                 validate_obstruction_handler(els, names, errors);
             }
         }
+        Stmt::ExternalActionRequest {
+            name,
+            request_type,
+            operation,
+            authority_scope,
+            basis,
+            max_settlement_bytes,
+            max_attempts,
+            span,
+            ..
+        } => {
+            names.bind(name, *span, errors);
+            validate_type_ref(request_type, *span, errors);
+            validate_expr(operation, names, errors);
+            validate_expr(authority_scope, names, errors);
+            validate_expr(basis, names, errors);
+            validate_expr(max_settlement_bytes, names, errors);
+            validate_expr(max_attempts, names, errors);
+        }
         Stmt::Require { predicate, arm, .. } => {
             validate_expr(predicate, names, errors);
             validate_require_else_arm(arm, names, errors);

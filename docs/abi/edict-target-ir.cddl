@@ -41,6 +41,7 @@ target-ir-legacy-artifact = {
 target-ir-semantic-closure = {
   sourceCore: target-ir-resource-ref,
   lawpacks: [* target-ir-resource-ref],
+  ? capabilities: [* target-ir-resource-ref],
 }
 
 target-ir-intent = {
@@ -58,6 +59,7 @@ target-ir-intent-common = (
   coreEvaluationBudget: core-budget,
   requirements: [* target-ir-requirement],
   steps: [* target-ir-step],
+  ? externalActionRequests: [* target-ir-external-action-request],
   result: core-expr,
 )
 
@@ -75,4 +77,21 @@ target-ir-step = {
   input: core-expr,
   obstructionFailures: [* failure-ident],
   obstructionArms: { * failure-ident => obstruction-arm },
+}
+
+target-ir-external-action-request = {
+  id: tstr,
+  binding: local-ref,
+  operation: target-ir-resource-ref,
+  inputType: core-type-ref,
+  settlementType: core-type-ref,
+  inputSchema: target-ir-resource-ref,
+  settlementSchema: target-ir-resource-ref,
+  input: core-expr,
+  authorityScope: core-expr,
+  basis: core-expr,
+  budget: external-action-budget,
+  reconciliationLaw: target-ir-resource-ref,
+  state: "awaitingSettlement",
+  settlementAdmission: "schemaRequired",
 }

@@ -603,6 +603,13 @@ fn corroborate_target_ir_semantic_closure(
                     "Target IR source Core identity does not match the supplied Core module",
                 ));
             }
+            if !actual.capabilities.is_empty() {
+                return Err(ContractBundleAssemblyError::new(
+                    ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+                    "target_ir_artifact.semantic_closure.capabilities",
+                    "Target IR capability closure does not match the supplied Core module",
+                ));
+            }
             canonical_resource_set(&actual.lawpacks)
         }
         (Some(expected), Some(actual)) => {
@@ -620,6 +627,15 @@ fn corroborate_target_ir_semantic_closure(
                     ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
                     "target_ir_artifact.semantic_closure.lawpacks",
                     "Target IR lawpack closure does not match the supplied Core module",
+                ));
+            }
+            if canonical_resource_set(&actual.capabilities)
+                != canonical_resource_set(&expected.capabilities)
+            {
+                return Err(ContractBundleAssemblyError::new(
+                    ContractBundleAssemblyErrorKind::TargetIrSourceMismatch,
+                    "target_ir_artifact.semantic_closure.capabilities",
+                    "Target IR capability closure does not match the supplied Core module",
                 ));
             }
             canonical_resource_set(&expected.lawpacks)
