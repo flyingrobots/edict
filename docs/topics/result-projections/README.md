@@ -29,12 +29,15 @@ No projection is emitted after any of these checks fails.
 
 `lower_to_target_ir` invokes that emitter for every intent in an artifact with
 an explicit semantic closure and returns the artifacts in
-`TargetLoweringReport::result_projections`, keyed by intent name. If any
-projection fails, the complete target-lowering report is `Unsupported`, its
-Target IR artifact is absent, and its projection map is empty. Legacy Target IR
-without an explicit Core/lawpack semantic closure remains byte-compatible and
-does not claim a result projection. [RESULT-PROJ-REQ-001]
-[RESULT-PROJ-REQ-006]
+`TargetLoweringReport::result_projections`, keyed by intent name. An intent
+outside the first closed projection subset appears instead in
+`result_projection_failures`; no projection is claimed for that intent.
+General Target IR lowering remains available because not every target consumer
+requires an executable application result. The public application-build path
+does require exactly one admitted projection and rejects any projection
+failure. Legacy Target IR without an explicit Core/lawpack semantic closure
+remains byte-compatible and claims neither projection nor projection failure.
+[RESULT-PROJ-REQ-001] [RESULT-PROJ-REQ-006]
 
 The closed `edict.result-projection/v1` expression language contains only:
 
