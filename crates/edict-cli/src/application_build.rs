@@ -301,8 +301,10 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             ),
         ));
     }
-    let (result_intent, result_projection) =
-        single_result_projection(&target_ir_report.result_projections)?;
+    let (result_intent, result_projection) = single_result_projection(
+        &target_ir_report.result_projections,
+        &target_ir_report.result_projection_failures,
+    )?;
     let target_ir = target_ir_report.artifact.ok_or_else(|| {
         failure(
             "TargetLoweringFailed",
@@ -1043,9 +1045,16 @@ fn single_configuration(
     )
 }
 
-fn single_result_projection(
-    projections: &BTreeMap<String, ResultProjectionArtifact>,
-) -> Result<(&str, &ResultProjectionArtifact), ApplicationBuildFailure> {
+fn single_result_projection<'a>(
+    projections: &'a BTreeMap<String, ResultProjectionArtifact>,
+    failures: &BTreeMap<String, edict_syntax::ResultProjectionFailure>,
+) -> Result<(&'a str, &'a ResultProjectionArtifact), ApplicationBuildFailure> {
+    if !failures.is_empty() {
+        return Err(failure(
+            "ResultProjectionUnavailable",
+            format!("application result projection failed closed: {failures:?}"),
+        ));
+    }
     let mut projections = projections.iter();
     match (projections.next(), projections.next()) {
         (Some((intent, projection)), None) => Ok((intent.as_str(), projection)),

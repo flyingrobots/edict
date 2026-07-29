@@ -8,7 +8,7 @@ use edict_syntax::{
     encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     verify_result_projection, CanonicalValue, CoreExpr, CoreModule, LocalRef, ResultProjection,
     ResultProjectionExpr, ResultProjectionFailureKind, ResultProjectionSource, TargetIrArtifact,
-    TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringReport, TargetLoweringStatus,
+    TargetIrLoweringFacts, TargetLoweringReport, TargetLoweringStatus,
     MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
     MAX_RESULT_PROJECTION_PATH_SEGMENTS, MAX_RESULT_PROJECTION_TEXT_BYTES,
     RESULT_PROJECTION_API_VERSION,
@@ -184,7 +184,7 @@ fn echo_target_lowering_emits_the_verified_result_projection() {
 }
 
 #[test]
-fn target_lowering_rejects_an_unsupported_result_projection() {
+fn target_lowering_exposes_an_unsupported_result_projection_without_claiming_one() {
     let (mut core, facts) = hello_echo_core_and_facts();
     core.intents
         .get_mut("createGreeting")
@@ -198,13 +198,13 @@ fn target_lowering_rejects_an_unsupported_result_projection() {
 
     let report = lower_to_target_ir(&core, &facts);
 
-    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
-    assert!(report.artifact.is_none());
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.artifact.is_some());
     assert!(report.result_projections.is_empty());
-    assert_eq!(report.failures.len(), 1);
+    assert!(report.failures.is_empty());
     assert_eq!(
-        report.failures[0].kind,
-        TargetLoweringFailureKind::UnsupportedResultProjection
+        report.result_projection_failures["createGreeting"].kind(),
+        ResultProjectionFailureKind::UnsupportedExpression
     );
 }
 
