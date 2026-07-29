@@ -14,8 +14,9 @@ executing the operation or introducing host-authored application semantics.
 matching Target IR artifact, and an intent name. The emitter requires:
 
 - the intent to exist in both artifacts;
-- the Target IR semantic closure to bind the exact Core coordinate and
-  canonical Core digest;
+- the Target IR semantic closure to equal the complete Core-derived closure,
+  including the exact Core coordinate, canonical Core digest, and every
+  digest-locked lawpack;
 - the Core and Target IR result expressions, operation profile, and evaluation
   budget to agree;
 - the application input to be the declared `arg.0` local with the intent input
@@ -83,9 +84,11 @@ digest. It:
 2. validates the closed projection shape and representation bounds;
 3. reproduces the exact canonical bytes;
 4. recomputes the domain-framed identity;
-5. independently rebuilds the Core-to-Target step/source correspondence;
-6. reconstructs a Core result expression from the projection; and
-7. requires that reconstruction to equal both the authored Core result and the
+5. independently reconstructs and compares the complete Core-derived semantic
+   closure;
+6. independently rebuilds the Core-to-Target step/source correspondence;
+7. reconstructs a Core result expression from the projection; and
+8. requires that reconstruction to equal both the authored Core result and the
    matching Target IR result.
 
 Only then does the API return `VerifiedResultProjection`, whose fields are
