@@ -13,6 +13,7 @@ use crate::core_ir::{
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
+use crate::ResultProjectionArtifact;
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
 pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
@@ -173,6 +174,7 @@ pub struct TargetLoweringFailure {
 pub struct TargetLoweringReport {
     pub status: TargetLoweringStatus,
     pub artifact: Option<TargetIrArtifact>,
+    pub result_projections: BTreeMap<String, ResultProjectionArtifact>,
     pub failures: Vec<TargetLoweringFailure>,
 }
 
@@ -287,6 +289,7 @@ pub fn lower_to_target_ir(
                 semantic_closure,
                 intents,
             }),
+            result_projections: BTreeMap::new(),
             failures,
         }
     } else {
@@ -759,6 +762,7 @@ fn unsupported(failures: Vec<TargetLoweringFailure>) -> TargetLoweringReport {
     TargetLoweringReport {
         status: TargetLoweringStatus::Unsupported,
         artifact: None,
+        result_projections: BTreeMap::new(),
         failures,
     }
 }

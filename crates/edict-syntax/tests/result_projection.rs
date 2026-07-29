@@ -8,9 +8,9 @@ use edict_syntax::{
     encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     verify_result_projection, CanonicalValue, CoreExpr, CoreModule, LocalRef, ResultProjection,
     ResultProjectionExpr, ResultProjectionFailureKind, ResultProjectionSource, TargetIrArtifact,
-    TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
-    MAX_RESULT_PROJECTION_PATH_SEGMENTS, MAX_RESULT_PROJECTION_TEXT_BYTES,
-    RESULT_PROJECTION_API_VERSION,
+    TargetLoweringReport, TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES,
+    MAX_RESULT_PROJECTION_NODES, MAX_RESULT_PROJECTION_PATH_SEGMENTS,
+    MAX_RESULT_PROJECTION_TEXT_BYTES, RESULT_PROJECTION_API_VERSION,
 };
 
 const MANIFEST_BYTES: &[u8] = include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor");
@@ -23,7 +23,7 @@ const PROJECTION_DIGEST: &str =
     include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.sha256");
 const PROPERTY_SEED: u64 = 0x1730_5eed_cafe_babe;
 
-fn hello_echo() -> (CoreModule, TargetIrArtifact) {
+fn hello_echo_lowering() -> (CoreModule, TargetLoweringReport) {
     let bundle =
         decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
     let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES)
@@ -35,6 +35,11 @@ fn hello_echo() -> (CoreModule, TargetIrArtifact) {
         .expect("compile Hello Echo Core");
     let target = lower_to_target_ir(&core, preparation.target_ir_facts());
     assert_eq!(target.status, TargetLoweringStatus::Lowered);
+    (core, target)
+}
+
+fn hello_echo() -> (CoreModule, TargetIrArtifact) {
+    let (core, target) = hello_echo_lowering();
     (core, target.artifact.expect("lower Hello Echo Target IR"))
 }
 
@@ -146,6 +151,30 @@ fn exact_core_and_target_ir_emit_the_typed_hello_echo_projection() {
     );
     assert_eq!(artifact.canonical_bytes, PROJECTION_BYTES);
     assert_eq!(artifact.digest.to_review_string(), PROJECTION_DIGEST.trim());
+}
+
+#[test]
+fn echo_target_lowering_emits_the_verified_result_projection() {
+    let (core, report) = hello_echo_lowering();
+    let artifact = report.artifact.as_ref().expect("lowered Target IR");
+    let projection = report
+        .result_projections
+        .get("createGreeting")
+        .expect("target lowerer emits the application result projection");
+
+    assert_eq!(projection.canonical_bytes, PROJECTION_BYTES);
+    assert_eq!(
+        projection.digest.to_review_string(),
+        PROJECTION_DIGEST.trim()
+    );
+    verify_result_projection(
+        &core,
+        artifact,
+        "createGreeting",
+        &projection.canonical_bytes,
+        projection.digest,
+    )
+    .expect("independent verifier reconstructs the lowerer output");
 }
 
 #[test]
