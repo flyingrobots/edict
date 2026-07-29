@@ -295,6 +295,30 @@ fn result_projection_root_matches_reference_encoder() {
 }
 
 #[test]
+fn result_projection_root_enforces_decoder_path_limit() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    let mut projection = representative_result_projection();
+    *projection_path_mut(&mut projection) = array(
+        (0..edict_syntax::MAX_RESULT_PROJECTION_PATH_SEGMENTS)
+            .map(|index| text(&format!("segment{index:02}")))
+            .collect(),
+    );
+
+    pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &projection)
+        .expect("the decoder's exact path-segment limit satisfies the published root");
+
+    let CanonicalValue::Array(path) = projection_path_mut(&mut projection) else {
+        panic!("projection path must be an array");
+    };
+    path.push(text("segment32"));
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &projection),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "the published root must reject one more segment than the decoder permits"
+    );
+}
+
+#[test]
 fn core_root_accepts_reference_encoded_operation_basis() {
     let context = CompilerContext::new()
         .with_operation_profile("sequence.splice", "continuum.profile.write/v1")
@@ -851,6 +875,19 @@ fn map_value_mut<'a>(value: &'a mut CanonicalValue, field: &str) -> &'a mut Cano
         .iter_mut()
         .find_map(|(key, value)| (key == &text(field)).then_some(value))
         .unwrap_or_else(|| panic!("missing map field {field}"))
+}
+
+fn projection_path_mut(projection: &mut CanonicalValue) -> &mut CanonicalValue {
+    let expression = map_value_mut(projection, "expression");
+    let fields = map_value_mut(expression, "fields");
+    let CanonicalValue::Map(fields) = fields else {
+        panic!("projection record fields must be a map");
+    };
+    let source = &mut fields
+        .first_mut()
+        .expect("representative projection has one field")
+        .1;
+    map_value_mut(source, "path")
 }
 
 fn remove_map_field(value: &mut CanonicalValue, field: &str) {
