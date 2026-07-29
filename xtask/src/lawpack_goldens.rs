@@ -477,7 +477,7 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             .map_err(|error| format!("digest Hello Echo Target IR: {error}"))?
             .to_review_string()
     );
-    let result_projection_digest = format!("{}\n", result_projection.digest.to_review_string());
+    let result_projection_digest = format!("{}\n", result_projection.digest().to_review_string());
     let manifest_digest = format!("{}\n", bundle.manifest_digest_review_string());
     let exports_digest = format!("{}\n", bundle.manifest().exports.digest_review_string());
     let adapter_digest = format!("{}\n", sha256_review_string(&adapter_digest));
@@ -505,7 +505,7 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
         ),
         (
             CREATE_GREETING_RESULT_PROJECTION_CBOR,
-            result_projection.canonical_bytes,
+            result_projection.canonical_bytes().to_vec(),
         ),
         (
             CREATE_GREETING_RESULT_PROJECTION_DIGEST,

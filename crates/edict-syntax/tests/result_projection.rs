@@ -144,29 +144,32 @@ fn exact_core_and_target_ir_emit_the_typed_hello_echo_projection() {
         .expect("emit exact result projection");
 
     assert_eq!(
-        artifact.projection.api_version,
+        artifact.projection().api_version,
         RESULT_PROJECTION_API_VERSION
     );
     assert_eq!(
-        artifact.projection.operation_coordinate,
+        artifact.projection().operation_coordinate,
         "examples.hello_echo@1.createGreeting"
     );
     assert_eq!(
-        artifact.projection.output_type,
+        artifact.projection().output_type,
         "examples.hello_echo@1.GreetingCreated"
     );
-    assert_eq!(artifact.projection.max_output_bytes, 512);
-    assert_eq!(artifact.projection.expression, expected_expression());
+    assert_eq!(artifact.projection().max_output_bytes, 512);
+    assert_eq!(artifact.projection().expression, expected_expression());
     assert_eq!(
-        decode_result_projection(&artifact.canonical_bytes).expect("decode emitted projection"),
-        artifact.projection
+        decode_result_projection(artifact.canonical_bytes()).expect("decode emitted projection"),
+        *artifact.projection()
     );
     assert_eq!(
-        digest_result_projection(&artifact.projection).expect("digest projection"),
-        artifact.digest
+        digest_result_projection(artifact.projection()).expect("digest projection"),
+        artifact.digest()
     );
-    assert_eq!(artifact.canonical_bytes, PROJECTION_BYTES);
-    assert_eq!(artifact.digest.to_review_string(), PROJECTION_DIGEST.trim());
+    assert_eq!(artifact.canonical_bytes(), PROJECTION_BYTES);
+    assert_eq!(
+        artifact.digest().to_review_string(),
+        PROJECTION_DIGEST.trim()
+    );
 }
 
 #[test]
@@ -178,17 +181,17 @@ fn echo_target_lowering_emits_the_verified_result_projection() {
         .get("createGreeting")
         .expect("target lowerer emits the application result projection");
 
-    assert_eq!(projection.canonical_bytes, PROJECTION_BYTES);
+    assert_eq!(projection.canonical_bytes(), PROJECTION_BYTES);
     assert_eq!(
-        projection.digest.to_review_string(),
+        projection.digest().to_review_string(),
         PROJECTION_DIGEST.trim()
     );
     verify_result_projection(
         &core,
         artifact,
         "createGreeting",
-        &projection.canonical_bytes,
-        projection.digest,
+        projection.canonical_bytes(),
+        projection.digest(),
     )
     .expect("independent verifier reconstructs the lowerer output");
 }
@@ -227,13 +230,13 @@ fn independent_verifier_reconstructs_the_authored_core_result() {
         &core,
         &target,
         "createGreeting",
-        &artifact.canonical_bytes,
-        artifact.digest,
+        artifact.canonical_bytes(),
+        artifact.digest(),
     )
     .expect("independent verifier accepts projection");
 
-    assert_eq!(verified.projection(), &artifact.projection);
-    assert_eq!(verified.digest(), artifact.digest);
+    assert_eq!(verified.projection(), artifact.projection());
+    assert_eq!(verified.digest(), artifact.digest());
 }
 
 #[test]
@@ -377,14 +380,14 @@ fn canonical_bytes_and_digest_are_independently_enforced() {
     let artifact =
         emit_result_projection(&core, &target, "createGreeting").expect("emit projection");
 
-    let mut malformed = artifact.canonical_bytes.clone();
+    let mut malformed = artifact.canonical_bytes().to_vec();
     malformed.push(0);
     let malformed_failure = verify_result_projection(
         &core,
         &target,
         "createGreeting",
         &malformed,
-        artifact.digest,
+        artifact.digest(),
     )
     .expect_err("trailing data must reject");
     assert_eq!(
@@ -398,7 +401,7 @@ fn canonical_bytes_and_digest_are_independently_enforced() {
         &core,
         &target,
         "createGreeting",
-        &artifact.canonical_bytes,
+        artifact.canonical_bytes(),
         different,
     )
     .expect_err("substituted digest must reject");
@@ -496,7 +499,7 @@ fn unknown_steps_and_invalid_application_input_bindings_fail_closed() {
     let (core, target) = hello_echo();
     let artifact =
         emit_result_projection(&core, &target, "createGreeting").expect("emit projection");
-    let mut unknown_step = artifact.projection.clone();
+    let mut unknown_step = artifact.projection().clone();
     let ResultProjectionExpr::Record { fields } = &mut unknown_step.expression else {
         panic!("Hello Echo projection is a record");
     };
@@ -608,8 +611,8 @@ fn repeated_emit_and_verify_is_stable_under_bounded_stress() {
             &core,
             &target,
             "createGreeting",
-            &next.canonical_bytes,
-            next.digest,
+            next.canonical_bytes(),
+            next.digest(),
         )
         .expect("repeat verification");
     }

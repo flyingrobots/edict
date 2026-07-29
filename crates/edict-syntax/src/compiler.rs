@@ -14,7 +14,7 @@ use crate::core_ir::{
     parse_core_integer, CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreImport, CoreImportKind,
     CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
     CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef, CORE_API_VERSION,
+    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -648,7 +648,7 @@ impl<'a> TypeChecker<'a> {
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
         let input_binding = LocalRef {
-            id: "arg.0".to_owned(),
+            id: CORE_APPLICATION_INPUT_LOCAL_ID.to_owned(),
             alpha_name: "$arg0".to_owned(),
             ty: input_shape.coord.clone(),
         };

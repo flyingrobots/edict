@@ -315,8 +315,8 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         &core,
         &target_ir,
         result_intent,
-        &result_projection.canonical_bytes,
-        result_projection.digest,
+        result_projection.canonical_bytes(),
+        result_projection.digest(),
     )
     .map_err(|error| {
         failure(
@@ -1116,11 +1116,11 @@ fn with_result_projection_input(
     let input = semantic_input(
         RESULT_PROJECTION_ROLE,
         ProviderSemanticInputKind::Auxiliary("result-projection".to_owned()),
-        &projection.projection.operation_coordinate,
+        &projection.projection().operation_coordinate,
         RESULT_PROJECTION_DIGEST_DOMAIN,
-        &projection.canonical_bytes,
+        projection.canonical_bytes(),
     )?;
-    if input.artifact.reference.digest.bytes != projection.digest.bytes() {
+    if input.artifact.reference.digest.bytes != projection.digest().bytes() {
         return Err(failure(
             "ResultProjectionDigestMismatch",
             "provider input does not preserve the compiler result projection identity",
@@ -1837,7 +1837,7 @@ mod tests {
     #[test]
     fn compiler_result_projection_is_bound_into_the_provider_closure() {
         let projection = result_projection_artifact();
-        let bytes = projection.canonical_bytes.clone();
+        let bytes = projection.canonical_bytes().to_vec();
         let input = test_ok(
             with_result_projection_input(Vec::new(), &projection),
             "bind compiler result projection",

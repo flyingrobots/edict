@@ -7,10 +7,11 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::core_ir::CORE_APPLICATION_INPUT_LOCAL_ID;
 use crate::{
     decode_canonical_cbor, digest_canonical_artifact, encode_canonical_cbor, CanonicalValue,
     CoreDigest, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreType, LocalRef, TargetIrArtifact,
-    TargetIrIntent, TargetIrStep,
+    TargetIrIntent, TargetIrSemanticClosure, TargetIrStep,
 };
 
 /// Semantic schema identifier for result-projection values.
@@ -34,13 +35,25 @@ pub const MAX_RESULT_PROJECTION_TEXT_BYTES: usize = 1_024;
 /// Maximum canonical bytes in one projection artifact.
 pub const MAX_RESULT_PROJECTION_ARTIFACT_BYTES: usize = 64 * 1_024;
 
-/// Canonical result projection for one application operation.
+/// Maximum recursive type comparisons while validating projection output shape.
+const MAX_RESULT_PROJECTION_TYPE_DEPTH: usize = 32;
+
+/// Untrusted result-projection candidate for one application operation.
+///
+/// Callers may construct candidates for encoding and verification. Only
+/// [`ResultProjectionArtifact`] binds an accepted candidate to canonical bytes
+/// and their domain-framed identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResultProjection {
+    /// Projection schema identifier.
     pub api_version: String,
+    /// Fully qualified application operation coordinate.
     pub operation_coordinate: String,
+    /// Fully qualified Core output type.
     pub output_type: String,
+    /// Maximum canonical result bytes admitted by the Core budget.
     pub max_output_bytes: u64,
+    /// Closed projection expression derived from the authored Core result.
     pub expression: ResultProjectionExpr,
 }
 
@@ -66,9 +79,29 @@ pub enum ResultProjectionSource {
 /// Emitted canonical bytes and their domain-framed identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResultProjectionArtifact {
-    pub projection: ResultProjection,
-    pub canonical_bytes: Vec<u8>,
-    pub digest: CoreDigest,
+    projection: ResultProjection,
+    canonical_bytes: Vec<u8>,
+    digest: CoreDigest,
+}
+
+impl ResultProjectionArtifact {
+    /// Borrow the validated projection value.
+    #[must_use]
+    pub const fn projection(&self) -> &ResultProjection {
+        &self.projection
+    }
+
+    /// Borrow the exact canonical bytes bound to the projection.
+    #[must_use]
+    pub fn canonical_bytes(&self) -> &[u8] {
+        &self.canonical_bytes
+    }
+
+    /// Return the domain-framed artifact identity.
+    #[must_use]
+    pub const fn digest(&self) -> CoreDigest {
+        self.digest
+    }
 }
 
 /// Projection accepted after independent semantic reconstruction.
@@ -156,7 +189,30 @@ pub fn emit_result_projection(
     target_ir: &TargetIrArtifact,
     intent_name: &str,
 ) -> Result<ResultProjectionArtifact, ResultProjectionFailure> {
-    let semantics = ProjectionSemantics::new(core, target_ir, intent_name)?;
+    let expected_semantic_closure =
+        crate::target_ir::semantic_closure_for_core(core).map_err(|error| {
+            failure(
+                ResultProjectionFailureKind::CoreTargetMismatch,
+                format!("{error:?}"),
+            )
+        })?;
+    let expected_semantic_closure = expected_semantic_closure.as_ref().ok_or_else(|| {
+        failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            format!("{intent_name}.semanticClosure"),
+        )
+    })?;
+    emit_result_projection_with_closure(core, target_ir, intent_name, expected_semantic_closure)
+}
+
+pub(crate) fn emit_result_projection_with_closure(
+    core: &CoreModule,
+    target_ir: &TargetIrArtifact,
+    intent_name: &str,
+    expected_semantic_closure: &TargetIrSemanticClosure,
+) -> Result<ResultProjectionArtifact, ResultProjectionFailure> {
+    let semantics =
+        ProjectionSemantics::new(core, target_ir, intent_name, expected_semantic_closure)?;
     let expression = project_core_expression(&semantics, &semantics.core_intent.body.result)?;
     validate_output_shape(&semantics, &expression, &semantics.core_intent.output)?;
     let projection = ResultProjection {
@@ -212,7 +268,21 @@ pub fn verify_result_projection(
         ));
     }
 
-    let semantics = ProjectionSemantics::new(core, target_ir, intent_name)?;
+    let expected_semantic_closure =
+        crate::target_ir::semantic_closure_for_core(core).map_err(|error| {
+            failure(
+                ResultProjectionFailureKind::CoreTargetMismatch,
+                format!("{error:?}"),
+            )
+        })?;
+    let expected_semantic_closure = expected_semantic_closure.as_ref().ok_or_else(|| {
+        failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            format!("{intent_name}.semanticClosure"),
+        )
+    })?;
+    let semantics =
+        ProjectionSemantics::new(core, target_ir, intent_name, expected_semantic_closure)?;
     if projection.api_version != RESULT_PROJECTION_API_VERSION
         || projection.operation_coordinate != format!("{}.{}", core.coordinate, intent_name)
         || projection.output_type != semantics.core_intent.output
@@ -283,7 +353,6 @@ pub fn decode_result_projection(bytes: &[u8]) -> Result<ResultProjection, Result
         )
     })?;
     let projection = projection_from_value(value)?;
-    validate_projection_bounds(&projection)?;
     if encode_result_projection(&projection)? != bytes {
         return Err(failure(
             ResultProjectionFailureKind::InvalidCanonicalArtifact,
@@ -324,10 +393,18 @@ impl<'a> ProjectionSemantics<'a> {
         core: &'a CoreModule,
         target_ir: &'a TargetIrArtifact,
         intent_name: &str,
+        expected_semantic_closure: &TargetIrSemanticClosure,
     ) -> Result<Self, ResultProjectionFailure> {
         let (core_intent, target_intent) =
             resolve_projection_intents(core, target_ir, intent_name)?;
-        validate_projection_basis(core, target_ir, core_intent, target_intent, intent_name)?;
+        validate_projection_basis(
+            core,
+            target_ir,
+            core_intent,
+            target_intent,
+            intent_name,
+            expected_semantic_closure,
+        )?;
         let input = resolve_application_input(core_intent, intent_name)?;
         let (capability_by_local, capability_by_step) =
             resolve_capability_sources(core_intent, target_intent, intent_name)?;
@@ -369,6 +446,7 @@ fn validate_projection_basis(
     core_intent: &CoreIntent,
     target_intent: &TargetIrIntent,
     intent_name: &str,
+    expected_semantic_closure: &TargetIrSemanticClosure,
 ) -> Result<(), ResultProjectionFailure> {
     if target_ir.source_core_coordinate != core.coordinate
         || core_intent.required_operation_profile != target_intent.operation_profile
@@ -379,16 +457,7 @@ fn validate_projection_basis(
             intent_name,
         ));
     }
-    let expected_semantic_closure =
-        crate::target_ir::semantic_closure_for_core(core).map_err(|error| {
-            failure(
-                ResultProjectionFailureKind::CoreTargetMismatch,
-                format!("{error:?}"),
-            )
-        })?;
-    if expected_semantic_closure.is_none()
-        || expected_semantic_closure.as_ref() != target_ir.semantic_closure.as_ref()
-    {
+    if target_ir.semantic_closure.as_ref() != Some(expected_semantic_closure) {
         return Err(failure(
             ResultProjectionFailureKind::CoreTargetMismatch,
             format!("{intent_name}.semanticClosure"),
@@ -413,11 +482,9 @@ fn resolve_application_input(
     core_intent: &CoreIntent,
     intent_name: &str,
 ) -> Result<LocalRef, ResultProjectionFailure> {
-    let mut matching_inputs = core_intent
-        .body
-        .locals
-        .iter()
-        .filter(|local| local.id == "arg.0" && local.ty == core_intent.input);
+    let mut matching_inputs = core_intent.body.locals.iter().filter(|local| {
+        local.id == CORE_APPLICATION_INPUT_LOCAL_ID && local.ty == core_intent.input
+    });
     let input = matching_inputs.next().cloned().ok_or_else(|| {
         failure(
             ResultProjectionFailureKind::InvalidApplicationInput,
@@ -687,13 +754,14 @@ fn source_type<'a>(
 fn resolve_type<'a>(core: &'a CoreModule, coordinate: &str) -> Option<&'a CoreType> {
     core.types.get(coordinate).or_else(|| {
         coordinate
-            .strip_prefix(&format!("{}.", core.coordinate))
+            .strip_prefix(core.coordinate.as_str())
+            .and_then(|relative| relative.strip_prefix('.'))
             .and_then(|relative| core.types.get(relative))
     })
 }
 
 fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize) -> bool {
-    if depth > MAX_RESULT_PROJECTION_PATH_SEGMENTS {
+    if depth > MAX_RESULT_PROJECTION_TYPE_DEPTH {
         return false;
     }
     let (Some(left), Some(right)) = (resolve_type(core, left), resolve_type(core, right)) else {
@@ -918,8 +986,10 @@ fn projection_from_value(
     let operation_coordinate = take_text(&mut fields, "operationCoordinate", "result projection")?;
     let output_type = take_text(&mut fields, "outputType", "result projection")?;
     let max_output_bytes = take_u64(&mut fields, "maxOutputBytes", "result projection")?;
-    let expression =
-        expression_from_value(fields.remove("expression").expect("exact projection field"))?;
+    let expression = expression_from_value(
+        fields.remove("expression").expect("exact projection field"),
+        MAX_RESULT_PROJECTION_NODES,
+    )?;
     Ok(ResultProjection {
         api_version,
         operation_coordinate,
@@ -931,7 +1001,11 @@ fn projection_from_value(
 
 fn expression_from_value(
     value: CanonicalValue,
+    remaining_depth: usize,
 ) -> Result<ResultProjectionExpr, ResultProjectionFailure> {
+    if remaining_depth == 0 {
+        return Err(limit_failure("expression depth"));
+    }
     let kind = map_text_field(&value, "kind", "projection expression")?;
     match kind.as_str() {
         "record" => {
@@ -947,7 +1021,7 @@ fn expression_from_value(
                     return Err(invalid_artifact("record expression field name"));
                 };
                 if projected
-                    .insert(field, expression_from_value(value)?)
+                    .insert(field, expression_from_value(value, remaining_depth - 1)?)
                     .is_some()
                 {
                     return Err(invalid_artifact("duplicate record expression field"));
@@ -1119,4 +1193,49 @@ fn failure(
     subject: impl Into<String>,
 ) -> ResultProjectionFailure {
     ResultProjectionFailure::new(kind, subject)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        expression_from_value, map, text, CanonicalValue, ResultProjectionFailureKind,
+        MAX_RESULT_PROJECTION_NODES,
+    };
+
+    fn nested_record_expression(record_count: usize) -> CanonicalValue {
+        let mut expression = map([
+            ("kind", text("source")),
+            ("source", map([("kind", text("applicationInput"))])),
+            ("path", CanonicalValue::Array(Vec::new())),
+        ]);
+        for index in 0..record_count {
+            expression = map([
+                ("kind", text("record")),
+                (
+                    "fields",
+                    CanonicalValue::Map(vec![(text(&format!("field{index:03}")), expression)]),
+                ),
+            ]);
+        }
+        expression
+    }
+
+    #[test]
+    fn expression_parser_refuses_recursion_beyond_the_node_budget() {
+        expression_from_value(
+            nested_record_expression(MAX_RESULT_PROJECTION_NODES - 1),
+            MAX_RESULT_PROJECTION_NODES,
+        )
+        .expect("the exact expression-node boundary parses");
+
+        let failure = expression_from_value(
+            nested_record_expression(MAX_RESULT_PROJECTION_NODES),
+            MAX_RESULT_PROJECTION_NODES,
+        )
+        .expect_err("one recursive expression node beyond the budget must reject");
+        assert_eq!(
+            failure.kind(),
+            ResultProjectionFailureKind::ProjectionLimitExceeded
+        );
+    }
 }
