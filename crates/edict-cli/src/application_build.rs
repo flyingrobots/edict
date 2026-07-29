@@ -22,10 +22,11 @@ use edict_syntax::{
     ProviderLoweringRequest, ProviderResourceRef, ProviderResponseLimits, ProviderSemanticInput,
     ProviderSemanticInputBinding, ProviderSemanticInputKind,
     ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
-    ProviderVerificationOutputRequest, ProviderVerificationRequest, TargetLoweringStatus,
-    TargetProviderManifest, ValidatedLawpackBundle, ValidatedTargetProviderManifest,
-    CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
-    TARGET_PROFILE_API_VERSION, TARGET_PROVIDER_PROTOCOL_VERSION,
+    ProviderVerificationOutputRequest, ProviderVerificationRequest, ResultProjectionArtifact,
+    TargetLoweringStatus, TargetProviderManifest, ValidatedLawpackBundle,
+    ValidatedTargetProviderManifest, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
+    RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
+    TARGET_PROVIDER_PROTOCOL_VERSION,
 };
 use serde::Deserialize;
 
@@ -37,6 +38,7 @@ const PACKAGE_ROLE: &str = "executable-operation-package.echo";
 const PACKAGE_DOMAIN: &str = "echo.operation-package/v1";
 const VERIFICATION_REPORT_ROLE: &str = "verifier-report.echo-operation";
 const VERIFICATION_REPORT_DOMAIN: &str = "echo.operation-package-verifier-report/v1";
+const RESULT_PROJECTION_ROLE: &str = "07-result-projection";
 const MAX_APPLICATION_ARTIFACT_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
@@ -1057,6 +1059,16 @@ fn semantic_input(
     })
 }
 
+fn with_result_projection_input(
+    _inputs: Vec<ProviderSemanticInput>,
+    _projection: &ResultProjectionArtifact,
+) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
+    Err(failure(
+        "ResultProjectionUnavailable",
+        "result projection provider input is not implemented",
+    ))
+}
+
 fn lowering_contract(
     core: &ProviderBoundArtifact,
     target_profile: &ProviderBoundArtifact,
@@ -1670,16 +1682,18 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use edict_syntax::{
-        LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef,
-        ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
-        TargetProviderManifest, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+        decode_result_projection, digest_canonical_artifact, LawpackResourceRef,
+        LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource,
+        ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef, ResultProjectionArtifact,
+        TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI,
+        TARGET_PROVIDER_MANIFEST_API_VERSION,
     };
 
     use super::{
         build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
         read, selected_adapter_reference, single_unique_configuration,
-        validate_application_manifest, write_outputs, ApplicationLawpack, ApplicationManifest,
-        ApplicationTarget,
+        validate_application_manifest, with_result_projection_input, write_outputs,
+        ApplicationLawpack, ApplicationManifest, ApplicationTarget, RESULT_PROJECTION_ROLE,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1756,6 +1770,49 @@ mod tests {
         );
 
         assert_eq!(actual, &configuration);
+    }
+
+    #[test]
+    fn compiler_result_projection_is_bound_into_the_provider_closure() {
+        let bytes = include_bytes!(
+            "../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.cbor"
+        )
+        .to_vec();
+        let projection = test_ok(
+            decode_result_projection(&bytes),
+            "decode result projection fixture",
+        );
+        let digest = test_ok(
+            digest_canonical_artifact(RESULT_PROJECTION_DIGEST_DOMAIN, &bytes),
+            "digest result projection fixture",
+        );
+        let input = test_ok(
+            with_result_projection_input(
+                Vec::new(),
+                &ResultProjectionArtifact {
+                    projection,
+                    canonical_bytes: bytes.clone(),
+                    digest,
+                },
+            ),
+            "bind compiler result projection",
+        );
+
+        assert_eq!(input.len(), 1);
+        assert_eq!(input[0].role, RESULT_PROJECTION_ROLE);
+        assert_eq!(
+            input[0].kind,
+            edict_syntax::ProviderSemanticInputKind::Auxiliary("result-projection".to_owned())
+        );
+        assert_eq!(
+            input[0].artifact.reference.coordinate,
+            "examples.hello_echo@1.createGreeting"
+        );
+        assert_eq!(
+            input[0].artifact.artifact.domain,
+            RESULT_PROJECTION_DIGEST_DOMAIN
+        );
+        assert_eq!(input[0].artifact.artifact.bytes, bytes);
     }
 
     #[test]
