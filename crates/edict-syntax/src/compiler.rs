@@ -1325,6 +1325,17 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_effect_profile(&mut self, intent: &ResolvedIntent, call: &Expr, span: Span) -> bool {
+        if let Some(alias) = self.capability_import_alias_for_call(call) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                format!(
+                    "external-action capability `{alias}` is request data, not a semantic effect"
+                ),
+                span,
+            ));
+            return false;
+        }
         let Some(effect) = effect_coordinate(call) else {
             self.unsupported_stmt(span, "effect call");
             return false;
@@ -1364,6 +1375,20 @@ impl<'a> TypeChecker<'a> {
             ));
             false
         }
+    }
+
+    fn capability_import_alias_for_call(&self, call: &Expr) -> Option<String> {
+        let Expr::Call { callee, .. } = call else {
+            return None;
+        };
+        let alias = plain_path_root(callee)?;
+        self.resolved
+            .imports
+            .iter()
+            .any(|import| {
+                import.kind == CoreImportKind::Capability && import.alias.as_deref() == Some(alias)
+            })
+            .then(|| alias.to_owned())
     }
 
     fn effect_binding_shape(&mut self, ty: Option<&TypeRef>, span: Span) -> Option<TypeShape> {

@@ -9,7 +9,7 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, CanonicalValue, CompilerContext,
     CompilerErrorKind, CoreBudget, ResourceRef, TargetIrLoweringFacts, TargetLoweringStatus,
-    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
 };
 
 const OPERATION_DIGEST: char = 'a';
@@ -279,8 +279,12 @@ intent observe(input: Input) returns Bytes<max=65536>
         digest(OPERATION_DIGEST)
     );
     let module = parse_module(&source).expect("direct call source parses");
-    let errors = compile_to_core(&module, &context()).expect_err("direct call rejects");
-    assert_eq!(errors[0].kind, CompilerErrorKind::MissingContextFact);
+    let permissive_effect_facts = context()
+        .with_operation_profile_write_classes("workspace.read", [WriteClass::Read])
+        .with_effect_write_class("snapshot", WriteClass::Read);
+    let errors = compile_to_core(&module, &permissive_effect_facts)
+        .expect_err("capability alias rejects despite matching effect facts");
+    assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape);
 }
 
 #[test]
