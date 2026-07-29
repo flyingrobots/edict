@@ -326,121 +326,12 @@ impl<'a> ProjectionSemantics<'a> {
         target_ir: &'a TargetIrArtifact,
         intent_name: &str,
     ) -> Result<Self, ResultProjectionFailure> {
-        let core_intent = core.intents.get(intent_name).ok_or_else(|| {
-            failure(
-                ResultProjectionFailureKind::MissingIntent,
-                format!("Core intent {intent_name}"),
-            )
-        })?;
-        let target_intent = target_ir.intents.get(intent_name).ok_or_else(|| {
-            failure(
-                ResultProjectionFailureKind::MissingIntent,
-                format!("Target IR intent {intent_name}"),
-            )
-        })?;
-        if target_ir.source_core_coordinate != core.coordinate
-            || core_intent.required_operation_profile != target_intent.operation_profile
-            || core_intent.core_evaluation_budget != target_intent.core_evaluation_budget
-        {
-            return Err(failure(
-                ResultProjectionFailureKind::CoreTargetMismatch,
-                intent_name,
-            ));
-        }
-        let expected_core_digest = digest_core_module(core)
-            .map_err(|error| {
-                failure(
-                    ResultProjectionFailureKind::CoreTargetMismatch,
-                    error.to_string(),
-                )
-            })?
-            .to_review_string();
-        let Some(semantic_closure) = &target_ir.semantic_closure else {
-            return Err(failure(
-                ResultProjectionFailureKind::CoreTargetMismatch,
-                format!("{intent_name}.semanticClosure"),
-            ));
-        };
-        if semantic_closure.source_core.coordinate != core.coordinate
-            || semantic_closure.source_core.digest.as_deref() != Some(expected_core_digest.as_str())
-        {
-            return Err(failure(
-                ResultProjectionFailureKind::CoreTargetMismatch,
-                format!("{intent_name}.semanticClosure.sourceCore"),
-            ));
-        }
-        if core_intent.body.result != target_intent.result {
-            return Err(failure(
-                ResultProjectionFailureKind::TargetResultMismatch,
-                intent_name,
-            ));
-        }
-        if core_intent.core_evaluation_budget.max_output_bytes == 0 {
-            return Err(failure(
-                ResultProjectionFailureKind::InvalidOutputBound,
-                intent_name,
-            ));
-        }
-
-        let mut matching_inputs = core_intent
-            .body
-            .locals
-            .iter()
-            .filter(|local| local.id == "arg.0" && local.ty == core_intent.input);
-        let input = matching_inputs.next().cloned().ok_or_else(|| {
-            failure(
-                ResultProjectionFailureKind::InvalidApplicationInput,
-                intent_name,
-            )
-        })?;
-        if matching_inputs.next().is_some() {
-            return Err(failure(
-                ResultProjectionFailureKind::InvalidApplicationInput,
-                intent_name,
-            ));
-        }
-
-        let core_effects = core_intent
-            .body
-            .nodes
-            .iter()
-            .filter_map(|node| match node {
-                CoreNode::Effect {
-                    binding,
-                    effect,
-                    input,
-                    ..
-                } => Some((binding, effect, input)),
-                CoreNode::Let { .. } | CoreNode::Require { .. } => None,
-            })
-            .collect::<Vec<_>>();
-        if core_effects.len() != target_intent.steps.len() {
-            return Err(failure(
-                ResultProjectionFailureKind::CoreTargetMismatch,
-                format!("{intent_name}.steps"),
-            ));
-        }
-
-        let mut capability_by_local = BTreeMap::new();
-        let mut capability_by_step = BTreeMap::new();
-        for step in &target_intent.steps {
-            validate_step_matches_core(step, &core_effects, intent_name)?;
-            if capability_by_local
-                .insert(
-                    step.binding.id.clone(),
-                    (step.id.clone(), step.binding.clone()),
-                )
-                .is_some()
-                || capability_by_step
-                    .insert(step.id.clone(), step.binding.clone())
-                    .is_some()
-            {
-                return Err(failure(
-                    ResultProjectionFailureKind::CoreTargetMismatch,
-                    format!("{intent_name}.steps"),
-                ));
-            }
-        }
+        let (core_intent, target_intent) =
+            resolve_projection_intents(core, target_ir, intent_name)?;
+        validate_projection_basis(core, target_ir, core_intent, target_intent, intent_name)?;
+        let input = resolve_application_input(core_intent, intent_name)?;
+        let (capability_by_local, capability_by_step) =
+            resolve_capability_sources(core_intent, target_intent, intent_name)?;
 
         Ok(Self {
             core,
@@ -451,6 +342,155 @@ impl<'a> ProjectionSemantics<'a> {
             capability_by_step,
         })
     }
+}
+
+fn resolve_projection_intents<'a>(
+    core: &'a CoreModule,
+    target_ir: &'a TargetIrArtifact,
+    intent_name: &str,
+) -> Result<(&'a CoreIntent, &'a TargetIrIntent), ResultProjectionFailure> {
+    let core_intent = core.intents.get(intent_name).ok_or_else(|| {
+        failure(
+            ResultProjectionFailureKind::MissingIntent,
+            format!("Core intent {intent_name}"),
+        )
+    })?;
+    let target_intent = target_ir.intents.get(intent_name).ok_or_else(|| {
+        failure(
+            ResultProjectionFailureKind::MissingIntent,
+            format!("Target IR intent {intent_name}"),
+        )
+    })?;
+    Ok((core_intent, target_intent))
+}
+
+fn validate_projection_basis(
+    core: &CoreModule,
+    target_ir: &TargetIrArtifact,
+    core_intent: &CoreIntent,
+    target_intent: &TargetIrIntent,
+    intent_name: &str,
+) -> Result<(), ResultProjectionFailure> {
+    if target_ir.source_core_coordinate != core.coordinate
+        || core_intent.required_operation_profile != target_intent.operation_profile
+        || core_intent.core_evaluation_budget != target_intent.core_evaluation_budget
+    {
+        return Err(failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            intent_name,
+        ));
+    }
+    let expected_core_digest = digest_core_module(core)
+        .map_err(|error| {
+            failure(
+                ResultProjectionFailureKind::CoreTargetMismatch,
+                error.to_string(),
+            )
+        })?
+        .to_review_string();
+    let Some(semantic_closure) = &target_ir.semantic_closure else {
+        return Err(failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            format!("{intent_name}.semanticClosure"),
+        ));
+    };
+    if semantic_closure.source_core.coordinate != core.coordinate
+        || semantic_closure.source_core.digest.as_deref() != Some(expected_core_digest.as_str())
+    {
+        return Err(failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            format!("{intent_name}.semanticClosure.sourceCore"),
+        ));
+    }
+    if core_intent.body.result != target_intent.result {
+        return Err(failure(
+            ResultProjectionFailureKind::TargetResultMismatch,
+            intent_name,
+        ));
+    }
+    if core_intent.core_evaluation_budget.max_output_bytes == 0 {
+        return Err(failure(
+            ResultProjectionFailureKind::InvalidOutputBound,
+            intent_name,
+        ));
+    }
+    Ok(())
+}
+
+fn resolve_application_input(
+    core_intent: &CoreIntent,
+    intent_name: &str,
+) -> Result<LocalRef, ResultProjectionFailure> {
+    let mut matching_inputs = core_intent
+        .body
+        .locals
+        .iter()
+        .filter(|local| local.id == "arg.0" && local.ty == core_intent.input);
+    let input = matching_inputs.next().cloned().ok_or_else(|| {
+        failure(
+            ResultProjectionFailureKind::InvalidApplicationInput,
+            intent_name,
+        )
+    })?;
+    if matching_inputs.next().is_some() {
+        return Err(failure(
+            ResultProjectionFailureKind::InvalidApplicationInput,
+            intent_name,
+        ));
+    }
+    Ok(input)
+}
+
+type CapabilityByLocal = BTreeMap<String, (String, LocalRef)>;
+type CapabilityByStep = BTreeMap<String, LocalRef>;
+
+fn resolve_capability_sources(
+    core_intent: &CoreIntent,
+    target_intent: &TargetIrIntent,
+    intent_name: &str,
+) -> Result<(CapabilityByLocal, CapabilityByStep), ResultProjectionFailure> {
+    let core_effects = core_intent
+        .body
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            CoreNode::Effect {
+                binding,
+                effect,
+                input,
+                ..
+            } => Some((binding, effect, input)),
+            CoreNode::Let { .. } | CoreNode::Require { .. } => None,
+        })
+        .collect::<Vec<_>>();
+    if core_effects.len() != target_intent.steps.len() {
+        return Err(failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            format!("{intent_name}.steps"),
+        ));
+    }
+
+    let mut capability_by_local = BTreeMap::new();
+    let mut capability_by_step = BTreeMap::new();
+    for step in &target_intent.steps {
+        validate_step_matches_core(step, &core_effects, intent_name)?;
+        if capability_by_local
+            .insert(
+                step.binding.id.clone(),
+                (step.id.clone(), step.binding.clone()),
+            )
+            .is_some()
+            || capability_by_step
+                .insert(step.id.clone(), step.binding.clone())
+                .is_some()
+        {
+            return Err(failure(
+                ResultProjectionFailureKind::CoreTargetMismatch,
+                format!("{intent_name}.steps"),
+            ));
+        }
+    }
+    Ok((capability_by_local, capability_by_step))
 }
 
 fn validate_step_matches_core(
