@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Hardened result-projection admission with immutable emitted artifacts,
+  bounded recursive decoding, shared compiler input identity, reuse of the
+  compiler-computed semantic closure, and provider-schema parity for positive
+  output bounds, flat-record size, and source-path depth.
 - Rejected many-to-one target obstruction mappings before Target IR emission so
   failure-coordinate collisions cannot silently discard an obstruction arm.
 - Hardened standalone application builds around complete lawpack dependency
