@@ -27,6 +27,15 @@ matching Target IR artifact, and an intent name. The emitter requires:
 No projection is emitted after any of these checks fails.
 [RESULT-PROJ-REQ-001] [RESULT-PROJ-REQ-005]
 
+`lower_to_target_ir` invokes that emitter for every intent in an artifact with
+an explicit semantic closure and returns the artifacts in
+`TargetLoweringReport::result_projections`, keyed by intent name. If any
+projection fails, the complete target-lowering report is `Unsupported`, its
+Target IR artifact is absent, and its projection map is empty. Legacy Target IR
+without an explicit Core/lawpack semantic closure remains byte-compatible and
+does not claim a result projection. [RESULT-PROJ-REQ-001]
+[RESULT-PROJ-REQ-006]
+
 The closed `edict.result-projection/v1` expression language contains only:
 
 - records with canonically ordered field names;
@@ -80,6 +89,15 @@ Only then does the API return `VerifiedResultProjection`, whose fields are
 available through read-only accessors. [RESULT-PROJ-REQ-005]
 [RESULT-PROJ-REQ-006]
 
+The public application-build path requires exactly one compiler-emitted
+projection for its current singleton executable-operation slice, runs the
+independent verifier over that artifact, and adds the same canonical bytes and
+domain-framed identity to both the provider lowerer and provider verifier
+semantic-input closures under the `result-projection` auxiliary kind. A
+provider package that does not declare and accept that input refuses rather
+than receiving a projection reconstructed by the host. [RESULT-PROJ-REQ-001]
+[RESULT-PROJ-REQ-003] [RESULT-PROJ-REQ-005]
+
 ```text
 Edict source + lawpack closure
     -> Core result
@@ -98,8 +116,10 @@ declared by Core and Target IR; it does not grant authority to obtain those
 values. [RESULT-PROJ-REQ-007]
 
 Echo #698 owns generic runtime evaluation, durable result binding, recovery,
-and exposure of the projected value. Hello Echo #18 owns the external
-application proof. Neither responsibility is implemented in this Edict
+package inclusion, and exposure of the projected value. Until that producer
+change lands, the previous six-input Echo provider package is incompatible with
+the new seven-input application-build closure. Hello Echo #18 owns the external
+application proof. Neither runtime responsibility is implemented in this Edict
 contract.
 
 ## Deferred

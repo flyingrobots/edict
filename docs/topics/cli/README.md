@@ -73,6 +73,13 @@ Edict does not re-encode either artifact and does not execute the package.
 Concurrent writers are excluded, and replacement preserves the previous pair
 if either output cannot be published.
 
+For the singleton executable-operation route, target lowering must also emit
+exactly one verified `edict.result-projection/v1` artifact. The build binds its
+canonical bytes and `edict.result-projection.artifact/v1` identity into both
+provider semantic-input closures. Providers that implement the previous
+six-input closure refuse before publication; Echo #698 owns package inclusion
+and runtime consumption of the new seventh input.
+
 Provider diagnostics are fail-closed on this first public build route: any
 provider-authored diagnostic rejects publication, independent of its severity.
 The terminal status `checked` count is `1` after a successful build because the

@@ -45,8 +45,9 @@ binding belong to Echo.
 | RESULT-PROJ-TP-010 | implemented | Schema fidelity | RESULT-PROJ-REQ-003 | The provider contract pack publishes the result-projection root and domain. | `result_projection_root_matches_reference_encoder` | docs/abi/edict-result-projection.cddl, fixtures/provider-contracts/v1/edict-provider-contracts.cddl | Echo #698 can consume only this admitted representation. |
 | RESULT-PROJ-TP-011 | implemented | Closure binding | RESULT-PROJ-REQ-001, RESULT-PROJ-REQ-005, RESULT-PROJ-REQ-006 | Substituting the Target IR semantic-closure Core identity rejects before projection emission. | `mutated_target_core_closure_fails_closed` | crates/edict-syntax/tests/result_projection.rs | Matching result syntax cannot detach the projection from the exact compiler input. |
 | RESULT-PROJ-TP-012 | implemented | Bound matrix | RESULT-PROJ-REQ-004, RESULT-PROJ-REQ-006 | One-over-limit path depth, UTF-8 text, artifact bytes, and structurally incompatible output types reject with stable kinds. | `path_text_artifact_and_structure_bounds_fail_closed` | crates/edict-syntax/tests/result_projection.rs | Complements the exact node-limit boundary. |
-| RESULT-PROJ-TP-013 | planned | Target emission | RESULT-PROJ-REQ-001, RESULT-PROJ-REQ-005 | Echo target lowering returns the compiler-produced projection and the independent verifier reconstructs that exact output. | `echo_target_lowering_emits_the_verified_result_projection` | crates/edict-syntax/tests/result_projection.rs | Prevents callers from reauthoring or dropping the projection between Core and the provider boundary. |
-| RESULT-PROJ-TP-014 | planned | Provider closure | RESULT-PROJ-REQ-001, RESULT-PROJ-REQ-003 | The application build binds the compiler-emitted canonical projection and digest into the provider semantic-input closure. | `compiler_result_projection_is_bound_into_the_provider_closure` | crates/edict-cli/src/application_build.rs | Echo #698 consumes this Edict-owned representation rather than inventing one inside the runtime. |
+| RESULT-PROJ-TP-013 | implemented | Target emission | RESULT-PROJ-REQ-001, RESULT-PROJ-REQ-005 | Echo target lowering returns the compiler-produced projection and the independent verifier reconstructs that exact output. | `echo_target_lowering_emits_the_verified_result_projection` | crates/edict-syntax/tests/result_projection.rs | Prevents callers from reauthoring or dropping the projection between Core and the provider boundary. |
+| RESULT-PROJ-TP-014 | implemented | Provider closure | RESULT-PROJ-REQ-001, RESULT-PROJ-REQ-003 | The application build binds the compiler-emitted canonical projection and digest into the provider semantic-input closure. | `compiler_result_projection_is_bound_into_the_provider_closure` | crates/edict-cli/src/application_build.rs | Echo #698 consumes this Edict-owned representation rather than inventing one inside the runtime. |
+| RESULT-PROJ-TP-015 | implemented | Target refusal | RESULT-PROJ-REQ-006, RESULT-PROJ-REQ-007 | A projection outside the closed expression language changes the complete target-lowering result to `Unsupported` with no Target IR artifact or partial projection map. | `target_lowering_rejects_an_unsupported_result_projection` | crates/edict-syntax/tests/result_projection.rs | The compiler cannot report successful target lowering while silently dropping an application result. |
 
 ## Determinism Obligations
 
@@ -57,6 +58,8 @@ binding belong to Echo.
 - Verification never trusts a claimed digest or a host-authored result.
 - Exact replay of the same Core and Target IR produces identical bytes and
   identity.
+- The lowerer and verifier receive byte-identical projection inputs bound to
+  the compiler-authored identity.
 
 ## Non-Goals
 

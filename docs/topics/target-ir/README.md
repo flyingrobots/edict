@@ -41,6 +41,16 @@ compatibility paths produce identical Target IR artifacts, canonical bytes, and
 digests. This adapter does not resolve provider manifests, load components, or
 define general target plugin dispatch. [TIR-REQ-013]
 
+For Target IR with an explicit Core/lawpack semantic closure,
+`TargetLoweringReport` also carries one compiler-owned result-projection
+artifact per intent. Projection failure changes the complete report to
+`Unsupported`; callers never receive a successful Target IR artifact with a
+missing projection. Legacy Target IR that intentionally omits semantic closure
+retains an empty projection map and byte-identical Target IR encoding. The
+projection artifact is outside the Target IR digest preimage and has its own
+canonical schema and domain-framed identity; its contract is defined by the
+[Result Projections topic](../result-projections/README.md).
+
 `TargetIrLoweringFacts::from_lowerability_report` derives the effect-to-intrinsic
 lowering table from accepted native lowerability reports.
 The derived facts use the target-profile coordinate and operation profile from
