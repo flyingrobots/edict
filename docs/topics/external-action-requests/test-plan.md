@@ -36,6 +36,7 @@ Out of scope:
 | EXTREQ-REQ-006 | implemented | Runtime-valued authority scope, basis, and budget expressions survive compilation for Echo admission; Edict performs no external action while compiling or lowering them. | issue #172 |
 | EXTREQ-REQ-007 | implemented | The request-family allowlist contains only the domain-specific `workspace` root; raw filesystem, process, network, Git, GitHub, model, shell, case-variant, abbreviation, and unregistered roots are outside the requestable capability vocabulary. | issue #172 |
 | EXTREQ-REQ-008 | implemented | Request construction remains bounded under a fixed-seed mutation corpus and a 64-request stress module. | issue #172 |
+| EXTREQ-REQ-009 | implemented | The public application build explicitly selects request-only publication, validates the exact source/root-reachable-lawpack/adapter/target-profile closure, rejects zero requests, callable-step mixtures, disconnected lawpacks, profile-budget mismatches, and substituted capability manifests, and atomically publishes exact canonical Core and Target IR bytes without invoking a provider component. | issue #176 |
 
 ## Fixtures
 
@@ -43,7 +44,9 @@ Out of scope:
 | --- | --- | --- |
 | In-test `workspace.snapshot.observe@1` source | First bounded read-only external request. | Public parser, compiler, canonical encoders, and Target IR lowerer preserve the exact request contract. |
 | Fixed seed `0x4558_5452_4551_0001` | Determinism and mutation corpus. | Repeated compilation is byte-identical and distinct capability identities produce distinct Core identities. |
+| CLI publication seed `0x5eed_1a77_c105_0a11` | Deterministic paired-publication corpus. | Sixteen fixed-seed Core/Target IR pairs publish byte-exactly, and 64 bounded pairs publish without growth. |
 | 64-request generated module | Bounded stress case. | All 64 requests survive Core and Target IR without becoming callable steps. |
+| `fixtures/lawpack/workspace-snapshot/` | Exact public-build capability closure. | The owning generator reproduces manifest, exports, request-only adapter, target configuration, source, Core, and Target IR; the public build reproduces the checked compiler bytes. |
 
 ## Cases
 
@@ -63,13 +66,17 @@ Out of scope:
 | EXTREQ-TP-012 | implemented | Canonical identity guard | EXTREQ-REQ-004 | Canonical Core encoding rejects empty request schema or reconciliation coordinates, and canonical Target IR encoding rejects duplicate request ids within one intent. | request_resource_coordinates_must_be_nonempty, duplicate_target_request_ids_reject_before_identity | crates/edict-syntax/tests/external_action_requests.rs | Waiting and settlement identity cannot be ambiguous or anonymous. |
 | EXTREQ-TP-013 | implemented | Tooling guard | EXTREQ-REQ-001 | A non-call request operation has its own stable parser kind, and `request` is highlighted as a keyword. | non_call_request_operation_has_a_request_specific_parse_kind, request_statement_introducer_is_highlighted_as_a_keyword | crates/edict-syntax/tests/external_action_requests.rs, crates/edict-syntax/tests/highlighting.rs | Request syntax remains distinct from semantic effect syntax. |
 | EXTREQ-TP-014 | implemented | Golden artifact | EXTREQ-REQ-002, EXTREQ-REQ-003, EXTREQ-REQ-004, EXTREQ-REQ-005 | The checked workspace-snapshot source reproduces exact compiler-owned Core and Target IR canonical bytes and domain-framed digests. | core_goldens_match_executable_encoder, target_ir_goldens_match_executable_encoder | fixtures/lang/external-actions/workspace-snapshot.edict, fixtures/core/canonical/workspace-snapshot.core.cbor, fixtures/core/canonical/workspace-snapshot.core.sha256, fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor, fixtures/target-ir/canonical/workspace-snapshot.target-ir.sha256 | Generated only through the owning xtask commands. |
+| EXTREQ-TP-015 | implemented | Public build | EXTREQ-REQ-009 | A real `edict.application/v1` request loads the generated workspace closure and exact Echo target profile, publishes checked canonical Core and Target IR bytes, removes stale executable outputs, and reruns byte-identically. | public_external_action_build_emits_exact_compiler_artifacts | crates/edict-cli/src/application_build.rs, fixtures/lawpack/workspace-snapshot/README.md, fixtures/providers/echo-target-profile/README.md | Provider components are outside the request-only route. |
+| EXTREQ-TP-016 | implemented | Closure refusal | EXTREQ-REQ-004, EXTREQ-REQ-009 | A request operation whose digest no longer equals its owning supplied capability manifest, or a supplied lawpack unreachable from the ordered root, is rejected before output publication; an independently versioned operation coordinate remains valid when its authority digest is exact. | external_action_build_rejects_a_substituted_capability_manifest, public_external_action_build_rejects_capability_substitution, public_external_action_build_rejects_a_disconnected_lawpack, external_action_build_binds_operation_authority_by_manifest_digest | crates/edict-cli/src/application_build.rs | Internal Core closure and a graph-valid disconnected manifest are each insufficient for public application authority; no undeclared coordinate derivation convention is inferred. |
+| EXTREQ-TP-017 | implemented | Execution-class refusal | EXTREQ-REQ-003, EXTREQ-REQ-009 | The request-only build rejects zero requests and any artifact mixing external requests with callable Target IR steps. | external_action_build_requires_a_typed_request, external_action_build_rejects_mixed_callable_execution | crates/edict-cli/src/application_build.rs | The first host route has one execution class. |
+| EXTREQ-TP-018 | implemented | Publication transaction | EXTREQ-REQ-009 | Paired request artifacts are deterministic under the recorded CLI publication seed and bounded stress corpus; stale executable outputs are removed; publication failure preserves the prior request pair. | external_action_pair_publication_is_deterministic_for_a_fixed_seed_corpus, external_action_pair_publication_remains_bounded_under_stress, external_action_publication_removes_stale_executable_outputs, failed_external_action_pair_publication_preserves_previous_core | crates/edict-cli/src/application_build.rs | Output ownership is symmetric across build kinds. |
 
 ## Determinism Obligations
 
 - Tests use no filesystem discovery, network access, clock, environment, or
   randomness.
-- The property corpus uses the recorded fixed seed and a local deterministic
-  generator.
+- The property and CLI publication corpora use their recorded fixed seeds and
+  local deterministic generators.
 - Canonical comparisons assert decoded structured fields and exact bytes, not
   diagnostics or log text.
 - Stress cardinality is fixed at 64.

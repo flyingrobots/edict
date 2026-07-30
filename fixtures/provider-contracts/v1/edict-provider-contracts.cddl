@@ -584,10 +584,19 @@ lawpack-adapter = {
 }
 
 ; Keys are canonical lawpack operation-profile coordinates.
-lawpack-adapter-operation-profile = {
-  core: tstr,
-  semanticEffects: [+ tstr],
-}
+lawpack-adapter-operation-profile =
+  {
+    core: tstr,
+    semanticEffects: [+ tstr],
+    ? budgetObligation: tstr,
+    ? targetConfiguration: resource-ref,
+  } /
+  {
+    core: tstr,
+    semanticEffects: [],
+    budgetObligation: tstr,
+    targetConfiguration: resource-ref,
+  }
 
 ; Keys are canonical lawpack semantic-effect coordinates. Footprint, cost, and
 ; failure fields must exactly discharge the matching exported effect.

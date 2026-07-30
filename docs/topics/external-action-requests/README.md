@@ -64,6 +64,28 @@ Equivalent source and compiler facts produce byte-identical Core and Target IR.
 Every operation, schema, input, scope, basis, budget, or reconciliation change
 participates in canonical identity. [EXTREQ-REQ-005]
 
+## Public Application Build
+
+An `edict.application/v1` manifest selects the request-only route with
+`"buildKind": "externalAction"`. The build loads the exact source, complete
+lawpack dependency set, declarative adapter, request-profile configuration, and
+provider-owned target profile. It then:
+
+1. compiles and lowers through the real lawpack closure;
+2. requires at least one typed request and zero callable Target IR steps;
+3. rejects supplied lawpacks unreachable from the first/root manifest;
+4. requires the source budget selected for each request-only profile to equal
+   that profile's exact declared obligation;
+5. binds each request operation digest to an exact root-reachable lawpack
+   manifest digest without inventing a namespace or version relationship
+   between the two independent resource coordinates;
+6. writes the owning encoders' exact `core.cbor` and `target-ir.cbor` bytes.
+
+Publication is a locked pair replacement. A failure restores the previous pair,
+and a successful request build removes stale executable-operation package and
+verification-report outputs. The route does not invoke a provider component or
+perform an external action. [EXTREQ-REQ-009]
+
 ## Authority Boundary
 
 Request authority is not performance authority:

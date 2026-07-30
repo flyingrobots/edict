@@ -58,7 +58,7 @@ cargo xtask verify
 - [Fixtures](./fixtures/README.md): shared executable fixture corpus and
   reviewed Core golden artifact contract.
 - [Lawpacks](./lawpacks/README.md): lawpack import, direct-adapter, bundle
-  reference, and deferred manifest-validation boundary.
+  reference, request-only profile, and canonical manifest-validation boundary.
 - [Lowerability](./lowerability/README.md): typed v1 lowering requirements,
   target-profile facts, and direct-only support classification.
 - [Obstruction Strands](./obstruction-strands/README.md): current terminal and

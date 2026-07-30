@@ -1,0 +1,34 @@
+package examples.workspace_observer@1;
+
+use lawpack workspace.snapshot@1 digest "sha256:7fcb985591d116a1624716334209dd5bf3948dfd756028dc32104621f9e90f71" as workspace;
+use capability workspace.snapshot.observe@1 digest "sha256:7fcb985591d116a1624716334209dd5bf3948dfd756028dc32104621f9e90f71" as snapshot;
+
+type ObserveInput = {
+  payload: Bytes<max=1024>,
+  scope: Bytes<max=32>,
+  basis: Bytes<max=32>,
+  maxSettlementBytes: U64,
+  maxAttempts: U32,
+};
+
+intent observe(input: ObserveInput)
+  returns ExternalActionRequest<Bytes<max=65536>>
+  profile workspace.observeRequest
+  basis input.basis
+  budget <= workspace.tinyObservationBudget
+{
+  request pending: ExternalActionRequest<Bytes<max=65536>> =
+    snapshot(input.payload)
+    input schema workspace.snapshot.input@1
+      digest "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    settlement schema workspace.snapshot.settlement@1
+      digest "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    authority input.scope
+    basis input.basis
+    budget
+      maxSettlementBytes input.maxSettlementBytes
+      maxAttempts input.maxAttempts
+    reconcile workspace.snapshot.reconcile@1
+      digest "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+  return pending;
+}

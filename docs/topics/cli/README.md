@@ -26,12 +26,13 @@ The implemented operations are `build`, `check`, and `project`.
 A `build` request contains one settings record and no compiler-input records.
 Its `application` field points to an `edict.application/v1` JSON manifest. The
 manifest names one exact Edict source, its complete lawpack closure, the
-selected target profile and provider package, and the output directory. The
-current executable-operation route accepts exactly one source and a non-empty
-ordered lawpack closure whose first entry is the root. It validates the complete
-supplied dependency graph, compiles and lowers the source through the root
-lawpack's declarative target adapter, and resolves the selected provider only
-from its checked package manifest.
+selected target profile and provider package, and the output directory. Both
+application routes accept exactly one source and a non-empty ordered lawpack
+closure whose first entry is the root. They validate the complete supplied
+dependency graph, reject any supplied lawpack unreachable from that root,
+compile and lower the source through the root lawpack's declarative target
+adapter, and resolve the selected target profile only from its checked
+provider-package manifest.
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","application":"edict.application.json"}
@@ -61,7 +62,48 @@ has this shape:
 }
 ```
 
-The build invokes the provider's checked lowerer component and its structurally
+`buildKind` defaults to `executableOperation`. Setting it to `externalAction`
+selects the request-only route explicitly:
+
+```json
+{
+  "schema": "edict.application/v1",
+  "buildKind": "externalAction",
+  "coordinate": "examples.workspace_observer@1",
+  "sources": ["src/observe-workspace.edict"],
+  "lawpacks": [{
+    "manifest": "vendor/workspace-snapshot/manifest.cbor",
+    "exports": "vendor/workspace-snapshot/exports.cbor",
+    "adapter": "vendor/workspace-snapshot/adapter.cbor",
+    "targetConfiguration": "vendor/workspace-snapshot/request-profile-configuration.cbor"
+  }],
+  "target": {
+    "profile": "echo.dpo@1",
+    "providerPackage": ".build/echo-provider"
+  },
+  "outputDirectory": ".build/application"
+}
+```
+
+The request-only route requires at least one compiler-emitted external-action
+request, rejects any callable Target IR step, and requires every request
+operation digest to equal one exact root-reachable lawpack manifest digest; the
+operation coordinate remains its own independently versioned resource identity.
+The source budget must equal the exact obligation declared by its selected
+request-only profile. `providerPackage` remains required because the route
+loads and verifies its provider manifest and selected target-profile artifact.
+Omitting it is `InvalidApplicationConfig`, but no provider component is invoked.
+The owning canonical encoders publish:
+
+- `core.cbor`;
+- `target-ir.cbor`.
+
+The pair is deterministic and transactionally replaces any previous
+application output pair. Switching build kinds removes stale outputs from the
+other route. Runtime admission, request execution, settlement, recovery, and
+replay remain outside Edict. [CLI-REQ-016]
+
+The executable-operation build invokes the provider's checked lowerer component and its structurally
 separate verifier component through the capability-denied provider host. Only
 an accepted verification result reaches the output directory. The current Echo
 target writes the exact provider-emitted bytes as:

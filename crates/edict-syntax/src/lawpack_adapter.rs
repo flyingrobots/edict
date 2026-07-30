@@ -65,6 +65,10 @@ pub struct LawpackAdapterFailure {
 pub struct LawpackAdapterOperationProfile {
     pub core: String,
     pub semantic_effects: Vec<String>,
+    /// Exact source budget required when `semantic_effects` is empty.
+    pub budget_obligation: Option<String>,
+    /// Opaque target configuration required when `semantic_effects` is empty.
+    pub target_configuration: Option<LawpackResourceRef>,
 }
 
 /// One semantic effect discharged by a direct adapter.
@@ -223,7 +227,12 @@ pub fn prepare_lawpack_compilation(
         }
         compiler_context = compiler_context
             .with_operation_profile(local_profile.clone(), profile.core.clone())
-            .with_operation_profile_write_classes(local_profile, write_classes);
+            .with_operation_profile_write_classes(local_profile.clone(), write_classes);
+        if let Some(budget) = &profile.budget_obligation {
+            let local_budget = local_coordinate(&alias, &prefix, budget)?;
+            compiler_context =
+                compiler_context.with_operation_profile_budget(local_profile, local_budget);
+        }
         operation_profiles.insert(profile.core.clone());
     }
 
@@ -306,18 +315,37 @@ fn parse_operation_profiles(
     let mut profiles = BTreeMap::new();
     for (coordinate, value) in values {
         let path = format!("adapter.operationProfiles.{coordinate}");
-        let fields = closed_map(value, &path, &["core", "semanticEffects"])?;
+        let fields = closed_map(
+            value,
+            &path,
+            &[
+                "core",
+                "semanticEffects",
+                "budgetObligation",
+                "targetConfiguration",
+            ],
+        )?;
         let core = required_nonempty_text(&fields, "core", &path)?;
         let semantic_effects = text_array(
             required(&fields, "semanticEffects", &path)?,
             &format!("{path}.semanticEffects"),
-            true,
+            false,
         )?;
+        let budget_obligation = fields
+            .get("budgetObligation")
+            .map(|value| nonempty_text(value, &format!("{path}.budgetObligation")))
+            .transpose()?;
+        let target_configuration = fields
+            .get("targetConfiguration")
+            .map(|value| parse_resource_ref(value, &format!("{path}.targetConfiguration")))
+            .transpose()?;
         profiles.insert(
             coordinate,
             LawpackAdapterOperationProfile {
                 core,
                 semantic_effects,
+                budget_obligation,
+                target_configuration,
             },
         );
     }
@@ -447,15 +475,24 @@ fn validate_adapter_closure(
         validate_effect(coordinate, exported, effect, &intrinsic_prefix)?;
         required_budgets.insert(effect.cost_obligation.as_str());
     }
-    exact_keys(
-        required_budgets,
-        budgets.keys().map(String::as_str),
-        LawpackAdapterFailureKind::MissingBudget,
-        LawpackAdapterFailureKind::UnknownBudget,
-        "adapter.budgets",
-    )?;
 
     for (coordinate, profile) in operation_profiles {
+        if let Some(budget) = &profile.budget_obligation {
+            required_budgets.insert(budget);
+        } else if profile.semantic_effects.is_empty() {
+            return Err(one(failure(
+                LawpackAdapterFailureKind::MissingBudget,
+                format!("adapter.operationProfiles.{coordinate}.budgetObligation"),
+                "request-only profile budget obligation",
+            )));
+        }
+        if profile.semantic_effects.is_empty() && profile.target_configuration.is_none() {
+            return Err(one(failure(
+                LawpackAdapterFailureKind::InvalidTargetConfiguration,
+                format!("adapter.operationProfiles.{coordinate}.targetConfiguration"),
+                "request-only profile target configuration",
+            )));
+        }
         let mut seen = BTreeSet::new();
         for effect in &profile.semantic_effects {
             if !seen.insert(effect) {
@@ -474,6 +511,13 @@ fn validate_adapter_closure(
             }
         }
     }
+    exact_keys(
+        required_budgets,
+        budgets.keys().map(String::as_str),
+        LawpackAdapterFailureKind::MissingBudget,
+        LawpackAdapterFailureKind::UnknownBudget,
+        "adapter.budgets",
+    )?;
     Ok(())
 }
 
