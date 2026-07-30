@@ -20,15 +20,15 @@ intent observe(input: ObserveInput)
   request pending: ExternalActionRequest<Bytes<max=65536>> =
     snapshot(input.payload)
     input schema workspace.snapshot.input@1
-      digest "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      digest "sha256:c390651d8975c49ff148a332feba4054a53fa9867e0412c1c303e0771cda1096"
     settlement schema workspace.snapshot.settlement@1
-      digest "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      digest "sha256:efff3be35fba0aeeadc59e73fe771cb42213d390a269bbc5b2e24a028bb84832"
     authority input.scope
     basis input.basis
     budget
       maxSettlementBytes input.maxSettlementBytes
       maxAttempts input.maxAttempts
     reconcile workspace.snapshot.reconcile@1
-      digest "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+      digest "sha256:352dab01263aa1a1f01a8ac213be0debef1bf23d7b522dce24527993124315c9";
   return pending;
 }

@@ -3,10 +3,11 @@ use std::fs;
 use std::path::Path;
 
 use edict_syntax::{
-    compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, digest_core_module,
-    digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
+    compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, digest_canonical_artifact,
+    digest_core_module, digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
-    CanonicalValue, TargetLoweringStatus,
+    CanonicalValue, TargetLoweringStatus, ValidatedLawpackAdapter, ValidatedLawpackBundle,
+    EXTERNAL_ACTION_RESOURCE_API_VERSION, EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN,
 };
 use sha2::{Digest, Sha256};
 
@@ -75,6 +76,18 @@ const WORKSPACE_SNAPSHOT_CONFIGURATION_CBOR: &str =
     "fixtures/lawpack/workspace-snapshot/request-profile-configuration.cbor";
 const WORKSPACE_SNAPSHOT_CONFIGURATION_DIGEST: &str =
     "fixtures/lawpack/workspace-snapshot/request-profile-configuration.sha256";
+const WORKSPACE_SNAPSHOT_INPUT_SCHEMA_CBOR: &str =
+    "fixtures/lawpack/workspace-snapshot/input-schema.cbor";
+const WORKSPACE_SNAPSHOT_INPUT_SCHEMA_DIGEST: &str =
+    "fixtures/lawpack/workspace-snapshot/input-schema.sha256";
+const WORKSPACE_SNAPSHOT_SETTLEMENT_SCHEMA_CBOR: &str =
+    "fixtures/lawpack/workspace-snapshot/settlement-schema.cbor";
+const WORKSPACE_SNAPSHOT_SETTLEMENT_SCHEMA_DIGEST: &str =
+    "fixtures/lawpack/workspace-snapshot/settlement-schema.sha256";
+const WORKSPACE_SNAPSHOT_RECONCILIATION_LAW_CBOR: &str =
+    "fixtures/lawpack/workspace-snapshot/reconciliation-law.cbor";
+const WORKSPACE_SNAPSHOT_RECONCILIATION_LAW_DIGEST: &str =
+    "fixtures/lawpack/workspace-snapshot/reconciliation-law.sha256";
 const WORKSPACE_SNAPSHOT_SOURCE: &str =
     "fixtures/lawpack/workspace-snapshot/observe-workspace.edict";
 const WORKSPACE_SNAPSHOT_CORE_CBOR: &str =
@@ -99,6 +112,18 @@ const WORKSPACE_PATCH_CONFIGURATION_CBOR: &str =
     "fixtures/lawpack/workspace-patch/request-profile-configuration.cbor";
 const WORKSPACE_PATCH_CONFIGURATION_DIGEST: &str =
     "fixtures/lawpack/workspace-patch/request-profile-configuration.sha256";
+const WORKSPACE_PATCH_INPUT_SCHEMA_CBOR: &str =
+    "fixtures/lawpack/workspace-patch/input-schema.cbor";
+const WORKSPACE_PATCH_INPUT_SCHEMA_DIGEST: &str =
+    "fixtures/lawpack/workspace-patch/input-schema.sha256";
+const WORKSPACE_PATCH_SETTLEMENT_SCHEMA_CBOR: &str =
+    "fixtures/lawpack/workspace-patch/settlement-schema.cbor";
+const WORKSPACE_PATCH_SETTLEMENT_SCHEMA_DIGEST: &str =
+    "fixtures/lawpack/workspace-patch/settlement-schema.sha256";
+const WORKSPACE_PATCH_RECONCILIATION_LAW_CBOR: &str =
+    "fixtures/lawpack/workspace-patch/reconciliation-law.cbor";
+const WORKSPACE_PATCH_RECONCILIATION_LAW_DIGEST: &str =
+    "fixtures/lawpack/workspace-patch/reconciliation-law.sha256";
 const WORKSPACE_PATCH_SOURCE: &str = "fixtures/lawpack/workspace-patch/apply-validated-patch.edict";
 const WORKSPACE_PATCH_CORE_CBOR: &str =
     "fixtures/lawpack/workspace-patch/apply-validated-patch.core.cbor";
@@ -116,6 +141,28 @@ const WORKSPACE_PATCH_CONFIGURATION_COORDINATE: &str = "workspace.patch.request-
 pub(crate) enum LawpackGoldenMode {
     Check,
     Write,
+}
+
+struct GeneratedExternalActionResource {
+    coordinate: String,
+    bytes: Vec<u8>,
+    digest: String,
+}
+
+#[derive(Clone, Copy)]
+struct InputSchemaResource<'a>(&'a GeneratedExternalActionResource);
+
+#[derive(Clone, Copy)]
+struct SettlementSchemaResource<'a>(&'a GeneratedExternalActionResource);
+
+#[derive(Clone, Copy)]
+struct ReconciliationLawResource<'a>(&'a GeneratedExternalActionResource);
+
+struct CompiledExternalActionArtifacts {
+    core_bytes: Vec<u8>,
+    core_digest: String,
+    target_ir_bytes: Vec<u8>,
+    target_ir_digest: String,
 }
 
 pub(crate) fn lawpack_goldens(root: &Path, mode: LawpackGoldenMode) -> Result<(), String> {
@@ -144,6 +191,21 @@ pub(crate) fn lawpack_goldens(root: &Path, mode: LawpackGoldenMode) -> Result<()
 }
 
 fn workspace_snapshot_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>, String> {
+    let input_schema = external_action_resource(
+        "workspace.snapshot.input@1",
+        "inputSchema",
+        workspace_snapshot_input_schema(),
+    )?;
+    let settlement_schema = external_action_resource(
+        "workspace.snapshot.settlement@1",
+        "settlementSchema",
+        workspace_snapshot_settlement_schema(),
+    )?;
+    let reconciliation_law = external_action_resource(
+        "workspace.snapshot.reconcile@1",
+        "reconciliationLaw",
+        workspace_snapshot_reconciliation_law(),
+    )?;
     let exports_value = workspace_snapshot_exports();
     let exports_bytes = encode_canonical_cbor(&exports_value)
         .map_err(|error| format!("encode workspace snapshot exports: {error}"))?;
@@ -170,49 +232,14 @@ fn workspace_snapshot_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>,
     let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
         .map_err(|failures| format!("validate workspace snapshot adapter: {failures:?}"))?;
 
-    let source = workspace_snapshot_application_source(&bundle.manifest_digest_review_string());
-    let module = parse_module(&source)
-        .map_err(|error| format!("parse workspace snapshot application: {error:?}"))?;
-    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
-        .map_err(|failures| format!("prepare workspace snapshot application: {failures:?}"))?;
-    let core = compile_to_core(&module, preparation.compiler_context())
-        .map_err(|error| format!("compile workspace snapshot application: {error:?}"))?;
-    let core_bytes = encode_core_module(&core)
-        .map_err(|error| format!("encode workspace snapshot Core: {error}"))?;
-    let core_digest = digest_core_module(&core)
-        .map_err(|error| format!("digest workspace snapshot Core: {error}"))?
-        .to_review_string();
-    let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
-    if target_ir_report.status != TargetLoweringStatus::Lowered {
-        return Err(format!(
-            "lower workspace snapshot Target IR: expected lowered status, got {:?}",
-            target_ir_report.status
-        ));
-    }
-    let target_ir = target_ir_report.artifact.ok_or_else(|| {
-        "lower workspace snapshot Target IR: lowered report omitted artifact".to_owned()
-    })?;
-    let request_count = target_ir
-        .intents
-        .values()
-        .map(|intent| intent.external_action_requests.len())
-        .sum::<usize>();
-    if request_count != 1
-        || target_ir
-            .intents
-            .values()
-            .any(|intent| !intent.steps.is_empty())
-    {
-        return Err(
-            "workspace snapshot application must lower to one request and zero callable steps"
-                .to_owned(),
-        );
-    }
-    let target_ir_bytes = encode_target_ir_artifact(&target_ir)
-        .map_err(|error| format!("encode workspace snapshot Target IR: {error}"))?;
-    let target_ir_digest = digest_target_ir_artifact(&target_ir)
-        .map_err(|error| format!("digest workspace snapshot Target IR: {error}"))?
-        .to_review_string();
+    let source = workspace_snapshot_application_source(
+        &bundle.manifest_digest_review_string(),
+        InputSchemaResource(&input_schema),
+        SettlementSchemaResource(&settlement_schema),
+        ReconciliationLawResource(&reconciliation_law),
+    );
+    let compiled =
+        compile_external_action_application(&source, &bundle, &adapter, "workspace snapshot")?;
 
     Ok(vec![
         (WORKSPACE_SNAPSHOT_MANIFEST_CBOR, manifest_bytes),
@@ -235,16 +262,37 @@ fn workspace_snapshot_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>,
             WORKSPACE_SNAPSHOT_CONFIGURATION_DIGEST,
             format!("{}\n", sha256_review_string(&configuration_digest)).into_bytes(),
         ),
+        (WORKSPACE_SNAPSHOT_INPUT_SCHEMA_CBOR, input_schema.bytes),
+        (
+            WORKSPACE_SNAPSHOT_INPUT_SCHEMA_DIGEST,
+            format!("{}\n", input_schema.digest).into_bytes(),
+        ),
+        (
+            WORKSPACE_SNAPSHOT_SETTLEMENT_SCHEMA_CBOR,
+            settlement_schema.bytes,
+        ),
+        (
+            WORKSPACE_SNAPSHOT_SETTLEMENT_SCHEMA_DIGEST,
+            format!("{}\n", settlement_schema.digest).into_bytes(),
+        ),
+        (
+            WORKSPACE_SNAPSHOT_RECONCILIATION_LAW_CBOR,
+            reconciliation_law.bytes,
+        ),
+        (
+            WORKSPACE_SNAPSHOT_RECONCILIATION_LAW_DIGEST,
+            format!("{}\n", reconciliation_law.digest).into_bytes(),
+        ),
         (WORKSPACE_SNAPSHOT_SOURCE, source.into_bytes()),
-        (WORKSPACE_SNAPSHOT_CORE_CBOR, core_bytes),
+        (WORKSPACE_SNAPSHOT_CORE_CBOR, compiled.core_bytes),
         (
             WORKSPACE_SNAPSHOT_CORE_DIGEST,
-            format!("{core_digest}\n").into_bytes(),
+            format!("{}\n", compiled.core_digest).into_bytes(),
         ),
-        (WORKSPACE_SNAPSHOT_TARGET_IR_CBOR, target_ir_bytes),
+        (WORKSPACE_SNAPSHOT_TARGET_IR_CBOR, compiled.target_ir_bytes),
         (
             WORKSPACE_SNAPSHOT_TARGET_IR_DIGEST,
-            format!("{target_ir_digest}\n").into_bytes(),
+            format!("{}\n", compiled.target_ir_digest).into_bytes(),
         ),
     ])
 }
@@ -391,7 +439,18 @@ fn workspace_snapshot_exports() -> CanonicalValue {
     ])
 }
 
-fn workspace_snapshot_application_source(manifest_digest: &str) -> String {
+fn workspace_snapshot_application_source(
+    manifest_digest: &str,
+    input_schema: InputSchemaResource<'_>,
+    settlement_schema: SettlementSchemaResource<'_>,
+    reconciliation_law: ReconciliationLawResource<'_>,
+) -> String {
+    let input_schema_coordinate = &input_schema.0.coordinate;
+    let input_schema_digest = &input_schema.0.digest;
+    let settlement_schema_coordinate = &settlement_schema.0.coordinate;
+    let settlement_schema_digest = &settlement_schema.0.digest;
+    let reconciliation_law_coordinate = &reconciliation_law.0.coordinate;
+    let reconciliation_law_digest = &reconciliation_law.0.digest;
     format!(
         r#"package examples.workspace_observer@1;
 
@@ -414,17 +473,17 @@ intent observe(input: ObserveInput)
 {{
   request pending: ExternalActionRequest<Bytes<max=65536>> =
     snapshot(input.payload)
-    input schema workspace.snapshot.input@1
-      digest "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    settlement schema workspace.snapshot.settlement@1
-      digest "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    input schema {input_schema_coordinate}
+      digest "{input_schema_digest}"
+    settlement schema {settlement_schema_coordinate}
+      digest "{settlement_schema_digest}"
     authority input.scope
     basis input.basis
     budget
       maxSettlementBytes input.maxSettlementBytes
       maxAttempts input.maxAttempts
-    reconcile workspace.snapshot.reconcile@1
-      digest "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+    reconcile {reconciliation_law_coordinate}
+      digest "{reconciliation_law_digest}";
   return pending;
 }}
 "#
@@ -432,6 +491,21 @@ intent observe(input: ObserveInput)
 }
 
 fn workspace_patch_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>, String> {
+    let input_schema = external_action_resource(
+        "workspace.patch.input@1",
+        "inputSchema",
+        workspace_patch_input_schema(),
+    )?;
+    let settlement_schema = external_action_resource(
+        "workspace.patch.settlement@1",
+        "settlementSchema",
+        workspace_patch_settlement_schema(),
+    )?;
+    let reconciliation_law = external_action_resource(
+        "workspace.patch.reconcile@1",
+        "reconciliationLaw",
+        workspace_patch_reconciliation_law(),
+    )?;
     let exports_value = workspace_patch_exports();
     let exports_bytes = encode_canonical_cbor(&exports_value)
         .map_err(|error| format!("encode workspace patch exports: {error}"))?;
@@ -458,49 +532,14 @@ fn workspace_patch_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>, St
     let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
         .map_err(|failures| format!("validate workspace patch adapter: {failures:?}"))?;
 
-    let source = workspace_patch_application_source(&bundle.manifest_digest_review_string());
-    let module = parse_module(&source)
-        .map_err(|error| format!("parse workspace patch application: {error:?}"))?;
-    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
-        .map_err(|failures| format!("prepare workspace patch application: {failures:?}"))?;
-    let core = compile_to_core(&module, preparation.compiler_context())
-        .map_err(|error| format!("compile workspace patch application: {error:?}"))?;
-    let core_bytes = encode_core_module(&core)
-        .map_err(|error| format!("encode workspace patch Core: {error}"))?;
-    let core_digest = digest_core_module(&core)
-        .map_err(|error| format!("digest workspace patch Core: {error}"))?
-        .to_review_string();
-    let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
-    if target_ir_report.status != TargetLoweringStatus::Lowered {
-        return Err(format!(
-            "lower workspace patch Target IR: expected lowered status, got {:?}",
-            target_ir_report.status
-        ));
-    }
-    let target_ir = target_ir_report.artifact.ok_or_else(|| {
-        "lower workspace patch Target IR: lowered report omitted artifact".to_owned()
-    })?;
-    let request_count = target_ir
-        .intents
-        .values()
-        .map(|intent| intent.external_action_requests.len())
-        .sum::<usize>();
-    if request_count != 1
-        || target_ir
-            .intents
-            .values()
-            .any(|intent| !intent.steps.is_empty())
-    {
-        return Err(
-            "workspace patch application must lower to one request and zero callable steps"
-                .to_owned(),
-        );
-    }
-    let target_ir_bytes = encode_target_ir_artifact(&target_ir)
-        .map_err(|error| format!("encode workspace patch Target IR: {error}"))?;
-    let target_ir_digest = digest_target_ir_artifact(&target_ir)
-        .map_err(|error| format!("digest workspace patch Target IR: {error}"))?
-        .to_review_string();
+    let source = workspace_patch_application_source(
+        &bundle.manifest_digest_review_string(),
+        InputSchemaResource(&input_schema),
+        SettlementSchemaResource(&settlement_schema),
+        ReconciliationLawResource(&reconciliation_law),
+    );
+    let compiled =
+        compile_external_action_application(&source, &bundle, &adapter, "workspace patch")?;
 
     Ok(vec![
         (WORKSPACE_PATCH_MANIFEST_CBOR, manifest_bytes),
@@ -523,16 +562,37 @@ fn workspace_patch_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>, St
             WORKSPACE_PATCH_CONFIGURATION_DIGEST,
             format!("{}\n", sha256_review_string(&configuration_digest)).into_bytes(),
         ),
+        (WORKSPACE_PATCH_INPUT_SCHEMA_CBOR, input_schema.bytes),
+        (
+            WORKSPACE_PATCH_INPUT_SCHEMA_DIGEST,
+            format!("{}\n", input_schema.digest).into_bytes(),
+        ),
+        (
+            WORKSPACE_PATCH_SETTLEMENT_SCHEMA_CBOR,
+            settlement_schema.bytes,
+        ),
+        (
+            WORKSPACE_PATCH_SETTLEMENT_SCHEMA_DIGEST,
+            format!("{}\n", settlement_schema.digest).into_bytes(),
+        ),
+        (
+            WORKSPACE_PATCH_RECONCILIATION_LAW_CBOR,
+            reconciliation_law.bytes,
+        ),
+        (
+            WORKSPACE_PATCH_RECONCILIATION_LAW_DIGEST,
+            format!("{}\n", reconciliation_law.digest).into_bytes(),
+        ),
         (WORKSPACE_PATCH_SOURCE, source.into_bytes()),
-        (WORKSPACE_PATCH_CORE_CBOR, core_bytes),
+        (WORKSPACE_PATCH_CORE_CBOR, compiled.core_bytes),
         (
             WORKSPACE_PATCH_CORE_DIGEST,
-            format!("{core_digest}\n").into_bytes(),
+            format!("{}\n", compiled.core_digest).into_bytes(),
         ),
-        (WORKSPACE_PATCH_TARGET_IR_CBOR, target_ir_bytes),
+        (WORKSPACE_PATCH_TARGET_IR_CBOR, compiled.target_ir_bytes),
         (
             WORKSPACE_PATCH_TARGET_IR_DIGEST,
-            format!("{target_ir_digest}\n").into_bytes(),
+            format!("{}\n", compiled.target_ir_digest).into_bytes(),
         ),
     ])
 }
@@ -683,7 +743,18 @@ fn workspace_patch_exports() -> CanonicalValue {
     ])
 }
 
-fn workspace_patch_application_source(manifest_digest: &str) -> String {
+fn workspace_patch_application_source(
+    manifest_digest: &str,
+    input_schema: InputSchemaResource<'_>,
+    settlement_schema: SettlementSchemaResource<'_>,
+    reconciliation_law: ReconciliationLawResource<'_>,
+) -> String {
+    let input_schema_coordinate = &input_schema.0.coordinate;
+    let input_schema_digest = &input_schema.0.digest;
+    let settlement_schema_coordinate = &settlement_schema.0.coordinate;
+    let settlement_schema_digest = &settlement_schema.0.digest;
+    let reconciliation_law_coordinate = &reconciliation_law.0.coordinate;
+    let reconciliation_law_digest = &reconciliation_law.0.digest;
     format!(
         r#"package examples.workspace_patcher@1;
 
@@ -706,17 +777,17 @@ intent applyValidated(input: ApplyPatchInput)
 {{
   request pending: ExternalActionRequest<Bytes<max=65536>> =
     patch(input.patch)
-    input schema workspace.patch.input@1
-      digest "sha256:9999999999999999999999999999999999999999999999999999999999999999"
-    settlement schema workspace.patch.settlement@1
-      digest "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    input schema {input_schema_coordinate}
+      digest "{input_schema_digest}"
+    settlement schema {settlement_schema_coordinate}
+      digest "{settlement_schema_digest}"
     authority input.authority
     basis input.basis
     budget
       maxSettlementBytes input.maxSettlementBytes
       maxAttempts input.maxAttempts
-    reconcile workspace.patch.reconcile@1
-      digest "sha256:7777777777777777777777777777777777777777777777777777777777777777";
+    reconcile {reconciliation_law_coordinate}
+      digest "{reconciliation_law_digest}";
   return pending;
 }}
 "#
@@ -1360,6 +1431,291 @@ fn hello_echo_exports() -> CanonicalValue {
                 ]),
             )]),
         ),
+    ])
+}
+
+fn external_action_resource(
+    coordinate: &str,
+    kind: &str,
+    definition: CanonicalValue,
+) -> Result<GeneratedExternalActionResource, String> {
+    let value = map([
+        ("apiVersion", text(EXTERNAL_ACTION_RESOURCE_API_VERSION)),
+        ("coordinate", text(coordinate)),
+        ("kind", text(kind)),
+        ("definition", definition),
+    ]);
+    let bytes = encode_canonical_cbor(&value)
+        .map_err(|error| format!("encode external-action resource `{coordinate}`: {error}"))?;
+    let digest = digest_canonical_artifact(EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, &bytes)
+        .map_err(|error| format!("digest external-action resource `{coordinate}`: {error}"))?
+        .to_review_string();
+    Ok(GeneratedExternalActionResource {
+        coordinate: coordinate.to_owned(),
+        bytes,
+        digest,
+    })
+}
+
+fn compile_external_action_application(
+    source: &str,
+    bundle: &ValidatedLawpackBundle,
+    adapter: &ValidatedLawpackAdapter,
+    label: &str,
+) -> Result<CompiledExternalActionArtifacts, String> {
+    let module =
+        parse_module(source).map_err(|error| format!("parse {label} application: {error:?}"))?;
+    let preparation = prepare_lawpack_compilation(&module, bundle, adapter)
+        .map_err(|failures| format!("prepare {label} application: {failures:?}"))?;
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .map_err(|error| format!("compile {label} application: {error:?}"))?;
+    let core_bytes =
+        encode_core_module(&core).map_err(|error| format!("encode {label} Core: {error}"))?;
+    let core_digest = digest_core_module(&core)
+        .map_err(|error| format!("digest {label} Core: {error}"))?
+        .to_review_string();
+    let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
+    if target_ir_report.status != TargetLoweringStatus::Lowered {
+        return Err(format!(
+            "lower {label} Target IR: expected lowered status, got {:?}: {:?}",
+            target_ir_report.status, target_ir_report.failures
+        ));
+    }
+    let target_ir = target_ir_report
+        .artifact
+        .ok_or_else(|| format!("lower {label} Target IR: lowered report omitted artifact"))?;
+    let request_count = target_ir
+        .intents
+        .values()
+        .map(|intent| intent.external_action_requests.len())
+        .sum::<usize>();
+    if request_count != 1
+        || target_ir
+            .intents
+            .values()
+            .any(|intent| !intent.steps.is_empty())
+    {
+        return Err(format!(
+            "{label} application must lower to one request and zero callable steps"
+        ));
+    }
+    let target_ir_bytes = encode_target_ir_artifact(&target_ir)
+        .map_err(|error| format!("encode {label} Target IR: {error}"))?;
+    let target_ir_digest = digest_target_ir_artifact(&target_ir)
+        .map_err(|error| format!("digest {label} Target IR: {error}"))?
+        .to_review_string();
+    Ok(CompiledExternalActionArtifacts {
+        core_bytes,
+        core_digest,
+        target_ir_bytes,
+        target_ir_digest,
+    })
+}
+
+fn workspace_snapshot_input_schema() -> CanonicalValue {
+    schema_definition(
+        "boundedWorkspaceObservationInput",
+        vec![
+            schema_field(
+                "kind",
+                "literal:boundedWorkspaceObservationInput",
+                "exact operation discriminator",
+            ),
+            schema_field(
+                "paths",
+                "array<canonical-relative-path>",
+                "ordered exact read aperture",
+            ),
+        ],
+    )
+}
+
+fn workspace_snapshot_settlement_schema() -> CanonicalValue {
+    schema_definition(
+        "boundedWorkspaceObservationSettlement",
+        vec![
+            schema_field(
+                "kind",
+                "literal:boundedWorkspaceObservationSettlement",
+                "exact settlement discriminator",
+            ),
+            schema_field(
+                "posture",
+                "enum:succeeded|obstructed|outcomeUnknown",
+                "terminal external-action posture",
+            ),
+            schema_field("basis", "bytes<exact=32>", "observed workspace root"),
+            schema_field(
+                "evidence",
+                "bytes<exact=32>",
+                "domain-separated observation evidence",
+            ),
+            schema_field(
+                "files",
+                "array<workspaceFile{path:text,bytes:bytes,digest:bytes32}>",
+                "strictly ordered requested file observations",
+            ),
+            schema_field(
+                "obstruction",
+                "optional<text>",
+                "typed obstruction or outcome-unknown code",
+            ),
+        ],
+    )
+}
+
+fn workspace_snapshot_reconciliation_law() -> CanonicalValue {
+    reconciliation_definition(
+        "boundedWorkspaceObservationInput",
+        "boundedWorkspaceObservationSettlement",
+        &["basis", "evidence", "files", "obstruction"],
+        "replay consumes the admitted settlement and performs no workspace read",
+    )
+}
+
+fn workspace_patch_input_schema() -> CanonicalValue {
+    schema_definition(
+        "validatedWorkspacePatchInput",
+        vec![
+            schema_field(
+                "kind",
+                "literal:validatedWorkspacePatchInput",
+                "exact operation discriminator",
+            ),
+            schema_field(
+                "path",
+                "canonical-relative-path",
+                "single writable aperture",
+            ),
+            schema_field(
+                "expectedContentDigest",
+                "bytes<exact=32>",
+                "basis-bound precondition",
+            ),
+            schema_field(
+                "replacement",
+                "bytes<max=65536>",
+                "validated replacement bytes",
+            ),
+            schema_field(
+                "replacementDigest",
+                "bytes<exact=32>",
+                "replacement identity",
+            ),
+        ],
+    )
+}
+
+fn workspace_patch_settlement_schema() -> CanonicalValue {
+    schema_definition(
+        "validatedWorkspacePatchSettlement",
+        vec![
+            schema_field(
+                "kind",
+                "literal:validatedWorkspacePatchSettlement",
+                "exact settlement discriminator",
+            ),
+            schema_field(
+                "posture",
+                "enum:succeeded|obstructed|outcomeUnknown",
+                "terminal external-action posture",
+            ),
+            schema_field(
+                "path",
+                "optional<canonical-relative-path>",
+                "settled aperture",
+            ),
+            schema_field(
+                "requestBasis",
+                "bytes<exact=32>",
+                "admitted workspace basis",
+            ),
+            schema_field(
+                "evidence",
+                "bytes<exact=32>",
+                "domain-separated settlement evidence",
+            ),
+            schema_field(
+                "beforeContentDigest",
+                "optional<bytes<exact=32>>",
+                "observed pre-mutation content",
+            ),
+            schema_field(
+                "afterContentDigest",
+                "optional<bytes<exact=32>>",
+                "observed postcondition content",
+            ),
+            schema_field(
+                "resultingBasis",
+                "optional<bytes<exact=32>>",
+                "observed postcondition workspace root",
+            ),
+            schema_field(
+                "obstruction",
+                "optional<text>",
+                "typed obstruction or outcome-unknown code",
+            ),
+        ],
+    )
+}
+
+fn workspace_patch_reconciliation_law() -> CanonicalValue {
+    reconciliation_definition(
+        "validatedWorkspacePatchInput",
+        "validatedWorkspacePatchSettlement",
+        &[
+            "path",
+            "requestBasis",
+            "evidence",
+            "beforeContentDigest",
+            "afterContentDigest",
+            "resultingBasis",
+            "obstruction",
+        ],
+        "replay consumes the admitted settlement and never reapplies the patch",
+    )
+}
+
+fn schema_definition(root: &str, fields: Vec<CanonicalValue>) -> CanonicalValue {
+    map([
+        ("encoding", text("canonical-cbor")),
+        ("root", text(root)),
+        ("closed", CanonicalValue::Bool(true)),
+        ("fields", CanonicalValue::Array(fields)),
+    ])
+}
+
+fn schema_field(name: &str, field_type: &str, authority: &str) -> CanonicalValue {
+    map([
+        ("name", text(name)),
+        ("type", text(field_type)),
+        ("required", CanonicalValue::Bool(true)),
+        ("authority", text(authority)),
+    ])
+}
+
+fn reconciliation_definition(
+    request_kind: &str,
+    settlement_kind: &str,
+    bindings: &[&str],
+    replay_rule: &str,
+) -> CanonicalValue {
+    map([
+        ("requestKind", text(request_kind)),
+        ("settlementKind", text(settlement_kind)),
+        (
+            "terminalPostures",
+            CanonicalValue::Array(vec![
+                text("succeeded"),
+                text("obstructed"),
+                text("outcomeUnknown"),
+            ]),
+        ),
+        (
+            "requiredBindings",
+            CanonicalValue::Array(bindings.iter().map(|binding| text(binding)).collect()),
+        ),
+        ("replayRule", text(replay_rule)),
     ])
 }
 

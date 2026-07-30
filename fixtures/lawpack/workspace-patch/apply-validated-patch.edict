@@ -20,15 +20,15 @@ intent applyValidated(input: ApplyPatchInput)
   request pending: ExternalActionRequest<Bytes<max=65536>> =
     patch(input.patch)
     input schema workspace.patch.input@1
-      digest "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+      digest "sha256:a815f7baa77c260f9c84a73552b6cab244900fcf27db7d8384d473a59c7e8607"
     settlement schema workspace.patch.settlement@1
-      digest "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+      digest "sha256:b74398fa5a7a997ccf3af3ee225bb2ef6eb776182d32789d7f8252eadb983a4d"
     authority input.authority
     basis input.basis
     budget
       maxSettlementBytes input.maxSettlementBytes
       maxAttempts input.maxAttempts
     reconcile workspace.patch.reconcile@1
-      digest "sha256:7777777777777777777777777777777777777777777777777777777777777777";
+      digest "sha256:efa7abd9a5f485994aab71ca796c9762b0f7676262b847750d5310e435da3194";
   return pending;
 }

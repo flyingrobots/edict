@@ -18,6 +18,14 @@ digest. The generated Core and Target IR therefore preserve the complete
 capability closure while Target IR contains one external-action request and
 zero callable steps.
 
+The same generator emits `input-schema.cbor`, `settlement-schema.cbor`, and
+`reconciliation-law.cbor` plus their domain-framed digest sidecars. The source
+pins those exact identities. A public external-action application lists all
+three paths in `externalActionResources`; the build independently decodes the
+closed meta-contracts, recomputes their identities, and rejects an incomplete,
+substituted, duplicate, disconnected, malformed, or placeholder closure before
+publication.
+
 This real-lawpack corpus is distinct from
 `fixtures/lang/external-actions/workspace-snapshot.edict`. That earlier
 compiler fixture uses synthetic context facts and a placeholder capability

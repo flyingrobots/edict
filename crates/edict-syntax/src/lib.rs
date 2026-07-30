@@ -113,7 +113,9 @@ pub use canonical::{
     encode_target_ir_artifact, BundleDigestDomain, BundlePreimageComponent, BundleSourceDescriptor,
     CanonicalError, CanonicalErrorKind, CanonicalValue, CoreDigest, BUNDLE_RELEASE_DIGEST_DOMAIN,
     BUNDLE_SEMANTIC_DIGEST_DOMAIN, CORE_CANONICAL_ENCODING, CORE_DIGEST_FRAME,
-    CORE_MODULE_DIGEST_DOMAIN, MAX_CANONICAL_NESTING_DEPTH, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    CORE_MODULE_DIGEST_DOMAIN, EXTERNAL_ACTION_RESOURCE_API_VERSION,
+    EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, MAX_CANONICAL_NESTING_DEPTH,
+    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,

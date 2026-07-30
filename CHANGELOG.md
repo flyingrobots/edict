@@ -10,6 +10,12 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Replaced sentinel external-request schema and reconciliation identities
+  with generator-owned canonical artifacts. External-action application builds
+  now require an exact `externalActionResources` closure, independently validate
+  each closed resource meta-contract and domain-framed digest, and fail before
+  publication on missing, duplicate, disconnected, substituted, opaque,
+  non-canonical, sentinel, mutated, or over-budget resources.
 - Hardened result-projection admission with immutable emitted artifacts,
   bounded recursive decoding, shared compiler input identity, reuse of the
   compiler-computed semantic closure, and provider-schema parity for positive
