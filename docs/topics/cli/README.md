@@ -87,10 +87,13 @@ selects the request-only route explicitly:
 
 The request-only route requires at least one compiler-emitted external-action
 request, rejects any callable Target IR step, and requires every request
-operation to be bound to one exact root-reachable lawpack manifest. The source
-budget must equal the exact obligation declared by its selected request-only
-profile. It invokes no provider component. The owning canonical encoders
-publish:
+operation digest to equal one exact root-reachable lawpack manifest digest; the
+operation coordinate remains its own independently versioned resource identity.
+The source budget must equal the exact obligation declared by its selected
+request-only profile. `providerPackage` remains required because the route
+loads and verifies its provider manifest and selected target-profile artifact.
+Omitting it is `InvalidApplicationConfig`, but no provider component is invoked.
+The owning canonical encoders publish:
 
 - `core.cbor`;
 - `target-ir.cbor`.

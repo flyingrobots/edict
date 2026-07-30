@@ -42,6 +42,7 @@ embedded snippet, schema, or fixture no longer matches the locked digests.
 - `EDICT-ABI-*` — cross-ABI rules (no-duplication, display sidecars).
 - `EDICT-ADMISSION-*` — Edict-owned admission-boundary artifact and operation
   semantics.
+- `EDICT-CLI-*` — public CLI and application-build contracts.
 - `EDICT-CONFORMANCE-*` — conformance/differential testing.
 - `CONTINUUM-*` — contract bundle and admission.
 

@@ -76,8 +76,9 @@ provider-owned target profile. It then:
 3. rejects supplied lawpacks unreachable from the first/root manifest;
 4. requires the source budget selected for each request-only profile to equal
    that profile's exact declared obligation;
-5. binds each request operation to an exact root-reachable lawpack manifest
-   digest;
+5. binds each request operation digest to an exact root-reachable lawpack
+   manifest digest without inventing a namespace or version relationship
+   between the two independent resource coordinates;
 6. writes the owning encoders' exact `core.cbor` and `target-ir.cbor` bytes.
 
 Publication is a locked pair replacement. A failure restores the previous pair,
