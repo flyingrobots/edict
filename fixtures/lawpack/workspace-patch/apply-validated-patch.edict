@@ -1,0 +1,34 @@
+package examples.workspace_patcher@1;
+
+use lawpack workspace.patch@1 digest "sha256:7d256b314ee6315e2768721cba2e2191649e7c877e85bc020ab2e119564cb06c" as workspace;
+use capability workspace.patch.applyValidated@1 digest "sha256:7d256b314ee6315e2768721cba2e2191649e7c877e85bc020ab2e119564cb06c" as patch;
+
+type ApplyPatchInput = {
+  patch: Bytes<max=65536>,
+  authority: Bytes<max=32>,
+  basis: Bytes<max=32>,
+  maxSettlementBytes: U64,
+  maxAttempts: U32,
+};
+
+intent applyValidated(input: ApplyPatchInput)
+  returns ExternalActionRequest<Bytes<max=65536>>
+  profile workspace.applyValidatedRequest
+  basis input.basis
+  budget <= workspace.tinyPatchBudget
+{
+  request pending: ExternalActionRequest<Bytes<max=65536>> =
+    patch(input.patch)
+    input schema workspace.patch.input@1
+      digest "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    settlement schema workspace.patch.settlement@1
+      digest "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    authority input.authority
+    basis input.basis
+    budget
+      maxSettlementBytes input.maxSettlementBytes
+      maxAttempts input.maxAttempts
+    reconcile workspace.patch.reconcile@1
+      digest "sha256:7777777777777777777777777777777777777777777777777777777777777777";
+  return pending;
+}

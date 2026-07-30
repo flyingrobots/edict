@@ -105,6 +105,22 @@ The first admitted family is domain-specific
 `workspace.snapshot.observe@1`, not ambient filesystem access.
 [EXTREQ-REQ-003] [EXTREQ-REQ-006] [EXTREQ-REQ-007]
 
+## Validated Patch Request
+
+`workspace.patch.applyValidated@1` is the second compiler-owned request family.
+Its generated lawpack closure binds the canonical patch-input schema, exact
+workspace-root basis class, writable-path-policy authority class, CI-workflow
+exclusion policy, settlement schema, postcondition class, and reconciliation
+law. The application source carries the patch, authority scope, basis, and
+budgets as typed request expressions. Core and Target IR contain one request
+and zero callable steps. [EXTREQ-REQ-010]
+
+These declarations bind the validation contract; they do not grant write
+authority or validate a live path or workspace basis. Echo must admit the
+dynamic request instance and a separately authorized adapter must perform any
+mutation. The compiler, lowerer, verifier, and provider-component interface
+remain free of filesystem access.
+
 ## Waiting And Settlement
 
 The request binding and Target IR request id identify explicit
@@ -118,7 +134,7 @@ and replay semantics.
 - Echo admission and durable settlement of the compiler-emitted request;
 - bounded workspace-observation adapter execution;
 - settlement-driven deterministic resumption;
-- basis-bound validated patch application;
+- Echo execution and settlement of the basis-bound validated patch request;
 - Git, GitHub, process, network, timer, and model adapters;
 - the autonomous delivery loop.
 

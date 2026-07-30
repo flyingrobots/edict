@@ -25,6 +25,11 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the generator-owned `workspace.patch.applyValidated@1` request closure.
+  Exact compiler-owned Core and Target IR bind the canonical patch-input schema,
+  workspace-root basis, writable-path-policy authority, CI-workflow exclusion,
+  bounded settlement, postcondition, and reconciliation contracts as one
+  non-callable request with no filesystem-write authority.
 - Added explicit `externalAction` application builds that validate one exact
   request-only source, lawpack/adapter/configuration closure, and provider-owned
   target profile before publishing canonical `core.cbor` and `target-ir.cbor`.

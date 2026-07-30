@@ -88,6 +88,29 @@ const WORKSPACE_SNAPSHOT_TARGET_IR_DIGEST: &str =
 const WORKSPACE_SNAPSHOT_EXPORTS_COORDINATE: &str = "workspace.snapshot.exports/v1";
 const WORKSPACE_SNAPSHOT_ADAPTER_COORDINATE: &str = "workspace.snapshot.echo-adapter/v1";
 const WORKSPACE_SNAPSHOT_CONFIGURATION_COORDINATE: &str = "workspace.snapshot.request-profile/v1";
+const WORKSPACE_PATCH_FIXTURE_ROOT: &str = "fixtures/lawpack/workspace-patch";
+const WORKSPACE_PATCH_MANIFEST_CBOR: &str = "fixtures/lawpack/workspace-patch/manifest.cbor";
+const WORKSPACE_PATCH_MANIFEST_DIGEST: &str = "fixtures/lawpack/workspace-patch/manifest.sha256";
+const WORKSPACE_PATCH_EXPORTS_CBOR: &str = "fixtures/lawpack/workspace-patch/exports.cbor";
+const WORKSPACE_PATCH_EXPORTS_DIGEST: &str = "fixtures/lawpack/workspace-patch/exports.sha256";
+const WORKSPACE_PATCH_ADAPTER_CBOR: &str = "fixtures/lawpack/workspace-patch/adapter.cbor";
+const WORKSPACE_PATCH_ADAPTER_DIGEST: &str = "fixtures/lawpack/workspace-patch/adapter.sha256";
+const WORKSPACE_PATCH_CONFIGURATION_CBOR: &str =
+    "fixtures/lawpack/workspace-patch/request-profile-configuration.cbor";
+const WORKSPACE_PATCH_CONFIGURATION_DIGEST: &str =
+    "fixtures/lawpack/workspace-patch/request-profile-configuration.sha256";
+const WORKSPACE_PATCH_SOURCE: &str = "fixtures/lawpack/workspace-patch/apply-validated-patch.edict";
+const WORKSPACE_PATCH_CORE_CBOR: &str =
+    "fixtures/lawpack/workspace-patch/apply-validated-patch.core.cbor";
+const WORKSPACE_PATCH_CORE_DIGEST: &str =
+    "fixtures/lawpack/workspace-patch/apply-validated-patch.core.sha256";
+const WORKSPACE_PATCH_TARGET_IR_CBOR: &str =
+    "fixtures/lawpack/workspace-patch/apply-validated-patch.target-ir.cbor";
+const WORKSPACE_PATCH_TARGET_IR_DIGEST: &str =
+    "fixtures/lawpack/workspace-patch/apply-validated-patch.target-ir.sha256";
+const WORKSPACE_PATCH_EXPORTS_COORDINATE: &str = "workspace.patch.exports/v1";
+const WORKSPACE_PATCH_ADAPTER_COORDINATE: &str = "workspace.patch.echo-adapter/v1";
+const WORKSPACE_PATCH_CONFIGURATION_COORDINATE: &str = "workspace.patch.request-profile/v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LawpackGoldenMode {
@@ -99,7 +122,8 @@ pub(crate) fn lawpack_goldens(root: &Path, mode: LawpackGoldenMode) -> Result<()
     let artifacts = hello_echo_golden_artifacts(root)?
         .into_iter()
         .chain(causal_cell_golden_artifacts()?)
-        .chain(workspace_snapshot_golden_artifacts()?);
+        .chain(workspace_snapshot_golden_artifacts()?)
+        .chain(workspace_patch_golden_artifacts()?);
     for (path, bytes) in artifacts {
         match mode {
             LawpackGoldenMode::Check => {
@@ -110,7 +134,7 @@ pub(crate) fn lawpack_goldens(root: &Path, mode: LawpackGoldenMode) -> Result<()
     }
 
     println!(
-        "lawpack-goldens: {FIXTURE_ROOT}, {CAUSAL_CELL_FIXTURE_ROOT}, and {WORKSPACE_SNAPSHOT_FIXTURE_ROOT} {}",
+        "lawpack-goldens: {FIXTURE_ROOT}, {CAUSAL_CELL_FIXTURE_ROOT}, {WORKSPACE_SNAPSHOT_FIXTURE_ROOT}, and {WORKSPACE_PATCH_FIXTURE_ROOT} {}",
         match mode {
             LawpackGoldenMode::Check => "checked",
             LawpackGoldenMode::Write => "written",
@@ -401,6 +425,298 @@ intent observe(input: ObserveInput)
       maxAttempts input.maxAttempts
     reconcile workspace.snapshot.reconcile@1
       digest "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+  return pending;
+}}
+"#
+    )
+}
+
+fn workspace_patch_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>, String> {
+    let exports_value = workspace_patch_exports();
+    let exports_bytes = encode_canonical_cbor(&exports_value)
+        .map_err(|error| format!("encode workspace patch exports: {error}"))?;
+    let exports_digest = digest_value(WORKSPACE_PATCH_EXPORTS_COORDINATE, &exports_value)?;
+
+    let configuration_value = workspace_patch_target_configuration();
+    let configuration_bytes = encode_canonical_cbor(&configuration_value)
+        .map_err(|error| format!("encode workspace patch target configuration: {error}"))?;
+    let configuration_digest = digest_value(
+        WORKSPACE_PATCH_CONFIGURATION_COORDINATE,
+        &configuration_value,
+    )?;
+
+    let adapter_value = workspace_patch_adapter(configuration_digest);
+    let adapter_bytes = encode_canonical_cbor(&adapter_value)
+        .map_err(|error| format!("encode workspace patch adapter: {error}"))?;
+    let adapter_digest = digest_value(WORKSPACE_PATCH_ADAPTER_COORDINATE, &adapter_value)?;
+
+    let manifest_value = workspace_patch_manifest(exports_digest, adapter_digest);
+    let manifest_bytes = encode_canonical_cbor(&manifest_value)
+        .map_err(|error| format!("encode workspace patch manifest: {error}"))?;
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .map_err(|failures| format!("validate workspace patch lawpack: {failures:?}"))?;
+    let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
+        .map_err(|failures| format!("validate workspace patch adapter: {failures:?}"))?;
+
+    let source = workspace_patch_application_source(&bundle.manifest_digest_review_string());
+    let module = parse_module(&source)
+        .map_err(|error| format!("parse workspace patch application: {error:?}"))?;
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .map_err(|failures| format!("prepare workspace patch application: {failures:?}"))?;
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .map_err(|error| format!("compile workspace patch application: {error:?}"))?;
+    let core_bytes = encode_core_module(&core)
+        .map_err(|error| format!("encode workspace patch Core: {error}"))?;
+    let core_digest = digest_core_module(&core)
+        .map_err(|error| format!("digest workspace patch Core: {error}"))?
+        .to_review_string();
+    let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
+    if target_ir_report.status != TargetLoweringStatus::Lowered {
+        return Err(format!(
+            "lower workspace patch Target IR: expected lowered status, got {:?}",
+            target_ir_report.status
+        ));
+    }
+    let target_ir = target_ir_report.artifact.ok_or_else(|| {
+        "lower workspace patch Target IR: lowered report omitted artifact".to_owned()
+    })?;
+    let request_count = target_ir
+        .intents
+        .values()
+        .map(|intent| intent.external_action_requests.len())
+        .sum::<usize>();
+    if request_count != 1
+        || target_ir
+            .intents
+            .values()
+            .any(|intent| !intent.steps.is_empty())
+    {
+        return Err(
+            "workspace patch application must lower to one request and zero callable steps"
+                .to_owned(),
+        );
+    }
+    let target_ir_bytes = encode_target_ir_artifact(&target_ir)
+        .map_err(|error| format!("encode workspace patch Target IR: {error}"))?;
+    let target_ir_digest = digest_target_ir_artifact(&target_ir)
+        .map_err(|error| format!("digest workspace patch Target IR: {error}"))?
+        .to_review_string();
+
+    Ok(vec![
+        (WORKSPACE_PATCH_MANIFEST_CBOR, manifest_bytes),
+        (
+            WORKSPACE_PATCH_MANIFEST_DIGEST,
+            format!("{}\n", bundle.manifest_digest_review_string()).into_bytes(),
+        ),
+        (WORKSPACE_PATCH_EXPORTS_CBOR, exports_bytes),
+        (
+            WORKSPACE_PATCH_EXPORTS_DIGEST,
+            format!("{}\n", bundle.manifest().exports.digest_review_string()).into_bytes(),
+        ),
+        (WORKSPACE_PATCH_ADAPTER_CBOR, adapter_bytes),
+        (
+            WORKSPACE_PATCH_ADAPTER_DIGEST,
+            format!("{}\n", sha256_review_string(&adapter_digest)).into_bytes(),
+        ),
+        (WORKSPACE_PATCH_CONFIGURATION_CBOR, configuration_bytes),
+        (
+            WORKSPACE_PATCH_CONFIGURATION_DIGEST,
+            format!("{}\n", sha256_review_string(&configuration_digest)).into_bytes(),
+        ),
+        (WORKSPACE_PATCH_SOURCE, source.into_bytes()),
+        (WORKSPACE_PATCH_CORE_CBOR, core_bytes),
+        (
+            WORKSPACE_PATCH_CORE_DIGEST,
+            format!("{core_digest}\n").into_bytes(),
+        ),
+        (WORKSPACE_PATCH_TARGET_IR_CBOR, target_ir_bytes),
+        (
+            WORKSPACE_PATCH_TARGET_IR_DIGEST,
+            format!("{target_ir_digest}\n").into_bytes(),
+        ),
+    ])
+}
+
+fn workspace_patch_manifest(exports_digest: [u8; 32], adapter_digest: [u8; 32]) -> CanonicalValue {
+    map([
+        ("apiVersion", text("edict.lawpack/v1")),
+        ("id", text("workspace.patch")),
+        ("version", text("1")),
+        (
+            "acceptedCoreAbi",
+            CanonicalValue::Array(vec![text("edict.core/v1")]),
+        ),
+        ("dependencies", CanonicalValue::Array(Vec::new())),
+        (
+            "exports",
+            resource_ref(WORKSPACE_PATCH_EXPORTS_COORDINATE, exports_digest),
+        ),
+        (
+            "targetAdapters",
+            CanonicalValue::Array(vec![map([
+                (
+                    "acceptedTargetProfile",
+                    resource_ref("echo.dpo@1", ECHO_TARGET_PROFILE_DIGEST),
+                ),
+                (
+                    "acceptedTargetIr",
+                    resource_ref("echo.span-ir/v1", ECHO_TARGET_IR_DIGEST),
+                ),
+                (
+                    "adapter",
+                    resource_ref(WORKSPACE_PATCH_ADAPTER_COORDINATE, adapter_digest),
+                ),
+            ])]),
+        ),
+        (
+            "verifier",
+            map([
+                ("class", text("declarative")),
+                (
+                    "ruleset",
+                    resource_ref("workspace.patch.verifier-rules/v1", [0x94; 32]),
+                ),
+            ]),
+        ),
+        (
+            "compatibility",
+            resource_ref("workspace.patch.compatibility/v1", [0x95; 32]),
+        ),
+        (
+            "conformanceFixtureCorpus",
+            resource_ref("workspace.patch.fixtures/v1", [0x96; 32]),
+        ),
+    ])
+}
+
+fn workspace_patch_adapter(configuration_digest: [u8; 32]) -> CanonicalValue {
+    map([
+        ("apiVersion", text("edict.lawpack-adapter/v1")),
+        ("class", text("declarative")),
+        (
+            "operationProfiles",
+            map([(
+                "workspace.patch@1.applyValidatedRequest",
+                map([
+                    ("core", text("continuum.profile.request-only/v1")),
+                    ("semanticEffects", CanonicalValue::Array(Vec::new())),
+                    (
+                        "budgetObligation",
+                        text("workspace.patch@1.tinyPatchBudget"),
+                    ),
+                    (
+                        "targetConfiguration",
+                        resource_ref(
+                            WORKSPACE_PATCH_CONFIGURATION_COORDINATE,
+                            configuration_digest,
+                        ),
+                    ),
+                ]),
+            )]),
+        ),
+        ("effectImplementations", CanonicalValue::Map(Vec::new())),
+        (
+            "budgets",
+            map([(
+                "workspace.patch@1.tinyPatchBudget",
+                map([
+                    ("maxSteps", CanonicalValue::Integer(768)),
+                    ("maxAllocatedBytes", CanonicalValue::Integer(512 * 1024)),
+                    ("maxOutputBytes", CanonicalValue::Integer(128 * 1024)),
+                ]),
+            )]),
+        ),
+    ])
+}
+
+fn workspace_patch_target_configuration() -> CanonicalValue {
+    map([
+        ("apiVersion", text("workspace.patch.request-profile/v1")),
+        ("operation", text("workspace.patch.applyValidated@1")),
+        ("authorityClass", text("exact-writable-path-set")),
+        ("basisClass", text("workspace-root")),
+        ("patchClass", text("canonical-validated-patch")),
+        ("forbiddenPathClass", text("ci-workflow")),
+        ("postconditionClass", text("exact-resulting-workspace-root")),
+        (
+            "reconciliationClass",
+            text("observe-postcondition-or-outcome-unknown"),
+        ),
+    ])
+}
+
+fn workspace_patch_exports() -> CanonicalValue {
+    map([
+        ("types", CanonicalValue::Array(Vec::new())),
+        ("constants", CanonicalValue::Array(Vec::new())),
+        ("pureFunctions", CanonicalValue::Array(Vec::new())),
+        ("effects", CanonicalValue::Array(Vec::new())),
+        ("obstructions", CanonicalValue::Array(Vec::new())),
+        (
+            "operationProfiles",
+            map([(
+                "workspace.patch@1.applyValidatedRequest",
+                map([
+                    (
+                        "opticTemplate",
+                        map([
+                            ("opticKind", text("revelation")),
+                            ("boundaryKind", text("projection")),
+                            ("supportPolicy", text("workspace.patch@1.requestOnly")),
+                            ("lossDisposition", text("workspace.patch@1.lossless")),
+                            (
+                                "apertureRequirement",
+                                map([
+                                    ("kind", text("abstractFootprintObligation")),
+                                    ("ref", text("workspace.patch@1.writablePathPolicy")),
+                                ]),
+                            ),
+                        ]),
+                    ),
+                    (
+                        "effectPredicate",
+                        text("workspace.patch@1.externalMutationRequest"),
+                    ),
+                ]),
+            )]),
+        ),
+    ])
+}
+
+fn workspace_patch_application_source(manifest_digest: &str) -> String {
+    format!(
+        r#"package examples.workspace_patcher@1;
+
+use lawpack workspace.patch@1 digest "{manifest_digest}" as workspace;
+use capability workspace.patch.applyValidated@1 digest "{manifest_digest}" as patch;
+
+type ApplyPatchInput = {{
+  patch: Bytes<max=65536>,
+  authority: Bytes<max=32>,
+  basis: Bytes<max=32>,
+  maxSettlementBytes: U64,
+  maxAttempts: U32,
+}};
+
+intent applyValidated(input: ApplyPatchInput)
+  returns ExternalActionRequest<Bytes<max=65536>>
+  profile workspace.applyValidatedRequest
+  basis input.basis
+  budget <= workspace.tinyPatchBudget
+{{
+  request pending: ExternalActionRequest<Bytes<max=65536>> =
+    patch(input.patch)
+    input schema workspace.patch.input@1
+      digest "sha256:9999999999999999999999999999999999999999999999999999999999999999"
+    settlement schema workspace.patch.settlement@1
+      digest "sha256:8888888888888888888888888888888888888888888888888888888888888888"
+    authority input.authority
+    basis input.basis
+    budget
+      maxSettlementBytes input.maxSettlementBytes
+      maxAttempts input.maxAttempts
+    reconcile workspace.patch.reconcile@1
+      digest "sha256:7777777777777777777777777777777777777777777777777777777777777777";
   return pending;
 }}
 "#
