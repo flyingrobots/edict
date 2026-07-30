@@ -86,7 +86,7 @@ fn request_source(request: &RequestSource<'_>) -> String {
     format!(
         r#"package examples.workspace_observer@1;
 
-use capability {capability_coordinate} digest "{operation_digest}" as snapshot;
+use capability {capability_coordinate} digest "{operation_digest}" as {operation_alias};
 
 type ObserveInput = {{
   payload: Bytes<max=1024>,
@@ -156,7 +156,6 @@ fn validated_patch_source() -> String {
         reconciliation_coordinate: "workspace.patch.reconcile@1",
         reconciliation_digest: &digest('6'),
     })
-    .replace("as snapshot;", "as patch;")
 }
 
 fn compile_source(source: &str) -> edict_syntax::CoreModule {
