@@ -163,16 +163,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     for lawpack in &config.lawpacks {
         loaded_lawpacks.push(load_lawpack(&root, lawpack)?);
     }
-    let bundles = loaded_lawpacks
-        .iter()
-        .map(|loaded| loaded.bundle.clone())
-        .collect::<Vec<_>>();
-    validate_lawpack_dependency_graph(&bundles).map_err(|failures| {
-        failure(
-            "InvalidLawpackClosure",
-            format!("application lawpack dependency closure is invalid: {failures:?}"),
-        )
-    })?;
+    validate_application_lawpack_closure(&loaded_lawpacks)?;
     let loaded = loaded_lawpacks.first().ok_or_else(|| {
         failure(
             "InvalidApplicationConfig",
@@ -478,6 +469,81 @@ fn validate_external_action_artifacts(
             format!(
                 "request operation `{}` is not bound to one exact application lawpack manifest",
                 operation.coordinate
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_application_lawpack_closure(
+    loaded_lawpacks: &[LoadedLawpack],
+) -> Result<(), ApplicationBuildFailure> {
+    let bundles = loaded_lawpacks
+        .iter()
+        .map(|loaded| loaded.bundle.clone())
+        .collect::<Vec<_>>();
+    validate_lawpack_dependency_graph(&bundles).map_err(|failures| {
+        failure(
+            "InvalidLawpackClosure",
+            format!("application lawpack dependency closure is invalid: {failures:?}"),
+        )
+    })?;
+    let root = loaded_lawpacks.first().ok_or_else(|| {
+        failure(
+            "InvalidLawpackClosure",
+            "application lawpack dependency closure has no root",
+        )
+    })?;
+    let by_identity = loaded_lawpacks
+        .iter()
+        .map(|loaded| {
+            (
+                (
+                    loaded.bundle.manifest().id.clone(),
+                    loaded.bundle.manifest().version.clone(),
+                ),
+                &loaded.bundle,
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut pending = vec![(
+        root.bundle.manifest().id.clone(),
+        root.bundle.manifest().version.clone(),
+    )];
+    let mut reachable = BTreeSet::new();
+    while let Some(identity) = pending.pop() {
+        if !reachable.insert(identity.clone()) {
+            continue;
+        }
+        let Some(bundle) = by_identity.get(&identity) else {
+            return Err(failure(
+                "InvalidLawpackClosure",
+                format!(
+                    "application root dependency closure omitted lawpack `{}@{}`",
+                    identity.0, identity.1
+                ),
+            ));
+        };
+        pending.extend(
+            bundle
+                .manifest()
+                .dependencies
+                .iter()
+                .map(|dependency| (dependency.id.clone(), dependency.version.clone())),
+        );
+    }
+    if let Some(unreachable) = by_identity
+        .keys()
+        .find(|identity| !reachable.contains(*identity))
+    {
+        return Err(failure(
+            "InvalidLawpackClosure",
+            format!(
+                "supplied lawpack `{}@{}` is unreachable from root `{}@{}`",
+                unreachable.0,
+                unreachable.1,
+                root.bundle.manifest().id,
+                root.bundle.manifest().version
             ),
         ));
     }

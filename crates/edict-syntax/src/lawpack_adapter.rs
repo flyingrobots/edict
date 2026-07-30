@@ -225,7 +225,12 @@ pub fn prepare_lawpack_compilation(
         }
         compiler_context = compiler_context
             .with_operation_profile(local_profile.clone(), profile.core.clone())
-            .with_operation_profile_write_classes(local_profile, write_classes);
+            .with_operation_profile_write_classes(local_profile.clone(), write_classes);
+        if let Some(budget) = &profile.budget_obligation {
+            let local_budget = local_coordinate(&alias, &prefix, budget)?;
+            compiler_context =
+                compiler_context.with_operation_profile_budget(local_profile, local_budget);
+        }
         operation_profiles.insert(profile.core.clone());
     }
 

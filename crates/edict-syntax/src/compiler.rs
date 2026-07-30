@@ -64,6 +64,7 @@ pub struct CompilerError {
 pub struct CompilerContext {
     operation_profiles: BTreeMap<String, String>,
     operation_profile_write_classes: BTreeMap<String, BTreeSet<WriteClass>>,
+    operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
     budgets: BTreeMap<String, CoreBudget>,
 }
@@ -98,6 +99,17 @@ impl CompilerContext {
             source_coordinate.into(),
             write_classes.into_iter().collect(),
         );
+        self
+    }
+
+    #[must_use]
+    pub fn with_operation_profile_budget(
+        mut self,
+        source_profile: impl Into<String>,
+        source_budget: impl Into<String>,
+    ) -> Self {
+        self.operation_profile_budgets
+            .insert(source_profile.into(), source_budget.into());
         self
     }
 
@@ -321,8 +333,10 @@ fn resolve_intent(
     errors: &mut Vec<CompilerError>,
 ) -> Option<ResolvedIntent> {
     let mut profile = None;
+    let mut profile_source = None;
     let mut allowed_write_classes = None;
     let mut budget = None;
+    let mut budget_source = None;
     for clause in &intent.clauses {
         match clause {
             IntentClause::Profile(path) => {
@@ -330,6 +344,7 @@ fn resolve_intent(
                 match context.operation_profiles.get(&key) {
                     Some(value) => {
                         profile = Some(value.clone());
+                        profile_source = Some(key.clone());
                         allowed_write_classes =
                             context.operation_profile_write_classes.get(&key).cloned();
                     }
@@ -342,7 +357,10 @@ fn resolve_intent(
             IntentClause::Budget(path) => {
                 let key = path_key(path);
                 match context.budgets.get(&key) {
-                    Some(value) => budget = Some(value.clone()),
+                    Some(value) => {
+                        budget = Some(value.clone());
+                        budget_source = Some(key);
+                    }
                     None => errors.push(missing_context_fact(
                         format!("budget `{key}` has no compiler context fact"),
                         intent.span,
@@ -356,6 +374,20 @@ fn resolve_intent(
                 intent.span,
             )),
             IntentClause::Basis(_) | IntentClause::Footprint(_) | IntentClause::Where(_) => {}
+        }
+    }
+
+    if let (Some(profile_source), Some(budget_source)) = (&profile_source, &budget_source) {
+        if let Some(required_budget) = context.operation_profile_budgets.get(profile_source) {
+            if required_budget != budget_source {
+                errors.push(missing_context_fact(
+                    format!(
+                        "profile `{profile_source}` requires budget `{required_budget}`, got `{budget_source}`"
+                    ),
+                    intent.span,
+                ));
+                return None;
+            }
         }
     }
 
