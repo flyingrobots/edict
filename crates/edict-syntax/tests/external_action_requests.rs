@@ -53,13 +53,16 @@ struct RequestSource<'a> {
     capability_coordinate: &'a str,
     operation_alias: &'a str,
     operation_digest: &'a str,
+    input_schema_coordinate: &'a str,
     input_schema_digest: &'a str,
+    settlement_schema_coordinate: &'a str,
     settlement_schema_digest: &'a str,
     input_expr: &'a str,
     authority_expr: &'a str,
     basis_expr: &'a str,
     max_settlement_bytes: &'a str,
     max_attempts: &'a str,
+    reconciliation_coordinate: &'a str,
     reconciliation_digest: &'a str,
 }
 
@@ -68,13 +71,16 @@ fn request_source(request: &RequestSource<'_>) -> String {
         capability_coordinate,
         operation_alias,
         operation_digest,
+        input_schema_coordinate,
         input_schema_digest,
+        settlement_schema_coordinate,
         settlement_schema_digest,
         input_expr,
         authority_expr,
         basis_expr,
         max_settlement_bytes,
         max_attempts,
+        reconciliation_coordinate,
         reconciliation_digest,
     } = request;
     format!(
@@ -102,12 +108,12 @@ intent observe(input: ObserveInput) returns ExternalActionRequest<Bytes<max=6553
 {{
   request pending: ExternalActionRequest<Bytes<max=65536>> =
     {operation_alias}({input_expr})
-    input schema workspace.snapshot.input@1 digest "{input_schema_digest}"
-    settlement schema workspace.snapshot.settlement@1 digest "{settlement_schema_digest}"
+    input schema {input_schema_coordinate} digest "{input_schema_digest}"
+    settlement schema {settlement_schema_coordinate} digest "{settlement_schema_digest}"
     authority {authority_expr}
     basis {basis_expr}
     budget maxSettlementBytes {max_settlement_bytes} maxAttempts {max_attempts}
-    reconcile workspace.snapshot.reconcile@1 digest "{reconciliation_digest}";
+    reconcile {reconciliation_coordinate} digest "{reconciliation_digest}";
   return pending;
 }}
 "#
@@ -119,15 +125,38 @@ fn baseline_source() -> String {
         capability_coordinate: "workspace.snapshot.observe@1",
         operation_alias: "snapshot",
         operation_digest: &digest(OPERATION_DIGEST),
+        input_schema_coordinate: "workspace.snapshot.input@1",
         input_schema_digest: &digest(INPUT_SCHEMA_DIGEST),
+        settlement_schema_coordinate: "workspace.snapshot.settlement@1",
         settlement_schema_digest: &digest(SETTLEMENT_SCHEMA_DIGEST),
         input_expr: "input.payload",
         authority_expr: "input.scope",
         basis_expr: "input.basis",
         max_settlement_bytes: "input.maxSettlementBytes",
         max_attempts: "input.maxAttempts",
+        reconciliation_coordinate: "workspace.snapshot.reconcile@1",
         reconciliation_digest: &digest(RECONCILIATION_DIGEST),
     })
+}
+
+fn validated_patch_source() -> String {
+    request_source(&RequestSource {
+        capability_coordinate: "workspace.patch.applyValidated@1",
+        operation_alias: "patch",
+        operation_digest: &digest('9'),
+        input_schema_coordinate: "workspace.patch.input@1",
+        input_schema_digest: &digest('8'),
+        settlement_schema_coordinate: "workspace.patch.settlement@1",
+        settlement_schema_digest: &digest('7'),
+        input_expr: "input.payload",
+        authority_expr: "input.scope",
+        basis_expr: "input.basis",
+        max_settlement_bytes: "input.maxSettlementBytes",
+        max_attempts: "input.maxAttempts",
+        reconciliation_coordinate: "workspace.patch.reconcile@1",
+        reconciliation_digest: &digest('6'),
+    })
+    .replace("as snapshot;", "as patch;")
 }
 
 fn compile_source(source: &str) -> edict_syntax::CoreModule {
@@ -231,6 +260,41 @@ fn workspace_observation_request_compiles_as_non_callable_data() {
     assert!(!target_bytes
         .windows("targetIntrinsic".len())
         .any(|window| window == b"targetIntrinsic"));
+}
+
+#[test]
+fn validated_patch_request_compiles_as_non_callable_data() {
+    let (core, target) = lower_source(&validated_patch_source());
+    let request = core
+        .intents
+        .get("observe")
+        .expect("patch intent exists")
+        .body
+        .nodes
+        .first()
+        .expect("patch request exists");
+    let CoreNode::ExternalActionRequest {
+        operation,
+        input_schema,
+        settlement_schema,
+        reconciliation_law,
+        ..
+    } = request
+    else {
+        panic!("first patch node is an external-action request");
+    };
+    assert_eq!(operation.coordinate, "workspace.patch.applyValidated@1");
+    assert_eq!(input_schema.coordinate, "workspace.patch.input@1");
+    assert_eq!(settlement_schema.coordinate, "workspace.patch.settlement@1");
+    assert_eq!(reconciliation_law.coordinate, "workspace.patch.reconcile@1");
+
+    let intent = target.intents.get("observe").expect("patch intent lowers");
+    assert!(intent.steps.is_empty());
+    assert_eq!(intent.external_action_requests.len(), 1);
+    assert_eq!(
+        intent.external_action_requests[0].operation.coordinate,
+        "workspace.patch.applyValidated@1"
+    );
 }
 
 #[test]
@@ -420,13 +484,16 @@ fn ambient_operation_families_are_not_requestable() {
             capability_coordinate: coordinate,
             operation_alias: "snapshot",
             operation_digest: &digest(OPERATION_DIGEST),
+            input_schema_coordinate: "workspace.snapshot.input@1",
             input_schema_digest: &digest(INPUT_SCHEMA_DIGEST),
+            settlement_schema_coordinate: "workspace.snapshot.settlement@1",
             settlement_schema_digest: &digest(SETTLEMENT_SCHEMA_DIGEST),
             input_expr: "input.payload",
             authority_expr: "input.scope",
             basis_expr: "input.basis",
             max_settlement_bytes: "input.maxSettlementBytes",
             max_attempts: "input.maxAttempts",
+            reconciliation_coordinate: "workspace.snapshot.reconcile@1",
             reconciliation_digest: &digest(RECONCILIATION_DIGEST),
         });
         let module = parse_module(&source).expect("ambient-family source parses structurally");
@@ -537,13 +604,16 @@ fn fixed_seed_request_identity_corpus_is_deterministic() {
             capability_coordinate: "workspace.snapshot.observe@1",
             operation_alias: "snapshot",
             operation_digest: &operation_digest,
+            input_schema_coordinate: "workspace.snapshot.input@1",
             input_schema_digest: &digest(INPUT_SCHEMA_DIGEST),
+            settlement_schema_coordinate: "workspace.snapshot.settlement@1",
             settlement_schema_digest: &digest(SETTLEMENT_SCHEMA_DIGEST),
             input_expr: "input.payload",
             authority_expr: "input.scope",
             basis_expr: "input.basis",
             max_settlement_bytes: "input.maxSettlementBytes",
             max_attempts: "input.maxAttempts",
+            reconciliation_coordinate: "workspace.snapshot.reconcile@1",
             reconciliation_digest: &digest(RECONCILIATION_DIGEST),
         });
         let first = digest_core_module(&compile_source(&source)).expect("first property digest");
