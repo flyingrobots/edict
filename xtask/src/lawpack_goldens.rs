@@ -637,6 +637,11 @@ fn workspace_patch_target_configuration() -> CanonicalValue {
         ("basisClass", text("workspace-root")),
         ("patchClass", text("canonical-validated-patch")),
         ("forbiddenPathClass", text("ci-workflow")),
+        ("postconditionClass", text("exact-resulting-workspace-root")),
+        (
+            "reconciliationClass",
+            text("observe-postcondition-or-outcome-unknown"),
+        ),
     ])
 }
 

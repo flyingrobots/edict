@@ -1,7 +1,7 @@
 package examples.workspace_patcher@1;
 
-use lawpack workspace.patch@1 digest "sha256:d96db6fcb49a4a30ecce33927fe76ff87af9f7f528c11a6627678483e9c7f7a8" as workspace;
-use capability workspace.patch.applyValidated@1 digest "sha256:d96db6fcb49a4a30ecce33927fe76ff87af9f7f528c11a6627678483e9c7f7a8" as patch;
+use lawpack workspace.patch@1 digest "sha256:7d256b314ee6315e2768721cba2e2191649e7c877e85bc020ab2e119564cb06c" as workspace;
+use capability workspace.patch.applyValidated@1 digest "sha256:7d256b314ee6315e2768721cba2e2191649e7c877e85bc020ab2e119564cb06c" as patch;
 
 type ApplyPatchInput = {
   patch: Bytes<max=65536>,
