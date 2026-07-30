@@ -8,7 +8,7 @@ use std::{collections::BTreeSet, fmt::Write as _};
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, CanonicalValue, CompilerContext,
-    CompilerErrorKind, CoreBudget, CoreNode, ResourceRef, TargetIrLoweringFacts,
+    CompilerErrorKind, CoreBudget, CoreExpr, CoreNode, ResourceRef, TargetIrLoweringFacts,
     TargetLoweringStatus, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
 };
 
@@ -212,6 +212,17 @@ fn target_request_values(target: &edict_syntax::TargetIrArtifact) -> Vec<Canonic
     array_field(intent, "externalActionRequests").to_vec()
 }
 
+fn assert_application_input_field(expr: &CoreExpr, expected_field: &str) {
+    let CoreExpr::Field { base, field } = expr else {
+        panic!("expected application-input field expression, got {expr:?}");
+    };
+    assert_eq!(field, expected_field);
+    let CoreExpr::Local { reference } = base.as_ref() else {
+        panic!("expected application-input local base, got {base:?}");
+    };
+    assert_eq!(reference.id, "arg.0");
+}
+
 #[test]
 fn workspace_observation_request_compiles_as_non_callable_data() {
     let (core, target) = lower_source(&baseline_source());
@@ -273,27 +284,73 @@ fn validated_patch_request_compiles_as_non_callable_data() {
         .first()
         .expect("patch request exists");
     let CoreNode::ExternalActionRequest {
+        binding,
         operation,
+        input_type,
+        settlement_type,
         input_schema,
         settlement_schema,
+        input,
+        authority_scope,
+        basis,
+        budget,
         reconciliation_law,
-        ..
     } = request
     else {
         panic!("first patch node is an external-action request");
     };
-    assert_eq!(operation.coordinate, "workspace.patch.applyValidated@1");
-    assert_eq!(input_schema.coordinate, "workspace.patch.input@1");
-    assert_eq!(settlement_schema.coordinate, "workspace.patch.settlement@1");
-    assert_eq!(reconciliation_law.coordinate, "workspace.patch.reconcile@1");
+    assert_eq!(
+        operation,
+        &ResourceRef {
+            coordinate: "workspace.patch.applyValidated@1".to_owned(),
+            digest: Some(digest('9')),
+        }
+    );
+    assert_eq!(input_type, "Bytes<max=1024>");
+    assert_eq!(settlement_type, "Bytes<max=65536>");
+    assert_eq!(
+        input_schema,
+        &ResourceRef {
+            coordinate: "workspace.patch.input@1".to_owned(),
+            digest: Some(digest('8')),
+        }
+    );
+    assert_eq!(
+        settlement_schema,
+        &ResourceRef {
+            coordinate: "workspace.patch.settlement@1".to_owned(),
+            digest: Some(digest('7')),
+        }
+    );
+    assert_eq!(
+        reconciliation_law,
+        &ResourceRef {
+            coordinate: "workspace.patch.reconcile@1".to_owned(),
+            digest: Some(digest('6')),
+        }
+    );
+    assert_application_input_field(input, "payload");
+    assert_application_input_field(authority_scope, "scope");
+    assert_application_input_field(basis, "basis");
+    assert_application_input_field(&budget.max_settlement_bytes, "maxSettlementBytes");
+    assert_application_input_field(&budget.max_attempts, "maxAttempts");
 
     let intent = target.intents.get("observe").expect("patch intent lowers");
     assert!(intent.steps.is_empty());
     assert_eq!(intent.external_action_requests.len(), 1);
-    assert_eq!(
-        intent.external_action_requests[0].operation.coordinate,
-        "workspace.patch.applyValidated@1"
-    );
+    let target_request = &intent.external_action_requests[0];
+    assert_eq!(target_request.id, "observe.request.0");
+    assert_eq!(&target_request.binding, binding);
+    assert_eq!(&target_request.operation, operation);
+    assert_eq!(&target_request.input_type, input_type);
+    assert_eq!(&target_request.settlement_type, settlement_type);
+    assert_eq!(&target_request.input_schema, input_schema);
+    assert_eq!(&target_request.settlement_schema, settlement_schema);
+    assert_eq!(&target_request.input, input);
+    assert_eq!(&target_request.authority_scope, authority_scope.as_ref());
+    assert_eq!(&target_request.basis, basis.as_ref());
+    assert_eq!(&target_request.budget, budget.as_ref());
+    assert_eq!(&target_request.reconciliation_law, reconciliation_law);
 }
 
 #[test]
