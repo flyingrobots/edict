@@ -111,7 +111,7 @@ The first admitted family is domain-specific
 Its generated lawpack closure binds the canonical patch-input schema, exact
 workspace-root basis class, writable-path-policy authority class, CI-workflow
 exclusion policy, settlement schema, postcondition class, and reconciliation
-law. The application source carries the patch, authority digest, basis, and
+law. The application source carries the patch, authority scope, basis, and
 budgets as typed request expressions. Core and Target IR contain one request
 and zero callable steps. [EXTREQ-REQ-010]
 
