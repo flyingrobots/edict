@@ -11,6 +11,14 @@ validated workspace patch request. It binds:
 - postcondition evidence as an exact resulting workspace root; and
 - bounded request construction and settlement budgets.
 
+`input-schema.cbor`, `settlement-schema.cbor`, and
+`reconciliation-law.cbor` are canonical
+`edict.external-action-resource/v1` artifacts with generator-owned digest
+sidecars. `apply-validated-patch.edict` pins those identities rather than
+placeholder strings. A public external-action application supplies the exact
+three artifact paths through `externalActionResources`; Edict recomputes and
+validates the complete closure before publishing Core or Target IR.
+
 The closure grants no callable write effect. Its operation profile has empty
 `semanticEffects`, its adapter has empty `effectImplementations`, and generated
 Target IR contains one external-action request with zero callable steps.

@@ -77,6 +77,11 @@ selects the request-only route explicitly:
     "adapter": "vendor/workspace-snapshot/adapter.cbor",
     "targetConfiguration": "vendor/workspace-snapshot/request-profile-configuration.cbor"
   }],
+  "externalActionResources": [
+    {"artifact": "vendor/workspace-snapshot/input-schema.cbor"},
+    {"artifact": "vendor/workspace-snapshot/settlement-schema.cbor"},
+    {"artifact": "vendor/workspace-snapshot/reconciliation-law.cbor"}
+  ],
   "target": {
     "profile": "echo.dpo@1",
     "providerPackage": ".build/echo-provider"
@@ -89,11 +94,17 @@ The request-only route requires at least one compiler-emitted external-action
 request, rejects any callable Target IR step, and requires every request
 operation digest to equal one exact root-reachable lawpack manifest digest; the
 operation coordinate remains its own independently versioned resource identity.
-The source budget must equal the exact obligation declared by its selected
-request-only profile. `providerPackage` remains required because the route
-loads and verifies its provider manifest and selected target-profile artifact.
-Omitting it is `InvalidApplicationConfig`, but no provider component is invoked.
-The owning canonical encoders publish:
+Every input schema, settlement schema, and reconciliation law must resolve
+through `externalActionResources` to one canonical
+`edict.external-action-resource/v1` artifact. The build validates the resource
+meta-contract and exact domain-framed identity and rejects missing, duplicate,
+disconnected, substituted, opaque, non-canonical, or placeholder resources.
+The list is bounded to 192 artifacts. Executable-operation builds reject a
+non-empty resource list. The source budget must equal the exact obligation
+declared by its selected request-only profile. `providerPackage` remains
+required because the route loads and verifies its provider manifest and
+selected target-profile artifact. Omitting it is `InvalidApplicationConfig`,
+but no provider component is invoked. The owning canonical encoders publish:
 
 - `core.cbor`;
 - `target-ir.cbor`.

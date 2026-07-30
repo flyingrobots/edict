@@ -15,7 +15,7 @@ A requestable operation family enters source through a digest-locked
 
 ```edict
 use capability workspace.snapshot.observe@1
-  digest "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  digest "sha256:7fcb985591d116a1624716334209dd5bf3948dfd756028dc32104621f9e90f71"
   as snapshot;
 ```
 
@@ -24,12 +24,12 @@ The alias is callable only in a `request` statement:
 ```edict
 request pending: ExternalActionRequest<Bytes<max=65536>> =
   snapshot(input.payload)
-  input schema workspace.snapshot.input@1 digest "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-  settlement schema workspace.snapshot.settlement@1 digest "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  input schema workspace.snapshot.input@1 digest "sha256:c390651d8975c49ff148a332feba4054a53fa9867e0412c1c303e0771cda1096"
+  settlement schema workspace.snapshot.settlement@1 digest "sha256:efff3be35fba0aeeadc59e73fe771cb42213d390a269bbc5b2e24a028bb84832"
   authority input.scope
   basis input.basis
   budget maxSettlementBytes input.maxSettlementBytes maxAttempts input.maxAttempts
-  reconcile workspace.snapshot.reconcile@1 digest "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+  reconcile workspace.snapshot.reconcile@1 digest "sha256:352dab01263aa1a1f01a8ac213be0debef1bf23d7b522dce24527993124315c9";
 ```
 
 The operation takes one typed input. Scope, basis, and both budgets are ordinary
@@ -67,9 +67,12 @@ participates in canonical identity. [EXTREQ-REQ-005]
 ## Public Application Build
 
 An `edict.application/v1` manifest selects the request-only route with
-`"buildKind": "externalAction"`. The build loads the exact source, complete
-lawpack dependency set, declarative adapter, request-profile configuration, and
-provider-owned target profile. It then:
+`"buildKind": "externalAction"`. Its `externalActionResources` array names the
+canonical artifacts for every input schema, settlement schema, and
+reconciliation law referenced by the source. The build loads those artifacts
+alongside the exact source, complete lawpack dependency set, declarative
+adapter, request-profile configuration, and provider-owned target profile. It
+then:
 
 1. compiles and lowers through the real lawpack closure;
 2. requires at least one typed request and zero callable Target IR steps;
@@ -79,12 +82,24 @@ provider-owned target profile. It then:
 5. binds each request operation digest to an exact root-reachable lawpack
    manifest digest without inventing a namespace or version relationship
    between the two independent resource coordinates;
-6. writes the owning encoders' exact `core.cbor` and `target-ir.cbor` bytes.
+6. decodes each external-action resource as canonical
+   `edict.external-action-resource/v1`, validates its closed schema or
+   reconciliation meta-contract, and recomputes its
+   `edict.external-action-resource/v1` domain-framed identity;
+7. requires the configured resource set to equal the Target request closure:
+   no missing, substituted, duplicate, disconnected, malformed, or placeholder
+   artifact survives;
+8. writes the owning encoders' exact `core.cbor` and `target-ir.cbor` bytes.
 
 Publication is a locked pair replacement. A failure restores the previous pair,
 and a successful request build removes stale executable-operation package and
 verification-report outputs. The route does not invoke a provider component or
 perform an external action. [EXTREQ-REQ-009]
+
+Resource resolution grants no performance authority. Schema artifacts describe
+canonical request or settlement values. Reconciliation artifacts declare the
+terminal postures, required bindings, and effect-free replay rule. They cannot
+read, write, spawn, or call a provider component. [EXTREQ-REQ-011]
 
 ## Authority Boundary
 
@@ -92,7 +107,8 @@ Request authority is not performance authority:
 
 - a capability alias cannot be invoked as an ordinary semantic effect;
 - the current request-family allowlist contains only the domain-specific
-  `workspace` root used by `workspace.snapshot.observe@1`;
+  `workspace` root used by `workspace.snapshot.observe@1` and
+  `workspace.patch.applyValidated@1`;
 - raw `filesystem`, `process`, `network`, Git, GitHub, `model`, and `shell`
   operation families, case variants, abbreviations, and unregistered roots are
   rejected with `UnrequestableExternalOperation`;
