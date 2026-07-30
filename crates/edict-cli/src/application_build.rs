@@ -2136,6 +2136,22 @@ mod tests {
     }
 
     #[test]
+    fn public_external_action_build_rejects_sentinel_resource_identities() {
+        let root = temp_tree("public-external-action-sentinel-resources");
+        let config_path = write_external_action_application(&root);
+
+        let failure = test_err(
+            build_application(&config_path),
+            "syntactically valid placeholder resource digests must not publish",
+        );
+
+        assert_eq!(failure.kind, "ExternalActionResourceClosureMismatch");
+        assert!(!root.join(".build/application/core.cbor").exists());
+        assert!(!root.join(".build/application/target-ir.cbor").exists());
+        test_ok(fs::remove_dir_all(root), "remove sentinel resource tree");
+    }
+
+    #[test]
     fn public_external_action_build_rejects_capability_substitution() {
         let root = temp_tree("public-external-action-substitution");
         let config_path = write_external_action_application(&root);

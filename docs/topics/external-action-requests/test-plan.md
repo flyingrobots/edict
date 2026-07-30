@@ -38,6 +38,7 @@ Out of scope:
 | EXTREQ-REQ-008 | implemented | Request construction remains bounded under a fixed-seed mutation corpus and a 64-request stress module. | issue #172 |
 | EXTREQ-REQ-009 | implemented | The public application build explicitly selects request-only publication, validates the exact source/root-reachable-lawpack/adapter/target-profile closure, rejects zero requests, callable-step mixtures, disconnected lawpacks, profile-budget mismatches, and substituted capability manifests, and atomically publishes exact canonical Core and Target IR bytes without invoking a provider component. | issue #176 |
 | EXTREQ-REQ-010 | implemented | A real `workspace.patch.applyValidated@1` closure binds canonical patch input, exact workspace basis, writable-path policy authority, request budgets, settlement schema, and reconciliation law as non-callable request data; compiler-owned Core and Target IR remain independently derivable without granting write authority. | issue #178 |
+| EXTREQ-REQ-011 | planned | A public external-action build resolves every request input schema, settlement schema, and reconciliation law to one canonical compiler-owned resource artifact whose exact domain-framed digest matches Core and Target IR; missing, substituted, duplicate, disconnected, non-canonical, or sentinel identities fail before publication. | issue #180 |
 
 ## Fixtures
 
@@ -49,6 +50,7 @@ Out of scope:
 | 64-request generated module | Bounded stress case. | All 64 requests survive Core and Target IR without becoming callable steps. |
 | `fixtures/lawpack/workspace-snapshot/` | Exact public-build capability closure. | The owning generator reproduces manifest, exports, request-only adapter, target configuration, source, Core, and Target IR; the public build reproduces the checked compiler bytes. |
 | `fixtures/lawpack/workspace-patch/` | Basis-bound validated patch request closure. | The owning generator reproduces manifest, exports, request-only adapter, target configuration, source, Core, and Target IR with one request and zero callable steps. |
+| Generator-owned external-action resource artifacts | Exact request schema and reconciliation closure. | Each canonical artifact carries its coordinate, resource kind, and complete definition; its domain-framed digest is pinned by the source request and independently recomputed by the public build. |
 
 ## Cases
 
@@ -77,6 +79,11 @@ Out of scope:
 | EXTREQ-TP-021 | implemented | Authority mutation | EXTREQ-REQ-005, EXTREQ-REQ-010 | Patch, basis, authority, budget, schema, operation, and reconciliation mutations move both Core and Target identity. | every_request_authority_field_moves_core_and_target_identity | crates/edict-syntax/tests/external_action_requests.rs | The generic mutation oracle applies to both domain-specific request families. |
 | EXTREQ-TP-022 | implemented | Property | EXTREQ-REQ-008, EXTREQ-REQ-010 | The fixed-seed request identity corpus remains deterministic and collision-free for request authority changes. | fixed_seed_request_identity_corpus_is_deterministic | crates/edict-syntax/tests/external_action_requests.rs | Seed `0x4558_5452_4551_0001` remains authoritative. |
 | EXTREQ-TP-023 | implemented | Stress | EXTREQ-REQ-008, EXTREQ-REQ-010 | Sixty-four request declarations remain bounded and non-callable. | sixty_four_requests_remain_bounded_non_callable_data | crates/edict-syntax/tests/external_action_requests.rs | Fixed CI bound; no adapter execution occurs. |
+| EXTREQ-TP-024 | planned | Resource golden path | EXTREQ-REQ-011 | The public build loads the exact generated input-schema, settlement-schema, and reconciliation-law artifacts referenced by every request and publishes only after their coordinates and digests reproduce the compiler-owned request closure. | public_external_action_build_resolves_exact_request_resources | crates/edict-cli/src/application_build.rs, fixtures/lawpack/workspace-snapshot/, fixtures/lawpack/workspace-patch/ | Resolution grants no execution authority. |
+| EXTREQ-TP-025 | planned | Resource refusal | EXTREQ-REQ-011 | A missing artifact, substituted artifact bytes, duplicate coordinate, disconnected artifact, invalid kind, or non-canonical encoding rejects before output publication. | public_external_action_build_rejects_invalid_request_resource_closure | crates/edict-cli/src/application_build.rs | Configuration and artifact bytes must corroborate one complete closure. |
+| EXTREQ-TP-026 | planned | Sentinel refusal | EXTREQ-REQ-011 | Repeated-byte placeholder digests and other unresolved identities reject even when they are syntactically valid SHA-256 strings. | public_external_action_build_rejects_sentinel_resource_identities | crates/edict-cli/src/application_build.rs | Syntactic digest validity is not artifact identity. |
+| EXTREQ-TP-027 | planned | Property | EXTREQ-REQ-005, EXTREQ-REQ-011 | A fixed-seed 16-case mutation corpus changes one canonical resource artifact at a time and every stale request digest rejects. | fixed_seed_request_resource_mutations_fail_closed | crates/edict-cli/src/application_build.rs | The seed is recorded in the test. |
+| EXTREQ-TP-028 | planned | Stress | EXTREQ-REQ-008, EXTREQ-REQ-011 | A 64-request resource closure resolves within the fixed CI bound, with no unreferenced artifact accepted. | sixty_four_request_resources_resolve_as_one_bounded_closure | crates/edict-cli/src/application_build.rs | Cardinality is fixed at 64. |
 
 ## Determinism Obligations
 
@@ -93,3 +100,4 @@ Out of scope:
 - Echo admission of compiler-emitted request values.
 - A concrete workspace-observation adapter and settlement witness.
 - Echo execution of the compiler-owned basis-bound validated patch request.
+- Canonical public-build resolution of request schema and reconciliation artifacts.
