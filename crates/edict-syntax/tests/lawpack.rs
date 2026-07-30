@@ -277,6 +277,11 @@ fn request_only_profile_supplies_budget_without_callable_effect_authority() {
     let mut exports = hello_echo_exports();
     array_mut(field_mut(&mut exports, "effects")).clear();
     let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let target_configuration = field_mut(
+        first_map_value_mut(field_mut(&mut adapter, "effectImplementations")),
+        "targetConfiguration",
+    )
+    .clone();
     map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
     let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
     array_mut(field_mut(profile, "semanticEffects")).clear();
@@ -285,6 +290,7 @@ fn request_only_profile_supplies_budget_without_callable_effect_authority() {
         "budgetObligation",
         text("hello.echo@1.smallCreateBudget"),
     );
+    insert_field(profile, "targetConfiguration", target_configuration);
     let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
     let source = format!(
         r#"package examples.workspace_observer@1;
@@ -351,6 +357,11 @@ fn request_only_profile_requires_an_exact_budget_obligation() {
     let mut exports = hello_echo_exports();
     array_mut(field_mut(&mut exports, "effects")).clear();
     let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let target_configuration = field_mut(
+        first_map_value_mut(field_mut(&mut adapter, "effectImplementations")),
+        "targetConfiguration",
+    )
+    .clone();
     map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
     let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
     array_mut(field_mut(profile, "semanticEffects")).clear();
@@ -359,6 +370,7 @@ fn request_only_profile_requires_an_exact_budget_obligation() {
         "budgetObligation",
         text("hello.echo@1.missingBudget"),
     );
+    insert_field(profile, "targetConfiguration", target_configuration);
     let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
     let bytes = encode_canonical_cbor(&adapter).expect("encode request-only adapter");
 
@@ -368,6 +380,31 @@ fn request_only_profile_requires_an_exact_budget_obligation() {
     assert_eq!(
         adapter_failure_kinds(&failures),
         vec![LawpackAdapterFailureKind::MissingBudget]
+    );
+}
+
+#[test]
+fn request_only_profile_requires_an_exact_target_configuration() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "effects")).clear();
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
+    let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
+    array_mut(field_mut(profile, "semanticEffects")).clear();
+    insert_field(
+        profile,
+        "budgetObligation",
+        text("hello.echo@1.smallCreateBudget"),
+    );
+    let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode request-only adapter");
+
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect_err("unconfigured request-only profile must reject");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::InvalidTargetConfiguration]
     );
 }
 
