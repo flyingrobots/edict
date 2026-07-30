@@ -33,8 +33,10 @@ versions still track specification maturity rather than a released product.
   the output pair transactionally, and clears stale executable-operation
   outputs. Request-only lawpack profiles now bind their own exact budget and
   opaque target configuration while carrying no semantic effect or target
-  intrinsic. A generator-owned workspace-snapshot closure and mirrored
-  Echo-owned target profile make the full public build reproducible in Edict.
+  intrinsic; compilation rejects another profile's budget, and application
+  builds reject supplied lawpacks outside the ordered root's dependency
+  closure. A generator-owned workspace-snapshot closure and mirrored Echo-owned
+  target profile make the full public build reproducible in Edict.
 - Added typed external-action request values without adding external execution
   authority to Edict. Digest-locked capability imports and `request` statements
   preserve exact operation, schema, scope, basis, budget, input, reconciliation,
