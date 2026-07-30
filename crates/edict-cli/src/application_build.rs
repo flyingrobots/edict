@@ -433,41 +433,27 @@ fn validate_external_action_artifacts(
             "external-action application build cannot mix requests with callable target steps",
         ));
     }
-    let capability_manifests = loaded_lawpacks
+    let capability_manifest_digests = loaded_lawpacks
         .iter()
-        .map(|loaded| {
-            (
-                loaded.bundle.manifest().id.as_str(),
-                loaded.bundle.manifest().version.as_str(),
-                loaded.bundle.manifest_digest_review_string(),
-            )
-        })
-        .collect::<Vec<_>>();
+        .map(|loaded| loaded.bundle.manifest_digest_review_string())
+        .collect::<BTreeSet<_>>();
     let substituted = target_ir.intents.values().find_map(|intent| {
         intent
             .external_action_requests
             .iter()
             .map(|request| &request.operation)
             .find(|operation| {
-                !capability_manifests.iter().any(|(id, version, digest)| {
-                    let Some((operation_id, operation_version)) =
-                        operation.coordinate.rsplit_once('@')
-                    else {
-                        return false;
-                    };
-                    operation.digest.as_deref() == Some(digest.as_str())
-                        && operation_version == *version
-                        && operation_id
-                            .strip_prefix(&format!("{id}."))
-                            .is_some_and(|suffix| !suffix.is_empty())
-                })
+                !operation
+                    .digest
+                    .as_ref()
+                    .is_some_and(|digest| capability_manifest_digests.contains(digest))
             })
     });
     if let Some(operation) = substituted {
         return Err(failure(
             "ExternalActionCapabilityClosureMismatch",
             format!(
-                "request operation `{}` is not bound to one exact application lawpack manifest",
+                "request operation `{}` is not bound to one exact root-reachable application lawpack manifest digest",
                 operation.coordinate
             ),
         ));

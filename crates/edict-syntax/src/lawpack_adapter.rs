@@ -65,7 +65,9 @@ pub struct LawpackAdapterFailure {
 pub struct LawpackAdapterOperationProfile {
     pub core: String,
     pub semantic_effects: Vec<String>,
+    /// Exact source budget required when `semantic_effects` is empty.
     pub budget_obligation: Option<String>,
+    /// Opaque target configuration required when `semantic_effects` is empty.
     pub target_configuration: Option<LawpackResourceRef>,
 }
 

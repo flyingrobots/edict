@@ -275,23 +275,7 @@ fn lawpack_adapter_requires_complete_exported_effect_coverage() {
 
 #[test]
 fn request_only_profile_supplies_budget_without_callable_effect_authority() {
-    let mut exports = hello_echo_exports();
-    array_mut(field_mut(&mut exports, "effects")).clear();
-    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
-    let target_configuration = field_mut(
-        first_map_value_mut(field_mut(&mut adapter, "effectImplementations")),
-        "targetConfiguration",
-    )
-    .clone();
-    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
-    let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
-    array_mut(field_mut(profile, "semanticEffects")).clear();
-    insert_field(
-        profile,
-        "budgetObligation",
-        text("hello.echo@1.smallCreateBudget"),
-    );
-    insert_field(profile, "targetConfiguration", target_configuration);
+    let (exports, adapter) = request_only_adapter(Some("hello.echo@1.smallCreateBudget"), true);
     let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
     let source = format!(
         r#"package examples.workspace_observer@1;
@@ -355,8 +339,8 @@ intent observe(input: ObserveInput)
 
 #[test]
 fn request_only_profile_rejects_another_profiles_budget() {
-    let mut exports = hello_echo_exports();
-    array_mut(field_mut(&mut exports, "effects")).clear();
+    let (mut exports, mut adapter) =
+        request_only_adapter(Some("hello.echo@1.smallCreateBudget"), true);
     let exported_profiles = map_mut(field_mut(&mut exports, "operationProfiles"));
     let second_exported_profile = exported_profiles
         .first()
@@ -367,25 +351,11 @@ fn request_only_profile_rejects_another_profiles_budget() {
         second_exported_profile,
     ));
 
-    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
-    let target_configuration = field_mut(
-        first_map_value_mut(field_mut(&mut adapter, "effectImplementations")),
-        "targetConfiguration",
-    )
-    .clone();
-    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
     let adapter_profiles = map_mut(field_mut(&mut adapter, "operationProfiles"));
     let first_profile = adapter_profiles
         .first_mut()
         .map(|(_coordinate, profile)| profile)
         .expect("adapter operation profile");
-    array_mut(field_mut(first_profile, "semanticEffects")).clear();
-    insert_field(
-        first_profile,
-        "budgetObligation",
-        text("hello.echo@1.smallCreateBudget"),
-    );
-    insert_field(first_profile, "targetConfiguration", target_configuration);
     let mut second_profile = first_profile.clone();
     replace_field(
         &mut second_profile,
@@ -460,23 +430,7 @@ intent observe(input: ObserveInput)
 
 #[test]
 fn request_only_profile_requires_an_exact_budget_obligation() {
-    let mut exports = hello_echo_exports();
-    array_mut(field_mut(&mut exports, "effects")).clear();
-    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
-    let target_configuration = field_mut(
-        first_map_value_mut(field_mut(&mut adapter, "effectImplementations")),
-        "targetConfiguration",
-    )
-    .clone();
-    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
-    let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
-    array_mut(field_mut(profile, "semanticEffects")).clear();
-    insert_field(
-        profile,
-        "budgetObligation",
-        text("hello.echo@1.missingBudget"),
-    );
-    insert_field(profile, "targetConfiguration", target_configuration);
+    let (exports, adapter) = request_only_adapter(Some("hello.echo@1.missingBudget"), true);
     let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
     let bytes = encode_canonical_cbor(&adapter).expect("encode request-only adapter");
 
@@ -491,17 +445,7 @@ fn request_only_profile_requires_an_exact_budget_obligation() {
 
 #[test]
 fn request_only_profile_requires_an_exact_target_configuration() {
-    let mut exports = hello_echo_exports();
-    array_mut(field_mut(&mut exports, "effects")).clear();
-    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
-    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
-    let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
-    array_mut(field_mut(profile, "semanticEffects")).clear();
-    insert_field(
-        profile,
-        "budgetObligation",
-        text("hello.echo@1.smallCreateBudget"),
-    );
+    let (exports, adapter) = request_only_adapter(Some("hello.echo@1.smallCreateBudget"), false);
     let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
     let bytes = encode_canonical_cbor(&adapter).expect("encode request-only adapter");
 
@@ -1095,6 +1039,30 @@ fn bundle(
 
 fn hello_echo_exports() -> CanonicalValue {
     decode_canonical_cbor(EXPORTS_BYTES).expect("decode fixture exports")
+}
+
+fn request_only_adapter(
+    budget_obligation: Option<&str>,
+    include_target_configuration: bool,
+) -> (CanonicalValue, CanonicalValue) {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "effects")).clear();
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let target_configuration = field_mut(
+        first_map_value_mut(field_mut(&mut adapter, "effectImplementations")),
+        "targetConfiguration",
+    )
+    .clone();
+    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
+    let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
+    array_mut(field_mut(profile, "semanticEffects")).clear();
+    if let Some(budget) = budget_obligation {
+        insert_field(profile, "budgetObligation", text(budget));
+    }
+    if include_target_configuration {
+        insert_field(profile, "targetConfiguration", target_configuration);
+    }
+    (exports, adapter)
 }
 
 fn resource_ref(id: &str, digest: [u8; 32]) -> CanonicalValue {
