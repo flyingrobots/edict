@@ -7,9 +7,10 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
     digest_core_module, digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
-    validate_lawpack_dependency_graph, CanonicalValue, LawpackAdapterFailureKind,
-    LawpackExecutionClass, LawpackPureFunctionImplementation, LawpackValidationFailureKind,
-    LawpackVerifierClass, TargetLoweringStatus, ValidatedLawpackBundle,
+    validate_lawpack_dependency_graph, CanonicalValue, CompilerErrorKind, CompilerStage,
+    LawpackAdapterFailureKind, LawpackExecutionClass, LawpackPureFunctionImplementation,
+    LawpackValidationFailureKind, LawpackVerifierClass, TargetLoweringStatus,
+    ValidatedLawpackBundle,
 };
 use sha2::{Digest, Sha256};
 
@@ -349,6 +350,111 @@ intent observe(input: ObserveInput)
     assert!(
         adapter.effects().is_empty(),
         "request-only profile must not grant target-call authority"
+    );
+}
+
+#[test]
+fn request_only_profile_rejects_another_profiles_budget() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "effects")).clear();
+    let exported_profiles = map_mut(field_mut(&mut exports, "operationProfiles"));
+    let second_exported_profile = exported_profiles
+        .first()
+        .map(|(_coordinate, profile)| profile.clone())
+        .expect("exported operation profile");
+    exported_profiles.push((
+        text("hello.echo@1.observeGreeting"),
+        second_exported_profile,
+    ));
+
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let target_configuration = field_mut(
+        first_map_value_mut(field_mut(&mut adapter, "effectImplementations")),
+        "targetConfiguration",
+    )
+    .clone();
+    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
+    let adapter_profiles = map_mut(field_mut(&mut adapter, "operationProfiles"));
+    let first_profile = adapter_profiles
+        .first_mut()
+        .map(|(_coordinate, profile)| profile)
+        .expect("adapter operation profile");
+    array_mut(field_mut(first_profile, "semanticEffects")).clear();
+    insert_field(
+        first_profile,
+        "budgetObligation",
+        text("hello.echo@1.smallCreateBudget"),
+    );
+    insert_field(first_profile, "targetConfiguration", target_configuration);
+    let mut second_profile = first_profile.clone();
+    replace_field(
+        &mut second_profile,
+        "budgetObligation",
+        text("hello.echo@1.largeObservationBudget"),
+    );
+    adapter_profiles.push((text("hello.echo@1.observeGreeting"), second_profile));
+    let budgets = map_mut(field_mut(&mut adapter, "budgets"));
+    let large_budget = budgets
+        .first()
+        .map(|(_coordinate, budget)| budget.clone())
+        .expect("adapter budget");
+    budgets.push((text("hello.echo@1.largeObservationBudget"), large_budget));
+
+    let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
+    let source = format!(
+        r#"package examples.workspace_observer@1;
+
+use lawpack hello.echo@1 digest "{}" as hello;
+use capability workspace.snapshot.observe@1
+  digest "sha256:{}"
+  as snapshot;
+
+type ObserveInput = {{
+  payload: Bytes<max=1024>,
+  scope: Bytes<max=32>,
+  basis: Bytes<max=32>,
+  maxSettlementBytes: U64,
+  maxAttempts: U32,
+}};
+
+intent observe(input: ObserveInput)
+  returns ExternalActionRequest<Bytes<max=65536>>
+  profile hello.createGreeting
+  basis input.basis
+  budget <= hello.largeObservationBudget
+{{
+  request pending: ExternalActionRequest<Bytes<max=65536>> =
+    snapshot(input.payload)
+    input schema workspace.snapshot.input@1 digest "sha256:{}"
+    settlement schema workspace.snapshot.settlement@1 digest "sha256:{}"
+    authority input.scope
+    basis input.basis
+    budget maxSettlementBytes input.maxSettlementBytes maxAttempts input.maxAttempts
+    reconcile workspace.snapshot.reconcile@1 digest "sha256:{}";
+  return pending;
+}}
+"#,
+        bundle.manifest_digest_review_string(),
+        "a".repeat(64),
+        "b".repeat(64),
+        "c".repeat(64),
+        "d".repeat(64),
+    );
+    let module = parse_module(&source).expect("parse mismatched-budget application");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("prepare mismatched-budget application");
+    let failures = compile_to_core(&module, preparation.compiler_context())
+        .expect_err("a profile must reject another profile's budget");
+
+    assert_eq!(failures.len(), 1);
+    assert_eq!(failures[0].stage, CompilerStage::Resolve);
+    assert_eq!(failures[0].kind, CompilerErrorKind::MissingContextFact);
+    assert!(
+        failures[0]
+            .message
+            .contains("profile `hello.createGreeting` requires budget `hello.smallCreateBudget`"),
+        "unexpected mismatch diagnostic: {}",
+        failures[0].message
     );
 }
 

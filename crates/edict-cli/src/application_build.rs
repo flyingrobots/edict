@@ -2103,6 +2103,82 @@ mod tests {
     }
 
     #[test]
+    fn public_external_action_build_rejects_a_disconnected_lawpack() {
+        let root = temp_tree("public-external-action-disconnected-lawpack");
+        let config_path = write_external_action_application(&root);
+        let lawpack_directory = root.join("vendor/hello-echo");
+        test_ok(
+            fs::create_dir_all(&lawpack_directory),
+            "create disconnected lawpack directory",
+        );
+        for (name, bytes) in [
+            (
+                "manifest.cbor",
+                include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice(),
+            ),
+            (
+                "exports.cbor",
+                include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice(),
+            ),
+            (
+                "adapter.cbor",
+                include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice(),
+            ),
+            (
+                "target-configuration.cbor",
+                include_bytes!(
+                    "../../../fixtures/lawpack/hello-echo/echo-operation-configuration.cbor"
+                )
+                .as_slice(),
+            ),
+        ] {
+            test_ok(
+                fs::write(lawpack_directory.join(name), bytes),
+                "write disconnected lawpack fixture",
+            );
+        }
+        let mut application = test_ok(
+            serde_json::from_slice::<serde_json::Value>(&test_ok(
+                fs::read(&config_path),
+                "read application manifest",
+            )),
+            "decode application manifest",
+        );
+        let Some(lawpacks) = application
+            .get_mut("lawpacks")
+            .and_then(serde_json::Value::as_array_mut)
+        else {
+            panic!("application manifest lawpacks");
+        };
+        lawpacks.push(serde_json::json!({
+            "manifest": "vendor/hello-echo/manifest.cbor",
+            "exports": "vendor/hello-echo/exports.cbor",
+            "adapter": "vendor/hello-echo/adapter.cbor",
+            "targetConfiguration": "vendor/hello-echo/target-configuration.cbor"
+        }));
+        test_ok(
+            fs::write(
+                &config_path,
+                test_ok(
+                    serde_json::to_vec_pretty(&application),
+                    "encode application manifest",
+                ),
+            ),
+            "write application manifest",
+        );
+
+        let failure = test_err(
+            build_application(&config_path),
+            "a disconnected supplied lawpack must reject",
+        );
+
+        assert_eq!(failure.kind, "InvalidLawpackClosure");
+        assert!(!root.join(".build/application/core.cbor").exists());
+        assert!(!root.join(".build/application/target-ir.cbor").exists());
+        test_ok(fs::remove_dir_all(root), "remove disconnected build tree");
+    }
+
+    #[test]
     fn relative_application_config_uses_the_current_directory_as_root() {
         let actual = test_ok(
             canonical_application_root(PathBuf::from("edict.application.json").as_path()),
