@@ -25,6 +25,16 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added explicit `externalAction` application builds that validate one exact
+  request-only source, lawpack/adapter/configuration closure, and provider-owned
+  target profile before publishing canonical `core.cbor` and `target-ir.cbor`.
+  The route requires a typed request, rejects callable Target IR steps and
+  substituted capability manifests, invokes no provider component, replaces
+  the output pair transactionally, and clears stale executable-operation
+  outputs. Request-only lawpack profiles now bind their own exact budget and
+  opaque target configuration while carrying no semantic effect or target
+  intrinsic. A generator-owned workspace-snapshot closure and mirrored
+  Echo-owned target profile make the full public build reproducible in Edict.
 - Added typed external-action request values without adding external execution
   authority to Edict. Digest-locked capability imports and `request` statements
   preserve exact operation, schema, scope, basis, budget, input, reconciliation,
