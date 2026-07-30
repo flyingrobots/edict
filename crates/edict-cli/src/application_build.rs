@@ -2020,6 +2020,22 @@ mod tests {
     }
 
     #[test]
+    fn external_action_build_binds_operation_authority_by_manifest_digest() {
+        let closure = [external_action_loaded_lawpack()];
+        let mut external = external_action_target_ir();
+        let Some(observe) = external.intents.get_mut("observe") else {
+            panic!("workspace observer intent exists");
+        };
+        observe.external_action_requests[0].operation.coordinate =
+            "workspace.snapshot.observe@2".to_owned();
+
+        test_ok(
+            validate_external_action_artifacts(&external, &closure),
+            "operation identity is independent of its authority manifest version",
+        );
+    }
+
+    #[test]
     fn external_action_build_requires_a_typed_request() {
         let failure = test_err(
             validate_external_action_artifacts(&hello_echo_target_ir(), &[]),
