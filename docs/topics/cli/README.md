@@ -98,7 +98,7 @@ Every input schema, settlement schema, and reconciliation law must resolve
 through `externalActionResources` to one canonical
 `edict.external-action-resource/v1` artifact. The build validates the resource
 meta-contract and exact domain-framed identity and rejects missing, duplicate,
-disconnected, substituted, opaque, non-canonical, or placeholder resources.
+disconnected, substituted, opaque, non-canonical, or sentinel resources.
 The list is bounded to 192 artifacts. Executable-operation builds reject a
 non-empty resource list. The source budget must equal the exact obligation
 declared by its selected request-only profile. `providerPackage` remains
