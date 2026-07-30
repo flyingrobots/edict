@@ -18,6 +18,13 @@ digest. The generated Core and Target IR therefore preserve the complete
 capability closure while Target IR contains one external-action request and
 zero callable steps.
 
+This real-lawpack corpus is distinct from
+`fixtures/lang/external-actions/workspace-snapshot.edict`. That earlier
+compiler fixture uses synthetic context facts and a placeholder capability
+digest to isolate request encoding. The files here use the generated manifest,
+profile, and budget closure, so their canonical Core and Target IR identities
+are intentionally different.
+
 Artifacts are generated only through:
 
 ```sh

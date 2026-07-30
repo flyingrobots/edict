@@ -129,7 +129,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     let source = config.sources.first().ok_or_else(|| {
         failure(
             "InvalidApplicationConfig",
-            "the executable-operation build requires exactly one Edict source",
+            "the application build requires exactly one Edict source",
         )
     })?;
     let source_path = confined_existing_path(
@@ -176,7 +176,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     let loaded = loaded_lawpacks.first().ok_or_else(|| {
         failure(
             "InvalidApplicationConfig",
-            "the executable-operation build requires a root lawpack",
+            "the application build requires a root lawpack",
         )
     })?;
 
@@ -509,13 +509,13 @@ fn validate_application_manifest(
     if config.sources.len() != 1 {
         return Err(failure(
             "InvalidApplicationConfig",
-            "the executable-operation build currently requires exactly one Edict source",
+            "the application build currently requires exactly one Edict source",
         ));
     }
     if config.lawpacks.is_empty() {
         return Err(failure(
             "InvalidApplicationConfig",
-            "the executable-operation build requires one root lawpack followed by its complete dependency closure",
+            "the application build requires one root lawpack followed by its complete dependency closure",
         ));
     }
     let paths = config
