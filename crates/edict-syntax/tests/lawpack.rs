@@ -273,6 +273,105 @@ fn lawpack_adapter_requires_complete_exported_effect_coverage() {
 }
 
 #[test]
+fn request_only_profile_supplies_budget_without_callable_effect_authority() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "effects")).clear();
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
+    let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
+    array_mut(field_mut(profile, "semanticEffects")).clear();
+    insert_field(
+        profile,
+        "budgetObligation",
+        text("hello.echo@1.smallCreateBudget"),
+    );
+    let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
+    let source = format!(
+        r#"package examples.workspace_observer@1;
+
+use lawpack hello.echo@1 digest "{}" as hello;
+use capability workspace.snapshot.observe@1
+  digest "sha256:{}"
+  as snapshot;
+
+type ObserveInput = {{
+  payload: Bytes<max=1024>,
+  scope: Bytes<max=32>,
+  basis: Bytes<max=32>,
+  maxSettlementBytes: U64,
+  maxAttempts: U32,
+}};
+
+intent observe(input: ObserveInput)
+  returns ExternalActionRequest<Bytes<max=65536>>
+  profile hello.createGreeting
+  basis input.basis
+  budget <= hello.smallCreateBudget
+{{
+  request pending: ExternalActionRequest<Bytes<max=65536>> =
+    snapshot(input.payload)
+    input schema workspace.snapshot.input@1 digest "sha256:{}"
+    settlement schema workspace.snapshot.settlement@1 digest "sha256:{}"
+    authority input.scope
+    basis input.basis
+    budget maxSettlementBytes input.maxSettlementBytes maxAttempts input.maxAttempts
+    reconcile workspace.snapshot.reconcile@1 digest "sha256:{}";
+  return pending;
+}}
+"#,
+        bundle.manifest_digest_review_string(),
+        "a".repeat(64),
+        "b".repeat(64),
+        "c".repeat(64),
+        "d".repeat(64),
+    );
+    let module = parse_module(&source).expect("parse request-only application");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("prepare request-only application");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile request-only application");
+    let report = lower_to_target_ir(&core, preparation.target_ir_facts());
+    let intent = report
+        .artifact
+        .expect("request-only Target IR")
+        .intents
+        .remove("observe")
+        .expect("observe intent");
+
+    assert_eq!(intent.external_action_requests.len(), 1);
+    assert!(intent.steps.is_empty());
+    assert!(
+        adapter.effects().is_empty(),
+        "request-only profile must not grant target-call authority"
+    );
+}
+
+#[test]
+fn request_only_profile_requires_an_exact_budget_obligation() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "effects")).clear();
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    map_mut(field_mut(&mut adapter, "effectImplementations")).clear();
+    let profile = first_map_value_mut(field_mut(&mut adapter, "operationProfiles"));
+    array_mut(field_mut(profile, "semanticEffects")).clear();
+    insert_field(
+        profile,
+        "budgetObligation",
+        text("hello.echo@1.missingBudget"),
+    );
+    let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode request-only adapter");
+
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect_err("unknown request-only budget must reject");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::MissingBudget]
+    );
+}
+
+#[test]
 fn lawpack_adapter_corroborates_footprint_cost_and_failure_obligations() {
     for (field, replacement, expected) in [
         (
@@ -951,6 +1050,47 @@ fn bundle_with_adapter(adapter: &CanonicalValue) -> ValidatedLawpackBundle {
     );
     let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode rebound manifest");
     decode_lawpack_bundle(&manifest_bytes, EXPORTS_BYTES).expect("load rebound lawpack")
+}
+
+fn bundle_with_exports_and_adapter(
+    exports: &CanonicalValue,
+    adapter: &CanonicalValue,
+) -> ValidatedLawpackBundle {
+    let exports_bytes = encode_canonical_cbor(exports).expect("encode rebound exports");
+    let mut manifest = decode_canonical_cbor(MANIFEST_BYTES).expect("decode canonical manifest");
+    replace_field(
+        field_mut(&mut manifest, "exports"),
+        "digest",
+        CanonicalValue::Array(vec![
+            text("sha256"),
+            CanonicalValue::Bytes(digest_value(EXPORTS_COORDINATE, exports).to_vec()),
+        ]),
+    );
+    let descriptor = first_array_item_mut(field_mut(&mut manifest, "targetAdapters"));
+    replace_field(
+        descriptor,
+        "adapter",
+        resource_ref(
+            ADAPTER_COORDINATE,
+            digest_value(ADAPTER_COORDINATE, adapter),
+        ),
+    );
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode rebound manifest");
+    decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load rebound lawpack")
+}
+
+fn bundle_and_adapter(
+    exports: &CanonicalValue,
+    adapter: &CanonicalValue,
+) -> (
+    ValidatedLawpackBundle,
+    edict_syntax::ValidatedLawpackAdapter,
+) {
+    let bundle = bundle_with_exports_and_adapter(exports, adapter);
+    let adapter_bytes = encode_canonical_cbor(adapter).expect("encode rebound adapter");
+    let validated = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
+        .expect("decode rebound adapter");
+    (bundle, validated)
 }
 
 fn insert_field(value: &mut CanonicalValue, field: &str, replacement: CanonicalValue) {
