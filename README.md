@@ -578,6 +578,9 @@ What exists today:
 - Typed external-action request construction: digest-locked operation families,
   schemas, scope, basis, budgets, and reconciliation law lower as non-callable
   Core and Target IR data with exact capability closure
+- Public request-only application builds: exact source, lawpack, declarative
+  adapter, target configuration, and target-profile closure publish canonical
+  Core and Target IR without provider-component invocation or external I/O
 - Reference `edict.canonical-cbor/v1` Core encoder and canonical byte validation
   path for the current in-memory Core module model
 - Reviewed Core golden bytes and exact `edict.core.module/v1` digest fixture for

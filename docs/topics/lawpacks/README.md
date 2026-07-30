@@ -41,12 +41,15 @@ The current executable Rust surfaces touching lawpacks are:
 - canonical manifest/export loading through `ValidatedLawpackBundle`;
 - complete dependency-set validation with exact manifest-digest edges;
 - canonical direct-adapter loading with exact target selection, adapter digest
-  corroboration, complete profile/effect/budget coverage, and typed target
-  configuration resource references;
+  corroboration, complete callable profile/effect/budget coverage, and
+  request-only profiles whose exact budget and target configuration confer no
+  callable effect authority;
 - compiler and Target IR fact derivation from the exact
   module/lawpack/adapter closure;
 - reproducible canonical Core and Target IR artifacts for the standalone Hello
   Echo crossing;
+- reproducible request-only workspace-snapshot closure and public application
+  build artifacts with one external request and zero callable Target IR steps;
 - authority-facts loading for budget and effect write-class facts whose source
   identity is a digest-locked lawpack reference;
 - target-profile validation for the exact `edict.lawpack-adapter/v1` ABI;
@@ -75,15 +78,21 @@ The current executable Rust surfaces touching lawpacks are:
 - `decode_lawpack_adapter` accepts only canonical adapter bytes selected by one
   exact digest-locked target descriptor. It requires exact operation-profile,
   runtime-effect, budget, footprint, cost, and named-failure coverage before
-  returning an opaque validated adapter. Each effect also carries one typed,
-  digest-locked target-configuration reference. Edict preserves that reference
-  but does not interpret its target-owned semantics.
+  returning an opaque validated adapter. Each callable effect carries one
+  typed, digest-locked target-configuration reference. A profile with no
+  semantic effects is request-only and must carry its own exact budget
+  obligation and target configuration. Edict preserves those references but
+  does not interpret their target-owned semantics.
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
   [LAWPACKS-REQ-008]
 - The Hello Echo golden generator compiles the exact source and lawpack closure,
   lowers the resulting Core module, and pins canonical Core and Target IR bytes
   under their native domain-framed identities. [LAWPACKS-REQ-009]
+- The workspace-snapshot generator binds a requestable capability to the exact
+  lawpack manifest, compiles one request through a request-only profile, and
+  pins canonical Core and Target IR with zero callable steps.
+  [LAWPACKS-REQ-011]
 - Lowerability may classify an operation as adapted when exactly one
   digest-locked direct adapter satisfies the required semantic effect, write
   class, and guard facts. Floating, chained, or ambiguous adapter claims reject
@@ -106,8 +115,8 @@ The following are not implemented:
 
 - executable target-adapter component loading; v1 currently specifies and
   implements the direct declarative adapter class only;
-- target-owned configuration resource loading and interpretation;
-- Echo executable-operation package emission from lowered Target IR;
+- target-owned configuration interpretation;
+- Echo admission or execution of compiler-emitted external-action requests;
 - lawpack conformance fixtures and two-lowerer differential trials.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
