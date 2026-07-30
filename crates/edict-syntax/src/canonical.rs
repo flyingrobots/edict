@@ -41,6 +41,12 @@ pub const CORE_MODULE_DIGEST_DOMAIN: &str = "edict.core.module/v1";
 /// Artifact domain label for Target IR artifact digests.
 pub const TARGET_IR_ARTIFACT_DIGEST_DOMAIN: &str = "edict.target-ir.artifact/v1";
 
+/// Canonical envelope version for typed external-action resources.
+pub const EXTERNAL_ACTION_RESOURCE_API_VERSION: &str = "edict.external-action-resource/v1";
+
+/// Artifact domain label for typed external-action resource digests.
+pub const EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN: &str = "edict.external-action-resource/v1";
+
 /// Stable canonical encoding error categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CanonicalErrorKind {

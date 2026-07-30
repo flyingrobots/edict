@@ -7,14 +7,13 @@ use edict_syntax::{
     digest_core_module, digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     CanonicalValue, TargetLoweringStatus, ValidatedLawpackAdapter, ValidatedLawpackBundle,
+    EXTERNAL_ACTION_RESOURCE_API_VERSION, EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN,
 };
 use sha2::{Digest, Sha256};
 
 use crate::goldens::{check_golden_file_with_command, write_golden_file};
 
 const DIGEST_FRAME: &str = "edict.digest/v1";
-const EXTERNAL_ACTION_RESOURCE_API_VERSION: &str = "edict.external-action-resource/v1";
-const EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN: &str = "edict.external-action-resource/v1";
 const EXPORTS_COORDINATE: &str = "hello.echo.exports/v1";
 const FIXTURE_ROOT: &str = "fixtures/lawpack/hello-echo";
 const MANIFEST_CBOR: &str = "fixtures/lawpack/hello-echo/manifest.cbor";
@@ -145,9 +144,19 @@ pub(crate) enum LawpackGoldenMode {
 }
 
 struct GeneratedExternalActionResource {
+    coordinate: String,
     bytes: Vec<u8>,
     digest: String,
 }
+
+#[derive(Clone, Copy)]
+struct InputSchemaResource<'a>(&'a GeneratedExternalActionResource);
+
+#[derive(Clone, Copy)]
+struct SettlementSchemaResource<'a>(&'a GeneratedExternalActionResource);
+
+#[derive(Clone, Copy)]
+struct ReconciliationLawResource<'a>(&'a GeneratedExternalActionResource);
 
 struct CompiledExternalActionArtifacts {
     core_bytes: Vec<u8>,
@@ -225,9 +234,9 @@ fn workspace_snapshot_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>,
 
     let source = workspace_snapshot_application_source(
         &bundle.manifest_digest_review_string(),
-        &input_schema.digest,
-        &settlement_schema.digest,
-        &reconciliation_law.digest,
+        InputSchemaResource(&input_schema),
+        SettlementSchemaResource(&settlement_schema),
+        ReconciliationLawResource(&reconciliation_law),
     );
     let compiled =
         compile_external_action_application(&source, &bundle, &adapter, "workspace snapshot")?;
@@ -432,10 +441,16 @@ fn workspace_snapshot_exports() -> CanonicalValue {
 
 fn workspace_snapshot_application_source(
     manifest_digest: &str,
-    input_schema_digest: &str,
-    settlement_schema_digest: &str,
-    reconciliation_law_digest: &str,
+    input_schema: InputSchemaResource<'_>,
+    settlement_schema: SettlementSchemaResource<'_>,
+    reconciliation_law: ReconciliationLawResource<'_>,
 ) -> String {
+    let input_schema_coordinate = &input_schema.0.coordinate;
+    let input_schema_digest = &input_schema.0.digest;
+    let settlement_schema_coordinate = &settlement_schema.0.coordinate;
+    let settlement_schema_digest = &settlement_schema.0.digest;
+    let reconciliation_law_coordinate = &reconciliation_law.0.coordinate;
+    let reconciliation_law_digest = &reconciliation_law.0.digest;
     format!(
         r#"package examples.workspace_observer@1;
 
@@ -458,16 +473,16 @@ intent observe(input: ObserveInput)
 {{
   request pending: ExternalActionRequest<Bytes<max=65536>> =
     snapshot(input.payload)
-    input schema workspace.snapshot.input@1
+    input schema {input_schema_coordinate}
       digest "{input_schema_digest}"
-    settlement schema workspace.snapshot.settlement@1
+    settlement schema {settlement_schema_coordinate}
       digest "{settlement_schema_digest}"
     authority input.scope
     basis input.basis
     budget
       maxSettlementBytes input.maxSettlementBytes
       maxAttempts input.maxAttempts
-    reconcile workspace.snapshot.reconcile@1
+    reconcile {reconciliation_law_coordinate}
       digest "{reconciliation_law_digest}";
   return pending;
 }}
@@ -519,9 +534,9 @@ fn workspace_patch_golden_artifacts() -> Result<Vec<(&'static str, Vec<u8>)>, St
 
     let source = workspace_patch_application_source(
         &bundle.manifest_digest_review_string(),
-        &input_schema.digest,
-        &settlement_schema.digest,
-        &reconciliation_law.digest,
+        InputSchemaResource(&input_schema),
+        SettlementSchemaResource(&settlement_schema),
+        ReconciliationLawResource(&reconciliation_law),
     );
     let compiled =
         compile_external_action_application(&source, &bundle, &adapter, "workspace patch")?;
@@ -730,10 +745,16 @@ fn workspace_patch_exports() -> CanonicalValue {
 
 fn workspace_patch_application_source(
     manifest_digest: &str,
-    input_schema_digest: &str,
-    settlement_schema_digest: &str,
-    reconciliation_law_digest: &str,
+    input_schema: InputSchemaResource<'_>,
+    settlement_schema: SettlementSchemaResource<'_>,
+    reconciliation_law: ReconciliationLawResource<'_>,
 ) -> String {
+    let input_schema_coordinate = &input_schema.0.coordinate;
+    let input_schema_digest = &input_schema.0.digest;
+    let settlement_schema_coordinate = &settlement_schema.0.coordinate;
+    let settlement_schema_digest = &settlement_schema.0.digest;
+    let reconciliation_law_coordinate = &reconciliation_law.0.coordinate;
+    let reconciliation_law_digest = &reconciliation_law.0.digest;
     format!(
         r#"package examples.workspace_patcher@1;
 
@@ -756,16 +777,16 @@ intent applyValidated(input: ApplyPatchInput)
 {{
   request pending: ExternalActionRequest<Bytes<max=65536>> =
     patch(input.patch)
-    input schema workspace.patch.input@1
+    input schema {input_schema_coordinate}
       digest "{input_schema_digest}"
-    settlement schema workspace.patch.settlement@1
+    settlement schema {settlement_schema_coordinate}
       digest "{settlement_schema_digest}"
     authority input.authority
     basis input.basis
     budget
       maxSettlementBytes input.maxSettlementBytes
       maxAttempts input.maxAttempts
-    reconcile workspace.patch.reconcile@1
+    reconcile {reconciliation_law_coordinate}
       digest "{reconciliation_law_digest}";
   return pending;
 }}
@@ -1429,7 +1450,11 @@ fn external_action_resource(
     let digest = digest_canonical_artifact(EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, &bytes)
         .map_err(|error| format!("digest external-action resource `{coordinate}`: {error}"))?
         .to_review_string();
-    Ok(GeneratedExternalActionResource { bytes, digest })
+    Ok(GeneratedExternalActionResource {
+        coordinate: coordinate.to_owned(),
+        bytes,
+        digest,
+    })
 }
 
 fn compile_external_action_application(
@@ -1452,8 +1477,8 @@ fn compile_external_action_application(
     let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
     if target_ir_report.status != TargetLoweringStatus::Lowered {
         return Err(format!(
-            "lower {label} Target IR: expected lowered status, got {:?}",
-            target_ir_report.status
+            "lower {label} Target IR: expected lowered status, got {:?}: {:?}",
+            target_ir_report.status, target_ir_report.failures
         ));
     }
     let target_ir = target_ir_report

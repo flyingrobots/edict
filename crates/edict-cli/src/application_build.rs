@@ -25,9 +25,10 @@ use edict_syntax::{
     ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
     ProviderVerificationOutputRequest, ProviderVerificationRequest, ResultProjectionArtifact,
     TargetIrArtifact, TargetLoweringStatus, TargetProviderManifest, ValidatedLawpackBundle,
-    ValidatedTargetProviderManifest, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
-    RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
-    TARGET_PROVIDER_PROTOCOL_VERSION,
+    ValidatedTargetProviderManifest, CORE_MODULE_DIGEST_DOMAIN,
+    EXTERNAL_ACTION_RESOURCE_API_VERSION, EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN,
+    PROVIDER_LAWPACK_ARTIFACT_DOMAIN, RESULT_PROJECTION_DIGEST_DOMAIN,
+    TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION, TARGET_PROVIDER_PROTOCOL_VERSION,
 };
 use serde::Deserialize;
 
@@ -40,8 +41,6 @@ const PACKAGE_DOMAIN: &str = "echo.operation-package/v1";
 const VERIFICATION_REPORT_ROLE: &str = "verifier-report.echo-operation";
 const VERIFICATION_REPORT_DOMAIN: &str = "echo.operation-package-verifier-report/v1";
 const RESULT_PROJECTION_ROLE: &str = "07-result-projection";
-const EXTERNAL_ACTION_RESOURCE_API_VERSION: &str = "edict.external-action-resource/v1";
-const EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN: &str = "edict.external-action-resource/v1";
 const MAX_APPLICATION_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_EXTERNAL_ACTION_RESOURCES: usize = 192;
 
@@ -516,9 +515,9 @@ fn load_external_action_resource(
     let kind = ExternalActionResourceKind::parse(kind_text).ok_or_else(|| {
         invalid_external_action_resource(&path, format!("kind `{kind_text}` is unsupported"))
     })?;
-    let Some(definition) = fields.get("definition") else {
-        unreachable!("the exact field-set check requires definition");
-    };
+    let definition = fields
+        .get("definition")
+        .ok_or_else(|| invalid_external_action_resource(&path, "is missing its `definition`"))?;
     validate_external_action_resource_definition(kind, definition, &path)?;
     let digest = digest_canonical_artifact(EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, &bytes)
         .map_err(|error| {
@@ -2712,7 +2711,12 @@ mod tests {
 
     #[test]
     fn public_external_action_build_rejects_invalid_request_resource_closure() {
-        for case in ["missing", "duplicate", "disconnected", "noncanonical"] {
+        for (case, expected_kind) in [
+            ("missing", "ExternalActionResourceClosureMismatch"),
+            ("duplicate", "ExternalActionResourceClosureMismatch"),
+            ("disconnected", "ExternalActionResourceClosureMismatch"),
+            ("noncanonical", "InvalidExternalActionResource"),
+        ] {
             let root = temp_tree(&format!("public-external-action-resource-{case}"));
             let config_path = write_external_action_application(&root);
             let mut config = test_ok(
@@ -2782,13 +2786,9 @@ mod tests {
                 "invalid request resource closure must reject",
             );
 
-            assert!(
-                matches!(
-                    failure.kind,
-                    "ExternalActionResourceClosureMismatch" | "InvalidExternalActionResource"
-                ),
-                "case {case} returned unexpected failure kind {}",
-                failure.kind
+            assert_eq!(
+                failure.kind, expected_kind,
+                "case {case} returned unexpected failure kind"
             );
             assert!(!root.join(".build/application/core.cbor").exists());
             assert!(!root.join(".build/application/target-ir.cbor").exists());
@@ -2796,12 +2796,137 @@ mod tests {
         }
     }
 
+    fn canonical_map_field_mut<'a>(
+        fields: &'a mut [(CanonicalValue, CanonicalValue)],
+        key: &str,
+    ) -> &'a mut CanonicalValue {
+        fields
+            .iter_mut()
+            .find_map(|(candidate, value)| {
+                matches!(candidate, CanonicalValue::Text(text) if text == key).then_some(value)
+            })
+            .unwrap_or_else(|| panic!("canonical map contains `{key}`"))
+    }
+
+    fn mutate_external_action_resource(
+        artifact: &mut [(CanonicalValue, CanonicalValue)],
+        ordinal: usize,
+        seed: u64,
+    ) {
+        match ordinal {
+            0 => {
+                *canonical_map_field_mut(artifact, "apiVersion") =
+                    CanonicalValue::Text(format!("edict.external-action-resource/v1-{seed:016x}"));
+            }
+            1 => {
+                *canonical_map_field_mut(artifact, "coordinate") =
+                    CanonicalValue::Text(format!("workspace.snapshot.input.mutated-{seed:016x}@1"));
+            }
+            2 => {
+                *canonical_map_field_mut(artifact, "kind") =
+                    CanonicalValue::Text("settlementSchema".to_owned());
+            }
+            _ => {
+                let CanonicalValue::Map(definition) =
+                    canonical_map_field_mut(artifact, "definition")
+                else {
+                    panic!("property resource has a definition map");
+                };
+                match ordinal {
+                    3 => {
+                        *canonical_map_field_mut(definition, "encoding") =
+                            CanonicalValue::Text("noncanonical-cbor".to_owned());
+                    }
+                    4 => {
+                        *canonical_map_field_mut(definition, "root") = CanonicalValue::Text(
+                            format!("boundedWorkspaceObservationInput-{seed:016x}"),
+                        );
+                    }
+                    5 => {
+                        *canonical_map_field_mut(definition, "closed") =
+                            CanonicalValue::Bool(false);
+                    }
+                    6 => {
+                        *canonical_map_field_mut(definition, "fields") =
+                            CanonicalValue::Array(Vec::new());
+                    }
+                    7..=14 => {
+                        let CanonicalValue::Array(fields) =
+                            canonical_map_field_mut(definition, "fields")
+                        else {
+                            panic!("property schema has a fields array");
+                        };
+                        let field_ordinal = (ordinal - 7) / 4;
+                        let Some(CanonicalValue::Map(field)) = fields.get_mut(field_ordinal) else {
+                            panic!("property schema has field {field_ordinal}");
+                        };
+                        let field_key =
+                            ["name", "type", "required", "authority"][(ordinal - 7) % 4];
+                        match canonical_map_field_mut(field, field_key) {
+                            CanonicalValue::Text(text) => {
+                                test_ok(
+                                    std::fmt::Write::write_fmt(
+                                        text,
+                                        format_args!("-{seed:016x}-{ordinal:02x}"),
+                                    ),
+                                    "mutate property schema text",
+                                );
+                            }
+                            CanonicalValue::Bool(required) => *required = !*required,
+                            _ => panic!("property schema field `{field_key}` is scalar"),
+                        }
+                    }
+                    15 => {
+                        let CanonicalValue::Array(fields) =
+                            canonical_map_field_mut(definition, "fields")
+                        else {
+                            panic!("property schema has a fields array");
+                        };
+                        fields.reverse();
+                    }
+                    _ => unreachable!("the mutation table is closed"),
+                }
+            }
+        }
+    }
+
     #[test]
     fn fixed_seed_request_resource_mutations_fail_closed() {
         const RESOURCE_MUTATION_SEED: u64 = 0x4558_5452_4551_0180;
 
-        for ordinal in 0_u8..16 {
-            let root = temp_tree(&format!("external-resource-property-{ordinal:02}"));
+        let mutations = [
+            ("api-version", "InvalidExternalActionResource"),
+            ("coordinate", "ExternalActionResourceClosureMismatch"),
+            ("kind", "ExternalActionResourceClosureMismatch"),
+            ("definition-encoding", "InvalidExternalActionResource"),
+            ("definition-root", "ExternalActionResourceClosureMismatch"),
+            ("definition-closed", "InvalidExternalActionResource"),
+            ("definition-fields-empty", "InvalidExternalActionResource"),
+            ("field-zero-name", "ExternalActionResourceClosureMismatch"),
+            ("field-zero-type", "ExternalActionResourceClosureMismatch"),
+            (
+                "field-zero-required",
+                "ExternalActionResourceClosureMismatch",
+            ),
+            (
+                "field-zero-authority",
+                "ExternalActionResourceClosureMismatch",
+            ),
+            ("field-one-name", "ExternalActionResourceClosureMismatch"),
+            ("field-one-type", "ExternalActionResourceClosureMismatch"),
+            (
+                "field-one-required",
+                "ExternalActionResourceClosureMismatch",
+            ),
+            (
+                "field-one-authority",
+                "ExternalActionResourceClosureMismatch",
+            ),
+            ("field-order", "ExternalActionResourceClosureMismatch"),
+        ];
+
+        for (ordinal, (case, expected_kind)) in mutations.into_iter().enumerate() {
+            let root = temp_tree(&format!("external-resource-property-{case}"));
             let config_path = write_external_action_application(&root);
             let artifact_path = root.join("vendor/workspace-snapshot/input-schema.cbor");
             let artifact_bytes = test_ok(fs::read(&artifact_path), "read property resource");
@@ -2811,21 +2936,8 @@ mod tests {
             ) else {
                 panic!("property resource is a canonical map");
             };
-            let Some((_, CanonicalValue::Map(definition))) = artifact
-                .iter_mut()
-                .find(|(key, _)| key == &CanonicalValue::Text("definition".to_owned()))
-            else {
-                panic!("property resource has a definition map");
-            };
-            let Some((_, root_name)) = definition
-                .iter_mut()
-                .find(|(key, _)| key == &CanonicalValue::Text("root".to_owned()))
-            else {
-                panic!("property schema has a root");
-            };
-            *root_name = CanonicalValue::Text(format!(
-                "boundedWorkspaceObservationInput-{RESOURCE_MUTATION_SEED:016x}-{ordinal:02x}"
-            ));
+
+            mutate_external_action_resource(&mut artifact, ordinal, RESOURCE_MUTATION_SEED);
             let mutated = test_ok(
                 encode_canonical_cbor(&CanonicalValue::Map(artifact)),
                 "encode property resource mutation",
@@ -2840,9 +2952,11 @@ mod tests {
                 "stale request digest must reject a canonical resource mutation",
             );
             assert_eq!(
-                failure.kind, "ExternalActionResourceClosureMismatch",
-                "property case {ordinal}"
+                failure.kind, expected_kind,
+                "property case {case} ({ordinal}) returned the wrong failure kind"
             );
+            assert!(!root.join(".build/application/core.cbor").exists());
+            assert!(!root.join(".build/application/target-ir.cbor").exists());
             test_ok(fs::remove_dir_all(root), "remove property resource tree");
         }
     }
