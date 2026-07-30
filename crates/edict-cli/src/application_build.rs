@@ -24,7 +24,7 @@ use edict_syntax::{
     ProviderSemanticInputBinding, ProviderSemanticInputKind,
     ProviderVerificationInvocationContract, ProviderVerificationOutputKind,
     ProviderVerificationOutputRequest, ProviderVerificationRequest, ResultProjectionArtifact,
-    TargetLoweringStatus, TargetProviderManifest, ValidatedLawpackBundle,
+    TargetIrArtifact, TargetLoweringStatus, TargetProviderManifest, ValidatedLawpackBundle,
     ValidatedTargetProviderManifest, CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN,
     RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
     TARGET_PROVIDER_PROTOCOL_VERSION,
@@ -228,36 +228,6 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     )?;
     require_manifest_identity(target_profile_artifact, &target_profile)?;
 
-    let schema_artifacts = provider_schema_artifacts(&provider_manifest)?;
-    let resolved_schema_artifacts = schema_artifacts
-        .into_iter()
-        .map(|schema_artifact| {
-            Ok(ResolvedProviderSchemaArtifact {
-                role: schema_artifact.role.clone(),
-                bytes: Arc::<[u8]>::from(read_provider_artifact(
-                    &provider_root,
-                    schema_artifact,
-                    ProviderArtifactKind::ArtifactSchema,
-                )?),
-            })
-        })
-        .collect::<Result<Vec<_>, ApplicationBuildFailure>>()?;
-    let required_domains = provider_manifest
-        .schema_bindings
-        .iter()
-        .map(|binding| binding.domain.as_str());
-    let registry = ProviderArtifactSchemaRegistry::from_manifest(
-        &provider_proof,
-        resolved_schema_artifacts,
-        required_domains,
-    )
-    .map_err(|error| {
-        failure(
-            "InvalidProviderPackage",
-            format!("provider artifact-schema registry failed: {error}"),
-        )
-    })?;
-
     let adapter = decode_lawpack_adapter(
         &loaded.bundle,
         &config.target.profile,
@@ -311,27 +281,10 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             ),
         ));
     }
-    let (result_intent, result_projection) = single_result_projection(
-        &target_ir_report.result_projections,
-        &target_ir_report.result_projection_failures,
-    )?;
     let target_ir = target_ir_report.artifact.ok_or_else(|| {
         failure(
             "TargetLoweringFailed",
             "target lowering reported success without an artifact",
-        )
-    })?;
-    verify_result_projection(
-        &core,
-        &target_ir,
-        result_intent,
-        result_projection.canonical_bytes(),
-        result_projection.digest(),
-    )
-    .map_err(|error| {
-        failure(
-            "ResultProjectionVerificationFailed",
-            format!("compiler result projection failed independent verification: {error}"),
         )
     })?;
 
@@ -347,6 +300,61 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             format!("Target IR canonical encoding failed: {error}"),
         )
     })?;
+
+    if config.build_kind == ApplicationBuildKind::ExternalAction {
+        validate_external_action_artifacts(&target_ir, &loaded_lawpacks)?;
+        let output_directory = prepare_output_directory(&root, &config.output_directory)?;
+        return write_external_action_outputs(&output_directory, &core_bytes, &target_ir_bytes);
+    }
+
+    let (result_intent, result_projection) = single_result_projection(
+        &target_ir_report.result_projections,
+        &target_ir_report.result_projection_failures,
+    )?;
+    verify_result_projection(
+        &core,
+        &target_ir,
+        result_intent,
+        result_projection.canonical_bytes(),
+        result_projection.digest(),
+    )
+    .map_err(|error| {
+        failure(
+            "ResultProjectionVerificationFailed",
+            format!("compiler result projection failed independent verification: {error}"),
+        )
+    })?;
+
+    let schema_artifacts = provider_schema_artifacts(&provider_manifest)?;
+    let resolved_schema_artifacts = schema_artifacts
+        .into_iter()
+        .map(|schema_artifact| {
+            Ok(ResolvedProviderSchemaArtifact {
+                role: schema_artifact.role.clone(),
+                bytes: Arc::<[u8]>::from(read_provider_artifact(
+                    &provider_root,
+                    schema_artifact,
+                    ProviderArtifactKind::ArtifactSchema,
+                )?),
+            })
+        })
+        .collect::<Result<Vec<_>, ApplicationBuildFailure>>()?;
+    let required_domains = provider_manifest
+        .schema_bindings
+        .iter()
+        .map(|binding| binding.domain.as_str());
+    let registry = ProviderArtifactSchemaRegistry::from_manifest(
+        &provider_proof,
+        resolved_schema_artifacts,
+        required_domains,
+    )
+    .map_err(|error| {
+        failure(
+            "InvalidProviderPackage",
+            format!("provider artifact-schema registry failed: {error}"),
+        )
+    })?;
+
     let source_artifact_bytes = encode_canonical_cbor(&CanonicalValue::Bytes(source_bytes))
         .map_err(|error| {
             failure(
@@ -407,6 +415,73 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
 
     let output_directory = prepare_output_directory(&root, &config.output_directory)?;
     write_outputs(&output_directory, &package_bytes, &report_bytes)
+}
+
+fn validate_external_action_artifacts(
+    target_ir: &TargetIrArtifact,
+    loaded_lawpacks: &[LoadedLawpack],
+) -> Result<(), ApplicationBuildFailure> {
+    let request_count = target_ir
+        .intents
+        .values()
+        .map(|intent| intent.external_action_requests.len())
+        .sum::<usize>();
+    if request_count == 0 {
+        return Err(failure(
+            "ExternalActionRequestUnavailable",
+            "external-action application build requires at least one typed request",
+        ));
+    }
+    if target_ir
+        .intents
+        .values()
+        .any(|intent| !intent.steps.is_empty())
+    {
+        return Err(failure(
+            "MixedApplicationExecution",
+            "external-action application build cannot mix requests with callable target steps",
+        ));
+    }
+    let capability_manifests = loaded_lawpacks
+        .iter()
+        .map(|loaded| {
+            (
+                loaded.bundle.manifest().id.as_str(),
+                loaded.bundle.manifest().version.as_str(),
+                loaded.bundle.manifest_digest_review_string(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let substituted = target_ir.intents.values().find_map(|intent| {
+        intent
+            .external_action_requests
+            .iter()
+            .map(|request| &request.operation)
+            .find(|operation| {
+                !capability_manifests.iter().any(|(id, version, digest)| {
+                    let Some((operation_id, operation_version)) =
+                        operation.coordinate.rsplit_once('@')
+                    else {
+                        return false;
+                    };
+                    operation.digest.as_deref() == Some(digest.as_str())
+                        && operation_version == *version
+                        && operation_id
+                            .strip_prefix(&format!("{id}."))
+                            .is_some_and(|suffix| !suffix.is_empty())
+                })
+            })
+    });
+    if let Some(operation) = substituted {
+        return Err(failure(
+            "ExternalActionCapabilityClosureMismatch",
+            format!(
+                "request operation `{}` is not bound to one exact application lawpack manifest",
+                operation.coordinate
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_application_manifest(
@@ -691,7 +766,13 @@ fn validate_target_configuration_binding(
         adapter
             .effects()
             .values()
-            .map(|effect| &effect.target_configuration),
+            .map(|effect| &effect.target_configuration)
+            .chain(
+                adapter
+                    .operation_profiles()
+                    .values()
+                    .filter_map(|profile| profile.target_configuration.as_ref()),
+            ),
     )?;
     let digest = provider_digest(&reference.id, bytes)?;
     if reference.digest_review_string() != rendered_digest(&digest) {
@@ -1084,7 +1165,7 @@ fn single_unique_configuration<'a>(
         (Some(reference), None) => Ok(reference),
         _ => Err(failure(
             "InvalidLawpackAdapter",
-            "the executable-operation adapter currently requires exactly one target configuration",
+            "the application adapter requires exactly one target configuration",
         )),
     }
 }
@@ -1270,14 +1351,94 @@ fn require_accepted_report(bytes: &[u8]) -> Result<(), ApplicationBuildFailure> 
     Ok(())
 }
 
-#[allow(
-    clippy::too_many_lines,
-    reason = "paired output publication keeps every rollback transition explicit"
-)]
 fn write_outputs(
     directory: &Path,
     package: &[u8],
     report: &[u8],
+) -> Result<(), ApplicationBuildFailure> {
+    write_application_output_pair(
+        directory,
+        &[
+            ApplicationOutput {
+                file_name: "executable-operation-package.cbor",
+                transaction_name: "new-package.cbor",
+                backup_name: "previous-package.cbor",
+                bytes: package,
+            },
+            ApplicationOutput {
+                file_name: "verification-report.cbor",
+                transaction_name: "new-report.cbor",
+                backup_name: "previous-report.cbor",
+                bytes: report,
+            },
+        ],
+        &[
+            ObsoleteApplicationOutput {
+                file_name: "core.cbor",
+                backup_name: "previous-core.cbor",
+            },
+            ObsoleteApplicationOutput {
+                file_name: "target-ir.cbor",
+                backup_name: "previous-target-ir.cbor",
+            },
+        ],
+    )
+}
+
+fn write_external_action_outputs(
+    directory: &Path,
+    core: &[u8],
+    target_ir: &[u8],
+) -> Result<(), ApplicationBuildFailure> {
+    write_application_output_pair(
+        directory,
+        &[
+            ApplicationOutput {
+                file_name: "core.cbor",
+                transaction_name: "new-core.cbor",
+                backup_name: "previous-core.cbor",
+                bytes: core,
+            },
+            ApplicationOutput {
+                file_name: "target-ir.cbor",
+                transaction_name: "new-target-ir.cbor",
+                backup_name: "previous-target-ir.cbor",
+                bytes: target_ir,
+            },
+        ],
+        &[
+            ObsoleteApplicationOutput {
+                file_name: "executable-operation-package.cbor",
+                backup_name: "previous-package.cbor",
+            },
+            ObsoleteApplicationOutput {
+                file_name: "verification-report.cbor",
+                backup_name: "previous-report.cbor",
+            },
+        ],
+    )
+}
+
+struct ApplicationOutput<'a> {
+    file_name: &'static str,
+    transaction_name: &'static str,
+    backup_name: &'static str,
+    bytes: &'a [u8],
+}
+
+struct ObsoleteApplicationOutput {
+    file_name: &'static str,
+    backup_name: &'static str,
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "paired output publication keeps every rollback transition explicit"
+)]
+fn write_application_output_pair(
+    directory: &Path,
+    outputs: &[ApplicationOutput<'_>; 2],
+    obsolete: &[ObsoleteApplicationOutput; 2],
 ) -> Result<(), ApplicationBuildFailure> {
     fs::create_dir_all(directory).map_err(|error| {
         failure(
@@ -1315,104 +1476,76 @@ fn write_outputs(
         )
     })?;
 
-    let package_path = directory.join("executable-operation-package.cbor");
-    let report_path = directory.join("verification-report.cbor");
-    let package_existed = validate_output_target(&package_path)?;
-    let report_existed = validate_output_target(&report_path)?;
+    let mut destinations = Vec::with_capacity(4);
+    for output in outputs {
+        let destination = directory.join(output.file_name);
+        let existed = validate_output_target(&destination)?;
+        destinations.push((destination, output.backup_name, existed));
+    }
+    for output in obsolete {
+        let destination = directory.join(output.file_name);
+        let existed = validate_output_target(&destination)?;
+        destinations.push((destination, output.backup_name, existed));
+    }
+
     let transaction = create_output_transaction(directory)?;
-    let package_temp = transaction.join("new-package.cbor");
-    let report_temp = transaction.join("new-report.cbor");
-    let package_backup = transaction.join("previous-package.cbor");
-    let report_backup = transaction.join("previous-report.cbor");
+    let mut recoveries = destinations
+        .into_iter()
+        .map(|(destination, backup_name, existed)| OutputRecovery {
+            destination,
+            backup: transaction.join(backup_name),
+            existed,
+            published: false,
+        })
+        .collect::<Vec<_>>();
 
-    if let Err(error) = write_synced(&package_temp, package) {
-        let _ = fs::remove_dir_all(&transaction);
-        return Err(failure(
-            "ApplicationOutputWriteFailed",
-            format!("failed to stage `{}`: {error}", package_path.display()),
-        ));
-    }
-    if let Err(error) = write_synced(&report_temp, report) {
-        let _ = fs::remove_dir_all(&transaction);
-        return Err(failure(
-            "ApplicationOutputWriteFailed",
-            format!("failed to stage `{}`: {error}", report_path.display()),
-        ));
-    }
-
-    if package_existed {
-        if let Err(error) = fs::rename(&package_path, &package_backup) {
+    let staged = outputs
+        .iter()
+        .map(|output| transaction.join(output.transaction_name))
+        .collect::<Vec<_>>();
+    for (output, staged_path) in outputs.iter().zip(&staged) {
+        if let Err(error) = write_synced(staged_path, output.bytes) {
             let _ = fs::remove_dir_all(&transaction);
             return Err(failure(
                 "ApplicationOutputWriteFailed",
                 format!(
-                    "failed to preserve previous output `{}`: {error}",
-                    package_path.display()
+                    "failed to stage `{}`: {error}",
+                    directory.join(output.file_name).display()
                 ),
             ));
         }
     }
-    if report_existed {
-        if let Err(error) = fs::rename(&report_path, &report_backup) {
-            let rollback = restore_output(&package_backup, &package_path, package_existed);
+
+    for index in 0..recoveries.len() {
+        if !recoveries[index].existed {
+            continue;
+        }
+        if let Err(error) = fs::rename(&recoveries[index].destination, &recoveries[index].backup) {
+            let rollback = restore_previous_outputs(&recoveries[..index]);
             if rollback.is_ok() {
                 let _ = fs::remove_dir_all(&transaction);
             }
             return Err(output_publication_failure(
-                &report_path,
+                &recoveries[index].destination,
                 &error,
                 rollback.err(),
             ));
         }
     }
 
-    if let Err(error) = fs::rename(&report_temp, &report_path) {
-        let rollback = restore_previous_outputs(&[
-            OutputRecovery {
-                destination: &package_path,
-                backup: &package_backup,
-                existed: package_existed,
-                published: false,
-            },
-            OutputRecovery {
-                destination: &report_path,
-                backup: &report_backup,
-                existed: report_existed,
-                published: false,
-            },
-        ]);
-        if rollback.is_ok() {
-            let _ = fs::remove_dir_all(&transaction);
+    for index in [1_usize, 0] {
+        if let Err(error) = fs::rename(&staged[index], &recoveries[index].destination) {
+            let rollback = restore_previous_outputs(&recoveries);
+            if rollback.is_ok() {
+                let _ = fs::remove_dir_all(&transaction);
+            }
+            return Err(output_publication_failure(
+                &recoveries[index].destination,
+                &error,
+                rollback.err(),
+            ));
         }
-        return Err(output_publication_failure(
-            &report_path,
-            &error,
-            rollback.err(),
-        ));
-    }
-    if let Err(error) = fs::rename(&package_temp, &package_path) {
-        let rollback = restore_previous_outputs(&[
-            OutputRecovery {
-                destination: &package_path,
-                backup: &package_backup,
-                existed: package_existed,
-                published: false,
-            },
-            OutputRecovery {
-                destination: &report_path,
-                backup: &report_backup,
-                existed: report_existed,
-                published: true,
-            },
-        ]);
-        if rollback.is_ok() {
-            let _ = fs::remove_dir_all(&transaction);
-        }
-        return Err(output_publication_failure(
-            &package_path,
-            &error,
-            rollback.err(),
-        ));
+        recoveries[index].published = true;
     }
 
     fs::remove_dir_all(&transaction).map_err(|error| {
@@ -1424,17 +1557,6 @@ fn write_outputs(
             ),
         )
     })
-}
-
-fn write_external_action_outputs(
-    _directory: &Path,
-    _core: &[u8],
-    _target_ir: &[u8],
-) -> Result<(), ApplicationBuildFailure> {
-    Err(failure(
-        "ExternalActionBuildUnavailable",
-        "the public application build cannot publish external-action artifacts",
-    ))
 }
 
 fn output_lock_path(directory: &Path) -> PathBuf {
@@ -1516,17 +1638,17 @@ fn create_output_transaction(directory: &Path) -> Result<PathBuf, ApplicationBui
     ))
 }
 
-struct OutputRecovery<'a> {
-    destination: &'a Path,
-    backup: &'a Path,
+struct OutputRecovery {
+    destination: PathBuf,
+    backup: PathBuf,
     existed: bool,
     published: bool,
 }
 
-fn restore_previous_outputs(outputs: &[OutputRecovery<'_>; 2]) -> Result<(), String> {
+fn restore_previous_outputs(outputs: &[OutputRecovery]) -> Result<(), String> {
     let mut failures = Vec::new();
     for output in outputs.iter().filter(|output| output.published) {
-        if let Err(error) = fs::remove_file(output.destination) {
+        if let Err(error) = fs::remove_file(&output.destination) {
             failures.push(format!(
                 "failed to remove partial output `{}`: {error}",
                 output.destination.display()
@@ -1534,7 +1656,7 @@ fn restore_previous_outputs(outputs: &[OutputRecovery<'_>; 2]) -> Result<(), Str
         }
     }
     for output in outputs {
-        if let Err(error) = restore_output(output.backup, output.destination, output.existed) {
+        if let Err(error) = restore_output(&output.backup, &output.destination, output.existed) {
             failures.push(error);
         }
     }
@@ -1768,16 +1890,17 @@ mod tests {
         lower_to_target_ir, parse_module, prepare_lawpack_compilation, LawpackResourceRef,
         LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource,
         ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef, ResultProjectionArtifact,
-        TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI,
-        TARGET_PROVIDER_MANIFEST_API_VERSION,
+        TargetIrArtifact, TargetLoweringReport, TargetProviderManifest,
+        RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
     };
 
     use super::{
         build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
         read, selected_adapter_reference, single_result_projection, single_unique_configuration,
-        validate_application_manifest, with_result_projection_input, write_external_action_outputs,
-        write_outputs, ApplicationBuildKind, ApplicationLawpack, ApplicationManifest,
-        ApplicationTarget, RESULT_PROJECTION_ROLE,
+        validate_application_manifest, validate_external_action_artifacts,
+        with_result_projection_input, write_external_action_outputs, write_outputs,
+        ApplicationBuildKind, ApplicationLawpack, ApplicationManifest, ApplicationTarget,
+        LoadedLawpack, RESULT_PROJECTION_ROLE,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1819,6 +1942,164 @@ mod tests {
         );
 
         assert_eq!(decoded.build_kind, ApplicationBuildKind::ExternalAction);
+    }
+
+    #[test]
+    fn external_action_build_accepts_request_only_target_ir() {
+        let closure = [external_action_loaded_lawpack()];
+        test_ok(
+            validate_external_action_artifacts(&external_action_target_ir(), &closure),
+            "request-only Target IR is publishable",
+        );
+    }
+
+    #[test]
+    fn external_action_build_requires_a_typed_request() {
+        let failure = test_err(
+            validate_external_action_artifacts(&hello_echo_target_ir(), &[]),
+            "callable-only Target IR must not publish as external-action artifacts",
+        );
+
+        assert_eq!(failure.kind, "ExternalActionRequestUnavailable");
+    }
+
+    #[test]
+    fn external_action_build_rejects_mixed_callable_execution() {
+        let closure = [external_action_loaded_lawpack()];
+        let mut external = external_action_target_ir();
+        let Some(callable) = hello_echo_target_ir()
+            .intents
+            .get("createGreeting")
+            .and_then(|intent| intent.steps.first())
+            .cloned()
+        else {
+            panic!("Hello Echo Target IR has one callable step");
+        };
+        let Some(observe) = external.intents.get_mut("observe") else {
+            panic!("workspace observer intent exists");
+        };
+        observe.steps.push(callable);
+
+        let failure = test_err(
+            validate_external_action_artifacts(&external, &closure),
+            "mixed callable/request execution must reject",
+        );
+
+        assert_eq!(failure.kind, "MixedApplicationExecution");
+    }
+
+    #[test]
+    fn external_action_build_rejects_a_substituted_capability_manifest() {
+        let closure = [external_action_loaded_lawpack()];
+        let mut external = external_action_target_ir();
+        let Some(observe) = external.intents.get_mut("observe") else {
+            panic!("workspace observer intent exists");
+        };
+        let operation = &mut observe.external_action_requests[0].operation;
+        operation.digest = Some(format!("sha256:{}", "0".repeat(64)));
+
+        let failure = test_err(
+            validate_external_action_artifacts(&external, &closure),
+            "substituted capability manifest must reject",
+        );
+
+        assert_eq!(failure.kind, "ExternalActionCapabilityClosureMismatch");
+    }
+
+    #[test]
+    fn public_external_action_build_emits_exact_compiler_artifacts() {
+        let root = temp_tree("public-external-action");
+        let config_path = write_external_action_application(&root);
+        let output = root.join(".build/application");
+        test_ok(fs::create_dir_all(&output), "create stale output directory");
+        test_ok(
+            fs::write(
+                output.join("executable-operation-package.cbor"),
+                b"stale-package",
+            ),
+            "write stale package",
+        );
+        test_ok(
+            fs::write(output.join("verification-report.cbor"), b"stale-report"),
+            "write stale report",
+        );
+
+        test_ok(
+            build_application(&config_path),
+            "build public external-action application",
+        );
+        let first_core = test_ok(fs::read(output.join("core.cbor")), "read first Core");
+        let first_target = test_ok(
+            fs::read(output.join("target-ir.cbor")),
+            "read first Target IR",
+        );
+
+        assert_eq!(
+            first_core,
+            include_bytes!(
+                "../../../fixtures/lawpack/workspace-snapshot/observe-workspace.core.cbor"
+            )
+        );
+        assert_eq!(
+            first_target,
+            include_bytes!(
+                "../../../fixtures/lawpack/workspace-snapshot/observe-workspace.target-ir.cbor"
+            )
+        );
+        assert!(!output.join("executable-operation-package.cbor").exists());
+        assert!(!output.join("verification-report.cbor").exists());
+
+        test_ok(
+            build_application(&config_path),
+            "rerun public external-action application build",
+        );
+        assert_eq!(
+            test_ok(fs::read(output.join("core.cbor")), "read rerun Core"),
+            first_core
+        );
+        assert_eq!(
+            test_ok(
+                fs::read(output.join("target-ir.cbor")),
+                "read rerun Target IR",
+            ),
+            first_target
+        );
+        test_ok(fs::remove_dir_all(root), "remove public build tree");
+    }
+
+    #[test]
+    fn public_external_action_build_rejects_capability_substitution() {
+        let root = temp_tree("public-external-action-substitution");
+        let config_path = write_external_action_application(&root);
+        let source_path = root.join("src/observe-workspace.edict");
+        let source = test_ok(fs::read_to_string(&source_path), "read application source");
+        let manifest_digest =
+            include_str!("../../../fixtures/lawpack/workspace-snapshot/manifest.sha256").trim();
+        let capability_import =
+            format!("use capability workspace.snapshot.observe@1 digest \"{manifest_digest}\"");
+        let substituted = source.replacen(
+            &capability_import,
+            &format!(
+                "use capability workspace.snapshot.observe@1 digest \"sha256:{}\"",
+                "0".repeat(64)
+            ),
+            1,
+        );
+        assert_ne!(substituted, source, "capability import fixture must mutate");
+        test_ok(
+            fs::write(&source_path, substituted),
+            "write substituted application source",
+        );
+
+        let failure = test_err(
+            build_application(&config_path),
+            "substituted capability closure must reject",
+        );
+
+        assert_eq!(failure.kind, "ExternalActionCapabilityClosureMismatch");
+        assert!(!root.join(".build/application/core.cbor").exists());
+        assert!(!root.join(".build/application/target-ir.cbor").exists());
+        test_ok(fs::remove_dir_all(root), "remove substituted build tree");
     }
 
     #[test]
@@ -1983,6 +2264,21 @@ mod tests {
     }
 
     fn result_projection_artifact() -> ResultProjectionArtifact {
+        let mut report = hello_echo_target_ir_report();
+        match report.result_projections.remove("createGreeting") {
+            Some(projection) => projection,
+            None => panic!("Hello Echo lowering emits its result projection"),
+        }
+    }
+
+    fn hello_echo_target_ir() -> TargetIrArtifact {
+        match hello_echo_target_ir_report().artifact {
+            Some(artifact) => artifact,
+            None => panic!("Hello Echo lowering emits Target IR"),
+        }
+    }
+
+    fn hello_echo_target_ir_report() -> TargetLoweringReport {
         let manifest =
             include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
         let exports =
@@ -2007,11 +2303,196 @@ mod tests {
             compile_to_core(&module, preparation.compiler_context()),
             "compile Hello Echo Core",
         );
-        let mut report = lower_to_target_ir(&core, preparation.target_ir_facts());
-        match report.result_projections.remove("createGreeting") {
-            Some(projection) => projection,
-            None => panic!("Hello Echo lowering emits its result projection"),
+        lower_to_target_ir(&core, preparation.target_ir_facts())
+    }
+
+    fn external_action_target_ir() -> TargetIrArtifact {
+        let loaded = external_action_loaded_lawpack();
+        let source =
+            include_str!("../../../fixtures/lawpack/workspace-snapshot/observe-workspace.edict");
+        let module = test_ok(parse_module(source), "parse workspace observation source");
+        let adapter = test_ok(
+            decode_lawpack_adapter(&loaded.bundle, "echo.dpo@1", &loaded.adapter_bytes),
+            "decode workspace observation adapter",
+        );
+        let preparation = test_ok(
+            prepare_lawpack_compilation(&module, &loaded.bundle, &adapter),
+            "prepare workspace observation compilation",
+        );
+        let core = test_ok(
+            compile_to_core(&module, preparation.compiler_context()),
+            "compile workspace observation Core",
+        );
+        match lower_to_target_ir(&core, preparation.target_ir_facts()).artifact {
+            Some(artifact) => artifact,
+            None => panic!("workspace observation lowering emits Target IR"),
         }
+    }
+
+    fn external_action_loaded_lawpack() -> LoadedLawpack {
+        let manifest_bytes =
+            include_bytes!("../../../fixtures/lawpack/workspace-snapshot/manifest.cbor").to_vec();
+        let exports_bytes =
+            include_bytes!("../../../fixtures/lawpack/workspace-snapshot/exports.cbor").to_vec();
+        let adapter_bytes =
+            include_bytes!("../../../fixtures/lawpack/workspace-snapshot/adapter.cbor").to_vec();
+        let configuration_bytes = include_bytes!(
+            "../../../fixtures/lawpack/workspace-snapshot/request-profile-configuration.cbor"
+        )
+        .to_vec();
+        let bundle = test_ok(
+            decode_lawpack_bundle(&manifest_bytes, &exports_bytes),
+            "decode workspace observation lawpack",
+        );
+        LoadedLawpack {
+            manifest_bytes,
+            exports_bytes,
+            adapter_bytes,
+            configuration_bytes,
+            bundle,
+        }
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the public-build fixture keeps its complete file closure visible"
+    )]
+    fn write_external_action_application(root: &std::path::Path) -> PathBuf {
+        let source_directory = root.join("src");
+        let lawpack_directory = root.join("vendor/workspace-snapshot");
+        let provider_directory = root.join("provider");
+        let provider_generated = provider_directory.join("generated/primary");
+        for directory in [&source_directory, &lawpack_directory, &provider_generated] {
+            test_ok(
+                fs::create_dir_all(directory),
+                "create application fixture tree",
+            );
+        }
+
+        for (path, bytes) in [
+            (
+                source_directory.join("observe-workspace.edict"),
+                include_bytes!(
+                    "../../../fixtures/lawpack/workspace-snapshot/observe-workspace.edict"
+                )
+                .as_slice(),
+            ),
+            (
+                lawpack_directory.join("manifest.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/manifest.cbor")
+                    .as_slice(),
+            ),
+            (
+                lawpack_directory.join("exports.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/exports.cbor")
+                    .as_slice(),
+            ),
+            (
+                lawpack_directory.join("adapter.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/adapter.cbor")
+                    .as_slice(),
+            ),
+            (
+                lawpack_directory.join("request-profile-configuration.cbor"),
+                include_bytes!(
+                    "../../../fixtures/lawpack/workspace-snapshot/request-profile-configuration.cbor"
+                )
+                .as_slice(),
+            ),
+            (
+                provider_generated.join("target-profile.echo-dpo.cbor"),
+                include_bytes!(
+                    "../../../fixtures/providers/echo-target-profile/generated/primary/target-profile.echo-dpo.cbor"
+                )
+                .as_slice(),
+            ),
+        ] {
+            test_ok(fs::write(path, bytes), "write application fixture");
+        }
+
+        let provider_manifest = serde_json::json!({
+            "apiVersion": TARGET_PROVIDER_MANIFEST_API_VERSION,
+            "providerAbi": TARGET_PROVIDER_ABI,
+            "provider": resource_json("echo.edict-provider@1", '1'),
+            "artifacts": [
+                {
+                    "role": "target-profile.echo-dpo",
+                    "artifactKind": "targetProfile",
+                    "resource": {
+                        "coordinate": "echo.dpo@1",
+                        "digest": "sha256:2e2494121aecf5e6a2d920f5fb85408825d394765fad41484c416397c920fb04"
+                    },
+                    "source": {
+                        "kind": "generated",
+                        "semanticSource": resource_json("echo.semantic-schema@1", '2'),
+                        "generator": resource_json("echo-wesley-gen.provider-artifact-generator@1", '3')
+                    }
+                },
+                {
+                    "role": "schema.echo-provider-artifacts",
+                    "artifactKind": "artifactSchema",
+                    "resource": resource_json("echo.provider-artifacts.cddl@1", '4'),
+                    "source": {
+                        "kind": "generated",
+                        "semanticSource": resource_json("echo.semantic-schema@1", '2'),
+                        "generator": resource_json("echo-wesley-gen.provider-artifact-generator@1", '3')
+                    }
+                }
+            ],
+            "schemaBindings": [{
+                "domain": "echo.generated-artifact/v1",
+                "schemaRole": "schema.echo-provider-artifacts",
+                "format": "selfContainedCddlV1",
+                "rootRule": "generated-artifact"
+            }]
+        });
+        test_ok(
+            fs::write(
+                provider_directory.join("provider-manifest.echo.json"),
+                test_ok(
+                    serde_json::to_vec_pretty(&provider_manifest),
+                    "encode provider manifest",
+                ),
+            ),
+            "write provider manifest",
+        );
+
+        let application = serde_json::json!({
+            "schema": "edict.application/v1",
+            "buildKind": "externalAction",
+            "coordinate": "examples.workspace_observer@1",
+            "sources": ["src/observe-workspace.edict"],
+            "lawpacks": [{
+                "manifest": "vendor/workspace-snapshot/manifest.cbor",
+                "exports": "vendor/workspace-snapshot/exports.cbor",
+                "adapter": "vendor/workspace-snapshot/adapter.cbor",
+                "targetConfiguration": "vendor/workspace-snapshot/request-profile-configuration.cbor"
+            }],
+            "target": {
+                "profile": "echo.dpo@1",
+                "providerPackage": "provider"
+            },
+            "outputDirectory": ".build/application"
+        });
+        let config_path = root.join("edict.application.json");
+        test_ok(
+            fs::write(
+                &config_path,
+                test_ok(
+                    serde_json::to_vec_pretty(&application),
+                    "encode application manifest",
+                ),
+            ),
+            "write application manifest",
+        );
+        config_path
+    }
+
+    fn resource_json(coordinate: &str, digest: char) -> serde_json::Value {
+        serde_json::json!({
+            "coordinate": coordinate,
+            "digest": format!("sha256:{}", digest.to_string().repeat(64))
+        })
     }
 
     #[test]
@@ -2039,6 +2520,42 @@ mod tests {
             b"previous-package"
         );
         test_ok(fs::remove_dir_all(root), "remove test-owned temp tree");
+    }
+
+    #[test]
+    fn executable_publication_removes_stale_external_action_outputs() {
+        let root = temp_tree("executable-stale");
+        test_ok(
+            fs::write(root.join("core.cbor"), b"stale-core"),
+            "write stale Core",
+        );
+        test_ok(
+            fs::write(root.join("target-ir.cbor"), b"stale-target-ir"),
+            "write stale Target IR",
+        );
+
+        test_ok(
+            write_outputs(&root, b"package", b"report"),
+            "publish executable pair over stale external-action outputs",
+        );
+
+        assert!(!root.join("core.cbor").exists());
+        assert!(!root.join("target-ir.cbor").exists());
+        assert_eq!(
+            test_ok(
+                fs::read(root.join("executable-operation-package.cbor")),
+                "read package",
+            ),
+            b"package"
+        );
+        assert_eq!(
+            test_ok(
+                fs::read(root.join("verification-report.cbor")),
+                "read report",
+            ),
+            b"report"
+        );
+        test_ok(fs::remove_dir_all(root), "remove executable output tree");
     }
 
     #[test]
