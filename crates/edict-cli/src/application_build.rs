@@ -48,10 +48,20 @@ pub(crate) struct ApplicationBuildFailure {
     pub(crate) message: String,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+enum ApplicationBuildKind {
+    #[default]
+    ExecutableOperation,
+    ExternalAction,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ApplicationManifest {
     schema: String,
+    #[serde(default)]
+    build_kind: ApplicationBuildKind,
     coordinate: String,
     sources: Vec<PathBuf>,
     lawpacks: Vec<ApplicationLawpack>,
@@ -1416,6 +1426,17 @@ fn write_outputs(
     })
 }
 
+fn write_external_action_outputs(
+    _directory: &Path,
+    _core: &[u8],
+    _target_ir: &[u8],
+) -> Result<(), ApplicationBuildFailure> {
+    Err(failure(
+        "ExternalActionBuildUnavailable",
+        "the public application build cannot publish external-action artifacts",
+    ))
+}
+
 fn output_lock_path(directory: &Path) -> PathBuf {
     let mut name = OsString::from(".");
     name.push(
@@ -1754,8 +1775,9 @@ mod tests {
     use super::{
         build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
         read, selected_adapter_reference, single_result_projection, single_unique_configuration,
-        validate_application_manifest, with_result_projection_input, write_outputs,
-        ApplicationLawpack, ApplicationManifest, ApplicationTarget, RESULT_PROJECTION_ROLE,
+        validate_application_manifest, with_result_projection_input, write_external_action_outputs,
+        write_outputs, ApplicationBuildKind, ApplicationLawpack, ApplicationManifest,
+        ApplicationTarget, RESULT_PROJECTION_ROLE,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1769,6 +1791,34 @@ mod tests {
             validate_application_manifest(&config),
             "one root plus a bounded dependency closure must be accepted",
         );
+    }
+
+    #[test]
+    fn application_manifest_accepts_an_explicit_external_action_build_kind() {
+        let manifest = serde_json::json!({
+            "schema": "edict.application/v1",
+            "buildKind": "externalAction",
+            "coordinate": "examples.workspace_observer@1",
+            "sources": ["src/workspace_observer.edict"],
+            "lawpacks": [{
+                "manifest": "vendor/workspace/manifest.cbor",
+                "exports": "vendor/workspace/exports.cbor",
+                "adapter": "vendor/workspace/adapter.cbor",
+                "targetConfiguration": "vendor/workspace/target-configuration.cbor"
+            }],
+            "target": {
+                "profile": "echo.dpo@1",
+                "providerPackage": ".build/echo-provider"
+            },
+            "outputDirectory": ".build/application"
+        });
+
+        let decoded = test_ok(
+            serde_json::from_value::<ApplicationManifest>(manifest),
+            "decode external-action application manifest",
+        );
+
+        assert_eq!(decoded.build_kind, ApplicationBuildKind::ExternalAction);
     }
 
     #[test]
@@ -1992,6 +2042,149 @@ mod tests {
     }
 
     #[test]
+    fn external_action_publication_writes_the_exact_compiler_pair() {
+        let root = temp_tree("external-action-pair");
+        let core = include_bytes!("../../../fixtures/core/canonical/workspace-snapshot.core.cbor");
+        let target_ir = include_bytes!(
+            "../../../fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor"
+        );
+
+        test_ok(
+            write_external_action_outputs(&root, core, target_ir),
+            "publish compiler-owned external-action artifacts",
+        );
+
+        assert_eq!(
+            test_ok(fs::read(root.join("core.cbor")), "read published Core"),
+            core
+        );
+        assert_eq!(
+            test_ok(
+                fs::read(root.join("target-ir.cbor")),
+                "read published Target IR",
+            ),
+            target_ir
+        );
+        assert!(!root.join("executable-operation-package.cbor").exists());
+        assert!(!root.join("verification-report.cbor").exists());
+        test_ok(fs::remove_dir_all(root), "remove external-action pair");
+    }
+
+    #[test]
+    fn external_action_publication_removes_stale_executable_outputs() {
+        let root = temp_tree("external-action-stale");
+        test_ok(
+            fs::write(
+                root.join("executable-operation-package.cbor"),
+                b"stale-package",
+            ),
+            "write stale package",
+        );
+        test_ok(
+            fs::write(root.join("verification-report.cbor"), b"stale-report"),
+            "write stale report",
+        );
+
+        test_ok(
+            write_external_action_outputs(&root, b"core", b"target"),
+            "publish external-action pair over stale executable outputs",
+        );
+
+        assert!(!root.join("executable-operation-package.cbor").exists());
+        assert!(!root.join("verification-report.cbor").exists());
+        assert_eq!(
+            test_ok(fs::read(root.join("core.cbor")), "read Core"),
+            b"core"
+        );
+        assert_eq!(
+            test_ok(fs::read(root.join("target-ir.cbor")), "read Target IR"),
+            b"target"
+        );
+        test_ok(fs::remove_dir_all(root), "remove stale-output tree");
+    }
+
+    #[test]
+    fn failed_external_action_pair_publication_preserves_previous_core() {
+        let root = temp_tree("external-action-rollback");
+        let core_path = root.join("core.cbor");
+        let target_path = root.join("target-ir.cbor");
+        test_ok(fs::write(&core_path, b"previous-core"), "write prior Core");
+        test_ok(
+            fs::create_dir(&target_path),
+            "create conflicting Target IR directory",
+        );
+
+        let failure = test_err(
+            write_external_action_outputs(&root, b"new-core", b"new-target"),
+            "a non-file target must reject the pair",
+        );
+
+        assert_eq!(failure.kind, "ApplicationOutputWriteFailed");
+        assert_eq!(
+            test_ok(fs::read(&core_path), "read preserved Core"),
+            b"previous-core"
+        );
+        test_ok(fs::remove_dir_all(root), "remove rollback tree");
+    }
+
+    #[test]
+    fn external_action_pair_publication_is_deterministic_for_a_fixed_seed_corpus() {
+        let root = temp_tree("external-action-property");
+        let mut state = STRESS_SEED;
+        for ordinal in 0_u8..16 {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let core = state.to_le_bytes();
+            let target = [ordinal; 8];
+
+            test_ok(
+                write_external_action_outputs(&root, &core, &target),
+                "publish fixed-seed pair",
+            );
+            assert_eq!(
+                test_ok(fs::read(root.join("core.cbor")), "read property Core"),
+                core
+            );
+            assert_eq!(
+                test_ok(
+                    fs::read(root.join("target-ir.cbor")),
+                    "read property Target IR",
+                ),
+                target
+            );
+        }
+        test_ok(fs::remove_dir_all(root), "remove property tree");
+    }
+
+    #[test]
+    fn external_action_pair_publication_remains_bounded_under_stress() {
+        let root = temp_tree("external-action-stress");
+        for ordinal in 0_u8..64 {
+            let core = vec![ordinal; 1024];
+            let target = vec![ordinal.wrapping_add(1); 1024];
+            test_ok(
+                write_external_action_outputs(&root, &core, &target),
+                "publish bounded stress pair",
+            );
+        }
+
+        assert_eq!(
+            test_ok(fs::metadata(root.join("core.cbor")), "measure stress Core",).len(),
+            1024
+        );
+        assert_eq!(
+            test_ok(
+                fs::metadata(root.join("target-ir.cbor")),
+                "measure stress Target IR",
+            )
+            .len(),
+            1024
+        );
+        test_ok(fs::remove_dir_all(root), "remove stress tree");
+    }
+
+    #[test]
     fn application_artifact_reads_are_bounded_before_allocation() {
         let root = temp_tree("bounded-read");
         let path = root.join("oversized.cbor");
@@ -2077,6 +2270,7 @@ mod tests {
     fn application_manifest(lawpack_count: usize) -> ApplicationManifest {
         ApplicationManifest {
             schema: "edict.application/v1".to_owned(),
+            build_kind: ApplicationBuildKind::ExecutableOperation,
             coordinate: "examples.test@1.operation".to_owned(),
             sources: vec![PathBuf::from("operation.edict")],
             lawpacks: (0..lawpack_count)
