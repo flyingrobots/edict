@@ -43,7 +43,7 @@ Out of scope:
 | CLI-REQ-013 | implemented | The `project` operation accepts dirty editor source from `source` input records and emits structured syntax, diagnostics, Core, Target IR, digest, and status records without requiring a source file on disk. | crates/edict-cli/tests/jsonl_cli.rs |
 | CLI-REQ-014 | implemented | Compiler-level projection failures are emitted as structured projection records and diagnostics, not process-level CLI failures. | crates/edict-cli/tests/jsonl_cli.rs |
 | CLI-REQ-015 | implemented | The executable-operation `build` route loads one `edict.application/v1` request, validates the exact Edict source and complete lawpack/adapter closure, invokes the selected target provider lowerer and independent verifier through the bounded provider host, and writes only the accepted canonical package and verification-report bytes. | crates/edict-cli/src/application_build.rs |
-| CLI-REQ-016 | implemented | The explicit external-action `build` route validates a request-only source and complete capability/adapter/target-profile closure, invokes no provider component, and atomically publishes the owning encoders' exact Core and Target IR bytes while clearing stale executable outputs. | issue #176, crates/edict-cli/src/application_build.rs |
+| CLI-REQ-016 | implemented | The explicit external-action `build` route validates a request-only source and complete root-reachable capability/adapter/target-profile closure, rejects profile-budget mismatches and disconnected lawpacks, invokes no provider component, and atomically publishes the owning encoders' exact Core and Target IR bytes while clearing stale executable outputs. | issue #176, crates/edict-cli/src/application_build.rs |
 
 ## Fixtures
 

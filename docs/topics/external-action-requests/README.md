@@ -73,8 +73,12 @@ provider-owned target profile. It then:
 
 1. compiles and lowers through the real lawpack closure;
 2. requires at least one typed request and zero callable Target IR steps;
-3. binds each request operation to an exact supplied lawpack manifest digest;
-4. writes the owning encoders' exact `core.cbor` and `target-ir.cbor` bytes.
+3. rejects supplied lawpacks unreachable from the first/root manifest;
+4. requires the source budget selected for each request-only profile to equal
+   that profile's exact declared obligation;
+5. binds each request operation to an exact root-reachable lawpack manifest
+   digest;
+6. writes the owning encoders' exact `core.cbor` and `target-ir.cbor` bytes.
 
 Publication is a locked pair replacement. A failure restores the previous pair,
 and a successful request build removes stale executable-operation package and

@@ -72,7 +72,9 @@ The current executable Rust surfaces touching lawpacks are:
   cannot be fabricated or mutated by callers. [LAWPACKS-REQ-005]
 - Dependency validation resolves the complete supplied set by `(id, version)`,
   detects cycles independent of input ordering, then corroborates every edge
-  against the exact resolved manifest digest. [LAWPACKS-REQ-005]
+  against the exact resolved manifest digest. Public application builds
+  additionally require every supplied lawpack to be reachable from the
+  manifest's first/root lawpack. [LAWPACKS-REQ-005]
 - v1 target profiles accept the exact `edict.lawpack-adapter/v1` identifier.
   Unknown and duplicate declarations reject. [LAWPACKS-REQ-003]
 - `decode_lawpack_adapter` accepts only canonical adapter bytes selected by one
@@ -81,8 +83,10 @@ The current executable Rust surfaces touching lawpacks are:
   returning an opaque validated adapter. Each callable effect carries one
   typed, digest-locked target-configuration reference. A profile with no
   semantic effects is request-only and must carry its own exact budget
-  obligation and target configuration. Edict preserves those references but
-  does not interpret their target-owned semantics.
+  obligation and target configuration. Compilation preserves the
+  profile-to-budget association and rejects source that selects another
+  profile's budget. Edict preserves those references but does not interpret
+  their target-owned semantics.
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
   [LAWPACKS-REQ-008]

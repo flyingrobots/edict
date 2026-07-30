@@ -29,9 +29,10 @@ manifest names one exact Edict source, its complete lawpack closure, the
 selected target profile and provider package, and the output directory. Both
 application routes accept exactly one source and a non-empty ordered lawpack
 closure whose first entry is the root. They validate the complete supplied
-dependency graph, compile and lower the source through the root lawpack's
-declarative target adapter, and resolve the selected target profile only from
-its checked provider-package manifest.
+dependency graph, reject any supplied lawpack unreachable from that root,
+compile and lower the source through the root lawpack's declarative target
+adapter, and resolve the selected target profile only from its checked
+provider-package manifest.
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","application":"edict.application.json"}
@@ -86,8 +87,10 @@ selects the request-only route explicitly:
 
 The request-only route requires at least one compiler-emitted external-action
 request, rejects any callable Target IR step, and requires every request
-operation to be bound to one exact supplied lawpack manifest. It invokes no
-provider component. The owning canonical encoders publish:
+operation to be bound to one exact root-reachable lawpack manifest. The source
+budget must equal the exact obligation declared by its selected request-only
+profile. It invokes no provider component. The owning canonical encoders
+publish:
 
 - `core.cbor`;
 - `target-ir.cbor`.
