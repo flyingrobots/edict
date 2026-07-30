@@ -40,7 +40,10 @@ const PACKAGE_DOMAIN: &str = "echo.operation-package/v1";
 const VERIFICATION_REPORT_ROLE: &str = "verifier-report.echo-operation";
 const VERIFICATION_REPORT_DOMAIN: &str = "echo.operation-package-verifier-report/v1";
 const RESULT_PROJECTION_ROLE: &str = "07-result-projection";
+const EXTERNAL_ACTION_RESOURCE_API_VERSION: &str = "edict.external-action-resource/v1";
+const EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN: &str = "edict.external-action-resource/v1";
 const MAX_APPLICATION_ARTIFACT_BYTES: u64 = 1024 * 1024;
+const MAX_EXTERNAL_ACTION_RESOURCES: usize = 192;
 
 #[derive(Debug)]
 pub(crate) struct ApplicationBuildFailure {
@@ -65,8 +68,16 @@ struct ApplicationManifest {
     coordinate: String,
     sources: Vec<PathBuf>,
     lawpacks: Vec<ApplicationLawpack>,
+    #[serde(default)]
+    external_action_resources: Vec<ApplicationExternalActionResource>,
     target: ApplicationTarget,
     output_directory: PathBuf,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApplicationExternalActionResource {
+    artifact: PathBuf,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,6 +102,38 @@ struct LoadedLawpack {
     adapter_bytes: Vec<u8>,
     configuration_bytes: Vec<u8>,
     bundle: ValidatedLawpackBundle,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ExternalActionResourceKind {
+    InputSchema,
+    SettlementSchema,
+    ReconciliationLaw,
+}
+
+impl ExternalActionResourceKind {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::InputSchema => "inputSchema",
+            Self::SettlementSchema => "settlementSchema",
+            Self::ReconciliationLaw => "reconciliationLaw",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "inputSchema" => Some(Self::InputSchema),
+            "settlementSchema" => Some(Self::SettlementSchema),
+            "reconciliationLaw" => Some(Self::ReconciliationLaw),
+            _ => None,
+        }
+    }
+}
+
+struct LoadedExternalActionResource {
+    coordinate: String,
+    kind: ExternalActionResourceKind,
+    digest: String,
 }
 
 struct ProviderInvocationContext<'a> {
@@ -125,6 +168,8 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     })?;
     validate_application_manifest(&config)?;
     let root = canonical_application_root(config_path)?;
+    let external_action_resources =
+        load_external_action_resources(&root, &config.external_action_resources)?;
 
     let source = config.sources.first().ok_or_else(|| {
         failure(
@@ -293,7 +338,11 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     })?;
 
     if config.build_kind == ApplicationBuildKind::ExternalAction {
-        validate_external_action_artifacts(&target_ir, &loaded_lawpacks)?;
+        validate_external_action_artifacts(
+            &target_ir,
+            &loaded_lawpacks,
+            &external_action_resources,
+        )?;
         let output_directory = prepare_output_directory(&root, &config.output_directory)?;
         return write_external_action_outputs(&output_directory, &core_bytes, &target_ir_bytes);
     }
@@ -408,9 +457,288 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
     write_outputs(&output_directory, &package_bytes, &report_bytes)
 }
 
+fn load_external_action_resources(
+    root: &Path,
+    configured: &[ApplicationExternalActionResource],
+) -> Result<Vec<LoadedExternalActionResource>, ApplicationBuildFailure> {
+    let mut loaded = Vec::with_capacity(configured.len());
+    let mut coordinates = BTreeSet::new();
+    for resource in configured {
+        let resource = load_external_action_resource(root, resource)?;
+        if !coordinates.insert(resource.coordinate.clone()) {
+            return Err(failure(
+                "ExternalActionResourceClosureMismatch",
+                format!(
+                    "external-action resource coordinate `{}` is configured more than once",
+                    resource.coordinate
+                ),
+            ));
+        }
+        loaded.push(resource);
+    }
+    Ok(loaded)
+}
+
+fn load_external_action_resource(
+    root: &Path,
+    configured: &ApplicationExternalActionResource,
+) -> Result<LoadedExternalActionResource, ApplicationBuildFailure> {
+    let path = confined_existing_path(
+        root,
+        &configured.artifact,
+        "externalActionResources.artifact",
+        "ExternalActionResourceReadFailed",
+        "external-action resource",
+    )?;
+    let bytes = read(
+        &path,
+        "ExternalActionResourceReadFailed",
+        "external-action resource",
+    )?;
+    let value = decode_canonical_cbor(&bytes).map_err(|error| {
+        invalid_external_action_resource(&path, format!("is not canonical CBOR: {error}"))
+    })?;
+    let fields = external_action_resource_object(
+        &value,
+        &["apiVersion", "coordinate", "definition", "kind"],
+        &path,
+        "artifact",
+    )?;
+    require_external_action_resource_text(
+        &fields,
+        "apiVersion",
+        Some(EXTERNAL_ACTION_RESOURCE_API_VERSION),
+        &path,
+    )?;
+    let coordinate =
+        require_external_action_resource_text(&fields, "coordinate", None, &path)?.to_owned();
+    let kind_text = require_external_action_resource_text(&fields, "kind", None, &path)?;
+    let kind = ExternalActionResourceKind::parse(kind_text).ok_or_else(|| {
+        invalid_external_action_resource(&path, format!("kind `{kind_text}` is unsupported"))
+    })?;
+    let Some(definition) = fields.get("definition") else {
+        unreachable!("the exact field-set check requires definition");
+    };
+    validate_external_action_resource_definition(kind, definition, &path)?;
+    let digest = digest_canonical_artifact(EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, &bytes)
+        .map_err(|error| {
+            invalid_external_action_resource(&path, format!("cannot be identified: {error}"))
+        })?
+        .to_review_string();
+    Ok(LoadedExternalActionResource {
+        coordinate,
+        kind,
+        digest,
+    })
+}
+
+fn validate_external_action_resource_definition(
+    kind: ExternalActionResourceKind,
+    definition: &CanonicalValue,
+    path: &Path,
+) -> Result<(), ApplicationBuildFailure> {
+    match kind {
+        ExternalActionResourceKind::InputSchema | ExternalActionResourceKind::SettlementSchema => {
+            let fields = external_action_resource_object(
+                definition,
+                &["closed", "encoding", "fields", "root"],
+                path,
+                "schema definition",
+            )?;
+            require_external_action_resource_text(
+                &fields,
+                "encoding",
+                Some("canonical-cbor"),
+                path,
+            )?;
+            require_external_action_resource_text(&fields, "root", None, path)?;
+            if !matches!(fields.get("closed"), Some(CanonicalValue::Bool(true))) {
+                return Err(invalid_external_action_resource(
+                    path,
+                    "schema definition field `closed` must be true",
+                ));
+            }
+            let Some(CanonicalValue::Array(schema_fields)) = fields.get("fields") else {
+                return Err(invalid_external_action_resource(
+                    path,
+                    "schema definition field `fields` must be a non-empty array",
+                ));
+            };
+            if schema_fields.is_empty() {
+                return Err(invalid_external_action_resource(
+                    path,
+                    "schema definition field `fields` must be a non-empty array",
+                ));
+            }
+            let mut names = BTreeSet::new();
+            for field in schema_fields {
+                let field = external_action_resource_object(
+                    field,
+                    &["authority", "name", "required", "type"],
+                    path,
+                    "schema field",
+                )?;
+                let name = require_external_action_resource_text(&field, "name", None, path)?;
+                require_external_action_resource_text(&field, "type", None, path)?;
+                require_external_action_resource_text(&field, "authority", None, path)?;
+                if !matches!(field.get("required"), Some(CanonicalValue::Bool(_))) {
+                    return Err(invalid_external_action_resource(
+                        path,
+                        "schema field `required` must be boolean",
+                    ));
+                }
+                if !names.insert(name) {
+                    return Err(invalid_external_action_resource(
+                        path,
+                        "schema field names must be unique",
+                    ));
+                }
+            }
+        }
+        ExternalActionResourceKind::ReconciliationLaw => {
+            let fields = external_action_resource_object(
+                definition,
+                &[
+                    "replayRule",
+                    "requestKind",
+                    "requiredBindings",
+                    "settlementKind",
+                    "terminalPostures",
+                ],
+                path,
+                "reconciliation definition",
+            )?;
+            require_external_action_resource_text(&fields, "requestKind", None, path)?;
+            require_external_action_resource_text(&fields, "settlementKind", None, path)?;
+            require_external_action_resource_text(&fields, "replayRule", None, path)?;
+            let bindings =
+                require_external_action_resource_text_array(&fields, "requiredBindings", path)?;
+            if bindings.is_empty()
+                || bindings.iter().copied().collect::<BTreeSet<_>>().len() != bindings.len()
+            {
+                return Err(invalid_external_action_resource(
+                    path,
+                    "reconciliation requiredBindings must be non-empty and unique",
+                ));
+            }
+            let postures =
+                require_external_action_resource_text_array(&fields, "terminalPostures", path)?;
+            if postures != ["succeeded", "obstructed", "outcomeUnknown"] {
+                return Err(invalid_external_action_resource(
+                    path,
+                    "reconciliation terminalPostures must be succeeded, obstructed, outcomeUnknown",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn external_action_resource_object<'a>(
+    value: &'a CanonicalValue,
+    expected: &[&str],
+    path: &Path,
+    label: &str,
+) -> Result<BTreeMap<&'a str, &'a CanonicalValue>, ApplicationBuildFailure> {
+    let CanonicalValue::Map(entries) = value else {
+        return Err(invalid_external_action_resource(
+            path,
+            format!("{label} must be a canonical map"),
+        ));
+    };
+    let mut fields = BTreeMap::new();
+    for (key, value) in entries {
+        let CanonicalValue::Text(key) = key else {
+            return Err(invalid_external_action_resource(
+                path,
+                format!("{label} has a non-text field name"),
+            ));
+        };
+        if fields.insert(key.as_str(), value).is_some() {
+            return Err(invalid_external_action_resource(
+                path,
+                format!("{label} repeats field `{key}`"),
+            ));
+        }
+    }
+    if fields.keys().copied().collect::<BTreeSet<_>>()
+        != expected.iter().copied().collect::<BTreeSet<_>>()
+    {
+        return Err(invalid_external_action_resource(
+            path,
+            format!("{label} has an unsupported field set"),
+        ));
+    }
+    Ok(fields)
+}
+
+fn require_external_action_resource_text<'a>(
+    fields: &BTreeMap<&str, &'a CanonicalValue>,
+    field: &str,
+    exact: Option<&str>,
+    path: &Path,
+) -> Result<&'a str, ApplicationBuildFailure> {
+    let Some(CanonicalValue::Text(value)) = fields.get(field) else {
+        return Err(invalid_external_action_resource(
+            path,
+            format!("resource field `{field}` must be text"),
+        ));
+    };
+    if value.is_empty() || exact.is_some_and(|expected| value != expected) {
+        return Err(invalid_external_action_resource(
+            path,
+            format!("resource field `{field}` has an invalid value"),
+        ));
+    }
+    Ok(value)
+}
+
+fn require_external_action_resource_text_array<'a>(
+    fields: &BTreeMap<&str, &'a CanonicalValue>,
+    field: &str,
+    path: &Path,
+) -> Result<Vec<&'a str>, ApplicationBuildFailure> {
+    let Some(CanonicalValue::Array(values)) = fields.get(field) else {
+        return Err(invalid_external_action_resource(
+            path,
+            format!("resource field `{field}` must be an array"),
+        ));
+    };
+    values
+        .iter()
+        .map(|value| match value {
+            CanonicalValue::Text(value) if !value.is_empty() => Ok(value.as_str()),
+            _ => Err(invalid_external_action_resource(
+                path,
+                format!("resource field `{field}` must contain non-empty text"),
+            )),
+        })
+        .collect()
+}
+
+fn invalid_external_action_resource(
+    path: &Path,
+    message: impl std::fmt::Display,
+) -> ApplicationBuildFailure {
+    failure(
+        "InvalidExternalActionResource",
+        format!("external-action resource `{}` {message}", path.display()),
+    )
+}
+
 fn validate_external_action_artifacts(
     target_ir: &TargetIrArtifact,
     loaded_lawpacks: &[LoadedLawpack],
+    loaded_resources: &[LoadedExternalActionResource],
+) -> Result<(), ApplicationBuildFailure> {
+    validate_external_action_execution_class(target_ir)?;
+    validate_external_action_capability_closure(target_ir, loaded_lawpacks)?;
+    let required_resources = required_external_action_resources(target_ir)?;
+    validate_external_action_resource_closure(&required_resources, loaded_resources)
+}
+
+fn validate_external_action_execution_class(
+    target_ir: &TargetIrArtifact,
 ) -> Result<(), ApplicationBuildFailure> {
     let request_count = target_ir
         .intents
@@ -433,6 +761,13 @@ fn validate_external_action_artifacts(
             "external-action application build cannot mix requests with callable target steps",
         ));
     }
+    Ok(())
+}
+
+fn validate_external_action_capability_closure(
+    target_ir: &TargetIrArtifact,
+    loaded_lawpacks: &[LoadedLawpack],
+) -> Result<(), ApplicationBuildFailure> {
     let capability_manifest_digests = loaded_lawpacks
         .iter()
         .map(|loaded| loaded.bundle.manifest_digest_review_string())
@@ -455,6 +790,103 @@ fn validate_external_action_artifacts(
             format!(
                 "request operation `{}` is not bound to one exact root-reachable application lawpack manifest digest",
                 operation.coordinate
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn required_external_action_resources(
+    target_ir: &TargetIrArtifact,
+) -> Result<BTreeMap<(String, ExternalActionResourceKind), String>, ApplicationBuildFailure> {
+    let mut required_resources = BTreeMap::new();
+    for request in target_ir
+        .intents
+        .values()
+        .flat_map(|intent| &intent.external_action_requests)
+    {
+        for (kind, resource) in [
+            (
+                ExternalActionResourceKind::InputSchema,
+                &request.input_schema,
+            ),
+            (
+                ExternalActionResourceKind::SettlementSchema,
+                &request.settlement_schema,
+            ),
+            (
+                ExternalActionResourceKind::ReconciliationLaw,
+                &request.reconciliation_law,
+            ),
+        ] {
+            let Some(digest) = resource.digest.as_deref() else {
+                return Err(failure(
+                    "ExternalActionResourceClosureMismatch",
+                    format!(
+                        "request resource `{}` is not digest locked",
+                        resource.coordinate
+                    ),
+                ));
+            };
+            let key = (resource.coordinate.clone(), kind);
+            if required_resources
+                .insert(key, digest.to_owned())
+                .is_some_and(|existing| existing != digest)
+            {
+                return Err(failure(
+                    "ExternalActionResourceClosureMismatch",
+                    format!(
+                        "request resource `{}` has conflicting digests",
+                        resource.coordinate
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(required_resources)
+}
+
+fn validate_external_action_resource_closure(
+    required_resources: &BTreeMap<(String, ExternalActionResourceKind), String>,
+    loaded_resources: &[LoadedExternalActionResource],
+) -> Result<(), ApplicationBuildFailure> {
+    let supplied = loaded_resources
+        .iter()
+        .map(|resource| (resource.coordinate.as_str(), resource))
+        .collect::<BTreeMap<_, _>>();
+    for ((coordinate, kind), digest) in required_resources {
+        let Some(resource) = supplied.get(coordinate.as_str()) else {
+            return Err(failure(
+                "ExternalActionResourceClosureMismatch",
+                format!(
+                    "request {kind} `{coordinate}` has no configured canonical artifact",
+                    kind = kind.as_str()
+                ),
+            ));
+        };
+        if resource.kind != *kind || resource.digest != *digest {
+            return Err(failure(
+                "ExternalActionResourceClosureMismatch",
+                format!(
+                    "request {kind} `{coordinate}` does not match its configured canonical artifact",
+                    kind = kind.as_str()
+                ),
+            ));
+        }
+    }
+    let required_coordinates = required_resources
+        .keys()
+        .map(|(coordinate, _)| coordinate.as_str())
+        .collect::<BTreeSet<_>>();
+    if let Some(disconnected) = loaded_resources
+        .iter()
+        .find(|resource| !required_coordinates.contains(resource.coordinate.as_str()))
+    {
+        return Err(failure(
+            "ExternalActionResourceClosureMismatch",
+            format!(
+                "configured external-action resource `{}` is not referenced by the Target request closure",
+                disconnected.coordinate
             ),
         ));
     }
@@ -570,6 +1002,22 @@ fn validate_application_manifest(
             "the application build requires one root lawpack followed by its complete dependency closure",
         ));
     }
+    if config.external_action_resources.len() > MAX_EXTERNAL_ACTION_RESOURCES {
+        return Err(failure(
+            "InvalidApplicationConfig",
+            format!(
+                "externalActionResources exceeds the bounded maximum of {MAX_EXTERNAL_ACTION_RESOURCES}"
+            ),
+        ));
+    }
+    if config.build_kind == ApplicationBuildKind::ExecutableOperation
+        && !config.external_action_resources.is_empty()
+    {
+        return Err(failure(
+            "InvalidApplicationConfig",
+            "executable-operation builds cannot declare external-action resources",
+        ));
+    }
     let paths = config
         .sources
         .iter()
@@ -584,6 +1032,12 @@ fn validate_application_manifest(
                     lawpack.target_configuration.as_path(),
                 ),
             ]
+        }))
+        .chain(config.external_action_resources.iter().map(|resource| {
+            (
+                "externalActionResources.artifact",
+                resource.artifact.as_path(),
+            )
         }))
         .chain([
             (
@@ -1938,11 +2392,12 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use edict_syntax::{
-        compile_to_core, decode_lawpack_adapter, decode_lawpack_bundle, decode_result_projection,
-        lower_to_target_ir, parse_module, prepare_lawpack_compilation, LawpackResourceRef,
-        LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource,
-        ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef, ResultProjectionArtifact,
-        TargetIrArtifact, TargetLoweringReport, TargetProviderManifest,
+        compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
+        decode_result_projection, digest_canonical_artifact, encode_canonical_cbor,
+        lower_to_target_ir, parse_module, prepare_lawpack_compilation, CanonicalValue,
+        LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef,
+        ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
+        ResultProjectionArtifact, TargetIrArtifact, TargetLoweringReport, TargetProviderManifest,
         RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
     };
 
@@ -1951,8 +2406,10 @@ mod tests {
         read, selected_adapter_reference, single_result_projection, single_unique_configuration,
         validate_application_manifest, validate_external_action_artifacts,
         with_result_projection_input, write_external_action_outputs, write_outputs,
-        ApplicationBuildKind, ApplicationLawpack, ApplicationManifest, ApplicationTarget,
-        LoadedLawpack, RESULT_PROJECTION_ROLE,
+        ApplicationBuildKind, ApplicationExternalActionResource, ApplicationLawpack,
+        ApplicationManifest, ApplicationTarget, ExternalActionResourceKind,
+        LoadedExternalActionResource, LoadedLawpack, EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN,
+        MAX_EXTERNAL_ACTION_RESOURCES, RESULT_PROJECTION_ROLE,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -1999,8 +2456,9 @@ mod tests {
     #[test]
     fn external_action_build_accepts_request_only_target_ir() {
         let closure = [external_action_loaded_lawpack()];
+        let resources = external_action_loaded_resources();
         test_ok(
-            validate_external_action_artifacts(&external_action_target_ir(), &closure),
+            validate_external_action_artifacts(&external_action_target_ir(), &closure, &resources),
             "request-only Target IR is publishable",
         );
     }
@@ -2008,6 +2466,7 @@ mod tests {
     #[test]
     fn external_action_build_binds_operation_authority_by_manifest_digest() {
         let closure = [external_action_loaded_lawpack()];
+        let resources = external_action_loaded_resources();
         let mut external = external_action_target_ir();
         let Some(observe) = external.intents.get_mut("observe") else {
             panic!("workspace observer intent exists");
@@ -2016,7 +2475,7 @@ mod tests {
             "workspace.snapshot.observe@2".to_owned();
 
         test_ok(
-            validate_external_action_artifacts(&external, &closure),
+            validate_external_action_artifacts(&external, &closure, &resources),
             "operation identity is independent of its authority manifest version",
         );
     }
@@ -2024,7 +2483,7 @@ mod tests {
     #[test]
     fn external_action_build_requires_a_typed_request() {
         let failure = test_err(
-            validate_external_action_artifacts(&hello_echo_target_ir(), &[]),
+            validate_external_action_artifacts(&hello_echo_target_ir(), &[], &[]),
             "callable-only Target IR must not publish as external-action artifacts",
         );
 
@@ -2034,6 +2493,7 @@ mod tests {
     #[test]
     fn external_action_build_rejects_mixed_callable_execution() {
         let closure = [external_action_loaded_lawpack()];
+        let resources = external_action_loaded_resources();
         let mut external = external_action_target_ir();
         let Some(callable) = hello_echo_target_ir()
             .intents
@@ -2049,7 +2509,7 @@ mod tests {
         observe.steps.push(callable);
 
         let failure = test_err(
-            validate_external_action_artifacts(&external, &closure),
+            validate_external_action_artifacts(&external, &closure, &resources),
             "mixed callable/request execution must reject",
         );
 
@@ -2059,6 +2519,7 @@ mod tests {
     #[test]
     fn external_action_build_rejects_a_substituted_capability_manifest() {
         let closure = [external_action_loaded_lawpack()];
+        let resources = external_action_loaded_resources();
         let mut external = external_action_target_ir();
         let Some(observe) = external.intents.get_mut("observe") else {
             panic!("workspace observer intent exists");
@@ -2067,7 +2528,7 @@ mod tests {
         operation.digest = Some(format!("sha256:{}", "0".repeat(64)));
 
         let failure = test_err(
-            validate_external_action_artifacts(&external, &closure),
+            validate_external_action_artifacts(&external, &closure, &resources),
             "substituted capability manifest must reject",
         );
 
@@ -2139,6 +2600,44 @@ mod tests {
     fn public_external_action_build_rejects_sentinel_resource_identities() {
         let root = temp_tree("public-external-action-sentinel-resources");
         let config_path = write_external_action_application(&root);
+        let source_path = root.join("src/observe-workspace.edict");
+        let mut source = test_ok(
+            fs::read_to_string(&source_path),
+            "read resource-bound source",
+        );
+        for (fixture_digest, sentinel) in [
+            (
+                include_str!("../../../fixtures/lawpack/workspace-snapshot/input-schema.sha256")
+                    .trim(),
+                '9',
+            ),
+            (
+                include_str!(
+                    "../../../fixtures/lawpack/workspace-snapshot/settlement-schema.sha256"
+                )
+                .trim(),
+                '8',
+            ),
+            (
+                include_str!(
+                    "../../../fixtures/lawpack/workspace-snapshot/reconciliation-law.sha256"
+                )
+                .trim(),
+                '7',
+            ),
+        ] {
+            let substituted = source.replacen(
+                fixture_digest,
+                &format!("sha256:{}", sentinel.to_string().repeat(64)),
+                1,
+            );
+            assert_ne!(substituted, source, "resource fixture digest must mutate");
+            source = substituted;
+        }
+        test_ok(
+            fs::write(&source_path, source),
+            "write sentinel-bound application source",
+        );
 
         let failure = test_err(
             build_application(&config_path),
@@ -2149,6 +2648,266 @@ mod tests {
         assert!(!root.join(".build/application/core.cbor").exists());
         assert!(!root.join(".build/application/target-ir.cbor").exists());
         test_ok(fs::remove_dir_all(root), "remove sentinel resource tree");
+    }
+
+    #[test]
+    fn public_external_action_build_rejects_opaque_resource_definitions() {
+        let root = temp_tree("public-external-action-opaque-resource");
+        let config_path = write_external_action_application(&root);
+        let artifact_path = root.join("vendor/workspace-snapshot/input-schema.cbor");
+        let source_path = root.join("src/observe-workspace.edict");
+        let artifact_bytes = test_ok(fs::read(&artifact_path), "read input schema artifact");
+        let CanonicalValue::Map(mut artifact) = test_ok(
+            decode_canonical_cbor(&artifact_bytes),
+            "decode input schema artifact",
+        ) else {
+            panic!("input schema artifact is a canonical map");
+        };
+        let Some((_, definition)) = artifact
+            .iter_mut()
+            .find(|(key, _)| key == &CanonicalValue::Text("definition".to_owned()))
+        else {
+            panic!("input schema artifact carries a definition");
+        };
+        *definition = CanonicalValue::Map(vec![(
+            CanonicalValue::Text("opaque".to_owned()),
+            CanonicalValue::Text("not-a-schema".to_owned()),
+        )]);
+        let substituted_bytes = test_ok(
+            encode_canonical_cbor(&CanonicalValue::Map(artifact)),
+            "encode opaque input schema artifact",
+        );
+        let substituted_digest = test_ok(
+            digest_canonical_artifact(EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, &substituted_bytes),
+            "digest opaque input schema artifact",
+        )
+        .to_review_string();
+        test_ok(
+            fs::write(&artifact_path, substituted_bytes),
+            "write opaque input schema artifact",
+        );
+        let source = test_ok(
+            fs::read_to_string(&source_path),
+            "read resource-bound source",
+        );
+        let original_digest =
+            include_str!("../../../fixtures/lawpack/workspace-snapshot/input-schema.sha256").trim();
+        let substituted = source.replacen(original_digest, &substituted_digest, 1);
+        assert_ne!(substituted, source, "input schema digest must mutate");
+        test_ok(
+            fs::write(&source_path, substituted),
+            "pin opaque input schema artifact",
+        );
+
+        let failure = test_err(
+            build_application(&config_path),
+            "opaque resource definition must not publish",
+        );
+
+        assert_eq!(failure.kind, "InvalidExternalActionResource");
+        assert!(!root.join(".build/application/core.cbor").exists());
+        assert!(!root.join(".build/application/target-ir.cbor").exists());
+        test_ok(fs::remove_dir_all(root), "remove opaque resource tree");
+    }
+
+    #[test]
+    fn public_external_action_build_rejects_invalid_request_resource_closure() {
+        for case in ["missing", "duplicate", "disconnected", "noncanonical"] {
+            let root = temp_tree(&format!("public-external-action-resource-{case}"));
+            let config_path = write_external_action_application(&root);
+            let mut config = test_ok(
+                serde_json::from_slice::<serde_json::Value>(&test_ok(
+                    fs::read(&config_path),
+                    "read application config",
+                )),
+                "decode application config",
+            );
+            let Some(resources) = config
+                .get_mut("externalActionResources")
+                .and_then(serde_json::Value::as_array_mut)
+            else {
+                panic!("application config has an externalActionResources array");
+            };
+            match case {
+                "missing" => {
+                    let removed = resources.pop();
+                    assert!(removed.is_some(), "resource fixture must be removable");
+                }
+                "duplicate" => {
+                    let Some(first) = resources.first().cloned() else {
+                        panic!("resource fixture is non-empty");
+                    };
+                    resources.push(first);
+                }
+                "disconnected" => {
+                    let disconnected =
+                        root.join("vendor/workspace-snapshot/disconnected-resource.cbor");
+                    test_ok(
+                        fs::write(
+                            &disconnected,
+                            include_bytes!(
+                                "../../../fixtures/lawpack/workspace-patch/input-schema.cbor"
+                            ),
+                        ),
+                        "write disconnected resource",
+                    );
+                    resources.push(serde_json::json!({
+                        "artifact": "vendor/workspace-snapshot/disconnected-resource.cbor"
+                    }));
+                }
+                "noncanonical" => {
+                    test_ok(
+                        fs::write(
+                            root.join("vendor/workspace-snapshot/input-schema.cbor"),
+                            [0x18, 0x00],
+                        ),
+                        "write non-canonical resource",
+                    );
+                }
+                _ => unreachable!("the case table is closed"),
+            }
+            test_ok(
+                fs::write(
+                    &config_path,
+                    test_ok(
+                        serde_json::to_vec_pretty(&config),
+                        "encode application config",
+                    ),
+                ),
+                "write mutated application config",
+            );
+
+            let failure = test_err(
+                build_application(&config_path),
+                "invalid request resource closure must reject",
+            );
+
+            assert!(
+                matches!(
+                    failure.kind,
+                    "ExternalActionResourceClosureMismatch" | "InvalidExternalActionResource"
+                ),
+                "case {case} returned unexpected failure kind {}",
+                failure.kind
+            );
+            assert!(!root.join(".build/application/core.cbor").exists());
+            assert!(!root.join(".build/application/target-ir.cbor").exists());
+            test_ok(fs::remove_dir_all(root), "remove invalid closure tree");
+        }
+    }
+
+    #[test]
+    fn fixed_seed_request_resource_mutations_fail_closed() {
+        const RESOURCE_MUTATION_SEED: u64 = 0x4558_5452_4551_0180;
+
+        for ordinal in 0_u8..16 {
+            let root = temp_tree(&format!("external-resource-property-{ordinal:02}"));
+            let config_path = write_external_action_application(&root);
+            let artifact_path = root.join("vendor/workspace-snapshot/input-schema.cbor");
+            let artifact_bytes = test_ok(fs::read(&artifact_path), "read property resource");
+            let CanonicalValue::Map(mut artifact) = test_ok(
+                decode_canonical_cbor(&artifact_bytes),
+                "decode property resource",
+            ) else {
+                panic!("property resource is a canonical map");
+            };
+            let Some((_, CanonicalValue::Map(definition))) = artifact
+                .iter_mut()
+                .find(|(key, _)| key == &CanonicalValue::Text("definition".to_owned()))
+            else {
+                panic!("property resource has a definition map");
+            };
+            let Some((_, root_name)) = definition
+                .iter_mut()
+                .find(|(key, _)| key == &CanonicalValue::Text("root".to_owned()))
+            else {
+                panic!("property schema has a root");
+            };
+            *root_name = CanonicalValue::Text(format!(
+                "boundedWorkspaceObservationInput-{RESOURCE_MUTATION_SEED:016x}-{ordinal:02x}"
+            ));
+            let mutated = test_ok(
+                encode_canonical_cbor(&CanonicalValue::Map(artifact)),
+                "encode property resource mutation",
+            );
+            test_ok(
+                fs::write(&artifact_path, mutated),
+                "write property resource mutation",
+            );
+
+            let failure = test_err(
+                build_application(&config_path),
+                "stale request digest must reject a canonical resource mutation",
+            );
+            assert_eq!(
+                failure.kind, "ExternalActionResourceClosureMismatch",
+                "property case {ordinal}"
+            );
+            test_ok(fs::remove_dir_all(root), "remove property resource tree");
+        }
+    }
+
+    #[test]
+    fn sixty_four_request_resources_resolve_as_one_bounded_closure() {
+        let closure = [external_action_loaded_lawpack()];
+        let mut external = external_action_target_ir();
+        let Some(intent) = external.intents.get_mut("observe") else {
+            panic!("workspace observer intent exists");
+        };
+        let Some(template) = intent.external_action_requests.first().cloned() else {
+            panic!("workspace observer request exists");
+        };
+        intent.external_action_requests.clear();
+        let mut resources = external_action_loaded_resources()
+            .into_iter()
+            .filter(|resource| resource.kind != ExternalActionResourceKind::InputSchema)
+            .collect::<Vec<_>>();
+        for ordinal in 0_u8..64 {
+            let coordinate = format!("workspace.snapshot.input-{ordinal:02}@1");
+            let digest = format!("sha256:{}", format!("{:02x}", ordinal + 1).repeat(32));
+            let mut request = template.clone();
+            request.id = format!("observe-{ordinal:02}");
+            request.input_schema.coordinate = coordinate.clone();
+            request.input_schema.digest = Some(digest.clone());
+            intent.external_action_requests.push(request);
+            resources.push(LoadedExternalActionResource {
+                coordinate,
+                kind: ExternalActionResourceKind::InputSchema,
+                digest,
+            });
+        }
+        assert_eq!(intent.external_action_requests.len(), 64);
+        assert_eq!(resources.len(), 66);
+
+        test_ok(
+            validate_external_action_artifacts(&external, &closure, &resources),
+            "64 request resource identities form one bounded exact closure",
+        );
+    }
+
+    #[test]
+    fn external_action_resource_configuration_has_a_fixed_boundary() {
+        let mut config = application_manifest(1);
+        config.build_kind = ApplicationBuildKind::ExternalAction;
+        config.external_action_resources = (0..MAX_EXTERNAL_ACTION_RESOURCES)
+            .map(|index| ApplicationExternalActionResource {
+                artifact: PathBuf::from(format!("resources/{index:03}.cbor")),
+            })
+            .collect();
+        test_ok(
+            validate_application_manifest(&config),
+            "the exact resource configuration boundary is accepted",
+        );
+        config
+            .external_action_resources
+            .push(ApplicationExternalActionResource {
+                artifact: PathBuf::from("resources/overflow.cbor"),
+            });
+        let failure = test_err(
+            validate_application_manifest(&config),
+            "one resource beyond the boundary must reject",
+        );
+        assert_eq!(failure.kind, "InvalidApplicationConfig");
     }
 
     #[test]
@@ -2513,6 +3272,44 @@ mod tests {
         }
     }
 
+    fn external_action_loaded_resources() -> Vec<LoadedExternalActionResource> {
+        [
+            (
+                "workspace.snapshot.input@1",
+                ExternalActionResourceKind::InputSchema,
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/input-schema.cbor")
+                    .as_slice(),
+            ),
+            (
+                "workspace.snapshot.settlement@1",
+                ExternalActionResourceKind::SettlementSchema,
+                include_bytes!(
+                    "../../../fixtures/lawpack/workspace-snapshot/settlement-schema.cbor"
+                )
+                .as_slice(),
+            ),
+            (
+                "workspace.snapshot.reconcile@1",
+                ExternalActionResourceKind::ReconciliationLaw,
+                include_bytes!(
+                    "../../../fixtures/lawpack/workspace-snapshot/reconciliation-law.cbor"
+                )
+                .as_slice(),
+            ),
+        ]
+        .into_iter()
+        .map(|(coordinate, kind, bytes)| LoadedExternalActionResource {
+            coordinate: coordinate.to_owned(),
+            kind,
+            digest: test_ok(
+                digest_canonical_artifact(EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, bytes),
+                "digest external-action resource fixture",
+            )
+            .to_review_string(),
+        })
+        .collect()
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "the public-build fixture keeps its complete file closure visible"
@@ -2556,6 +3353,25 @@ mod tests {
                 lawpack_directory.join("request-profile-configuration.cbor"),
                 include_bytes!(
                     "../../../fixtures/lawpack/workspace-snapshot/request-profile-configuration.cbor"
+                )
+                .as_slice(),
+            ),
+            (
+                lawpack_directory.join("input-schema.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/input-schema.cbor")
+                    .as_slice(),
+            ),
+            (
+                lawpack_directory.join("settlement-schema.cbor"),
+                include_bytes!(
+                    "../../../fixtures/lawpack/workspace-snapshot/settlement-schema.cbor"
+                )
+                .as_slice(),
+            ),
+            (
+                lawpack_directory.join("reconciliation-law.cbor"),
+                include_bytes!(
+                    "../../../fixtures/lawpack/workspace-snapshot/reconciliation-law.cbor"
                 )
                 .as_slice(),
             ),
@@ -2628,6 +3444,11 @@ mod tests {
                 "adapter": "vendor/workspace-snapshot/adapter.cbor",
                 "targetConfiguration": "vendor/workspace-snapshot/request-profile-configuration.cbor"
             }],
+            "externalActionResources": [
+                {"artifact": "vendor/workspace-snapshot/input-schema.cbor"},
+                {"artifact": "vendor/workspace-snapshot/settlement-schema.cbor"},
+                {"artifact": "vendor/workspace-snapshot/reconciliation-law.cbor"}
+            ],
             "target": {
                 "profile": "echo.dpo@1",
                 "providerPackage": "provider"
@@ -2960,6 +3781,7 @@ mod tests {
                     )),
                 })
                 .collect(),
+            external_action_resources: Vec::new(),
             target: ApplicationTarget {
                 profile: "target.test@1".to_owned(),
                 provider_package: PathBuf::from("provider"),
