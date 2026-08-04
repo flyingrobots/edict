@@ -43,6 +43,23 @@ jobs:
       - name: Provider component fixture inventory
         run: cargo +"${{ matrix.rust-version }}" xtask provider-component-fixtures --check
 
+  release-dates:
+    name: release-dates (git tag reconciliation)
+    runs-on: ubuntu-latest
+    steps:
+      # The reconciliation compares recorded dates against the tags that
+      # published them, so this job needs the tags. The default shallow
+      # checkout fetches none, which is why this cannot ride along on the
+      # matrix job above.
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Reconcile release dates against git tags
+        run: cargo +stable xtask release-dates --check
+
   supply-chain:
     name: supply-chain (cargo-deny)
     runs-on: ubuntu-latest
