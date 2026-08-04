@@ -28,6 +28,132 @@ versions still track specification maturity rather than a released product.
   target obstructions, exact verifier acceptance, safe provider roles, shared
   domain-framed artifact identities, and rollback-safe package/report
   publication.
+- Release dates across `CHANGELOG.md`, `docs/topics/release-process/policy.toml`,
+  `docs/releases/*.md`, and the `xtask` release guards now record the actual git
+  tag dates (2026-06-21 through 2026-06-30) instead of the planned biweekly
+  schedule that ran to 2026-11-04. The `target_date` field keeps its name but now
+  holds the date the release was tagged, so `RELEASE-REQ-008` is restated
+  accordingly. The tag date is not the GitHub Release publication timestamp:
+  `v0.4.0-alpha.1` was tagged 2026-06-25 and published later the same day, and
+  release notes keep that publication timestamp separately. Tag dates are read in
+  UTC so a local run and a CI run agree; `v0.4.0-alpha.1` is the one tag where
+  that matters, resolving to 2026-06-24 in PDT and 2026-06-25 in UTC.
+- `cargo xtask release-prep` no longer derives the scaffolded date by adding
+  fourteen days to the last recorded release. That extrapolation assumed
+  `target_date` held a planned date on a biweekly cadence; now that it records
+  when a release was tagged, extrapolating produced a date in the past. The
+  command takes `--date YYYY-MM-DD` and otherwise uses today's UTC date.
+- The local `cargo xtask verify` gate now schedules one default workspace test
+  pass, which already includes doctests, instead of repeating every workspace
+  doctest in a second Cargo invocation.
+- Selected provider component identities now borrow their validated manifest
+  directly rather than the temporary proof handle used to authorize selection,
+  so callers can discard that handle after obtaining the opaque selection.
+- Canonical-CBOR encoding and decoding now accept at most 128 nested values and
+  return the stable `NestingLimitExceeded` kind beyond that bound. Provider
+  artifact validation uses the same bounded decoder before digest computation.
+- The parser now accepts first-class obstruction-strand source syntax:
+  `require ... else continue obstructed { reason: ... }`. The form is preserved
+  as a distinct `RequireElseArm::ContinueObstructed` source AST arm, requires
+  exactly one `reason` field, rejects duplicate `reason` fields, and remains
+  contextual to a `require ... else` arm. Helper-shaped constructors such as
+  `continueInObstructedStrand(...)` remain ordinary terminal obstruction
+  targets. Echo receipts, runtime execution, and editor projection remain
+  deferred.
+- Core lowering now represents `require` statements as explicit Core require
+  nodes with terminal and preserved-obstruction failure arms. The canonical Core
+  preimage distinguishes `else <obstruction>` from
+  `else continue obstructed { ... }`, binds stable reason kinds and canonical
+  payload fields, rejects duplicate payload fields before Core digesting, and
+  keeps non-semantic formatting out of Core digests. Runtime receipt behavior
+  for obstruction strands remains deferred.
+- Echo Target IR lowering now represents supported Core `require` guards as
+  explicit Target IR requirements with terminal and `continueObstructed` failure
+  dispositions. Canonical Target IR bytes and digests now bind requirement
+  predicates, reason kinds, reason payload values, and terminal-vs-preserved
+  disposition, while targets without requirement support reject with a stable
+  `UnsupportedTargetFeature` failure before artifact emission. Requirements
+  after a target step, including requirements whose predicate or reason payload
+  reads a target step output, reject until Target IR owns an ordered or
+  step-attached guard shape. Echo runtime receipts, admission, scheduler
+  counterfactuals, and editor projection remain deferred.
+- The obstruction-strands design note now formalizes the cross-project taxonomy
+  separating not-admitted scheduler counterfactuals, admitted obstructed strands,
+  and hard rejections. The taxonomy records authority boundaries only; it does
+  not add Edict-owned runtime execution, scheduler exploration, Graft
+  projection, jedit display, Continuum settlement, or XYPH settlement behavior.
+- Added the `edict` CLI `project` operation for editor-facing JSONL
+  projection over dirty source records. It can emit syntax spans, diagnostics,
+  Core review JSON plus canonical Core digest, and Echo Target IR review JSON
+  plus canonical Target IR digest without requiring the source to exist on disk;
+  compiler and lowering failures are structured projection data on stdout, not
+  CLI transport failures. The projection review JSON is not a canonical hash
+  contract. Syntax-only lexical failures now emit visible diagnostics projection
+  data, and CLI-input failures for known `project` requests report
+  `command: "project"` in their diagnostic and status records. Explicit `null`
+  values for object-valued compiler settings such as `compilerContext` and
+  `target` are rejected before serde can treat them as absent values, and the
+  settings schema now rejects empty `project` emit lists. The help record now
+  scopes exit code `1` to `check` diagnostics because `project` compiler
+  diagnostics are projection data and exit `0`.
+- The `edict` CLI now bounds stdin before request parsing with a default 8 MiB
+  cap and an `EDICT_CLI_MAX_STDIN_BYTES` override. Over-limit input fails with
+  the stable `InputTooLarge` CLI diagnostic and exit 2, pinned by
+  `CLI-REQ-010` / `CLI-TP-016` and `fixtures/cli/12-input-too-large`.
+- The `edict` CLI now documents its trusted local request boundary and accepts
+  optional compiler setting `inputRoot` to confine path, path-list, directory,
+  and glob inputs. Inputs resolving outside that root fail with
+  `InputPathOutsideRoot`, exit 2, and are pinned by `CLI-REQ-011` /
+  `CLI-TP-017` plus `fixtures/cli/13-input-root-outside`; explicit JSON `null`
+  for `inputRoot` is rejected as `InvalidSettings`, and non-file glob matches
+  are skipped before root-confined canonicalization.
+- The `edict` CLI now builds its JSONL check-result, diagnostic, status, and
+  info records from typed `Serialize` structs instead of post-construction
+  `serde_json::Value` mutation, while preserving the existing byte-for-byte
+  golden output.
+- The `edict-cli` production targets now deny `clippy::unwrap_used` and
+  `clippy::expect_used`, and the parser's `self.expect` helper is documented as
+  a fallible token-matching combinator rather than a panic primitive.
+- CI now includes a dedicated `cargo deny check` supply-chain job backed by
+  `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
+  duplicate-version warnings, and source restrictions.
+- Raised the Rust MSRV to 1.94 for Wasmtime 46.0.1, with every workspace package
+  inheriting that value into Cargo metadata. Wasmtime is isolated to the private
+  provider host with default features disabled, no `wasmtime-wasi`, an executable
+  direct/resolved feature ratchet, reviewed permissive license additions, and
+  cargo-deny coverage for both the root and nested fixture guest lockfiles.
+- Directory expansion in the `edict` CLI no longer allocates a temporary dotted
+  extension string per visited file; behavior and golden output are unchanged.
+- Added `cargo xtask cli-goldens --check/--write` and wired check mode into
+  `cargo xtask verify`, giving the CLI golden corpus the same check/write
+  regeneration path as the Core, Target IR, and bundle goldens. The CLI golden
+  runner resolves the `edict` binary through Cargo metadata so custom target
+  directories are honored.
+- Added `cargo xtask release-prep <version>` to scaffold the mechanical release
+  prep surfaces that must move together: workspace package versions, lockfile
+  package versions, dated changelog section, release policy boundary block,
+  release notes stub, boundary test stub, changelog date guard entry, and paired
+  release-process test-plan rows. Generated boundary tests now require operators
+  to replace scaffolded scope/non-goal placeholders before the branch can pass.
+- Added a root `ARCHITECTURE.md` workspace map covering current crate
+  responsibilities, dependency direction, the `edict-syntax` crate-scope caveat,
+  and current non-claims.
+- Added a Core IR canonical encoding explainer covering the canonical value
+  model, canonical CBOR subset, Core digest frame, reviewed golden fixtures, and
+  byte/hash change discipline.
+- Recorded the crate-scope decision to prefer an eventual layered split behind
+  an umbrella crate over a simple `edict-syntax` rename, while documenting the
+  current crate-scope caveat in `ARCHITECTURE.md`.
+- Recorded the schema-as-source-of-truth codegen decision: defer generator work
+  until cross-language drift or fixture-authoring pain is measurable, and do not
+  reintroduce GraphQL semantics as the contract source.
+- Split `xtask` out of its former single-file shape: command dispatch,
+  contract checks, golden management, release scaffolding, shared utilities, and
+  harness tests now live in focused `xtask/src/*.rs` modules with command
+  behavior preserved.
+- Marked `v0.11.0-alpha.1` as published in the release-process contract and
+  release notes, recording the immutable tag, workflow evidence, milestone
+  closure, release URL, and no-crates publication evidence.
 
 ### Added
 
@@ -237,135 +363,6 @@ versions still track specification maturity rather than a released product.
   output, guest traps, instantiation failure, instantiation-time fuel exhaustion,
   and malformed canonical-ABI lifting. Both Rust CI matrix jobs check the
   inventory explicitly.
-
-### Changed
-
-- Release dates across `CHANGELOG.md`, `docs/topics/release-process/policy.toml`,
-  `docs/releases/*.md`, and the `xtask` release guards now record the actual git
-  tag dates (2026-06-21 through 2026-06-30) instead of the planned biweekly
-  schedule that ran to 2026-11-04. The `target_date` field keeps its name but now
-  holds the date the release was tagged, so `RELEASE-REQ-008` is restated
-  accordingly. The tag date is not the GitHub Release publication timestamp:
-  `v0.4.0-alpha.1` was tagged 2026-06-25 and published later the same day, and
-  release notes keep that publication timestamp separately. Tag dates are read in
-  UTC so a local run and a CI run agree; `v0.4.0-alpha.1` is the one tag where
-  that matters, resolving to 2026-06-24 in PDT and 2026-06-25 in UTC.
-- `cargo xtask release-prep` no longer derives the scaffolded date by adding
-  fourteen days to the last recorded release. That extrapolation assumed
-  `target_date` held a planned date on a biweekly cadence; now that it records
-  when a release was tagged, extrapolating produced a date in the past. The
-  command takes `--date YYYY-MM-DD` and otherwise uses today's UTC date.
-- The local `cargo xtask verify` gate now schedules one default workspace test
-  pass, which already includes doctests, instead of repeating every workspace
-  doctest in a second Cargo invocation.
-- Selected provider component identities now borrow their validated manifest
-  directly rather than the temporary proof handle used to authorize selection,
-  so callers can discard that handle after obtaining the opaque selection.
-- Canonical-CBOR encoding and decoding now accept at most 128 nested values and
-  return the stable `NestingLimitExceeded` kind beyond that bound. Provider
-  artifact validation uses the same bounded decoder before digest computation.
-- The parser now accepts first-class obstruction-strand source syntax:
-  `require ... else continue obstructed { reason: ... }`. The form is preserved
-  as a distinct `RequireElseArm::ContinueObstructed` source AST arm, requires
-  exactly one `reason` field, rejects duplicate `reason` fields, and remains
-  contextual to a `require ... else` arm. Helper-shaped constructors such as
-  `continueInObstructedStrand(...)` remain ordinary terminal obstruction
-  targets. Echo receipts, runtime execution, and editor projection remain
-  deferred.
-- Core lowering now represents `require` statements as explicit Core require
-  nodes with terminal and preserved-obstruction failure arms. The canonical Core
-  preimage distinguishes `else <obstruction>` from
-  `else continue obstructed { ... }`, binds stable reason kinds and canonical
-  payload fields, rejects duplicate payload fields before Core digesting, and
-  keeps non-semantic formatting out of Core digests. Runtime receipt behavior
-  for obstruction strands remains deferred.
-- Echo Target IR lowering now represents supported Core `require` guards as
-  explicit Target IR requirements with terminal and `continueObstructed` failure
-  dispositions. Canonical Target IR bytes and digests now bind requirement
-  predicates, reason kinds, reason payload values, and terminal-vs-preserved
-  disposition, while targets without requirement support reject with a stable
-  `UnsupportedTargetFeature` failure before artifact emission. Requirements
-  after a target step, including requirements whose predicate or reason payload
-  reads a target step output, reject until Target IR owns an ordered or
-  step-attached guard shape. Echo runtime receipts, admission, scheduler
-  counterfactuals, and editor projection remain deferred.
-- The obstruction-strands design note now formalizes the cross-project taxonomy
-  separating not-admitted scheduler counterfactuals, admitted obstructed strands,
-  and hard rejections. The taxonomy records authority boundaries only; it does
-  not add Edict-owned runtime execution, scheduler exploration, Graft
-  projection, jedit display, Continuum settlement, or XYPH settlement behavior.
-- Added the `edict` CLI `project` operation for editor-facing JSONL
-  projection over dirty source records. It can emit syntax spans, diagnostics,
-  Core review JSON plus canonical Core digest, and Echo Target IR review JSON
-  plus canonical Target IR digest without requiring the source to exist on disk;
-  compiler and lowering failures are structured projection data on stdout, not
-  CLI transport failures. The projection review JSON is not a canonical hash
-  contract. Syntax-only lexical failures now emit visible diagnostics projection
-  data, and CLI-input failures for known `project` requests report
-  `command: "project"` in their diagnostic and status records. Explicit `null`
-  values for object-valued compiler settings such as `compilerContext` and
-  `target` are rejected before serde can treat them as absent values, and the
-  settings schema now rejects empty `project` emit lists. The help record now
-  scopes exit code `1` to `check` diagnostics because `project` compiler
-  diagnostics are projection data and exit `0`.
-- The `edict` CLI now bounds stdin before request parsing with a default 8 MiB
-  cap and an `EDICT_CLI_MAX_STDIN_BYTES` override. Over-limit input fails with
-  the stable `InputTooLarge` CLI diagnostic and exit 2, pinned by
-  `CLI-REQ-010` / `CLI-TP-016` and `fixtures/cli/12-input-too-large`.
-- The `edict` CLI now documents its trusted local request boundary and accepts
-  optional compiler setting `inputRoot` to confine path, path-list, directory,
-  and glob inputs. Inputs resolving outside that root fail with
-  `InputPathOutsideRoot`, exit 2, and are pinned by `CLI-REQ-011` /
-  `CLI-TP-017` plus `fixtures/cli/13-input-root-outside`; explicit JSON `null`
-  for `inputRoot` is rejected as `InvalidSettings`, and non-file glob matches
-  are skipped before root-confined canonicalization.
-- The `edict` CLI now builds its JSONL check-result, diagnostic, status, and
-  info records from typed `Serialize` structs instead of post-construction
-  `serde_json::Value` mutation, while preserving the existing byte-for-byte
-  golden output.
-- The `edict-cli` production targets now deny `clippy::unwrap_used` and
-  `clippy::expect_used`, and the parser's `self.expect` helper is documented as
-  a fallible token-matching combinator rather than a panic primitive.
-- CI now includes a dedicated `cargo deny check` supply-chain job backed by
-  `deny.toml`, enforcing RustSec advisories, yanked crates, license allowlisting,
-  duplicate-version warnings, and source restrictions.
-- Raised the Rust MSRV to 1.94 for Wasmtime 46.0.1, with every workspace package
-  inheriting that value into Cargo metadata. Wasmtime is isolated to the private
-  provider host with default features disabled, no `wasmtime-wasi`, an executable
-  direct/resolved feature ratchet, reviewed permissive license additions, and
-  cargo-deny coverage for both the root and nested fixture guest lockfiles.
-- Directory expansion in the `edict` CLI no longer allocates a temporary dotted
-  extension string per visited file; behavior and golden output are unchanged.
-- Added `cargo xtask cli-goldens --check/--write` and wired check mode into
-  `cargo xtask verify`, giving the CLI golden corpus the same check/write
-  regeneration path as the Core, Target IR, and bundle goldens. The CLI golden
-  runner resolves the `edict` binary through Cargo metadata so custom target
-  directories are honored.
-- Added `cargo xtask release-prep <version>` to scaffold the mechanical release
-  prep surfaces that must move together: workspace package versions, lockfile
-  package versions, dated changelog section, release policy boundary block,
-  release notes stub, boundary test stub, changelog date guard entry, and paired
-  release-process test-plan rows. Generated boundary tests now require operators
-  to replace scaffolded scope/non-goal placeholders before the branch can pass.
-- Added a root `ARCHITECTURE.md` workspace map covering current crate
-  responsibilities, dependency direction, the `edict-syntax` crate-scope caveat,
-  and current non-claims.
-- Added a Core IR canonical encoding explainer covering the canonical value
-  model, canonical CBOR subset, Core digest frame, reviewed golden fixtures, and
-  byte/hash change discipline.
-- Recorded the crate-scope decision to prefer an eventual layered split behind
-  an umbrella crate over a simple `edict-syntax` rename, while documenting the
-  current crate-scope caveat in `ARCHITECTURE.md`.
-- Recorded the schema-as-source-of-truth codegen decision: defer generator work
-  until cross-language drift or fixture-authoring pain is measurable, and do not
-  reintroduce GraphQL semantics as the contract source.
-- Split `xtask` out of its former single-file shape: command dispatch,
-  contract checks, golden management, release scaffolding, shared utilities, and
-  harness tests now live in focused `xtask/src/*.rs` modules with command
-  behavior preserved.
-- Marked `v0.11.0-alpha.1` as published in the release-process contract and
-  release notes, recording the immutable tag, workflow evidence, milestone
-  closure, release URL, and no-crates publication evidence.
 
 ## [v0.11.0-alpha.1] - 2026-06-30
 
