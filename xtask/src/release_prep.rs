@@ -9,7 +9,6 @@ struct ReleasePrepVersion {
     tag: String,
     package_version: String,
     policy_key: String,
-    boundary_test_name: String,
 }
 
 impl ReleasePrepVersion {
@@ -29,16 +28,10 @@ impl ReleasePrepVersion {
         }
         let alpha = parse_decimal(alpha, "alpha")?;
         let policy_key = format!("v{major}_{minor}_{patch}_alpha_{alpha}");
-        let boundary_key = if patch == 0 && alpha == 1 {
-            format!("v{major}_{minor}")
-        } else {
-            policy_key.clone()
-        };
         Ok(Self {
             tag: input.to_owned(),
             package_version: package_version.to_owned(),
             policy_key,
-            boundary_test_name: format!("release_policy_tracks_{boundary_key}_boundary"),
         })
     }
 
@@ -68,7 +61,6 @@ pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
     let changelog_path = root.join("CHANGELOG.md");
     let policy_path = root.join("docs/topics/release-process/policy.toml");
     let test_plan_path = root.join("docs/topics/release-process/test-plan.md");
-    let xtask_tests_path = root.join("xtask/src/tests.rs");
     let release_notes_path = release_notes_path(root, &version);
 
     if release_notes_path.exists() {
@@ -98,11 +90,6 @@ pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
     let policy = append_release_policy_block(&policy, &version, &target_date)?;
     let release_notes = render_release_notes_stub(&version, &target_date);
     let test_plan = insert_release_test_plan_rows(&read_to_string(&test_plan_path)?, &version)?;
-    let xtask_tests = insert_release_boundary_test_stub(
-        &read_to_string(&xtask_tests_path)?,
-        &version,
-        &target_date,
-    )?;
 
     write_file(&cli_manifest_path, &cli_manifest)?;
     write_file(&syntax_manifest_path, &syntax_manifest)?;
@@ -111,7 +98,6 @@ pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
     write_file(&policy_path, &policy)?;
     write_file(&release_notes_path, &release_notes)?;
     write_file(&test_plan_path, &test_plan)?;
-    write_file(&xtask_tests_path, &xtask_tests)?;
 
     println!(
         "release-prep: scaffolded {} with target date {}",
@@ -300,7 +286,7 @@ fn insert_release_test_plan_rows(
     test_plan: &str,
     version: &ReleasePrepVersion,
 ) -> Result<String, String> {
-    if test_plan.contains(&version.tag) || test_plan.contains(&version.boundary_test_name) {
+    if test_plan.contains(&version.tag) {
         return Err(format!(
             "release-process test plan already contains {}",
             version.tag
@@ -330,97 +316,11 @@ fn insert_release_test_plan_rows(
         &with_fixture,
         "\n## Determinism Obligations\n",
         &format!(
-            "| {tp_id} | planned | Boundary guard | {req_id} | Structured policy captures the `{tag}` scope and non-goal boundary after scaffold placeholders are replaced. | {test_name} | docs/topics/release-process/policy.toml, docs/releases/{tag}.md | Scaffolded by `cargo xtask release-prep {tag}`; reviewers must replace TODO scope/non-goal values before release. |\n",
+            "| {tp_id} | planned | Boundary guard | {req_id} | Review confirms structured policy captures the `{tag}` scope and non-goal boundary after scaffold placeholders are replaced. | - | docs/topics/release-process/policy.toml, docs/releases/{tag}.md | Scaffolded by `cargo xtask release-prep {tag}`; reviewers must replace TODO scope/non-goal values before release. Block structure is checked by `release_policy_blocks_are_structurally_complete`; dates are reconciled against git tags by `cargo xtask release-dates`. |\n",
             tag = version.tag,
-            test_name = version.boundary_test_name,
         ),
         "release-process test case table",
     )
-}
-
-fn insert_release_boundary_test_stub(
-    source: &str,
-    version: &ReleasePrepVersion,
-    target_date: &str,
-) -> Result<String, String> {
-    if source.contains(&format!("fn {}()", version.boundary_test_name)) {
-        return Err(format!(
-            "xtask source already contains {}",
-            version.boundary_test_name
-        ));
-    }
-    let date_case = format!("            (\"{}\", \"{target_date}\"),\n", version.tag);
-    let with_date = insert_in_alpha_changelog_date_cases(source, &date_case)?;
-    let alpha_marker =
-        if with_date.contains("    #[test]\n    fn alpha_changelog_dates_match_release_policy()") {
-            "    #[test]\n    fn alpha_changelog_dates_match_release_policy()"
-        } else {
-            "fn alpha_changelog_dates_match_release_policy()"
-        };
-    insert_before_once(
-        &with_date,
-        alpha_marker,
-        &format!(
-            "\
-    #[test]
-    fn {test_name}() {{
-        let root = repo_root().expect(\"repo root\");
-        let policy = fs::read_to_string(root.join(\"docs/topics/release-process/policy.toml\"))
-            .expect(\"release policy\");
-        let release_policy = toml_section(&policy, \"{section}\");
-        for required in [
-            \"{section}\",
-            \"tag = \\\"{tag}\\\"\",
-            \"target_date = \\\"{target_date}\\\"\",
-            \"status = \\\"prep\\\"\",
-            \"scope = [\",
-            \"non_goals = [\",
-        ] {{
-            assert!(
-                release_policy.contains(required),
-                \"{tag} release policy missing structured field: {{required}}\"
-            );
-        }}
-        for forbidden in [
-            \"TODO_release_scope\",
-            \"TODO_release_non_goal\",
-        ] {{
-            assert!(
-                !release_policy.contains(forbidden),
-                \"{tag} release policy must replace scaffold placeholder: {{forbidden}}\"
-            );
-        }}
-    }}
-
-",
-            test_name = version.boundary_test_name,
-            section = version.policy_section(),
-            tag = version.tag,
-        ),
-        "xtask alpha changelog date guard",
-    )
-}
-
-fn insert_in_alpha_changelog_date_cases(source: &str, date_case: &str) -> Result<String, String> {
-    if source.contains(date_case.trim()) {
-        return Err("alpha changelog date guard already contains release".into());
-    }
-    let function_start = source
-        .find("fn alpha_changelog_dates_match_release_policy()")
-        .ok_or_else(|| {
-            "xtask source missing alpha_changelog_dates_match_release_policy".to_owned()
-        })?;
-    let tail = &source[function_start..];
-    let list_end = tail
-        .find("] {")
-        .ok_or_else(|| "alpha changelog date guard missing tuple list terminator".to_owned())?;
-    let line_start = tail[..list_end].rfind('\n').map_or(0, |index| index + 1);
-    let insert_at = function_start + line_start;
-    let mut output = String::with_capacity(source.len() + date_case.len());
-    output.push_str(&source[..insert_at]);
-    output.push_str(date_case);
-    output.push_str(&source[insert_at..]);
-    Ok(output)
 }
 
 fn next_numbered_id(text: &str, prefix: &str) -> Result<String, String> {
