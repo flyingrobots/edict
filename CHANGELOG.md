@@ -140,6 +140,18 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- **BREAKING (language surface):** the action declaration keyword is now
+  `action` instead of `intent`. Source files that declare `intent name { ... }`
+  no longer parse. The rename is workspace-wide and also covers the public Rust
+  surface (`ActionDecl`, `ActionClause`, `CoreAction`, `TargetIrAction`,
+  `CoreModule::actions`, `ResolvedAction`, `TypedAction`).
+- **BREAKING (canonical ABI):** the canonical CBOR map key for the action map is
+  now `actions` instead of `intents` in both `edict.core/v1` and
+  `edict.target-ir.artifact/v1`. Canonical bytes and every derived digest move
+  accordingly; the reviewed Core and Target IR goldens under
+  `fixtures/core/canonical/` and `fixtures/target-ir/canonical/` were
+  regenerated. Previously published digests do not carry over. Fixtures, specs,
+  CDDL, and topic shelves use the new term throughout.
 - The local `cargo xtask verify` gate now schedules one default workspace test
   pass, which already includes doctests, instead of repeating every workspace
   doctest in a second Cargo invocation.

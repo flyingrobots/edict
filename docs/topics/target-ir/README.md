@@ -54,7 +54,7 @@ profiles and does not perform adapter-chain search or general target plugin
 dispatch.
 
 Target-lowering facts also carry the operation profiles selected by
-lowerability. A Core intent whose `required_operation_profile` is absent from
+lowerability. A Core action whose `required_operation_profile` is absent from
 that explicit set rejects before Target IR is emitted.
 
 For the supported Echo and git-warp slices, each supported Core effect node
@@ -78,7 +78,7 @@ git-warp does not currently claim Target IR requirement support. A Core module
 with `require` nodes selected for git-warp rejects before artifact emission with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`.
 
-Intent-level Target IR requirements are pre-step guards. A Core `require` after
+Action-level Target IR requirements are pre-step guards. A Core `require` after
 an emitted target step rejects with
 `TargetLoweringFailureKind::UnsupportedTargetFeature` before artifact emission.
 If the requirement predicate or reason payload references a local produced by an
@@ -86,7 +86,7 @@ earlier target step, lowering uses the same stable failure kind with a more
 specific step-output-dependency detail. Ordered or step-attached guards remain a
 future artifact-model change.
 
-Each Target IR intent also preserves the Core input constraints, Core evaluation
+Each Target IR action also preserves the Core input constraints, Core evaluation
 budget, source-ordered requirements, source-ordered effect steps, and structured
 Core result expression for the supported slice. This records preconditions,
 evaluation limits, guard dispositions, and success-output semantics without
@@ -101,7 +101,7 @@ CBOR for:
 ```
 
 The canonical value includes the artifact's own domain, digest-locked target
-profile resource, source Core coordinate, sorted intent map, input constraints,
+profile resource, source Core coordinate, sorted action map, input constraints,
 Core evaluation budget, source-ordered requirements, requirement predicates and
 failure dispositions, source-ordered target steps, sorted obstruction failure
 keys and arms, and structured Core result expression. Target profile digests are
@@ -147,8 +147,8 @@ Core feature that the selected target does not support rejects with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`. Missing or ambiguous
 effect lowering facts, non-Echo target intrinsics, missing operation-profile
 support, and obstruction keys absent from the selected target facts also reject
-before any artifact is emitted. A Core intent with no target-owned requirements
-or steps, or a Core module with no intents, rejects with
+before any artifact is emitted. A Core action with no target-owned requirements
+or steps, or a Core module with no actions, rejects with
 `TargetLoweringFailureKind::NoTargetSteps`. Duplicate target-lowering facts are
 ambiguous only when they match an effect used by the Core module being lowered;
 unrelated duplicate facts do not block the supported artifact.
