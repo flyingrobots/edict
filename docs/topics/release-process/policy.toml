@@ -189,7 +189,7 @@ non_goals = [
 
 [release_notes.v0_4_0_alpha_1]
 tag = "v0.4.0-alpha.1"
-target_date = "2026-06-24"
+target_date = "2026-06-25"
 status = "published"
 release_issue = 39
 scope = [

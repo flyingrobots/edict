@@ -1711,10 +1711,12 @@ fn release_runbook_policy_is_structured() {
 }
 
 #[test]
-fn release_prep_scaffolds_version_policy_changelog_and_test_stub() {
+fn release_prep_scaffolds_version_policy_changelog_and_notes() {
     let root = temp_root("release-prep-scaffold");
     write_release_prep_scaffold_fixture(&root);
-    release_prep(&root, "v0.12.0-alpha.1").expect("release prep scaffold");
+    let xtask_source_before =
+        fs::read_to_string(root.join("xtask/src/tests.rs")).expect("xtask tests before");
+    release_prep(&root, "v0.12.0-alpha.1", Some("2026-08-04")).expect("release prep scaffold");
 
     let package_version = "version = \"0.12.0-alpha.1\"";
     assert!(
@@ -1738,7 +1740,7 @@ fn release_prep_scaffolds_version_policy_changelog_and_test_stub() {
     let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
     assert!(
             changelog.contains(
-                "## [Unreleased]\n\n## [v0.12.0-alpha.1] - 2026-11-18\n\n### Changed\n\n- Pending release note."
+                "## [Unreleased]\n\n## [v0.12.0-alpha.1] - 2026-08-04\n\n### Changed\n\n- Pending release note."
             ),
             "release prep must move pending changelog content under the dated release section"
         );
@@ -1747,7 +1749,7 @@ fn release_prep_scaffolds_version_policy_changelog_and_test_stub() {
     for required in [
         "[release_notes.v0_12_0_alpha_1]",
         "tag = \"v0.12.0-alpha.1\"",
-        "target_date = \"2026-11-18\"",
+        "target_date = \"2026-08-04\"",
         "status = \"prep\"",
         "TODO_release_scope",
         "TODO_release_non_goal",
@@ -1772,10 +1774,13 @@ fn release_prep_scaffolds_version_policy_changelog_and_test_stub() {
     // Release prep no longer writes Rust test stubs. Per-release policy content
     // is reviewed, block structure is covered by one data-driven test, and
     // dates are reconciled against git tags by `cargo xtask release-dates`.
+    // Comparing the whole file against the seeded fixture is what makes this
+    // assertion able to fail: searching for a stub name the fixture never
+    // contained would pass no matter what release-prep wrote.
     let xtask_source = fs::read_to_string(root.join("xtask/src/tests.rs")).expect("xtask tests");
-    assert!(
-        !xtask_source.contains("release_policy_tracks_v0_12_boundary"),
-        "release prep must not scaffold per-release boundary test stubs"
+    assert_eq!(
+        xtask_source, xtask_source_before,
+        "release prep must not modify xtask/src/tests.rs"
     );
 }
 
@@ -1808,7 +1813,8 @@ fn release_prep_rejects_existing_release_notes_before_writing() {
         })
         .collect::<Vec<_>>();
 
-    let error = release_prep(&root, "v0.12.0-alpha.1").expect_err("existing notes reject");
+    let error = release_prep(&root, "v0.12.0-alpha.1", Some("2026-08-04"))
+        .expect_err("existing notes reject");
     assert!(
         error.contains("release notes already exist"),
         "duplicate release notes must be rejected before writes: {error}"
@@ -1869,7 +1875,7 @@ fn write_release_prep_policy_fixture(root: &Path) {
 fn write_release_prep_test_plan_fixture(root: &Path) {
     fs::write(
             root.join("docs/topics/release-process/test-plan.md"),
-            "# Release Process Test Plan\n\n## Requirements\n\n| ID | Status | Requirement | Source |\n| --- | --- | --- | --- |\n| RELEASE-REQ-023 | implemented | Existing release boundary. | docs/topics/release-process/policy.toml |\n| RELEASE-REQ-024 | implemented | Release prep scaffolding exists. | xtask/src/main.rs |\n\n## Fixtures\n\n| Fixture | Purpose | Oracle |\n| --- | --- | --- |\n| docs/topics/release-process/policy.toml | Structured release policy. | Checked by xtask. |\n\n## Test Cases\n\n| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| RELEASE-TP-018 | implemented | Boundary guard | RELEASE-REQ-023 | Existing release boundary is pinned. | release_policy_tracks_v0_11_boundary | docs/topics/release-process/policy.toml | Existing row. |\n| RELEASE-TP-019 | implemented | Scaffolding guard | RELEASE-REQ-024 | Release prep scaffolding is pinned. | release_prep_scaffolds_version_policy_changelog_and_test_stub | xtask/src/main.rs | Existing row. |\n\n## Determinism Obligations\n",
+            "# Release Process Test Plan\n\n## Requirements\n\n| ID | Status | Requirement | Source |\n| --- | --- | --- | --- |\n| RELEASE-REQ-023 | implemented | Existing release boundary. | docs/topics/release-process/policy.toml |\n| RELEASE-REQ-024 | implemented | Release prep scaffolding exists. | xtask/src/main.rs |\n\n## Fixtures\n\n| Fixture | Purpose | Oracle |\n| --- | --- | --- |\n| docs/topics/release-process/policy.toml | Structured release policy. | Checked by xtask. |\n\n## Test Cases\n\n| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| RELEASE-TP-018 | implemented | Boundary guard | RELEASE-REQ-023 | Existing release boundary is pinned. | release_policy_tracks_v0_11_boundary | docs/topics/release-process/policy.toml | Existing row. |\n| RELEASE-TP-019 | implemented | Scaffolding guard | RELEASE-REQ-024 | Release prep scaffolding is pinned. | release_prep_scaffolds_version_policy_changelog_and_notes | xtask/src/main.rs | Existing row. |\n\n## Determinism Obligations\n",
         )
         .expect("test plan");
 }
@@ -2763,10 +2769,12 @@ fn release_policy_blocks_are_structurally_complete() {
         .expect("release policy");
     let blocks = crate::release_dates::parse_release_policy_blocks(&policy);
 
-    assert!(
-        blocks.len() >= 10,
-        "release policy should retain a block per published release, found {}",
-        blocks.len()
+    // Exact, not a lower bound: a lower bound lets a historical block be
+    // deleted silently, which is the failure class this check exists to stop.
+    assert_eq!(
+        blocks.len(),
+        10,
+        "release policy must retain exactly one block per release from v0.2.0-alpha.1 onward"
     );
 
     let mut seen_sections = BTreeSet::new();
@@ -2783,6 +2791,11 @@ fn release_policy_blocks_are_structurally_complete() {
         assert!(
             seen_tags.insert(tag.to_owned()),
             "duplicate release policy tag {tag} in [release_notes.{section}]"
+        );
+        assert_eq!(
+            *section,
+            crate::release_dates::policy_section_key(tag),
+            "[release_notes.{section}] declares tag {tag}, which belongs in a differently keyed section"
         );
         let Some(date) = block.target_date.as_deref() else {
             panic!("[release_notes.{section}] has no target_date");
@@ -2804,13 +2817,14 @@ fn release_policy_blocks_are_structurally_complete() {
                 "[release_notes.{section}] is missing `{field}`"
             );
         }
-        if status == "published" {
-            for placeholder in ["TODO_release_scope", "TODO_release_non_goal"] {
-                assert!(
-                    !block.body.contains(placeholder),
-                    "published [release_notes.{section}] still has scaffold placeholder `{placeholder}`"
-                );
-            }
+        // Applies to `prep` too: auto-release-tag publishes from a merged
+        // release-prep branch, so a placeholder that survives to merge would
+        // ship in the release.
+        for placeholder in ["TODO_release_scope", "TODO_release_non_goal"] {
+            assert!(
+                !block.body.contains(placeholder),
+                "[release_notes.{section}] still has scaffold placeholder `{placeholder}`"
+            );
         }
     }
 }
@@ -2860,7 +2874,7 @@ fn release_policy_block_parsing_scopes_fields_to_their_own_release() {
 /// against `policy.toml`, and release-prep writes both from one field, so the
 /// two agreed even while both disagreed with the tags.
 #[test]
-fn release_date_reconciliation_reports_drift_and_gaps() {
+fn release_date_reconciliation_reports_internally_consistent_wrong_dates() {
     let policy = concat!(
         "[release_notes.v0_9_0_alpha_1]\n",
         "tag = \"v0.9.0-alpha.1\"\n",
@@ -2872,18 +2886,21 @@ fn release_date_reconciliation_reports_drift_and_gaps() {
     let changelog =
         "# Changelog\n\n## [v0.9.0-alpha.1] - 2026-10-07\n\n## [v0.8.0-alpha.1] - 2026-06-28\n";
     let tags = BTreeMap::from([
-        ("v0.9.0-alpha.1".to_owned(), "2026-06-28".to_owned()),
-        ("v0.8.0-alpha.1".to_owned(), "2026-06-28".to_owned()),
+        ("v0.9.0-alpha.1".to_owned(), annotated_tag("2026-06-28")),
+        ("v0.8.0-alpha.1".to_owned(), annotated_tag("2026-06-28")),
     ]);
     let notes = BTreeMap::from([("v0.9.0-alpha.1".to_owned(), Some("2026-10-07".to_owned()))]);
 
     let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
 
-    // v0.9 is internally consistent across all three surfaces and still wrong.
+    // v0.9 is internally consistent across all three surfaces and still wrong,
+    // which is precisely what comparing copies against each other cannot see.
+    // v0.8 contributes two more findings: its policy block and release notes are
+    // absent, and absence of a covered surface is a failure, not an advisory.
     assert_eq!(
         report.drift.len(),
-        3,
-        "policy, changelog, and notes each contradict the tag: {:?}",
+        5,
+        "three contradicting surfaces plus two absent ones: {:?}",
         report.drift
     );
     assert!(report
@@ -2896,19 +2913,20 @@ fn release_date_reconciliation_reports_drift_and_gaps() {
         .iter()
         .any(|entry| entry.contains("CHANGELOG.md `## [v0.9.0-alpha.1]` is dated 2026-10-07")));
 
-    // v0.8 matches its tag, so its only findings are uncovered surfaces.
+    // v0.8's date agrees with its tag, but its absent surfaces still fail:
+    // deleting the evidence must not be a way to pass.
     assert!(report
-        .gaps
+        .drift
         .iter()
         .any(|entry| entry.contains("no [release_notes.*] block for tag v0.8.0-alpha.1")));
     assert!(report
-        .gaps
+        .drift
         .iter()
         .any(|entry| entry.contains("docs/releases/v0.8.0-alpha.1.md is missing")));
     assert!(
-        !report.drift.iter().any(|entry| entry.contains("v0.8")),
-        "a correctly dated release must not be reported as drift: {:?}",
-        report.drift
+        report.gaps.is_empty(),
+        "nothing here is allowlisted or mid-publication: {:?}",
+        report.gaps
     );
 }
 
@@ -2923,7 +2941,7 @@ fn release_date_reconciliation_accepts_dates_matching_their_tags() {
         "non_goals = [\n  \"only_non_goal\",\n]\n",
     );
     let changelog = "# Changelog\n\n## [v0.8.0-alpha.1] - 2026-06-28\n";
-    let tags = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), "2026-06-28".to_owned())]);
+    let tags = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), annotated_tag("2026-06-28"))]);
     let notes = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), Some("2026-06-28".to_owned()))]);
 
     let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
@@ -2933,6 +2951,132 @@ fn release_date_reconciliation_accepts_dates_matching_their_tags() {
         report.drift
     );
     assert!(report.gaps.is_empty(), "unexpected gaps: {:?}", report.gaps);
+}
+
+/// A lightweight tag has no tagger, so `creatordate` would silently fall back
+/// to the tagged commit's committer date. Tagging an older commit would then
+/// report a date that never corresponded to a release, so the tag is rejected
+/// rather than trusted.
+#[test]
+fn release_date_reconciliation_rejects_lightweight_release_tags() {
+    let policy = concat!(
+        "[release_notes.v0_8_0_alpha_1]\n",
+        "tag = \"v0.8.0-alpha.1\"\n",
+        "target_date = \"2026-06-28\"\n",
+        "status = \"published\"\n",
+        "scope = [\n  \"only_scope\",\n]\n",
+        "non_goals = [\n  \"only_non_goal\",\n]\n",
+    );
+    let changelog = "# Changelog\n\n## [v0.8.0-alpha.1] - 2026-06-28\n";
+    let tags = BTreeMap::from([(
+        "v0.8.0-alpha.1".to_owned(),
+        crate::release_dates::TagRecord {
+            date: Some("2026-06-28".to_owned()),
+            annotated: false,
+        },
+    )]);
+    let notes = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), Some("2026-06-28".to_owned()))]);
+
+    let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
+    assert!(
+        report
+            .drift
+            .iter()
+            .any(|entry| entry.contains("is lightweight")),
+        "lightweight release tags must fail: {:?}",
+        report.drift
+    );
+}
+
+/// A tag exists before the post-publication change flips its block from `prep`
+/// to `published`. That window is a lagging surface, not a contradiction;
+/// failing it would make `verify` red on `main` for unrelated branches.
+#[test]
+fn release_date_reconciliation_tolerates_prep_status_for_a_fresh_tag() {
+    let policy = concat!(
+        "[release_notes.v0_12_0_alpha_1]\n",
+        "tag = \"v0.12.0-alpha.1\"\n",
+        "target_date = \"2026-08-04\"\n",
+        "status = \"prep\"\n",
+        "scope = [\n  \"only_scope\",\n]\n",
+        "non_goals = [\n  \"only_non_goal\",\n]\n",
+    );
+    let changelog = "# Changelog\n\n## [v0.12.0-alpha.1] - 2026-08-04\n";
+    let tags = BTreeMap::from([("v0.12.0-alpha.1".to_owned(), annotated_tag("2026-08-04"))]);
+    let notes = BTreeMap::from([("v0.12.0-alpha.1".to_owned(), Some("2026-08-04".to_owned()))]);
+
+    let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
+    assert!(
+        report.drift.is_empty(),
+        "a freshly tagged prep release must not fail the gate: {:?}",
+        report.drift
+    );
+    assert!(
+        report
+            .gaps
+            .iter()
+            .any(|entry| entry.contains("still has status `prep`")),
+        "the lagging status must still be reported: {:?}",
+        report.gaps
+    );
+}
+
+/// Deleting a date-bearing surface must fail rather than downgrade to an
+/// advisory gap, otherwise removing the evidence makes the gate pass.
+#[test]
+fn release_date_reconciliation_fails_when_a_covered_surface_disappears() {
+    let tags = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), annotated_tag("2026-06-28"))]);
+    let report =
+        crate::release_dates::reconcile_release_dates(&tags, "", "# Changelog\n", &BTreeMap::new());
+    for expected in [
+        "no [release_notes.*] block for tag v0.8.0-alpha.1",
+        "CHANGELOG.md has no `## [v0.8.0-alpha.1]` section",
+        "docs/releases/v0.8.0-alpha.1.md is missing",
+    ] {
+        assert!(
+            report.drift.iter().any(|entry| entry.contains(expected)),
+            "missing surface must be drift, not a gap: {expected} not in {:?}",
+            report.drift
+        );
+    }
+    assert!(
+        report.gaps.is_empty(),
+        "no surface here is allowlisted: {:?}",
+        report.gaps
+    );
+}
+
+/// The one release that predates the structured policy stays advisory.
+#[test]
+fn release_date_reconciliation_allowlists_the_prepolicy_release() {
+    let tags = BTreeMap::from([("v0.1.0-alpha.1".to_owned(), annotated_tag("2026-06-21"))]);
+    let notes = BTreeMap::from([("v0.1.0-alpha.1".to_owned(), Some("2026-06-21".to_owned()))]);
+    let report = crate::release_dates::reconcile_release_dates(
+        &tags,
+        "",
+        "# Changelog\n\n## [v0.1.0-alpha.1] - 2026-06-21\n",
+        &notes,
+    );
+    assert!(
+        report.drift.is_empty(),
+        "the pre-policy release must not fail the gate: {:?}",
+        report.drift
+    );
+    assert!(
+        report
+            .gaps
+            .iter()
+            .any(|entry| entry.contains("no [release_notes.*] block for tag v0.1.0-alpha.1")),
+        "the allowlisted omission must still be reported: {:?}",
+        report.gaps
+    );
+}
+
+fn annotated_tag(date: &str) -> crate::release_dates::TagRecord {
+    crate::release_dates::TagRecord {
+        date: Some(date.to_owned()),
+        annotated: true,
+    }
 }
 
 fn is_iso_date(value: &str) -> bool {

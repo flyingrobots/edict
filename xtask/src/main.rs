@@ -95,15 +95,7 @@ fn run() -> Result<(), String> {
             target_ir_goldens(&repo_root()?, mode)
         }
         Some("lawpack-goldens") => run_lawpack_goldens(&mut args),
-        Some("release-prep") => {
-            let version = args
-                .next()
-                .ok_or_else(|| "usage: cargo xtask release-prep <version>".to_owned())?;
-            if let Some(extra) = args.next() {
-                return Err(format!("unexpected release-prep argument `{extra}`"));
-            }
-            release_prep(&repo_root()?, &version)
-        }
+        Some("release-prep") => run_release_prep(&mut args),
         Some("provider-component-fixtures") => {
             let mode = match args.next().as_deref() {
                 Some("--write") => ProviderComponentFixtureMode::Write,
@@ -134,10 +126,27 @@ fn run() -> Result<(), String> {
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
         None => Err(
-            "usage: cargo xtask <verify|contract-check|release-dates|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|lawpack-goldens|provider-component-fixtures|provider-contract-pack|provider-runtime-dependencies|release-prep>"
+            "usage: cargo xtask <verify|contract-check|release-dates|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|lawpack-goldens|provider-component-fixtures|provider-contract-pack|provider-runtime-dependencies|release-prep [--date YYYY-MM-DD]>"
                 .into(),
         ),
     }
+}
+
+fn run_release_prep(args: &mut impl Iterator<Item = String>) -> Result<(), String> {
+    const USAGE: &str = "usage: cargo xtask release-prep <version> [--date YYYY-MM-DD]";
+    let version = args.next().ok_or_else(|| USAGE.to_owned())?;
+    let date = match args.next().as_deref() {
+        None => None,
+        Some("--date") => Some(
+            args.next()
+                .ok_or_else(|| "release-prep `--date` requires YYYY-MM-DD".to_owned())?,
+        ),
+        Some(flag) => return Err(format!("unknown release-prep flag `{flag}`; {USAGE}")),
+    };
+    if let Some(extra) = args.next() {
+        return Err(format!("unexpected release-prep argument `{extra}`"));
+    }
+    release_prep(&repo_root()?, &version, date.as_deref())
 }
 
 fn run_release_dates(args: &mut impl Iterator<Item = String>) -> Result<(), String> {

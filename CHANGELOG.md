@@ -244,9 +244,17 @@ versions still track specification maturity rather than a released product.
   `docs/releases/*.md`, and the `xtask` release guards now record the actual git
   tag dates (2026-06-21 through 2026-06-30) instead of the planned biweekly
   schedule that ran to 2026-11-04. The `target_date` field keeps its name but now
-  holds the real publication date, so `RELEASE-REQ-008` is restated accordingly.
-  `next_release_target_date` still increments the last entry by 14 days and now
-  seeds a past date; see the release-process test plan for that open gap.
+  holds the date the release was tagged, so `RELEASE-REQ-008` is restated
+  accordingly. The tag date is not the GitHub Release publication timestamp:
+  `v0.4.0-alpha.1` was tagged 2026-06-25 and published later the same day, and
+  release notes keep that publication timestamp separately. Tag dates are read in
+  UTC so a local run and a CI run agree; `v0.4.0-alpha.1` is the one tag where
+  that matters, resolving to 2026-06-24 in PDT and 2026-06-25 in UTC.
+- `cargo xtask release-prep` no longer derives the scaffolded date by adding
+  fourteen days to the last recorded release. That extrapolation assumed
+  `target_date` held a planned date on a biweekly cadence; now that it records
+  when a release was tagged, extrapolating produced a date in the past. The
+  command takes `--date YYYY-MM-DD` and otherwise uses today's UTC date.
 - The local `cargo xtask verify` gate now schedules one default workspace test
   pass, which already includes doctests, instead of repeating every workspace
   doctest in a second Cargo invocation.
@@ -566,7 +574,7 @@ versions still track specification maturity rather than a released product.
 - Added the admission topic shelf for the Edict/Continuum admission-boundary
   contract and verification matrix.
 
-## [v0.4.0-alpha.1] - 2026-06-24
+## [v0.4.0-alpha.1] - 2026-06-25
 
 ### Added
 

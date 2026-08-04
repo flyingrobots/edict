@@ -66,8 +66,26 @@ them. Those three surfaces are written from one field at scaffold time, so
 comparing them against each other only proves the copy succeeded; the tags are
 the independent authority for when a release happened. The check runs inside
 `cargo xtask verify` and reports uncovered surfaces separately from date drift.
-A clone without tags reports that it skipped rather than passing silently.
-[RELEASE-REQ-008]
+A clone without tags fails rather than passing silently, because a missing
+independent authority is not approval. [RELEASE-REQ-008]
+
+For a published release, `target_date` in [`policy.toml`](./policy.toml) and
+`Target date:` in `docs/releases/*.md` record the date the release was tagged,
+not a date it was planned for and not the GitHub Release publication timestamp.
+`v0.4.0-alpha.1` shows the difference: tagged 2026-06-24, published 2026-06-25.
+The field keeps its scaffold-era name because the reconciliation parses that
+exact literal. [RELEASE-REQ-008]
+
+Tag dates are read in UTC. `%(taggerdate)` renders in the reading machine's
+timezone by default, so a tag created near midnight resolves to different days
+for different operators. `v0.4.0-alpha.1` is such a tag: 2026-06-24 in PDT and
+2026-06-25 in UTC. The recorded date is the UTC one, so a local run and a CI run
+agree. [RELEASE-REQ-008]
+
+Release tags must be annotated. A lightweight tag has no tagger date, so the
+check would fall back to the tagged commit's committer date and a tag placed on
+an older commit would report a date that never corresponded to a release. The
+reconciliation rejects lightweight `v*` tags instead. [RELEASE-REQ-008]
 
 Every release-prep branch must audit `docs/topics/` coverage and accuracy before
 the release-prep pull request opens. Coverage is audited topic shelves divided

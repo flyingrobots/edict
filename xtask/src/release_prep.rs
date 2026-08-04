@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::util::read_to_string;
 
@@ -53,7 +54,7 @@ fn parse_decimal(part: &str, name: &str) -> Result<u16, String> {
         .map_err(|err| format!("parse release-prep {name} version part `{part}`: {err}"))
 }
 
-pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
+pub(crate) fn release_prep(root: &Path, input: &str, date: Option<&str>) -> Result<(), String> {
     let version = ReleasePrepVersion::parse(input)?;
     let cli_manifest_path = root.join("crates/edict-cli/Cargo.toml");
     let syntax_manifest_path = root.join("crates/edict-syntax/Cargo.toml");
@@ -71,7 +72,7 @@ pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
     }
 
     let policy = read_to_string(&policy_path)?;
-    let target_date = next_release_target_date(&policy)?;
+    let target_date = scaffold_release_date(date)?;
     let cli_manifest = replace_first_version_line(
         &read_to_string(&cli_manifest_path)?,
         &version.package_version,
@@ -370,40 +371,67 @@ fn replace_once(
     Ok(text.replacen(needle, replacement, 1))
 }
 
-fn next_release_target_date(policy: &str) -> Result<String, String> {
-    let latest = policy
-        .lines()
-        .filter_map(|line| {
-            line.trim()
-                .strip_prefix("target_date = ")
-                .and_then(parse_quoted_string)
-        })
-        .next_back()
-        .ok_or_else(|| "release policy contains no target_date fields".to_owned())?;
-    add_days_to_iso_date(&latest, 14)
+/// The date a release-prep scaffold records.
+///
+/// This used to be the last `target_date` plus fourteen days, from an era when
+/// the field held a planned date on a biweekly cadence. Now that `target_date`
+/// records the date a release was actually tagged, extrapolating from history
+/// produces a date in the past: seeded from the realigned record, the next value
+/// would be 2026-07-14. An explicit `--date` wins; otherwise today's UTC date is
+/// used, so the scaffold is at least current when it is written.
+fn scaffold_release_date(explicit: Option<&str>) -> Result<String, String> {
+    match explicit {
+        Some(date) => {
+            validate_iso_date(date)?;
+            Ok(date.to_owned())
+        }
+        None => today_utc(),
+    }
 }
 
-fn add_days_to_iso_date(date: &str, days: u8) -> Result<String, String> {
+fn validate_iso_date(date: &str) -> Result<(), String> {
     let mut parts = date.split('-');
-    let mut year = parse_date_part(parts.next(), "year")?;
-    let mut month = parse_date_part(parts.next(), "month")?;
-    let mut day = parse_date_part(parts.next(), "day")?;
-    if parts.next().is_some() || month == 0 || month > 12 || day == 0 {
+    let year = parse_date_part(parts.next(), "year")?;
+    let month = parse_date_part(parts.next(), "month")?;
+    let day = parse_date_part(parts.next(), "day")?;
+    if parts.next().is_some() || date.len() != 10 || month == 0 || month > 12 || day == 0 {
         return Err(format!("invalid ISO date `{date}`"));
     }
-    for _ in 0..days {
-        day += 1;
-        let month_days = days_in_month(year, month)?;
-        if day > month_days {
-            day = 1;
-            month += 1;
-            if month > 12 {
-                month = 1;
-                year += 1;
-            }
-        }
+    if day > days_in_month(year, month)? {
+        return Err(format!("invalid ISO date `{date}`"));
     }
-    Ok(format!("{year:04}-{month:02}-{day:02}"))
+    Ok(())
+}
+
+fn today_utc() -> Result<String, String> {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|err| format!("read system clock: {err}"))?
+        .as_secs();
+    let days = i64::try_from(seconds / 86_400)
+        .map_err(|err| format!("system clock out of range: {err}"))?;
+    Ok(iso_date_from_days_since_epoch(days))
+}
+
+/// Civil date from a day count since 1970-01-01, using Howard Hinnant's
+/// `civil_from_days`. Avoids taking a date-library dependency for one call.
+fn iso_date_from_days_since_epoch(days: i64) -> String {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let day_of_era = z - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_position = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_position + 2) / 5 + 1;
+    let month = if month_position < 10 {
+        month_position + 3
+    } else {
+        month_position - 9
+    };
+    let year = if month <= 2 { year + 1 } else { year };
+    format!("{year:04}-{month:02}-{day:02}")
 }
 
 fn parse_date_part(part: Option<&str>, name: &str) -> Result<u16, String> {
