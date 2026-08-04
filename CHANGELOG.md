@@ -8,6 +8,19 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+### Security
+
+- Raised the pinned Wasmtime engine from `46.0.1` to `46.0.2` to clear
+  [RUSTSEC-2026-0222](https://rustsec.org/advisories/RUSTSEC-2026-0222)
+  ("Stores can mix up type indices between engines"). The pin is exact, so the
+  bump moves `crates/edict-provider-host-wasmtime/Cargo.toml`, the
+  `provider-runtime-dependencies` boundary check in `xtask`, and the providers
+  architecture shelf together. Patch-level within `46.x`; no host API, provider
+  ABI, or golden artifact changes. The provider component fixture inventory
+  records a new `sourceDigest` because the workspace `Cargo.lock` is one of its
+  hashed provenance inputs; all five component digests are unchanged, since the
+  guest components do not depend on the host engine version.
+
 ### Changed
 
 - Replaced sentinel external-request schema and reconciliation identities
