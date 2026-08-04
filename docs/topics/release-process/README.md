@@ -55,10 +55,19 @@ captured in [`policy.toml`](./policy.toml). [RELEASE-REQ-009]
 `cargo xtask release-prep <version>` scaffolds the mechanical release-prep
 surfaces that must move together: workspace package versions, lockfile package
 versions, a dated changelog section, release policy boundary block, release
-notes stub, release boundary test stub, changelog date guard entry, and paired
-release-process test-plan rows. The command does not write the release thesis,
-replace topic-shelf audits, or decide scope/non-goals; reviewers must replace
-the scaffold placeholders before release. [RELEASE-REQ-024]
+notes stub, and paired release-process test-plan rows. The command does not
+write the release thesis, replace topic-shelf audits, decide scope/non-goals, or
+generate Rust test stubs; reviewers must replace the scaffold placeholders
+before release. [RELEASE-REQ-024]
+
+`cargo xtask release-dates` reconciles the dates recorded in the release policy,
+`CHANGELOG.md`, and `docs/releases/*.md` against the git tags that published
+them. Those three surfaces are written from one field at scaffold time, so
+comparing them against each other only proves the copy succeeded; the tags are
+the independent authority for when a release happened. The check runs inside
+`cargo xtask verify` and reports uncovered surfaces separately from date drift.
+A clone without tags reports that it skipped rather than passing silently.
+[RELEASE-REQ-008]
 
 Every release-prep branch must audit `docs/topics/` coverage and accuracy before
 the release-prep pull request opens. Coverage is audited topic shelves divided

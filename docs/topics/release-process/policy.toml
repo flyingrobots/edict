@@ -44,8 +44,6 @@ scaffold_outputs = [
   "dated_changelog_section",
   "release_policy_boundary_block",
   "release_notes_stub",
-  "release_boundary_test_stub",
-  "alpha_changelog_date_guard_entry",
   "release_process_test_plan_rows",
 ]
 steps = [

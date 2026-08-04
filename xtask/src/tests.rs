@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -1701,8 +1701,6 @@ fn release_runbook_policy_is_structured() {
         "dated_changelog_section",
         "release_policy_boundary_block",
         "release_notes_stub",
-        "release_boundary_test_stub",
-        "alpha_changelog_date_guard_entry",
         "release_process_test_plan_rows",
     ] {
         assert!(
@@ -1768,21 +1766,16 @@ fn release_prep_scaffolds_version_policy_changelog_and_test_stub() {
     let test_plan = fs::read_to_string(root.join("docs/topics/release-process/test-plan.md"))
         .expect("test plan");
     assert!(
-        test_plan.contains("RELEASE-REQ-025")
-            && test_plan.contains("RELEASE-TP-020")
-            && test_plan.contains("release_policy_tracks_v0_12_boundary"),
+        test_plan.contains("RELEASE-REQ-025") && test_plan.contains("RELEASE-TP-020"),
         "release prep must add paired requirement and test-plan rows"
     );
+    // Release prep no longer writes Rust test stubs. Per-release policy content
+    // is reviewed, block structure is covered by one data-driven test, and
+    // dates are reconciled against git tags by `cargo xtask release-dates`.
     let xtask_source = fs::read_to_string(root.join("xtask/src/tests.rs")).expect("xtask tests");
     assert!(
-        xtask_source.contains("fn release_policy_tracks_v0_12_boundary()")
-            && xtask_source.contains("(\"v0.12.0-alpha.1\", \"2026-11-18\")"),
-        "release prep must add the boundary test stub and changelog date case"
-    );
-    assert!(
-        xtask_source.contains("!release_policy.contains(forbidden)")
-            && xtask_source.contains("release policy must replace scaffold placeholder"),
-        "release boundary test must fail while scaffold placeholders remain"
+        !xtask_source.contains("release_policy_tracks_v0_12_boundary"),
+        "release prep must not scaffold per-release boundary test stubs"
     );
 }
 
@@ -2764,410 +2757,193 @@ fn release_automation_policy_is_structured() {
 }
 
 #[test]
-fn release_policy_tracks_v0_3_boundary() {
+fn release_policy_blocks_are_structurally_complete() {
     let root = repo_root().expect("repo root");
     let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
         .expect("release policy");
-    for required in [
-        "[release_notes.v0_3_0_alpha_1]",
-        "tag = \"v0.3.0-alpha.1\"",
-        "target_date = \"2026-06-24\"",
-        "status = \"published\"",
-        "compiler_spine",
-        "surface_validation_split",
-        "canonical_core_encoder",
-        "reviewed_core_golden_fixture",
-        "exact_core_digest_fixture",
-        "no_target_lowering",
-        "no_bundle_admission",
-    ] {
+    let blocks = crate::release_dates::parse_release_policy_blocks(&policy);
+
+    assert!(
+        blocks.len() >= 10,
+        "release policy should retain a block per published release, found {}",
+        blocks.len()
+    );
+
+    let mut seen_sections = BTreeSet::new();
+    let mut seen_tags = BTreeSet::new();
+    for block in &blocks {
+        let section = &block.section;
         assert!(
-            policy.contains(required),
-            "v0.3 release policy missing structured field: {required}"
+            seen_sections.insert(section.clone()),
+            "duplicate release policy section [release_notes.{section}]"
         );
+        let Some(tag) = block.tag.as_deref() else {
+            panic!("[release_notes.{section}] has no tag");
+        };
+        assert!(
+            seen_tags.insert(tag.to_owned()),
+            "duplicate release policy tag {tag} in [release_notes.{section}]"
+        );
+        let Some(date) = block.target_date.as_deref() else {
+            panic!("[release_notes.{section}] has no target_date");
+        };
+        assert!(
+            is_iso_date(date),
+            "[release_notes.{section}] target_date `{date}` is not an ISO date"
+        );
+        let Some(status) = block.status.as_deref() else {
+            panic!("[release_notes.{section}] has no status");
+        };
+        assert!(
+            matches!(status, "published" | "planned" | "prep"),
+            "[release_notes.{section}] has unexpected status `{status}`"
+        );
+        for field in ["scope = [", "non_goals = ["] {
+            assert!(
+                block.body.contains(field),
+                "[release_notes.{section}] is missing `{field}`"
+            );
+        }
+        if status == "published" {
+            for placeholder in ["TODO_release_scope", "TODO_release_non_goal"] {
+                assert!(
+                    !block.body.contains(placeholder),
+                    "published [release_notes.{section}] still has scaffold placeholder `{placeholder}`"
+                );
+            }
+        }
     }
 }
 
+/// Regression guard for the substring-matching flaw this test file used to
+/// have. The previous per-release guards asserted
+/// `policy.contains("target_date = \"...\"")` against the whole file, so a
+/// release carrying a wrong date still passed whenever any other release
+/// happened to carry the expected string. Releases tagged on the same day
+/// share a date, so that is the normal case, not a corner case.
 #[test]
-fn release_policy_tracks_v0_4_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    for required in [
-        "[release_notes.v0_4_0_alpha_1]",
-        "tag = \"v0.4.0-alpha.1\"",
-        "target_date = \"2026-06-24\"",
-        "status = \"published\"",
-        "target_profile_conformance",
-        "lowerability_direct_adapter",
-        "contract_bundle_manifest_validation",
-        "no_target_lowerer_execution",
-        "no_admission_policy",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            policy.contains(required),
-            "v0.4 release policy missing structured field: {required}"
-        );
-    }
+fn release_policy_block_parsing_scopes_fields_to_their_own_release() {
+    let policy = concat!(
+        "[release_notes.v0_3_0_alpha_1]\n",
+        "tag = \"v0.3.0-alpha.1\"\n",
+        "target_date = \"1999-01-01\"\n",
+        "status = \"published\"\n",
+        "scope = [\n  \"first_scope\",\n]\n",
+        "non_goals = [\n  \"first_non_goal\",\n]\n",
+        "\n",
+        "[release_notes.v0_4_0_alpha_1]\n",
+        "tag = \"v0.4.0-alpha.1\"\n",
+        "target_date = \"2026-06-24\"\n",
+        "status = \"published\"\n",
+        "scope = [\n  \"second_scope\",\n]\n",
+        "non_goals = [\n  \"second_non_goal\",\n]\n",
+    );
+    let blocks = crate::release_dates::parse_release_policy_blocks(policy);
+    assert_eq!(blocks.len(), 2, "both release blocks must parse");
+
+    let first = blocks
+        .iter()
+        .find(|block| block.tag.as_deref() == Some("v0.3.0-alpha.1"))
+        .expect("v0.3 block");
+
+    // A whole-file substring search finds the correct-looking date here...
+    assert!(policy.contains("target_date = \"2026-06-24\""));
+    // ...but it belongs to v0.4, and block-scoped parsing reports v0.3's own.
+    assert_eq!(first.target_date.as_deref(), Some("1999-01-01"));
+    assert_eq!(first.status.as_deref(), Some("published"));
+    assert!(first.body.contains("first_scope"));
+    assert!(!first.body.contains("second_scope"));
+}
+
+/// The reconciliation compares recorded dates against git tag dates, which is
+/// the check the previous guard could not perform: it compared `CHANGELOG.md`
+/// against `policy.toml`, and release-prep writes both from one field, so the
+/// two agreed even while both disagreed with the tags.
+#[test]
+fn release_date_reconciliation_reports_drift_and_gaps() {
+    let policy = concat!(
+        "[release_notes.v0_9_0_alpha_1]\n",
+        "tag = \"v0.9.0-alpha.1\"\n",
+        "target_date = \"2026-10-07\"\n",
+        "status = \"published\"\n",
+        "scope = [\n  \"only_scope\",\n]\n",
+        "non_goals = [\n  \"only_non_goal\",\n]\n",
+    );
+    let changelog =
+        "# Changelog\n\n## [v0.9.0-alpha.1] - 2026-10-07\n\n## [v0.8.0-alpha.1] - 2026-06-28\n";
+    let tags = BTreeMap::from([
+        ("v0.9.0-alpha.1".to_owned(), "2026-06-28".to_owned()),
+        ("v0.8.0-alpha.1".to_owned(), "2026-06-28".to_owned()),
+    ]);
+    let notes = BTreeMap::from([("v0.9.0-alpha.1".to_owned(), Some("2026-10-07".to_owned()))]);
+
+    let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
+
+    // v0.9 is internally consistent across all three surfaces and still wrong.
+    assert_eq!(
+        report.drift.len(),
+        3,
+        "policy, changelog, and notes each contradict the tag: {:?}",
+        report.drift
+    );
+    assert!(report
+        .drift
+        .iter()
+        .any(|entry| entry.contains("target_date is 2026-10-07")
+            && entry.contains("created 2026-06-28")));
+    assert!(report
+        .drift
+        .iter()
+        .any(|entry| entry.contains("CHANGELOG.md `## [v0.9.0-alpha.1]` is dated 2026-10-07")));
+
+    // v0.8 matches its tag, so its only findings are uncovered surfaces.
+    assert!(report
+        .gaps
+        .iter()
+        .any(|entry| entry.contains("no [release_notes.*] block for tag v0.8.0-alpha.1")));
+    assert!(report
+        .gaps
+        .iter()
+        .any(|entry| entry.contains("docs/releases/v0.8.0-alpha.1.md is missing")));
+    assert!(
+        !report.drift.iter().any(|entry| entry.contains("v0.8")),
+        "a correctly dated release must not be reported as drift: {:?}",
+        report.drift
+    );
 }
 
 #[test]
-fn release_policy_tracks_v0_5_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    for required in [
-        "[release_notes.v0_5_0_alpha_1]",
-        "tag = \"v0.5.0-alpha.1\"",
-        "target_date = \"2026-06-25\"",
-        "status = \"published\"",
-        "edict_owned_continuum_participation_boundary",
-        "gate_c_admission_request_validation",
-        "gate_c_admission_receipt_validation",
-        "admission_request_digest_binding",
-        "policy_epoch_receipt_binding",
-        "invocation_capability_evidence_validation",
-        "release_automation_after_main_ci",
-        "no_participant_policy_evaluation",
-        "no_participant_identity_delegation_or_revocation",
-        "no_admission_ledger_persistence",
-        "no_signature_verification",
-        "no_target_lowerer_execution",
-        "no_bundle_digest_recomputation",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            policy.contains(required),
-            "v0.5 release policy missing structured field: {required}"
-        );
-    }
+fn release_date_reconciliation_accepts_dates_matching_their_tags() {
+    let policy = concat!(
+        "[release_notes.v0_8_0_alpha_1]\n",
+        "tag = \"v0.8.0-alpha.1\"\n",
+        "target_date = \"2026-06-28\"\n",
+        "status = \"published\"\n",
+        "scope = [\n  \"only_scope\",\n]\n",
+        "non_goals = [\n  \"only_non_goal\",\n]\n",
+    );
+    let changelog = "# Changelog\n\n## [v0.8.0-alpha.1] - 2026-06-28\n";
+    let tags = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), "2026-06-28".to_owned())]);
+    let notes = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), Some("2026-06-28".to_owned()))]);
+
+    let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
+    assert!(
+        report.drift.is_empty(),
+        "unexpected drift: {:?}",
+        report.drift
+    );
+    assert!(report.gaps.is_empty(), "unexpected gaps: {:?}", report.gaps);
 }
 
-#[test]
-fn release_policy_tracks_v0_6_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    let v0_6_policy = toml_section(&policy, "[release_notes.v0_6_0_alpha_1]");
-    for required in [
-        "[release_notes.v0_6_0_alpha_1]",
-        "tag = \"v0.6.0-alpha.1\"",
-        "target_date = \"2026-06-26\"",
-        "status = \"published\"",
-        "editor_highlight_roles",
-        "tree_sitter_grammar_source",
-        "textmate_grammar_artifact",
-        "vscode_cursor_extension_package",
-        "topic_shelf_coverage_audit",
-        "no_compiler_cli",
-        "no_language_server",
-        "no_marketplace_publication",
-        "no_target_lowering",
-        "no_admission_tooling",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            v0_6_policy.contains(required),
-            "v0.6 release policy missing structured field: {required}"
-        );
-    }
-}
-
-#[test]
-fn release_policy_tracks_v0_7_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    let v0_7_policy = toml_section(&policy, "[release_notes.v0_7_0_alpha_1]");
-    for required in [
-        "[release_notes.v0_7_0_alpha_1]",
-        "tag = \"v0.7.0-alpha.1\"",
-        "target_date = \"2026-06-27\"",
-        "status = \"published\"",
-        "release_issue = 59",
-        "published_at = \"2026-06-27T22:31:49Z\"",
-        "release_url = \"https://github.com/flyingrobots/edict/releases/tag/v0.7.0-alpha.1\"",
-        "tag_object = \"f7888160f7f9a0d7b9b82d4f78bb38b886856a1e\"",
-        "peeled_commit = \"6f9c731b4f36d3283dcb448b14761832ab916b07\"",
-        "release_notes_source_commit = \"6f9c731b4f36d3283dcb448b14761832ab916b07\"",
-        "post_publication_evidence_pr = 61",
-        "main_ci_run = 28303787401",
-        "auto_release_tag_run = 28303801200",
-        "release_workflow_run = 28303809157",
-        "milestone_number = 8",
-        "milestone_closed_at = \"2026-06-27T22:31:50Z\"",
-        "milestone_open_issues = 0",
-        "release_assets = 0",
-        "crates_io_published = false",
-        "file_backed_authority_facts",
-        "operation_profile_facts",
-        "profile_write_class_allowances",
-        "effect_write_classes",
-        "budget_facts",
-        "lawpack_source_identity",
-        "target_profile_source_identity",
-        "deterministic_loaded_fact_harness",
-        "stable_load_failure_kinds",
-        "authority_fact_governance_design_note",
-        "release_policy_and_rust_standards_hardening",
-        "review_bot_fallback_policy",
-        "no_trusted_lawpack_or_target_profile_authorship",
-        "no_full_lawpack_manifest_loading",
-        "no_full_target_profile_manifest_loading",
-        "no_obstruction_obligation_adapter_footprint_cost_or_target_capability_corpus_loading",
-        "no_global_registry_trust_root_identity_system_or_revocation_model",
-        "no_target_ir_generation",
-        "no_full_effectful_source_lowering",
-        "no_admission_execution_workflow",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            v0_7_policy.contains(required),
-            "v0.7 release policy missing structured field: {required}"
-        );
-    }
-}
-
-#[test]
-fn release_policy_tracks_v0_8_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    let v0_8_policy = toml_section(&policy, "[release_notes.v0_8_0_alpha_1]");
-    for required in [
-        "[release_notes.v0_8_0_alpha_1]",
-        "tag = \"v0.8.0-alpha.1\"",
-        "target_date = \"2026-06-28\"",
-        "status = \"published\"",
-        "release_issue = 62",
-        "published_at = \"2026-06-28T01:41:16Z\"",
-        "release_url = \"https://github.com/flyingrobots/edict/releases/tag/v0.8.0-alpha.1\"",
-        "tag_object = \"32e843c5e5f7b9252078c2b8a99afa23daeab411\"",
-        "peeled_commit = \"c6a166ccea0fcb61fff9b8d76bfb5d51d613e2eb\"",
-        "release_notes_source_commit = \"c6a166ccea0fcb61fff9b8d76bfb5d51d613e2eb\"",
-        "main_ci_run = 28307840316",
-        "auto_release_tag_run = 28307856119",
-        "release_workflow_run = 28307864582",
-        "milestone_number = 9",
-        "milestone_closed_at = \"2026-06-28T01:41:16Z\"",
-        "milestone_open_issues = 0",
-        "release_assets = 0",
-        "crates_io_published = false",
-        "minimal_effectful_compiler_spine",
-        "core_effect_node_model",
-        "core_obstruction_arm_model",
-        "canonical_effect_node_encoding",
-        "file_backed_effectful_compiler_context",
-        "annotated_effectful_let_lowering",
-        "deterministic_obstruction_map_lowering",
-        "source_order_stable_obstruction_binders",
-        "unsupported_effectful_branch_yield_rejection",
-        "chained_effect_call_rejection",
-        "typed_effect_call_rejection",
-        "duplicate_obstruction_failure_rejection",
-        "pure_core_golden_stability",
-        "no_target_ir_generation",
-        "no_target_runtime_execution",
-        "no_adapter_composition",
-        "no_public_cli",
-        "no_admission_execution_workflow",
-        "no_lawpack_governance_implementation",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            v0_8_policy.contains(required),
-            "v0.8 release policy missing structured field: {required}"
-        );
-    }
-}
-
-#[test]
-fn release_policy_tracks_v0_9_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    let v0_9_policy = toml_section(&policy, "[release_notes.v0_9_0_alpha_1]");
-    for required in [
-        "[release_notes.v0_9_0_alpha_1]",
-        "tag = \"v0.9.0-alpha.1\"",
-        "target_date = \"2026-06-28\"",
-        "status = \"published\"",
-        "release_issue = 70",
-        "published_at = \"2026-06-28T07:04:06Z\"",
-        "release_url = \"https://github.com/flyingrobots/edict/releases/tag/v0.9.0-alpha.1\"",
-        "tag_object = \"c6a4ea6b10d438cd407cd7f273fecf1fd012b2d3\"",
-        "peeled_commit = \"81bacc5a240bd3ea50af934a3611ce6b3f505043\"",
-        "release_notes_source_commit = \"81bacc5a240bd3ea50af934a3611ce6b3f505043\"",
-        "main_ci_run = 28314566818",
-        "auto_release_tag_run = 28314582826",
-        "release_workflow_run = 28314590143",
-        "milestone_number = 10",
-        "milestone_closed_at = \"2026-06-28T07:04:06Z\"",
-        "milestone_open_issues = 0",
-        "release_assets = 0",
-        "crates_io_published = false",
-        "first_target_ir_alpha",
-        "echo_span_ir_review_artifact",
-        "gitwarp_commit_reducer_ir_review_artifact",
-        "lowerability_to_target_ir_bridge",
-        "explicit_target_profile_selection",
-        "stable_target_lowering_failure_kinds",
-        "core_obligation_preservation",
-        "target_ir_topic_shelf",
-        "no_runtime_execution",
-        "no_echo_verifier",
-        "no_gitwarp_commit_creation",
-        "no_gitwarp_crdt_reducer_verification",
-        "no_general_target_plugin_dispatch",
-        "no_canonical_target_ir_bytes_or_digests",
-        "no_bundle_or_admission_generation",
-        "no_v2_adapter_composition",
-        "no_public_cli",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            v0_9_policy.contains(required),
-            "v0.9 release policy missing structured field: {required}"
-        );
-    }
-}
-
-#[test]
-fn release_policy_tracks_v0_10_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    let v0_10_policy = toml_section(&policy, "[release_notes.v0_10_0_alpha_1]");
-    for required in [
-        "[release_notes.v0_10_0_alpha_1]",
-        "tag = \"v0.10.0-alpha.1\"",
-        "target_date = \"2026-06-29\"",
-        "status = \"published\"",
-        "release_issue = 76",
-        "published_at = \"2026-06-29T04:21:11Z\"",
-        "release_url = \"https://github.com/flyingrobots/edict/releases/tag/v0.10.0-alpha.1\"",
-        "tag_object = \"11e516c8ea8be5fa6739efd545c5b8fb40cbc46d\"",
-        "peeled_commit = \"622834138af249e70d717d6b7a940e4b01e23f4d\"",
-        "release_notes_source_commit = \"622834138af249e70d717d6b7a940e4b01e23f4d\"",
-        "main_ci_run = 28348355987",
-        "auto_release_tag_run = 28348383070",
-        "release_workflow_run = 28348397035",
-        "milestone_number = 11",
-        "milestone_closed_at = \"2026-06-29T04:21:11Z\"",
-        "milestone_open_issues = 0",
-        "release_assets = 0",
-        "crates_io_published = false",
-        "first_public_cli_surface",
-        "jsonl_check_workflow",
-        "deterministic_input_expansion",
-        "compiler_settings_json_schema",
-        "cli_stream_record_schemas",
-        "structured_cli_diagnostics",
-        "stable_diagnostic_kind_codes",
-        "golden_cli_fixture_corpus",
-        "cli_topic_shelf",
-        "no_compile_lower_explain_bundle_or_admission_commands",
-        "no_human_pretty_output",
-        "no_embedded_json_schema_validation_engine",
-        "no_language_server",
-        "no_marketplace_packaging",
-        "no_participant_policy_execution",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            v0_10_policy.contains(required),
-            "v0.10 release policy missing structured field: {required}"
-        );
-    }
-}
-
-#[test]
-fn release_policy_tracks_v0_11_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    let v0_11_policy = toml_section(&policy, "[release_notes.v0_11_0_alpha_1]");
-    for required in [
-        "[release_notes.v0_11_0_alpha_1]",
-        "tag = \"v0.11.0-alpha.1\"",
-        "target_date = \"2026-06-30\"",
-        "status = \"published\"",
-        "release_issue = 109",
-        "published_at = \"2026-06-30T07:58:29Z\"",
-        "release_url = \"https://github.com/flyingrobots/edict/releases/tag/v0.11.0-alpha.1\"",
-        "tag_object = \"e5d207527d737131e54a8d2614765e63ff7218e6\"",
-        "peeled_commit = \"3eb71f6127e31b68ea4e0bb766623930ce24ae46\"",
-        "release_notes_source_commit = \"3eb71f6127e31b68ea4e0bb766623930ce24ae46\"",
-        "main_ci_run = 28429259737",
-        "auto_release_tag_run = 28429294814",
-        "release_workflow_run = 28429313876",
-        "milestone_number = 12",
-        "milestone_closed_at = \"2026-06-30T07:58:29Z\"",
-        "milestone_open_issues = 0",
-        "release_assets = 0",
-        "crates_io_published = false",
-        "contract_bundle_assembly",
-        "semantic_bundle_digest_preimage",
-        "release_bundle_digest_preimage",
-        "bundle_digest_goldens",
-        "canonical_target_ir_value_model",
-        "canonical_target_ir_cbor_bytes",
-        "target_ir_artifact_digest_frame",
-        "target_ir_byte_digest_goldens",
-        "computed_target_ir_bundle_assembly",
-        "xtask_core_target_ir_bundle_golden_checks",
-        "no_runtime_execution",
-        "no_admission_execution",
-        "no_participant_policy_logic",
-        "no_verifier_completeness",
-        "no_echo_verifier_completeness",
-        "no_git_warp_commit_creation",
-        "no_git_warp_crdt_reducer_verification",
-        "no_general_target_plugin_dispatch",
-        "no_additional_target_profiles",
-        "no_extra_source_to_target_fixtures",
-        "no_canonical_contract_bundle_manifest_bytes",
-        "no_crates_io_publish",
-    ] {
-        assert!(
-            v0_11_policy.contains(required),
-            "v0.11 release policy missing structured field: {required}"
-        );
-    }
-}
-
-#[test]
-fn alpha_changelog_dates_match_release_policy() {
-    let root = repo_root().expect("repo root");
-    let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    for (tag, target) in [
-        ("v0.2.0-alpha.1", "2026-06-21"),
-        ("v0.3.0-alpha.1", "2026-06-24"),
-        ("v0.4.0-alpha.1", "2026-06-24"),
-        ("v0.5.0-alpha.1", "2026-06-25"),
-        ("v0.6.0-alpha.1", "2026-06-26"),
-        ("v0.7.0-alpha.1", "2026-06-27"),
-        ("v0.8.0-alpha.1", "2026-06-28"),
-        ("v0.9.0-alpha.1", "2026-06-28"),
-        ("v0.10.0-alpha.1", "2026-06-29"),
-        ("v0.11.0-alpha.1", "2026-06-30"),
-    ] {
-        assert!(
-            policy.contains(&format!("tag = \"{tag}\"")),
-            "release policy missing tag {tag}"
-        );
-        assert!(
-            policy.contains(&format!("target_date = \"{target}\"")),
-            "release policy missing target date {target}"
-        );
-        assert!(
-            changelog.contains(&format!("## [{tag}] - {target}")),
-            "{tag} changelog date must match release policy target date {target}"
-        );
-    }
+fn is_iso_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 10
+        && bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
 }
 
 fn wit_named_type(interface: &Interface, name: &str) -> TypeId {
@@ -4023,31 +3799,6 @@ fn legacy_target_profile_wit_is_not_provider_envelope() {
     assert!(verifier
         .exports
         .contains_key(&WorldKey::Name("verify".to_owned())));
-}
-
-#[test]
-fn release_policy_tracks_v0_2_boundary() {
-    let root = repo_root().expect("repo root");
-    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
-        .expect("release policy");
-    for required in [
-        "[release_notes.v0_2_0_alpha_1]",
-        "tag = \"v0.2.0-alpha.1\"",
-        "target_date = \"2026-06-21\"",
-        "core_semantic_model",
-        "normative_core_schema",
-        "no_source_to_core_lowering",
-        "no_canonical_encoder",
-        "no_golden_core_bytes",
-        "no_exact_core_digests",
-        "no_target_lowering",
-        "no_bundle_admission",
-    ] {
-        assert!(
-            policy.contains(required),
-            "v0.2 release policy missing structured field: {required}"
-        );
-    }
 }
 
 #[test]

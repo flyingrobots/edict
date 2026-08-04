@@ -7,6 +7,7 @@ mod lawpack_goldens;
 mod provider_components;
 mod provider_contract_pack;
 mod provider_dependencies;
+mod release_dates;
 mod release_prep;
 mod util;
 
@@ -27,6 +28,7 @@ use lawpack_goldens::{lawpack_goldens, LawpackGoldenMode};
 use provider_components::{provider_component_fixtures, ProviderComponentFixtureMode};
 use provider_contract_pack::{provider_contract_pack, ProviderContractPackMode};
 use provider_dependencies::provider_runtime_dependencies;
+use release_dates::release_dates;
 use release_prep::release_prep;
 use util::{diff_check_base, repo_root, run_cmd, run_cmd_slice};
 
@@ -128,13 +130,25 @@ fn run() -> Result<(), String> {
             }
             provider_runtime_dependencies(&repo_root()?)
         }
+        Some("release-dates") => run_release_dates(&mut args),
         Some("verify") => verify(&repo_root()?),
         Some(cmd) => Err(format!("unknown xtask command `{cmd}`")),
         None => Err(
-            "usage: cargo xtask <verify|contract-check|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|lawpack-goldens|provider-component-fixtures|provider-contract-pack|provider-runtime-dependencies|release-prep>"
+            "usage: cargo xtask <verify|contract-check|release-dates|authority-facts-goldens|target-profile-resource-goldens|core-goldens|bundle-goldens|cli-goldens|target-ir-goldens|lawpack-goldens|provider-component-fixtures|provider-contract-pack|provider-runtime-dependencies|release-prep>"
                 .into(),
         ),
     }
+}
+
+fn run_release_dates(args: &mut impl Iterator<Item = String>) -> Result<(), String> {
+    match args.next().as_deref() {
+        Some("--check") | None => {}
+        Some(flag) => return Err(format!("unknown release-dates flag `{flag}`")),
+    }
+    if let Some(extra) = args.next() {
+        return Err(format!("unexpected release-dates argument `{extra}`"));
+    }
+    release_dates(&repo_root()?)
 }
 
 fn run_authority_facts_goldens(args: &mut impl Iterator<Item = String>) -> Result<(), String> {
@@ -210,6 +224,7 @@ fn verify(root: &Path) -> Result<(), String> {
     provider_contract_pack(root, ProviderContractPackMode::Check)?;
     provider_runtime_dependencies(root)?;
     contract_check(root)?;
+    release_dates(root)?;
     let base = diff_check_base(root)?;
     run_cmd(root, "git", ["diff", "--check", &format!("{base}...HEAD")])?;
     Ok(())
