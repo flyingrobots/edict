@@ -240,6 +240,13 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Release dates across `CHANGELOG.md`, `docs/topics/release-process/policy.toml`,
+  `docs/releases/*.md`, and the `xtask` release guards now record the actual git
+  tag dates (2026-06-21 through 2026-06-30) instead of the planned biweekly
+  schedule that ran to 2026-11-04. The `target_date` field keeps its name but now
+  holds the real publication date, so `RELEASE-REQ-008` is restated accordingly.
+  `next_release_target_date` still increments the last entry by 14 days and now
+  seeds a past date; see the release-process test plan for that open gap.
 - The local `cargo xtask verify` gate now schedules one default workspace test
   pass, which already includes doctests, instead of repeating every workspace
   doctest in a second Cargo invocation.
@@ -352,7 +359,7 @@ versions still track specification maturity rather than a released product.
   release notes, recording the immutable tag, workflow evidence, milestone
   closure, release URL, and no-crates publication evidence.
 
-## [v0.11.0-alpha.1] - 2026-11-04
+## [v0.11.0-alpha.1] - 2026-06-30
 
 ### Added
 
@@ -406,7 +413,7 @@ versions still track specification maturity rather than a released product.
   recorded durable release evidence for its tag, workflow runs, milestone
   closure, and no-crates publication boundary.
 
-## [v0.10.0-alpha.1] - 2026-10-21
+## [v0.10.0-alpha.1] - 2026-06-29
 
 ### Added
 
@@ -446,7 +453,7 @@ versions still track specification maturity rather than a released product.
   recorded durable release evidence for its tag, workflow runs, milestone
   closure, and no-crates publication boundary.
 
-## [v0.9.0-alpha.1] - 2026-10-07
+## [v0.9.0-alpha.1] - 2026-06-28
 
 ### Added
 
@@ -477,7 +484,7 @@ versions still track specification maturity rather than a released product.
   recorded durable release evidence for its tag, workflow runs, milestone
   closure, and no-crates publication boundary.
 
-## [v0.8.0-alpha.1] - 2026-09-23
+## [v0.8.0-alpha.1] - 2026-06-28
 
 ### Added
 
@@ -495,7 +502,7 @@ versions still track specification maturity rather than a released product.
   recorded durable release evidence for its tag, workflow runs, milestone
   closure, and no-crates publication boundary.
 
-## [v0.7.0-alpha.1] - 2026-09-09
+## [v0.7.0-alpha.1] - 2026-06-27
 
 ### Added
 
@@ -518,7 +525,7 @@ versions still track specification maturity rather than a released product.
 - Added the review-process topic shelf and structured CodeRabbit-to-Codex
   fallback policy for review-bot outages, rate limits, and credit exhaustion.
 
-## [v0.6.0-alpha.1] - 2026-08-26
+## [v0.6.0-alpha.1] - 2026-06-26
 
 ### Added
 
@@ -542,7 +549,7 @@ versions still track specification maturity rather than a released product.
 - Added a release-prep topic-shelf audit gate requiring `docs/topics/` coverage
   and accuracy to both meet at least 90% before release.
 
-## [v0.5.0-alpha.1] - 2026-08-12
+## [v0.5.0-alpha.1] - 2026-06-25
 
 ### Added
 
@@ -559,7 +566,7 @@ versions still track specification maturity rather than a released product.
 - Added the admission topic shelf for the Edict/Continuum admission-boundary
   contract and verification matrix.
 
-## [v0.4.0-alpha.1] - 2026-07-29
+## [v0.4.0-alpha.1] - 2026-06-24
 
 ### Added
 
@@ -596,7 +603,7 @@ versions still track specification maturity rather than a released product.
   native support, exactly one direct adapter, or unsupported. General composite
   adapter-chain search remains future v2 design work.
 
-## [v0.3.0-alpha.1] - 2026-07-15
+## [v0.3.0-alpha.1] - 2026-06-24
 
 ### Added
 
@@ -645,7 +652,7 @@ versions still track specification maturity rather than a released product.
   parameter renaming stays hash-invariant while Core local identity mutations
   still change canonical bytes and digests.
 
-## [v0.2.0-alpha.1] - 2026-07-01
+## [v0.2.0-alpha.1] - 2026-06-21
 
 ### Added
 
@@ -664,7 +671,7 @@ versions still track specification maturity rather than a released product.
 - Relaxed Markdown heading duplication checks to allow changelog section
   headings to repeat across different release versions.
 
-## [v0.1.0-alpha.1] - 2026-06-24
+## [v0.1.0-alpha.1] - 2026-06-21
 
 ### Added
 

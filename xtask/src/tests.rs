@@ -2771,7 +2771,7 @@ fn release_policy_tracks_v0_3_boundary() {
     for required in [
         "[release_notes.v0_3_0_alpha_1]",
         "tag = \"v0.3.0-alpha.1\"",
-        "target_date = \"2026-07-15\"",
+        "target_date = \"2026-06-24\"",
         "status = \"published\"",
         "compiler_spine",
         "surface_validation_split",
@@ -2796,7 +2796,7 @@ fn release_policy_tracks_v0_4_boundary() {
     for required in [
         "[release_notes.v0_4_0_alpha_1]",
         "tag = \"v0.4.0-alpha.1\"",
-        "target_date = \"2026-07-29\"",
+        "target_date = \"2026-06-24\"",
         "status = \"published\"",
         "target_profile_conformance",
         "lowerability_direct_adapter",
@@ -2820,7 +2820,7 @@ fn release_policy_tracks_v0_5_boundary() {
     for required in [
         "[release_notes.v0_5_0_alpha_1]",
         "tag = \"v0.5.0-alpha.1\"",
-        "target_date = \"2026-08-12\"",
+        "target_date = \"2026-06-25\"",
         "status = \"published\"",
         "edict_owned_continuum_participation_boundary",
         "gate_c_admission_request_validation",
@@ -2853,7 +2853,7 @@ fn release_policy_tracks_v0_6_boundary() {
     for required in [
         "[release_notes.v0_6_0_alpha_1]",
         "tag = \"v0.6.0-alpha.1\"",
-        "target_date = \"2026-08-26\"",
+        "target_date = \"2026-06-26\"",
         "status = \"published\"",
         "editor_highlight_roles",
         "tree_sitter_grammar_source",
@@ -2883,7 +2883,7 @@ fn release_policy_tracks_v0_7_boundary() {
     for required in [
         "[release_notes.v0_7_0_alpha_1]",
         "tag = \"v0.7.0-alpha.1\"",
-        "target_date = \"2026-09-09\"",
+        "target_date = \"2026-06-27\"",
         "status = \"published\"",
         "release_issue = 59",
         "published_at = \"2026-06-27T22:31:49Z\"",
@@ -2938,7 +2938,7 @@ fn release_policy_tracks_v0_8_boundary() {
     for required in [
         "[release_notes.v0_8_0_alpha_1]",
         "tag = \"v0.8.0-alpha.1\"",
-        "target_date = \"2026-09-23\"",
+        "target_date = \"2026-06-28\"",
         "status = \"published\"",
         "release_issue = 62",
         "published_at = \"2026-06-28T01:41:16Z\"",
@@ -2991,7 +2991,7 @@ fn release_policy_tracks_v0_9_boundary() {
     for required in [
         "[release_notes.v0_9_0_alpha_1]",
         "tag = \"v0.9.0-alpha.1\"",
-        "target_date = \"2026-10-07\"",
+        "target_date = \"2026-06-28\"",
         "status = \"published\"",
         "release_issue = 70",
         "published_at = \"2026-06-28T07:04:06Z\"",
@@ -3042,7 +3042,7 @@ fn release_policy_tracks_v0_10_boundary() {
     for required in [
         "[release_notes.v0_10_0_alpha_1]",
         "tag = \"v0.10.0-alpha.1\"",
-        "target_date = \"2026-10-21\"",
+        "target_date = \"2026-06-29\"",
         "status = \"published\"",
         "release_issue = 76",
         "published_at = \"2026-06-29T04:21:11Z\"",
@@ -3091,7 +3091,7 @@ fn release_policy_tracks_v0_11_boundary() {
     for required in [
         "[release_notes.v0_11_0_alpha_1]",
         "tag = \"v0.11.0-alpha.1\"",
-        "target_date = \"2026-11-04\"",
+        "target_date = \"2026-06-30\"",
         "status = \"published\"",
         "release_issue = 109",
         "published_at = \"2026-06-30T07:58:29Z\"",
@@ -3144,16 +3144,16 @@ fn alpha_changelog_dates_match_release_policy() {
     let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
         .expect("release policy");
     for (tag, target) in [
-        ("v0.2.0-alpha.1", "2026-07-01"),
-        ("v0.3.0-alpha.1", "2026-07-15"),
-        ("v0.4.0-alpha.1", "2026-07-29"),
-        ("v0.5.0-alpha.1", "2026-08-12"),
-        ("v0.6.0-alpha.1", "2026-08-26"),
-        ("v0.7.0-alpha.1", "2026-09-09"),
-        ("v0.8.0-alpha.1", "2026-09-23"),
-        ("v0.9.0-alpha.1", "2026-10-07"),
-        ("v0.10.0-alpha.1", "2026-10-21"),
-        ("v0.11.0-alpha.1", "2026-11-04"),
+        ("v0.2.0-alpha.1", "2026-06-21"),
+        ("v0.3.0-alpha.1", "2026-06-24"),
+        ("v0.4.0-alpha.1", "2026-06-24"),
+        ("v0.5.0-alpha.1", "2026-06-25"),
+        ("v0.6.0-alpha.1", "2026-06-26"),
+        ("v0.7.0-alpha.1", "2026-06-27"),
+        ("v0.8.0-alpha.1", "2026-06-28"),
+        ("v0.9.0-alpha.1", "2026-06-28"),
+        ("v0.10.0-alpha.1", "2026-06-29"),
+        ("v0.11.0-alpha.1", "2026-06-30"),
     ] {
         assert!(
             policy.contains(&format!("tag = \"{tag}\"")),
@@ -4033,7 +4033,7 @@ fn release_policy_tracks_v0_2_boundary() {
     for required in [
         "[release_notes.v0_2_0_alpha_1]",
         "tag = \"v0.2.0-alpha.1\"",
-        "target_date = \"2026-07-01\"",
+        "target_date = \"2026-06-21\"",
         "core_semantic_model",
         "normative_core_schema",
         "no_source_to_core_lowering",

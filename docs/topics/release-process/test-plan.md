@@ -39,7 +39,7 @@ Out of scope:
 | RELEASE-REQ-005 | implemented | The current release workflow does not publish crates or other package artifacts. | .github/workflows/release.yml |
 | RELEASE-REQ-006 | implemented | Pushed release tags are durable; recovery must not move, delete, or recreate release tags. | docs/topics/release-process/policy.toml |
 | RELEASE-REQ-007 | implemented | Structured release policy captures the `v0.2.0-alpha.1` Core schema scope and explicit non-goals. | docs/topics/release-process/policy.toml |
-| RELEASE-REQ-008 | implemented | Scheduled alpha release changelog dates match their structured release policy target dates. | CHANGELOG.md, docs/topics/release-process/policy.toml |
+| RELEASE-REQ-008 | implemented | Published alpha release changelog dates match the actual tag dates recorded in the structured release policy `target_date` fields. | CHANGELOG.md, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-009 | implemented | Release preparation follows a documented runbook with branch prep, local verification, PR merge gate, tag publication, workflow watch, evidence capture, and non-mutating recovery phases. | docs/topics/release-process/runbook.md, docs/topics/release-process/policy.toml |
 | RELEASE-REQ-010 | implemented | Structured release policy captures the `v0.3.0-alpha.1` compiler-spine, canonical encoder, reviewed golden fixture, exact digest, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
 | RELEASE-REQ-011 | implemented | Structured release policy captures the `v0.4.0-alpha.1` target-profile, lowerability, contract-bundle validation, and explicit non-goal boundaries. | docs/topics/release-process/policy.toml |
@@ -73,7 +73,7 @@ Out of scope:
 | docs/releases/v0.9.0-alpha.1.md | Published release notes for the first Target IR alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
 | docs/releases/v0.11.0-alpha.1.md | Published notes for the contract-bundle assembly and canonical Target IR artifact freeze alpha. | The release workflow looked up this file by full tag name after the release-prep PR merged. |
 | .github/workflows/auto-release-tag.yml | Successful main-CI release-prep merges create immutable release tags and dispatch publication. | The workflow derives tags only from merged `release/*-prep` branches and refuses tag mutation. |
-| CHANGELOG.md | Release history for published and release-prep alpha releases. | Scheduled alpha release sections use the matching release target date. |
+| CHANGELOG.md | Release history for published and release-prep alpha releases. | Published alpha release sections use the actual tag date recorded in release policy. |
 | docs/topics/release-process/policy.toml | Structured release-tag, runbook, and alpha boundary policy. | Tag mutation is forbidden, runbook phases are named, and release scope/non-goals are structured. |
 | docs/topics/release-process/runbook.md | Operator steps for preparing, tagging, publishing, and recovering releases. | The structured policy names the phases and checks the runbook must cover. |
 | `cargo xtask release-prep <version>` | Mechanical scaffold for the next release-prep branch. | The xtask regression exercises the writer against a temp repo skeleton and checks every generated file surface. |
@@ -85,7 +85,7 @@ Out of scope:
 | RELEASE-TP-001 | implemented | Golden path | RELEASE-REQ-001, RELEASE-REQ-002, RELEASE-REQ-003, RELEASE-REQ-004, RELEASE-REQ-005 | The workflow contains the tag trigger, main reachability guard, full-tag release-notes path, verified GitHub Release creation, prerelease flag, and no package publish command. | release_workflow_publishes_only_main_reachable_tags | docs/releases/v0.1.0-alpha.1.md | Static workflow contract regression. |
 | RELEASE-TP-002 | implemented | Policy guard | RELEASE-REQ-006 | Structured policy forbids tag mutation and names existing-valid-tag publication as recovery. | release_tag_recovery_policy_is_structured | docs/topics/release-process/policy.toml | Policy evidence is structured, not prose. |
 | RELEASE-TP-003 | implemented | Boundary guard | RELEASE-REQ-007 | Structured policy captures the v0.2 Core schema scope and non-goals for lowering, encoder, bytes, digests, targets, and admission. | release_policy_tracks_v0_2_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the Core milestone. |
-| RELEASE-TP-004 | implemented | Consistency guard | RELEASE-REQ-008 | Scheduled alpha changelog section dates equal their target dates in structured release policy. | alpha_changelog_dates_match_release_policy | CHANGELOG.md, docs/topics/release-process/policy.toml | Prevents release chronology drift across release prep and publication. |
+| RELEASE-TP-004 | implemented | Consistency guard | RELEASE-REQ-008 | Published alpha changelog section dates equal the actual tag dates recorded in structured release policy. | alpha_changelog_dates_match_release_policy | CHANGELOG.md, docs/topics/release-process/policy.toml | Prevents release chronology drift across release prep and publication. |
 | RELEASE-TP-005 | implemented | Runbook guard | RELEASE-REQ-009 | Structured policy names the release-prep phases and required checks for local verification, PR checks, and release existence. | release_runbook_policy_is_structured | docs/topics/release-process/policy.toml, docs/topics/release-process/runbook.md | Keeps the human runbook tied to a stable release contract. |
 | RELEASE-TP-006 | implemented | Boundary guard | RELEASE-REQ-010 | Structured policy captures the v0.3 compiler-spine, canonical encoder, reviewed golden fixture, exact digest, target-lowering, and admission boundaries. | release_policy_tracks_v0_3_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the compiler-spine milestone. |
 | RELEASE-TP-007 | implemented | Boundary guard | RELEASE-REQ-011 | Structured policy captures the v0.4 target-profile, lowerability, contract-bundle validation, target-lowering, admission, and publication boundaries. | release_policy_tracks_v0_4_boundary | docs/topics/release-process/policy.toml | Prevents the release metadata from overclaiming the target-profile and lowerability milestone. |
@@ -125,3 +125,8 @@ Out of scope:
 - The current checker proves workflow contract structure, not GitHub API
   availability.
 - No crates.io policy exists; package publication remains intentionally absent.
+- `target_date` now records the actual tag date rather than a planned date, but
+  `next_release_target_date` still seeds the next value by adding 14 days to the
+  last entry. Seeded from the realigned history it computes 2026-07-14, which is
+  already past, so `release-prep` needs an explicit or clock-derived date before
+  the next release rather than the biweekly increment.
