@@ -11,7 +11,7 @@ use edict_syntax::{
     lower_core, parse_module, resolve_module, type_check, BoundFact, CompilerContext,
     CompilerErrorKind, CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, PureFunctionFact,
-    WriteClass,
+    ResourceRef, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -133,6 +133,7 @@ const PURE_CONDITIONAL: &str = "package a.b@1;\n\
       return { value };\n\
     }";
 const PURE_HELPER_CALL: &str = "package a.b@1;\n\
+    use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
     type Input = { value: U64, };\n\
     type Output = { value: U64, };\n\
     intent t(input: Input) returns Output\n\
@@ -200,6 +201,13 @@ fn pure_helper_context(parameter_type: &str) -> CompilerContext {
     pure_context().with_pure_function(
         "helpers.bump",
         PureFunctionFact {
+            lawpack: ResourceRef {
+                coordinate: "example.bounds@1".to_owned(),
+                digest: Some(
+                    "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                        .to_owned(),
+                ),
+            },
             coordinate: "example.bounds@1.bump".to_owned(),
             parameter_types: vec![parameter_type.to_owned()],
             return_type: "U64".to_owned(),
@@ -338,6 +346,30 @@ fn pure_conditional_expression_rejects_incompatible_branches() {
 }
 
 #[test]
+fn pure_conditional_bare_integer_inherits_width_from_either_branch() {
+    for expression in [
+        "if true then 0 else input.value",
+        "if true then input.value else 0",
+    ] {
+        let source = format!(
+            "package a.b@1;\n\
+             type Input = {{ value: U64, }};\n\
+             type Output = {{ value: U64, }};\n\
+             intent t(input: Input) returns Output\n\
+               profile p.read\n\
+               basis none\n\
+               budget <= p.tiny {{\n\
+               let value = {expression};\n\
+               return {{ value }};\n\
+             }}"
+        );
+        let module = parse_module(&source).expect("conditional source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("either typed branch constrains the bare integer");
+    }
+}
+
+#[test]
 fn pure_conditional_branch_mutation_moves_core_digest() {
     let original = parse_module(PURE_CONDITIONAL).expect("conditional source parses");
     let swapped_source = PURE_CONDITIONAL.replace(
@@ -381,6 +413,21 @@ fn missing_pure_helper_rejects_before_core() {
     assert!(errors
         .iter()
         .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedFunction));
+}
+
+#[test]
+fn pure_helper_fact_without_exact_owning_import_rejects_before_core() {
+    let source = PURE_HELPER_CALL.replace(
+        "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    );
+    let module = parse_module(&source).expect("pure-helper source parses");
+    let errors = compile_to_core(&module, &pure_helper_context("U64"))
+        .expect_err("unowned helper fact rejects");
+
     assert!(errors
         .iter()
         .any(|error| error.kind == CompilerErrorKind::UnresolvedFunction));
@@ -437,6 +484,42 @@ fn bounded_list_loop_rejects_unsound_or_over_budget_bounds() {
 }
 
 #[test]
+fn bounded_list_loops_reject_cumulative_and_nested_over_budget_work() {
+    let sequential = "package a.b@1;\n\
+        type Input = { items: List<U64, max=8>, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          for left in input.items bounded 8 { require left <= 10u64 else example.TooLarge; }\n\
+          for right in input.items bounded 8 { require right <= 10u64 else example.TooLarge; }\n\
+          return { value: 0u64 };\n\
+        }";
+    let nested = "package a.b@1;\n\
+        type Input = { batches: List<List<U64, max=4>, max=4>, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          for batch in input.batches bounded 4 {\n\
+            for item in batch bounded 4 { require item <= 10u64 else example.TooLarge; }\n\
+          }\n\
+          return { value: 0u64 };\n\
+        }";
+
+    for source in [sequential, nested] {
+        let module = parse_module(source).expect("over-budget loop source parses");
+        let errors =
+            compile_to_core(&module, &pure_context()).expect_err("cumulative loop work rejects");
+        assert!(errors
+            .iter()
+            .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+    }
+}
+
+#[test]
 fn bounded_list_loop_bound_mutation_moves_core_digest() {
     let original = parse_module(BOUNDED_LIST_LOOP).expect("bounded loop parses");
     let wider_source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded 5");
@@ -476,6 +559,25 @@ fn missing_coordinate_loop_cap_rejects_before_core() {
     assert!(errors
         .iter()
         .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
+}
+
+#[test]
+fn coordinate_loop_cap_rejects_unsound_or_over_budget_fact_values() {
+    let source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded bounds.maxItems");
+    let module = parse_module(&source).expect("coordinate-bounded loop parses");
+    for value in [3, 9] {
+        let context = pure_context().with_bound(
+            "bounds.maxItems",
+            BoundFact {
+                coordinate: "example.bounds@1.maxItems".to_owned(),
+                value,
+            },
+        );
+        let errors = compile_to_core(&module, &context).expect_err("invalid bound fact rejects");
+        assert!(errors
+            .iter()
+            .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+    }
 }
 
 #[test]

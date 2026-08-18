@@ -48,7 +48,8 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   statements and produce compatible bounded values. Statement conditionals
   lower to isolated branch blocks, and literal- or
   coordinate-bounded loops lower over bounded lists when the resolved cap
-  covers the list maximum without exceeding the operation step budget.
+  covers the list maximum and cumulative sequential/nested loop work stays
+  within the operation step budget.
   [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017] [CSPINE-REQ-023]
   [CSPINE-REQ-025] [CSPINE-REQ-026]
 - The fixed-width source scalar set is `I32`, `I64`, `U32`, and `U64`.
@@ -96,11 +97,12 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 - File-backed authority facts can supply the same profile, budget, profile
   write-class, and effect write-class facts consumed by the compiler spine.
   [CSPINE-REQ-010]
-- Pure-helper calls resolve only from explicit compiler facts. The exact
-  lawpack preparation path derives those facts from the source import alias and
-  validated export signature, while Core records the canonical exported
-  coordinate. Missing helpers and incompatible arguments reject before Core;
-  the imported lawpack digest remains the helper implementation identity.
+- Pure-helper calls resolve only from compiler facts owned by an exact imported
+  lawpack. The preparation path derives those facts, including primitive or
+  bounded exported signature types, from the validated export closure, while
+  Core records the canonical helper coordinate. Missing helpers, substituted
+  import digests, and incompatible arguments reject before Core; the imported
+  lawpack digest remains the helper implementation and type-closure identity.
   [CSPINE-REQ-024]
 - Coordinate loop bounds resolve only from explicit compiler facts. Exact
   lawpack preparation projects exported `U32` and `U64` constants through the
