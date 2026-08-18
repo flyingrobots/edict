@@ -119,8 +119,8 @@ pub use canonical::{
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
-    CompilerErrorKind, CompilerStage, ResolvedIntent, ResolvedModule, ResolvedTypeDecl,
-    TypedIntent, TypedModule,
+    CompilerErrorKind, CompilerStage, PureFunctionFact, ResolvedIntent, ResolvedModule,
+    ResolvedTypeDecl, TypedIntent, TypedModule,
 };
 pub use contract_bundle::{
     assemble_contract_bundle, assemble_contract_bundle_from_target_ir,

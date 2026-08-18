@@ -38,6 +38,7 @@ pub enum CompilerErrorKind {
     MissingContextFact,
     UnsupportedSourceShape,
     UnresolvedType,
+    UnresolvedFunction,
     UnknownField,
     TypeMismatch,
     ExpectedPredicate,
@@ -45,6 +46,19 @@ pub enum CompilerErrorKind {
     UnrequestableExternalOperation,
     DuplicateObstructionFailure,
     DuplicateObstructionPayloadField,
+}
+
+/// Deterministic signature and canonical identity for one imported pure helper.
+///
+/// The owning digest-bound lawpack remains the source of executable helper
+/// semantics. This fact only makes its reviewed signature and canonical export
+/// coordinate available to source resolution and type checking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PureFunctionFact {
+    pub coordinate: String,
+    pub parameter_types: Vec<String>,
+    pub return_type: String,
+    pub cost_template: String,
 }
 
 /// A compiler-spine failure with stable stage/kind identity.
@@ -66,6 +80,7 @@ pub struct CompilerContext {
     operation_profile_write_classes: BTreeMap<String, BTreeSet<WriteClass>>,
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
+    pure_functions: BTreeMap<String, PureFunctionFact>,
     budgets: BTreeMap<String, CoreBudget>,
 }
 
@@ -125,6 +140,16 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub fn with_pure_function(
+        mut self,
+        source_coordinate: impl Into<String>,
+        fact: PureFunctionFact,
+    ) -> Self {
+        self.pure_functions.insert(source_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_budget(mut self, source_coordinate: impl Into<String>, budget: CoreBudget) -> Self {
         self.budgets.insert(source_coordinate.into(), budget);
         self
@@ -137,6 +162,7 @@ pub struct ResolvedModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
+    pub pure_functions: BTreeMap<String, PureFunctionFact>,
     pub types: Vec<ResolvedTypeDecl>,
     pub intents: Vec<ResolvedIntent>,
 }
@@ -246,6 +272,7 @@ pub fn resolve_module(
             coordinate,
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
+            pure_functions: context.pure_functions.clone(),
             types,
             intents,
         },
@@ -1928,6 +1955,12 @@ impl<'a> TypeChecker<'a> {
                 span,
             } => self.check_string_concat(lhs, rhs, env, *span),
             Expr::Record { entries, span } => self.check_record(entries, env, expected, *span),
+            Expr::Call {
+                callee,
+                type_args,
+                args,
+                span,
+            } => self.check_pure_call(callee, type_args, args, env, expected, *span),
             Expr::If {
                 cond,
                 then,
@@ -1936,7 +1969,6 @@ impl<'a> TypeChecker<'a> {
             } => self.check_pure_conditional(cond, then, els, env, expected, *span),
             Expr::Binary { .. }
             | Expr::Digest { .. }
-            | Expr::Call { .. }
             | Expr::Unary { .. }
             | Expr::IfYield { .. }
             | Expr::VariantLit { .. }
@@ -1950,6 +1982,135 @@ impl<'a> TypeChecker<'a> {
                 None
             }
         }
+    }
+
+    fn check_pure_call(
+        &mut self,
+        callee: &Expr,
+        type_args: &[TypeRef],
+        args: &[Expr],
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        if !type_args.is_empty() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "generic pure-helper calls are outside the initial lowerable subset",
+                span,
+            ));
+            return None;
+        }
+        let Some(source_coordinate) = plain_callee_coordinate(callee) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                "pure-helper callee is not a stable imported coordinate",
+                span,
+            ));
+            return None;
+        };
+        let Some(fact) = self
+            .resolved
+            .pure_functions
+            .get(&source_coordinate)
+            .cloned()
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                format!("pure helper `{source_coordinate}` has no compiler context fact"),
+                span,
+            ));
+            return None;
+        };
+        if args.len() != fact.parameter_types.len() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!(
+                    "pure helper `{source_coordinate}` expects {} arguments, got {}",
+                    fact.parameter_types.len(),
+                    args.len()
+                ),
+                span,
+            ));
+            return None;
+        }
+
+        let mut core_args = Vec::with_capacity(args.len());
+        for (arg, parameter_type) in args.iter().zip(&fact.parameter_types) {
+            let Some(parameter_shape) = self.shape_for_coordinate(parameter_type) else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "pure helper `{source_coordinate}` parameter type `{parameter_type}` is not available in the module type closure"
+                    ),
+                    span,
+                ));
+                return None;
+            };
+            let value = self.check_expr_with_expected(arg, env, Some(&parameter_shape))?;
+            if !compatible(&parameter_shape, &value.ty) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    format!("argument does not match pure helper `{source_coordinate}` signature"),
+                    expr_span(arg),
+                ));
+                return None;
+            }
+            core_args.push(value.expr);
+        }
+
+        let Some(return_shape) = self.shape_for_coordinate(&fact.return_type) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "pure helper `{source_coordinate}` return type `{}` is not available in the module type closure",
+                    fact.return_type
+                ),
+                span,
+            ));
+            return None;
+        };
+        if expected.is_some_and(|expected| !compatible(expected, &return_shape)) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!("pure helper `{source_coordinate}` return type does not match its use"),
+                span,
+            ));
+            return None;
+        }
+
+        Some(TypedValue {
+            expr: CoreExpr::Call {
+                callee: fact.coordinate,
+                type_args: Vec::new(),
+                args: core_args,
+            },
+            ty: return_shape,
+        })
+    }
+
+    fn shape_for_coordinate(&self, coordinate: &str) -> Option<TypeShape> {
+        if coordinate == "Bool" {
+            return Some(TypeShape {
+                coord: "Bool".to_owned(),
+                kind: TypeKind::Bool,
+            });
+        }
+        if let Some(width) = builtin_integer_width(coordinate) {
+            return Some(integer_shape(width));
+        }
+        self.named_types
+            .values()
+            .find(|shape| shape.coord == coordinate)
+            .cloned()
     }
 
     fn check_pure_conditional(

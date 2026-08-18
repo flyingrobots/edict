@@ -7,8 +7,8 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
     digest_core_module, digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
-    validate_lawpack_dependency_graph, CanonicalValue, CompilerErrorKind, CompilerStage,
-    LawpackAdapterFailureKind, LawpackExecutionClass, LawpackPureFunctionImplementation,
+    validate_lawpack_dependency_graph, CanonicalValue, CompilerErrorKind, CompilerStage, CoreExpr,
+    CoreNode, LawpackAdapterFailureKind, LawpackExecutionClass, LawpackPureFunctionImplementation,
     LawpackValidationFailureKind, LawpackVerifierClass, TargetLoweringStatus,
     ValidatedLawpackBundle,
 };
@@ -719,6 +719,74 @@ fn all_hash_bound_helper_and_verifier_variants_load() {
 }
 
 #[test]
+fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        ("ref", local_ref("arg:0", "value", "U64")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.identityU64",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", identity_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode pure-helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode pure-helper manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load pure-helper lawpack");
+    let source = format!(
+        "package examples.pure_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ value: U64, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let value: U64 = hello.identityU64(input.value);\n\
+           return {{ value }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse pure-helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive pure-helper compiler fact");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile exact lawpack helper call");
+    let intent = core.intents.get("apply").expect("lowered apply intent");
+    let CoreNode::Let { value, .. } = &intent.body.nodes[0] else {
+        panic!("pure helper is a Core let");
+    };
+
+    assert!(matches!(
+        value,
+        CoreExpr::Call { callee, args, .. }
+            if callee == "hello.echo@1.identityU64" && args.len() == 1
+    ));
+}
+
+#[test]
 fn edict_pure_helpers_reject_effectful_and_unresolved_callees() {
     for callee in ["hello.echo@1.createGreeting", "hello.echo@1.notExported"] {
         let mut exports = hello_echo_exports();
@@ -1094,14 +1162,30 @@ fn pure_function(
     source: &str,
     implementation: (&str, CanonicalValue),
 ) -> CanonicalValue {
+    pure_function_with_types(
+        coordinate,
+        &["hello.echo@1.GreetingKey"],
+        "hello.echo@1.GreetingKey",
+        source,
+        implementation,
+    )
+}
+
+fn pure_function_with_types(
+    coordinate: &str,
+    parameter_types: &[&str],
+    return_type: &str,
+    source: &str,
+    implementation: (&str, CanonicalValue),
+) -> CanonicalValue {
     map([
         ("coordinate", text(coordinate)),
         ("typeParameters", CanonicalValue::Array(Vec::new())),
         (
             "parameterTypes",
-            CanonicalValue::Array(vec![text("hello.echo@1.GreetingKey")]),
+            CanonicalValue::Array(parameter_types.iter().copied().map(text).collect()),
         ),
-        ("returnType", text("hello.echo@1.GreetingKey")),
+        ("returnType", text(return_type)),
         ("costTemplate", text("hello.echo@1.tiny")),
         ("determinismClass", text("total")),
         ("source", text(source)),

@@ -90,6 +90,11 @@ The current executable Rust surfaces touching lawpacks are:
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
   [LAWPACKS-REQ-008]
+- The same preparation boundary projects each exported pure-helper signature
+  through the source alias. Source calls type-check against that signature and
+  lower under the canonical exported coordinate, while the exact imported
+  manifest digest continues to bind the helper implementation.
+  [LAWPACKS-REQ-012]
 - The Hello Echo golden generator compiles the exact source and lawpack closure,
   lowers the resulting Core module, and pins canonical Core and Target IR bytes
   under their native domain-framed identities. [LAWPACKS-REQ-009]

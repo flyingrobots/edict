@@ -86,6 +86,12 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 - File-backed authority facts can supply the same profile, budget, profile
   write-class, and effect write-class facts consumed by the compiler spine.
   [CSPINE-REQ-010]
+- Pure-helper calls resolve only from explicit compiler facts. The exact
+  lawpack preparation path derives those facts from the source import alias and
+  validated export signature, while Core records the canonical exported
+  coordinate. Missing helpers and incompatible arguments reject before Core;
+  the imported lawpack digest remains the helper implementation identity.
+  [CSPINE-REQ-024]
 - The lowerer output carries no embedded canonical bytes, exact digest, target
   IR, or admission fields. Canonical encoding is a separate Core IR surface, and
   reviewed golden bytes and exact digests are separate Core IR artifacts.

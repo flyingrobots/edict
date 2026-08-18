@@ -1185,6 +1185,7 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::MissingContextFact => "MissingContextFact",
         CompilerErrorKind::UnsupportedSourceShape => "UnsupportedSourceShape",
         CompilerErrorKind::UnresolvedType => "UnresolvedType",
+        CompilerErrorKind::UnresolvedFunction => "UnresolvedFunction",
         CompilerErrorKind::UnknownField => "UnknownField",
         CompilerErrorKind::TypeMismatch => "TypeMismatch",
         CompilerErrorKind::ExpectedPredicate => "ExpectedPredicate",

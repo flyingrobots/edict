@@ -10,7 +10,7 @@ use edict_syntax::{
     compile_to_core, digest_core_module, load_compiler_context_from_authority_fact_files,
     lower_core, parse_module, resolve_module, type_check, CompilerContext, CompilerErrorKind,
     CompilerStage, CoreBudget, CoreExpr, CoreNode, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, CoreType, WriteClass,
+    CoreRequireFailureArm, CoreType, PureFunctionFact, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -129,6 +129,16 @@ const PURE_CONDITIONAL: &str = "package a.b@1;\n\
       let value = if input.choose == 0u32 then input.left else input.right;\n\
       return { value };\n\
     }";
+const PURE_HELPER_CALL: &str = "package a.b@1;\n\
+    type Input = { value: U64, };\n\
+    type Output = { value: U64, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let value: U64 = helpers.bump(input.value);\n\
+      return { value };\n\
+    }";
 
 fn hello_context() -> CompilerContext {
     CompilerContext::new()
@@ -154,6 +164,18 @@ fn pure_context() -> CompilerContext {
                 max_output_bytes: 256,
             },
         )
+}
+
+fn pure_helper_context(parameter_type: &str) -> CompilerContext {
+    pure_context().with_pure_function(
+        "helpers.bump",
+        PureFunctionFact {
+            coordinate: "example.bounds@1.bump".to_owned(),
+            parameter_types: vec![parameter_type.to_owned()],
+            return_type: "U64".to_owned(),
+            cost_template: "example.bounds@1.tiny".to_owned(),
+        },
+    )
 }
 
 #[test]
@@ -292,6 +314,50 @@ fn pure_conditional_branch_mutation_moves_core_digest() {
         digest_core_module(&original_core).expect("digest original Core"),
         digest_core_module(&swapped_core).expect("digest swapped Core")
     );
+}
+
+#[test]
+fn digest_bound_pure_helper_call_lowers_to_core() {
+    let module = parse_module(PURE_HELPER_CALL).expect("pure-helper source parses");
+    let core =
+        compile_to_core(&module, &pure_helper_context("U64")).expect("pure-helper call lowers");
+    let intent = core.intents.get("t").expect("lowered intent");
+    let CoreNode::Let { value, .. } = &intent.body.nodes[0] else {
+        panic!("helper binding is a Core let");
+    };
+
+    assert!(matches!(
+        value,
+        CoreExpr::Call { callee, type_args, args }
+            if callee == "example.bounds@1.bump" && type_args.is_empty() && args.len() == 1
+    ));
+}
+
+#[test]
+fn missing_pure_helper_rejects_before_core() {
+    let module = parse_module(PURE_HELPER_CALL).expect("pure-helper source parses");
+    let errors = compile_to_core(&module, &pure_context()).expect_err("missing helper rejects");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedFunction));
+}
+
+#[test]
+fn pure_helper_argument_type_mismatch_rejects_before_core() {
+    let module = parse_module(PURE_HELPER_CALL).expect("pure-helper source parses");
+    let errors = compile_to_core(&module, &pure_helper_context("Bool"))
+        .expect_err("helper argument mismatch rejects");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
 }
 
 #[test]
