@@ -62,6 +62,13 @@ pub struct PureFunctionFact {
     pub cost_template: String,
 }
 
+/// Canonical identity plus numeric value for one imported static bound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundFact {
+    pub coordinate: String,
+    pub value: u64,
+}
+
 /// A compiler-spine failure with stable stage/kind identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerError {
@@ -82,6 +89,7 @@ pub struct CompilerContext {
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
+    bounds: BTreeMap<String, BoundFact>,
     budgets: BTreeMap<String, CoreBudget>,
 }
 
@@ -151,6 +159,12 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub fn with_bound(mut self, source_coordinate: impl Into<String>, fact: BoundFact) -> Self {
+        self.bounds.insert(source_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_budget(mut self, source_coordinate: impl Into<String>, budget: CoreBudget) -> Self {
         self.budgets.insert(source_coordinate.into(), budget);
         self
@@ -164,6 +178,7 @@ pub struct ResolvedModule {
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
+    pub bounds: BTreeMap<String, BoundFact>,
     pub types: Vec<ResolvedTypeDecl>,
     pub intents: Vec<ResolvedIntent>,
 }
@@ -274,6 +289,7 @@ pub fn resolve_module(
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
             pure_functions: context.pure_functions.clone(),
+            bounds: context.bounds.clone(),
             types,
             intents,
         },
@@ -1084,16 +1100,23 @@ impl<'a> TypeChecker<'a> {
             ));
             return;
         };
-        let BoundRef::Int { value, .. } = bound else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::InvalidBound,
-                "coordinate loop bounds require an imported constant fact",
-                span,
-            ));
-            return;
+        let (value, core_bound) = match bound {
+            BoundRef::Int { value, .. } => (*value, CoreBound::Literal(*value)),
+            BoundRef::Coord(path) => {
+                let source_coordinate = path.join(".");
+                let Some(fact) = self.resolved.bounds.get(&source_coordinate) else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::MissingContextFact,
+                        format!("loop bound `{source_coordinate}` has no compiler context fact"),
+                        span,
+                    ));
+                    return;
+                };
+                (fact.value, CoreBound::Coordinate(fact.coordinate.clone()))
+            }
         };
-        if *value < *max {
+        if value < *max {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::InvalidBound,
@@ -1102,7 +1125,7 @@ impl<'a> TypeChecker<'a> {
             ));
             return;
         }
-        if *value > intent.budget.max_steps {
+        if value > intent.budget.max_steps {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::InvalidBound,
@@ -1149,7 +1172,7 @@ impl<'a> TypeChecker<'a> {
         state.nodes.push(CoreNode::For {
             binder,
             iter: iter_value.expr,
-            bound: CoreBound::Literal(*value),
+            bound: core_bound,
             body: CoreBlock {
                 locals: nested_locals,
                 nodes: nested_state.nodes,

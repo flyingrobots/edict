@@ -7,10 +7,10 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
     digest_core_module, digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
-    validate_lawpack_dependency_graph, CanonicalValue, CompilerErrorKind, CompilerStage, CoreExpr,
-    CoreNode, LawpackAdapterFailureKind, LawpackExecutionClass, LawpackPureFunctionImplementation,
-    LawpackValidationFailureKind, LawpackVerifierClass, TargetLoweringStatus,
-    ValidatedLawpackBundle,
+    validate_lawpack_dependency_graph, CanonicalValue, CompilerErrorKind, CompilerStage, CoreBound,
+    CoreExpr, CoreNode, LawpackAdapterFailureKind, LawpackExecutionClass,
+    LawpackPureFunctionImplementation, LawpackValidationFailureKind, LawpackVerifierClass,
+    TargetLoweringStatus, ValidatedLawpackBundle,
 };
 use sha2::{Digest, Sha256};
 
@@ -784,6 +784,53 @@ fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
         CoreExpr::Call { callee, args, .. }
             if callee == "hello.echo@1.identityU64" && args.len() == 1
     ));
+}
+
+#[test]
+fn exact_lawpack_constant_enters_loop_bound_compilation() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U64")),
+        ("value", CanonicalValue::Integer(4)),
+    ]));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode bound exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode bound manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load bound lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ items: List<U64, max=4>, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           for item in input.items bounded hello.maxItems {{\n\
+             require item <= 10u64 else example.ItemTooLarge;\n\
+           }}\n\
+           return {{ value: 0u64 }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse coordinate-bounded application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive digest-bound constant fact");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile coordinate-bounded loop");
+    let intent = core.intents.get("apply").expect("lowered apply intent");
+    let CoreNode::For { bound, .. } = &intent.body.nodes[0] else {
+        panic!("first node is a Core for");
+    };
+
+    assert_eq!(
+        bound,
+        &CoreBound::Coordinate("hello.echo@1.maxItems".to_owned())
+    );
 }
 
 #[test]

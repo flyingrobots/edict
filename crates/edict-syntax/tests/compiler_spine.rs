@@ -8,9 +8,10 @@ use std::path::{Path, PathBuf};
 
 use edict_syntax::{
     compile_to_core, digest_core_module, load_compiler_context_from_authority_fact_files,
-    lower_core, parse_module, resolve_module, type_check, CompilerContext, CompilerErrorKind,
-    CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, CoreType, PureFunctionFact, WriteClass,
+    lower_core, parse_module, resolve_module, type_check, BoundFact, CompilerContext,
+    CompilerErrorKind, CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode,
+    CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, PureFunctionFact,
+    WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -201,6 +202,16 @@ fn pure_helper_context(parameter_type: &str) -> CompilerContext {
             parameter_types: vec![parameter_type.to_owned()],
             return_type: "U64".to_owned(),
             cost_template: "example.bounds@1.tiny".to_owned(),
+        },
+    )
+}
+
+fn coordinate_bound_context() -> CompilerContext {
+    pure_context().with_bound(
+        "bounds.maxItems",
+        BoundFact {
+            coordinate: "example.bounds@1.maxItems".to_owned(),
+            value: 4,
         },
     )
 }
@@ -435,6 +446,34 @@ fn bounded_list_loop_bound_mutation_moves_core_digest() {
         digest_core_module(&original_core).expect("digest original loop"),
         digest_core_module(&wider_core).expect("digest wider loop")
     );
+}
+
+#[test]
+fn digest_bound_coordinate_loop_cap_lowers_to_core() {
+    let source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded bounds.maxItems");
+    let module = parse_module(&source).expect("coordinate-bounded loop parses");
+    let core = compile_to_core(&module, &coordinate_bound_context())
+        .expect("coordinate-bounded loop lowers");
+    let intent = core.intents.get("t").expect("lowered intent");
+    let CoreNode::For { bound, .. } = &intent.body.nodes[0] else {
+        panic!("first node is a Core for");
+    };
+
+    assert_eq!(
+        bound,
+        &CoreBound::Coordinate("example.bounds@1.maxItems".to_owned())
+    );
+}
+
+#[test]
+fn missing_coordinate_loop_cap_rejects_before_core() {
+    let source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded bounds.maxItems");
+    let module = parse_module(&source).expect("coordinate-bounded loop parses");
+    let errors = compile_to_core(&module, &pure_context()).expect_err("missing bound fact rejects");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
 }
 
 #[test]

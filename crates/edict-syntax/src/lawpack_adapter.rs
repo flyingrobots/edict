@@ -11,7 +11,7 @@ use crate::ast::{ImportKind, Module};
 use crate::canonical::{
     decode_canonical_cbor, digest_canonical_value, sha256_review_string, CanonicalValue,
 };
-use crate::compiler::{CompilerContext, PureFunctionFact};
+use crate::compiler::{BoundFact, CompilerContext, PureFunctionFact};
 use crate::core_ir::{CoreBudget, ResourceRef};
 use crate::lawpack::{
     LawpackExecutionClass, LawpackResourceRef, LawpackSemanticEffect, LawpackTargetAdapter,
@@ -257,6 +257,26 @@ pub fn prepare_lawpack_compilation(
                 parameter_types: function.parameter_types.clone(),
                 return_type: function.return_type.clone(),
                 cost_template: function.cost_template.clone(),
+            },
+        );
+    }
+
+    for constant in &bundle.exports().constants {
+        if !matches!(constant.ty.as_str(), "U32" | "U64") {
+            continue;
+        }
+        let CanonicalValue::Integer(value) = &constant.value else {
+            continue;
+        };
+        let Ok(value) = u64::try_from(*value) else {
+            continue;
+        };
+        let local_constant = local_coordinate(&alias, &prefix, &constant.coordinate)?;
+        compiler_context = compiler_context.with_bound(
+            local_constant,
+            BoundFact {
+                coordinate: constant.coordinate.clone(),
+                value,
             },
         );
     }

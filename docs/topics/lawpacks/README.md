@@ -46,6 +46,8 @@ The current executable Rust surfaces touching lawpacks are:
   callable effect authority;
 - compiler and Target IR fact derivation from the exact
   module/lawpack/adapter closure;
+- compiler projection of exported pure-helper signatures and numeric loop-bound
+  constants under canonical export identities;
 - reproducible canonical Core and Target IR artifacts for the standalone Hello
   Echo crossing;
 - reproducible request-only workspace-snapshot closure and public application
@@ -95,6 +97,10 @@ The current executable Rust surfaces touching lawpacks are:
   lower under the canonical exported coordinate, while the exact imported
   manifest digest continues to bind the helper implementation.
   [LAWPACKS-REQ-012]
+- The preparation boundary also projects exported `U32` and `U64` constants
+  through the source alias as numeric bound facts. Static loop checks consume
+  the value, while Core preserves the canonical exported coordinate.
+  [LAWPACKS-REQ-013]
 - The Hello Echo golden generator compiles the exact source and lawpack closure,
   lowers the resulting Core module, and pins canonical Core and Target IR bytes
   under their native domain-framed identities. [LAWPACKS-REQ-009]
