@@ -42,8 +42,9 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   basis, `budget <=`, `where` predicates, pure `let` bindings, one annotated
   effectful `let ... else` shape, lowerable `require ... else` obstruction
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
-  field access, record literals, equality predicates, and string concatenation.
-  [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017]
+  field access, record literals, equality predicates, string concatenation, and
+  pure conditional expressions whose branches have compatible bounded types.
+  [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017] [CSPINE-REQ-023]
 - The fixed-width source scalar set is `I32`, `I64`, `U32`, and `U64`.
   Explicitly suffixed literals retain their exact width and signedness;
   bare literals inherit an unambiguous expected width from supported comparison,

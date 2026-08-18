@@ -763,6 +763,15 @@ fn expr_references_step_output(expr: &CoreExpr, step_outputs: &BTreeSet<String>)
         CoreExpr::Call { args, .. } => args
             .iter()
             .any(|arg| expr_references_step_output(arg, step_outputs)),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            predicate_references_step_output(predicate, step_outputs)
+                || expr_references_step_output(then_value, step_outputs)
+                || expr_references_step_output(else_value, step_outputs)
+        }
     }
 }
 

@@ -1564,6 +1564,16 @@ fn core_expr_review(expr: &CoreExpr) -> Value {
             "typeArgs": type_args,
             "args": args.iter().map(core_expr_review).collect::<Vec<_>>(),
         }),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => json!({
+            "kind": "if",
+            "predicate": core_predicate_review(predicate),
+            "then": core_expr_review(then_value),
+            "else": core_expr_review(else_value),
+        }),
     }
 }
 

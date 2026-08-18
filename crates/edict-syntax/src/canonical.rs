@@ -1157,6 +1157,16 @@ fn core_expr_value(expr: &CoreExpr) -> Result<CanonicalValue, CanonicalError> {
             ),
             ("args", array_results(args.iter().map(core_expr_value))?),
         ]),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => map([
+            ("kind", text("if")),
+            ("predicate", core_predicate_value(predicate)?),
+            ("then", core_expr_value(then_value)?),
+            ("else", core_expr_value(else_value)?),
+        ]),
     })
 }
 

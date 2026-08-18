@@ -119,6 +119,16 @@ const CONTINUE_OBSTRUCTED_REQUIRE: &str = "package a.b@1;\n\
       };\n\
       return { id: input.id };\n\
     }";
+const PURE_CONDITIONAL: &str = "package a.b@1;\n\
+    type Input = { choose: U32, left: String<max=16>, right: String<max=16>, };\n\
+    type Output = { value: String<max=16>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let value = if input.choose == 0u32 then input.left else input.right;\n\
+      return { value };\n\
+    }";
 
 fn hello_context() -> CompilerContext {
     CompilerContext::new()
@@ -224,6 +234,64 @@ fn compiler_spine_exposes_distinct_stage_boundaries() {
 
     let core = lower_core(&typed).expect("lower Core stage");
     assert!(core.intents.contains_key("sayHello"));
+}
+
+#[test]
+fn pure_conditional_expression_lowers_to_core() {
+    let module = parse_module(PURE_CONDITIONAL).expect("conditional source parses");
+    let core = compile_to_core(&module, &pure_context()).expect("conditional lowers to Core");
+    let intent = core.intents.get("t").expect("lowered intent");
+    let CoreNode::Let { value, .. } = &intent.body.nodes[0] else {
+        panic!("conditional binding is a Core let");
+    };
+
+    assert!(matches!(
+        value,
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } if matches!(predicate.as_ref(), CorePredicate::Compare { .. })
+            && matches!(then_value.as_ref(), CoreExpr::Field { field, .. } if field == "left")
+            && matches!(else_value.as_ref(), CoreExpr::Field { field, .. } if field == "right")
+    ));
+}
+
+#[test]
+fn pure_conditional_expression_rejects_incompatible_branches() {
+    let source = PURE_CONDITIONAL.replace(
+        "then input.left else input.right",
+        "then input.left else input.choose",
+    );
+    let module = parse_module(&source).expect("incompatible conditional parses");
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("incompatible conditional branches reject");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
+fn pure_conditional_branch_mutation_moves_core_digest() {
+    let original = parse_module(PURE_CONDITIONAL).expect("conditional source parses");
+    let swapped_source = PURE_CONDITIONAL.replace(
+        "then input.left else input.right",
+        "then input.right else input.left",
+    );
+    let swapped = parse_module(&swapped_source).expect("swapped conditional parses");
+    let original_core =
+        compile_to_core(&original, &pure_context()).expect("original conditional compiles");
+    let swapped_core =
+        compile_to_core(&swapped, &pure_context()).expect("swapped conditional compiles");
+
+    assert_ne!(
+        digest_core_module(&original_core).expect("digest original Core"),
+        digest_core_module(&swapped_core).expect("digest swapped Core")
+    );
 }
 
 #[test]

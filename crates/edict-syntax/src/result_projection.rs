@@ -610,7 +610,7 @@ fn project_core_expression(
             };
             Ok(ResultProjectionExpr::Source { source, path })
         }
-        CoreExpr::Const(_) | CoreExpr::Call { .. } => Err(failure(
+        CoreExpr::Const(_) | CoreExpr::Call { .. } | CoreExpr::If { .. } => Err(failure(
             ResultProjectionFailureKind::UnsupportedExpression,
             "result expression",
         )),
@@ -627,7 +627,10 @@ fn source_path(expression: &CoreExpr) -> Result<(&LocalRef, Vec<String>), Result
     path.reverse();
     match current {
         CoreExpr::Local { reference } => Ok((reference, path)),
-        CoreExpr::Const(_) | CoreExpr::Record { .. } | CoreExpr::Call { .. } => Err(failure(
+        CoreExpr::Const(_)
+        | CoreExpr::Record { .. }
+        | CoreExpr::Call { .. }
+        | CoreExpr::If { .. } => Err(failure(
             ResultProjectionFailureKind::UnsupportedExpression,
             "projection source",
         )),

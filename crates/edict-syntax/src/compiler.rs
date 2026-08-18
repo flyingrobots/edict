@@ -1928,11 +1928,16 @@ impl<'a> TypeChecker<'a> {
                 span,
             } => self.check_string_concat(lhs, rhs, env, *span),
             Expr::Record { entries, span } => self.check_record(entries, env, expected, *span),
+            Expr::If {
+                cond,
+                then,
+                els,
+                span,
+            } => self.check_pure_conditional(cond, then, els, env, expected, *span),
             Expr::Binary { .. }
             | Expr::Digest { .. }
             | Expr::Call { .. }
             | Expr::Unary { .. }
-            | Expr::If { .. }
             | Expr::IfYield { .. }
             | Expr::VariantLit { .. }
             | Expr::Match { .. } => {
@@ -1945,6 +1950,55 @@ impl<'a> TypeChecker<'a> {
                 None
             }
         }
+    }
+
+    fn check_pure_conditional(
+        &mut self,
+        cond: &Expr,
+        then: &Expr,
+        els: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        let predicate = self.check_predicate(cond, env)?;
+        let then_value = self.check_expr_with_expected(then, env, expected)?;
+        let branch_expectation = expected.unwrap_or(&then_value.ty);
+        let else_value = self.check_expr_with_expected(els, env, Some(branch_expectation))?;
+
+        let ty = if let Some(expected) = expected {
+            if !compatible(expected, &then_value.ty) || !compatible(expected, &else_value.ty) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "conditional branches do not match the expected type",
+                    span,
+                ));
+                return None;
+            }
+            expected.clone()
+        } else if compatible(&then_value.ty, &else_value.ty) {
+            then_value.ty.clone()
+        } else if compatible(&else_value.ty, &then_value.ty) {
+            else_value.ty.clone()
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "conditional branches do not have a compatible bounded type",
+                span,
+            ));
+            return None;
+        };
+
+        Some(TypedValue {
+            expr: CoreExpr::If {
+                predicate: Box::new(predicate),
+                then_value: Box::new(then_value.expr),
+                else_value: Box::new(else_value.expr),
+            },
+            ty,
+        })
     }
 
     fn check_integer_literal(

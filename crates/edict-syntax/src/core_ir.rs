@@ -191,6 +191,11 @@ pub enum CoreExpr {
         type_args: Vec<String>,
         args: Vec<CoreExpr>,
     },
+    If {
+        predicate: Box<CorePredicate>,
+        then_value: Box<CoreExpr>,
+        else_value: Box<CoreExpr>,
+    },
 }
 
 /// Core predicate subset used by initial source-to-Core lowering.
