@@ -11,7 +11,7 @@ use crate::ast::{ImportKind, Module};
 use crate::canonical::{
     decode_canonical_cbor, digest_canonical_value, sha256_review_string, CanonicalValue,
 };
-use crate::compiler::{BoundFact, CompilerContext, PureFunctionFact};
+use crate::compiler::{BoundFact, CompilerContext, PureFunctionFact, TypeShapeFact};
 use crate::core_ir::{CoreBudget, ResourceRef};
 use crate::lawpack::{
     LawpackExecutionClass, LawpackResourceRef, LawpackSemanticEffect, LawpackTargetAdapter,
@@ -207,6 +207,10 @@ pub fn prepare_lawpack_compilation(
 ) -> Result<PreparedLawpackCompilation, Vec<LawpackAdapterFailure>> {
     let alias = matching_import_alias(module, bundle)?;
     let prefix = format!("{}@{}.", bundle.manifest().id, bundle.manifest().version);
+    let lawpack = ResourceRef {
+        coordinate: format!("{}@{}", bundle.manifest().id, bundle.manifest().version),
+        digest: Some(bundle.manifest_digest_review_string()),
+    };
     let mut compiler_context = CompilerContext::new();
     let mut operation_profiles = BTreeSet::new();
     let mut obstruction_coordinates = BTreeSet::new();
@@ -253,6 +257,7 @@ pub fn prepare_lawpack_compilation(
         compiler_context = compiler_context.with_pure_function(
             local_function,
             PureFunctionFact {
+                lawpack: lawpack.clone(),
                 coordinate: function.coordinate.clone(),
                 parameter_types: function.parameter_types.clone(),
                 return_type: function.return_type.clone(),
@@ -261,25 +266,15 @@ pub fn prepare_lawpack_compilation(
         );
     }
 
-    for constant in &bundle.exports().constants {
-        if !matches!(constant.ty.as_str(), "U32" | "U64") {
-            continue;
-        }
-        let CanonicalValue::Integer(value) = &constant.value else {
-            continue;
-        };
-        let Ok(value) = u64::try_from(*value) else {
-            continue;
-        };
-        let local_constant = local_coordinate(&alias, &prefix, &constant.coordinate)?;
-        compiler_context = compiler_context.with_bound(
-            local_constant,
-            BoundFact {
-                coordinate: constant.coordinate.clone(),
-                value,
-            },
-        );
+    for exported_type in &bundle.exports().types {
+        compiler_context = compiler_context.with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: exported_type.coordinate.clone(),
+            definition: exported_type.definition.clone(),
+        });
     }
+
+    compiler_context = project_bound_constants(compiler_context, bundle, &alias, &prefix)?;
 
     for (coordinate, budget) in &adapter.budgets {
         let local_budget = local_coordinate(&alias, &prefix, coordinate)?;
@@ -299,6 +294,47 @@ pub fn prepare_lawpack_compilation(
             effect_lowerings,
         },
     })
+}
+
+fn project_bound_constants(
+    mut context: CompilerContext,
+    bundle: &ValidatedLawpackBundle,
+    alias: &str,
+    prefix: &str,
+) -> Result<CompilerContext, Vec<LawpackAdapterFailure>> {
+    for constant in &bundle.exports().constants {
+        if !matches!(constant.ty.as_str(), "U32" | "U64") {
+            continue;
+        }
+        let CanonicalValue::Integer(value) = &constant.value else {
+            return Err(invalid_numeric_constant(constant, "canonical integer"));
+        };
+        let Ok(value) = u64::try_from(*value) else {
+            return Err(invalid_numeric_constant(constant, "value in type domain"));
+        };
+        if constant.ty == "U32" && value > u64::from(u32::MAX) {
+            return Err(invalid_numeric_constant(constant, "value in U32 domain"));
+        }
+        context = context.with_bound(
+            local_coordinate(alias, prefix, &constant.coordinate)?,
+            BoundFact {
+                coordinate: constant.coordinate.clone(),
+                value,
+            },
+        );
+    }
+    Ok(context)
+}
+
+fn invalid_numeric_constant(
+    constant: &crate::lawpack::LawpackExportedConstant,
+    obligation: &str,
+) -> Vec<LawpackAdapterFailure> {
+    one(failure(
+        LawpackAdapterFailureKind::InvalidShape,
+        format!("exports.constants.{}.value", constant.coordinate),
+        format!("{obligation} for {}", constant.ty),
+    ))
 }
 
 type AdapterParts = (

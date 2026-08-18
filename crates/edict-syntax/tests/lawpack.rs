@@ -787,6 +787,74 @@ fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
 }
 
 #[test]
+fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref(
+                "arg:0",
+                "value",
+                "hello.echo@1.GreetingKey",
+            )]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        (
+                            "ref",
+                            local_ref("arg:0", "value", "hello.echo@1.GreetingKey"),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).push(map([
+        ("coordinate", text("hello.echo@1.GreetingKey")),
+        ("definition", text("String<max=32,canonical=raw-utf8>")),
+    ]));
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function(
+        "hello.echo@1.identityKey",
+        "edict",
+        ("body", identity_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode typed helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode typed helper manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load typed helper lawpack");
+    let source = format!(
+        "package examples.typed_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ value: String<max=32>, }};\n\
+         type Output = {{ value: String<max=32>, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let value = hello.identityKey(input.value);\n\
+           return {{ value }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse typed helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive typed helper compiler facts");
+
+    compile_to_core(&module, preparation.compiler_context())
+        .expect("compile helper over an exact exported bounded type");
+}
+
+#[test]
 fn exact_lawpack_constant_enters_loop_bound_compilation() {
     let mut exports = hello_echo_exports();
     array_mut(field_mut(&mut exports, "constants")).push(map([
@@ -831,6 +899,111 @@ fn exact_lawpack_constant_enters_loop_bound_compilation() {
         bound,
         &CoreBound::Coordinate("hello.echo@1.maxItems".to_owned())
     );
+}
+
+#[test]
+fn exact_lawpack_u32_constant_enters_loop_bound_compilation() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U32")),
+        ("value", CanonicalValue::Integer(4)),
+    ]));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode U32 bound exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode U32 bound manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load U32 bound lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ items: List<U64, max=4>, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           for item in input.items bounded hello.maxItems {{\n\
+             require item <= 10u64 else example.ItemTooLarge;\n\
+           }}\n\
+           return {{ value: 0u64 }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse U32 coordinate-bounded application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation =
+        prepare_lawpack_compilation(&module, &bundle, &adapter).expect("derive U32 constant fact");
+
+    compile_to_core(&module, preparation.compiler_context())
+        .expect("compile U32 coordinate-bounded loop");
+}
+
+#[test]
+fn exact_lawpack_numeric_constants_reject_type_and_budget_violations() {
+    let mut oversized_u32_exports = hello_echo_exports();
+    array_mut(field_mut(&mut oversized_u32_exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U32")),
+        ("value", CanonicalValue::Integer(i128::from(u32::MAX) + 1)),
+    ]));
+    let exports_bytes =
+        encode_canonical_cbor(&oversized_u32_exports).expect("encode oversized U32 exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &oversized_u32_exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode oversized U32 manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load syntactically canonical oversized U32 lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse exact lawpack import");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect_err("oversized U32 bound must reject preparation");
+    assert_eq!(failures[0].kind, LawpackAdapterFailureKind::InvalidShape);
+
+    let mut over_budget_exports = hello_echo_exports();
+    array_mut(field_mut(&mut over_budget_exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U64")),
+        ("value", CanonicalValue::Integer(65)),
+    ]));
+    let exports_bytes =
+        encode_canonical_cbor(&over_budget_exports).expect("encode over-budget exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &over_budget_exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode over-budget manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load over-budget lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ items: List<U64, max=4>, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           for item in input.items bounded hello.maxItems {{\n\
+             require item <= 10u64 else example.ItemTooLarge;\n\
+           }}\n\
+           return {{ value: 0u64 }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse over-budget application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive over-budget constant fact");
+    let errors = compile_to_core(&module, preparation.compiler_context())
+        .expect_err("over-budget U64 bound must reject compilation");
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::InvalidBound));
 }
 
 #[test]

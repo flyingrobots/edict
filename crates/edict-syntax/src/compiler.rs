@@ -56,10 +56,19 @@ pub enum CompilerErrorKind {
 /// coordinate available to source resolution and type checking.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PureFunctionFact {
+    pub lawpack: ResourceRef,
     pub coordinate: String,
     pub parameter_types: Vec<String>,
     pub return_type: String,
     pub cost_template: String,
+}
+
+/// Canonical identity and Core definition for one imported lawpack type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeShapeFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub definition: String,
 }
 
 /// Canonical identity plus numeric value for one imported static bound.
@@ -89,6 +98,7 @@ pub struct CompilerContext {
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
+    type_shapes: BTreeMap<String, TypeShapeFact>,
     bounds: BTreeMap<String, BoundFact>,
     budgets: BTreeMap<String, CoreBudget>,
 }
@@ -159,6 +169,12 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub fn with_type_shape(mut self, fact: TypeShapeFact) -> Self {
+        self.type_shapes.insert(fact.coordinate.clone(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_bound(mut self, source_coordinate: impl Into<String>, fact: BoundFact) -> Self {
         self.bounds.insert(source_coordinate.into(), fact);
         self
@@ -178,6 +194,7 @@ pub struct ResolvedModule {
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
+    pub type_shapes: BTreeMap<String, TypeShapeFact>,
     pub bounds: BTreeMap<String, BoundFact>,
     pub types: Vec<ResolvedTypeDecl>,
     pub intents: Vec<ResolvedIntent>,
@@ -289,6 +306,7 @@ pub fn resolve_module(
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
             pure_functions: context.pure_functions.clone(),
+            type_shapes: context.type_shapes.clone(),
             bounds: context.bounds.clone(),
             types,
             intents,
@@ -516,12 +534,27 @@ struct TypedValue {
     ty: TypeShape,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct BodyState {
     nodes: Vec<CoreNode>,
     result: Option<CoreExpr>,
     local_index: usize,
     obstruction_index: usize,
+    step_factor: u64,
+    accumulated_steps: u64,
+}
+
+impl Default for BodyState {
+    fn default() -> Self {
+        Self {
+            nodes: Vec::new(),
+            result: None,
+            local_index: 0,
+            obstruction_index: 0,
+            step_factor: 1,
+            accumulated_steps: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -673,8 +706,8 @@ impl<'a> TypeChecker<'a> {
                 let BoundRef::Int { value, .. } = max else {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,
-                        CompilerErrorKind::InvalidBound,
-                        "list maximum requires a literal bound in the current compiler subset",
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "coordinate list bounds require bound proof in a later stage",
                         span,
                     ));
                     return None;
@@ -1008,8 +1041,11 @@ impl<'a> TypeChecker<'a> {
         let Some(predicate) = self.check_predicate(cond, env) else {
             return;
         };
+        let baseline_steps = state.accumulated_steps;
         let then_block =
             self.check_isolated_statement_block(intent, output_shape, then_block, env, state);
+        let then_steps = state.accumulated_steps;
+        state.accumulated_steps = baseline_steps;
         let else_block = match els {
             Some(ElseClause::Block(block)) => {
                 self.check_isolated_statement_block(intent, output_shape, block, env, state)
@@ -1025,6 +1061,7 @@ impl<'a> TypeChecker<'a> {
             }
             None => empty_core_block(),
         };
+        state.accumulated_steps = then_steps.max(state.accumulated_steps);
         state.nodes.push(CoreNode::Branch {
             predicate,
             then_block,
@@ -1045,6 +1082,8 @@ impl<'a> TypeChecker<'a> {
         let mut nested_state = BodyState {
             local_index: state.local_index,
             obstruction_index: state.obstruction_index,
+            step_factor: state.step_factor,
+            accumulated_steps: state.accumulated_steps,
             ..BodyState::default()
         };
         for stmt in &block.stmts {
@@ -1068,6 +1107,7 @@ impl<'a> TypeChecker<'a> {
         }
         state.local_index = nested_state.local_index;
         state.obstruction_index = nested_state.obstruction_index;
+        state.accumulated_steps = nested_state.accumulated_steps;
         CoreBlock {
             locals: nested_locals,
             nodes: nested_state.nodes,
@@ -1125,18 +1165,11 @@ impl<'a> TypeChecker<'a> {
             ));
             return;
         }
-        if value > intent.budget.max_steps {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::InvalidBound,
-                format!(
-                    "loop bound {value} exceeds operation step budget {}",
-                    intent.budget.max_steps
-                ),
-                span,
-            ));
+        let Some((loop_steps, accumulated_steps)) =
+            self.charge_loop_work(intent, state, value, span)
+        else {
             return;
-        }
+        };
 
         let binder_shape = item.as_ref().clone();
         let binder = next_local(&mut state.local_index, binder_shape.value_type_coord());
@@ -1146,6 +1179,8 @@ impl<'a> TypeChecker<'a> {
         let mut nested_state = BodyState {
             local_index: state.local_index,
             obstruction_index: state.obstruction_index,
+            step_factor: loop_steps,
+            accumulated_steps,
             ..BodyState::default()
         };
         for stmt in &body.stmts {
@@ -1169,6 +1204,7 @@ impl<'a> TypeChecker<'a> {
         }
         state.local_index = nested_state.local_index;
         state.obstruction_index = nested_state.obstruction_index;
+        state.accumulated_steps = nested_state.accumulated_steps;
         state.nodes.push(CoreNode::For {
             binder,
             iter: iter_value.expr,
@@ -1179,6 +1215,40 @@ impl<'a> TypeChecker<'a> {
                 result: CoreExpr::Const(CoreValue::Null),
             },
         });
+    }
+
+    fn charge_loop_work(
+        &mut self,
+        intent: &ResolvedIntent,
+        state: &BodyState,
+        bound: u64,
+        span: Span,
+    ) -> Option<(u64, u64)> {
+        let loop_steps = state.step_factor.checked_mul(bound);
+        let accumulated_steps =
+            loop_steps.and_then(|steps| state.accumulated_steps.checked_add(steps));
+        let Some((loop_steps, accumulated_steps)) = loop_steps.zip(accumulated_steps) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "cumulative loop step accounting overflows u64",
+                span,
+            ));
+            return None;
+        };
+        if accumulated_steps > intent.budget.max_steps {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!(
+                    "cumulative loop work {accumulated_steps} exceeds operation step budget {}",
+                    intent.budget.max_steps
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some((loop_steps, accumulated_steps))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2264,29 +2334,7 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
-        let Some(source_coordinate) = plain_callee_coordinate(callee) else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::UnresolvedFunction,
-                "pure-helper callee is not a stable imported coordinate",
-                span,
-            ));
-            return None;
-        };
-        let Some(fact) = self
-            .resolved
-            .pure_functions
-            .get(&source_coordinate)
-            .cloned()
-        else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::UnresolvedFunction,
-                format!("pure helper `{source_coordinate}` has no compiler context fact"),
-                span,
-            ));
-            return None;
-        };
+        let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
         if args.len() != fact.parameter_types.len() {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -2303,7 +2351,9 @@ impl<'a> TypeChecker<'a> {
 
         let mut core_args = Vec::with_capacity(args.len());
         for (arg, parameter_type) in args.iter().zip(&fact.parameter_types) {
-            let Some(parameter_shape) = self.shape_for_coordinate(parameter_type) else {
+            let Some(parameter_shape) =
+                self.shape_for_helper_coordinate(parameter_type, &fact.lawpack)
+            else {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
                     CompilerErrorKind::UnresolvedType,
@@ -2327,7 +2377,8 @@ impl<'a> TypeChecker<'a> {
             core_args.push(value.expr);
         }
 
-        let Some(return_shape) = self.shape_for_coordinate(&fact.return_type) else {
+        let Some(return_shape) = self.shape_for_helper_coordinate(&fact.return_type, &fact.lawpack)
+        else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnresolvedType,
@@ -2359,6 +2410,55 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
+    fn helper_is_owned(&self, fact: &PureFunctionFact) -> bool {
+        self.resolved
+            .imports
+            .iter()
+            .any(|import| import.kind == CoreImportKind::Lawpack && import.resource == fact.lawpack)
+    }
+
+    fn resolve_pure_function(
+        &mut self,
+        callee: &Expr,
+        span: Span,
+    ) -> Option<(String, PureFunctionFact)> {
+        let Some(source_coordinate) = plain_callee_coordinate(callee) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                "pure-helper callee is not a stable imported coordinate",
+                span,
+            ));
+            return None;
+        };
+        let Some(fact) = self
+            .resolved
+            .pure_functions
+            .get(&source_coordinate)
+            .cloned()
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                format!("pure helper `{source_coordinate}` has no compiler context fact"),
+                span,
+            ));
+            return None;
+        };
+        if !self.helper_is_owned(&fact) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                format!(
+                    "pure helper `{source_coordinate}` is not owned by an exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some((source_coordinate, fact))
+    }
+
     fn shape_for_coordinate(&self, coordinate: &str) -> Option<TypeShape> {
         if coordinate == "Bool" {
             return Some(TypeShape {
@@ -2375,6 +2475,27 @@ impl<'a> TypeChecker<'a> {
             .cloned()
     }
 
+    fn shape_for_helper_coordinate(
+        &self,
+        coordinate: &str,
+        lawpack: &ResourceRef,
+    ) -> Option<TypeShape> {
+        if coordinate == "Bool" || builtin_integer_width(coordinate).is_some() {
+            return self.shape_for_coordinate(coordinate);
+        }
+        self.resolved
+            .type_shapes
+            .get(coordinate)
+            .filter(|fact| &fact.lawpack == lawpack)
+            .and_then(Self::shape_from_imported_type)
+    }
+
+    fn shape_from_imported_type(fact: &TypeShapeFact) -> Option<TypeShape> {
+        let mut shape = imported_type_definition_shape(&fact.definition)?;
+        shape.coord.clone_from(&fact.coordinate);
+        Some(shape)
+    }
+
     fn check_pure_conditional(
         &mut self,
         cond: &Expr,
@@ -2385,9 +2506,16 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<TypedValue> {
         let predicate = self.check_predicate(cond, env)?;
-        let then_value = self.check_expr_with_expected(then, env, expected)?;
-        let branch_expectation = expected.unwrap_or(&then_value.ty);
-        let else_value = self.check_expr_with_expected(els, env, Some(branch_expectation))?;
+        let (then_value, else_value) = if expected.is_none() && is_bare_integer_literal(then) {
+            let else_value = self.check_expr_with_expected(els, env, None)?;
+            let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
+            (then_value, else_value)
+        } else {
+            let then_value = self.check_expr_with_expected(then, env, expected)?;
+            let branch_expectation = expected.unwrap_or(&then_value.ty);
+            let else_value = self.check_expr_with_expected(els, env, Some(branch_expectation))?;
+            (then_value, else_value)
+        };
 
         let ty = if let Some(expected) = expected {
             if !compatible(expected, &then_value.ty) || !compatible(expected, &else_value.ty) {
@@ -2728,6 +2856,53 @@ fn compare_op(op: BinOp) -> Option<CompareOp> {
 
 fn string_type_coord(max: u64, canonical: &str) -> String {
     format!("String<max={max},canonical={canonical}>")
+}
+
+fn imported_type_definition_shape(definition: &str) -> Option<TypeShape> {
+    if definition == "Bool" {
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::Bool,
+        });
+    }
+    if let Some(width) = builtin_integer_width(definition) {
+        return Some(integer_shape(width));
+    }
+    if let Some(inner) = definition
+        .strip_prefix("String<max=")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let (max, canonical) = inner.split_once(",canonical=")?;
+        let max = max.parse().ok()?;
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::String {
+                max,
+                canonical: canonical.to_owned(),
+            },
+        });
+    }
+    if let Some(max) = definition
+        .strip_prefix("Bytes<max=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|value| value.parse().ok())
+    {
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::Bytes { max },
+        });
+    }
+    let inner = definition
+        .strip_prefix("List<")
+        .and_then(|value| value.strip_suffix('>'))?;
+    let (item, max) = inner.rsplit_once(",max=")?;
+    Some(TypeShape {
+        coord: definition.to_owned(),
+        kind: TypeKind::List {
+            item: Box::new(imported_type_definition_shape(item)?),
+            max: max.parse().ok()?,
+        },
+    })
 }
 
 fn bytes_type_coord(max: u64) -> String {
