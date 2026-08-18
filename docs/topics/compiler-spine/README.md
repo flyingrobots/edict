@@ -43,8 +43,10 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   effectful `let ... else` shape, lowerable `require ... else` obstruction
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
   field access, record literals, equality predicates, string concatenation, and
-  pure conditional expressions whose branches have compatible bounded types.
-  Statement conditionals lower to isolated branch blocks, and literal- or
+  pure conditional expressions whose branches have compatible bounded types,
+  and effectful branch-yield lets whose isolated blocks use already-supported
+  statements and produce compatible bounded values. Statement conditionals
+  lower to isolated branch blocks, and literal- or
   coordinate-bounded loops lower over bounded lists when the resolved cap
   covers the list maximum without exceeding the operation step budget.
   [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017] [CSPINE-REQ-023]
@@ -76,8 +78,12 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   Core effect node with the effect coordinate, input expression, result binding,
   and deterministic obstruction map. [CSPINE-REQ-011] [CSPINE-REQ-014]
   [CSPINE-REQ-015]
-- Effectful branch-yield and other unsupported effectful forms still reject
-  with stable compiler stage and kind identities before Core lowering.
+- A branch-yield `let` lowers to a Core branch with one optional result binding;
+  each selected block retains its own locals, effects, and yielded result.
+  Incompatible branch results reject before Core exists. Unsupported effect
+  calls and bare effect statements still reject with stable compiler stage and
+  kind identities before Core lowering.
+  [CSPINE-REQ-028]
   [CSPINE-REQ-012]
 - Duplicate failure keys in an obstruction map reject with
   `DuplicateObstructionFailure` before Core lowering. [CSPINE-REQ-013]
@@ -114,7 +120,6 @@ The following are not implemented by this compiler-spine slice:
 - obstruction exhaustiveness against target/lawpack failure facts;
 - effect obstruction payload lowering;
 - bare effect-statement lowering;
-- effectful branch-yield lowering;
 - shape/lawpack schema loading;
 - full lawpack or target-profile manifest loading beyond authority-facts
   documents;

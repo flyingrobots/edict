@@ -29,16 +29,18 @@ const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
     }";
 const EFFECTFUL_BRANCH_YIELD: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
     intent t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
       let id = if true {\n\
-        target.replace(input.id) else { rejected(reason) => domain.WriteRejected };\n\
+        let receipt: Receipt = target.replace(input.id)\n\
+          else { rejected(reason) => domain.WriteRejected };\n\
         yield input.id;\n\
       } else {\n\
-        yield input.id;\n\
+        yield \"fallback\";\n\
       };\n\
       return { id };\n\
     }";
@@ -482,6 +484,7 @@ fn statement_conditional_lowers_to_isolated_core_branches() {
     let core = compile_to_core(&module, &pure_context()).expect("statement conditional lowers");
     let intent = core.intents.get("t").expect("lowered intent");
     let CoreNode::Branch {
+        binding,
         predicate,
         then_block,
         else_block,
@@ -490,6 +493,7 @@ fn statement_conditional_lowers_to_isolated_core_branches() {
         panic!("first node is a Core branch");
     };
 
+    assert!(binding.is_none());
     assert!(matches!(predicate, CorePredicate::Compare { .. }));
     assert!(matches!(
         then_block.nodes.as_slice(),
@@ -788,7 +792,7 @@ fn effectful_write_intent_lowers_to_typed_core_from_file_backed_facts() {
 }
 
 #[test]
-fn unsupported_effectful_branch_yield_rejects_before_core_lowering() {
+fn effectful_branch_yield_lowers_to_bound_core_branch() {
     let dir = temp_case_dir("effectful-branch-yield");
     let target = write_json(
         &dir,
@@ -799,20 +803,86 @@ fn unsupported_effectful_branch_yield_rejects_before_core_lowering() {
     let context =
         load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
             .expect("authority facts load");
-    let module = parse_module(EFFECTFUL_BRANCH_YIELD).expect("unsupported effectful source parses");
+    let module = parse_module(EFFECTFUL_BRANCH_YIELD).expect("effectful branch-yield parses");
+    let core = compile_to_core(&module, &context).expect("effectful branch-yield lowers");
+    let intent = core.intents.get("t").expect("compiled intent");
+    let CoreNode::Branch {
+        binding: Some(binding),
+        then_block,
+        else_block,
+        ..
+    } = &intent.body.nodes[0]
+    else {
+        panic!("branch-yield let lowers to one bound Core branch");
+    };
 
-    let errors =
-        compile_to_core(&module, &context).expect_err("unsupported effectful shape rejects");
+    assert_eq!(binding.ty, "a.b@1.Input.id");
+    assert!(matches!(
+        then_block.nodes.as_slice(),
+        [CoreNode::Effect { .. }]
+    ));
+    assert!(else_block.nodes.is_empty());
+    assert!(matches!(then_block.result, CoreExpr::Field { .. }));
+    assert!(matches!(
+        else_block.result,
+        CoreExpr::Const(edict_syntax::CoreValue::String(ref value)) if value == "fallback"
+    ));
+    assert!(matches!(
+        intent.body.result,
+        CoreExpr::Record { ref fields }
+            if matches!(&fields["id"], CoreExpr::Local { reference } if reference == binding)
+    ));
+}
+
+#[test]
+fn effectful_branch_yield_rejects_incompatible_results() {
+    let source = EFFECTFUL_BRANCH_YIELD.replace("yield \"fallback\"", "yield true");
+    let module = parse_module(&source).expect("incompatible branch-yield parses");
+    let errors = compile_to_core(&module, &effectful_context())
+        .expect_err("incompatible branch results reject");
 
     assert!(errors
         .iter()
-        .all(|err| err.stage == CompilerStage::TypeCheck));
-    assert!(errors
-        .iter()
-        .any(|err| err.kind == CompilerErrorKind::UnsupportedSourceShape));
-    assert!(!errors
-        .iter()
-        .any(|err| err.kind == CompilerErrorKind::ProfileEffectMismatch));
+        .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
+fn effectful_branch_yield_mutation_moves_core_digest() {
+    let original = compile_to_core(
+        &parse_module(EFFECTFUL_BRANCH_YIELD).expect("original parses"),
+        &effectful_context(),
+    )
+    .expect("original lowers");
+    let swapped_source = EFFECTFUL_BRANCH_YIELD
+        .replace("yield input.id", "yield __placeholder")
+        .replace("yield \"fallback\"", "yield input.id")
+        .replace("yield __placeholder", "yield \"fallback\"");
+    let swapped = compile_to_core(
+        &parse_module(&swapped_source).expect("swapped parses"),
+        &effectful_context(),
+    )
+    .expect("swapped lowers");
+
+    assert_ne!(
+        digest_core_module(&original).expect("digest original branch-yield"),
+        digest_core_module(&swapped).expect("digest swapped branch-yield")
+    );
+
+    let mut unbound = original.clone();
+    let CoreNode::Branch { binding, .. } = &mut unbound
+        .intents
+        .get_mut("t")
+        .expect("unbound intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("first node remains a branch");
+    };
+    *binding = None;
+    assert_ne!(
+        digest_core_module(&original).expect("digest bound branch-yield"),
+        digest_core_module(&unbound).expect("digest unbound branch")
+    );
 }
 
 #[test]
@@ -1107,18 +1177,21 @@ fn initial_core_lowering_makes_no_canonical_or_target_claim() {
 }
 
 fn compile_effectful_source(source: &str) -> edict_syntax::CoreModule {
-    let dir = temp_case_dir("compile-effectful-source");
+    let context = effectful_context();
+    let module = parse_module(source).expect("effectful source parses");
+    compile_to_core(&module, &context).expect("effectful source compiles")
+}
+
+fn effectful_context() -> CompilerContext {
+    let dir = temp_case_dir("effectful-context");
     let target = write_json(
         &dir,
         "target-profile-facts.json",
         effectful_target_profile_facts(),
     );
     let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
-    let context =
-        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
-            .expect("authority facts load");
-    let module = parse_module(source).expect("effectful source parses");
-    compile_to_core(&module, &context).expect("effectful source compiles")
+    load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+        .expect("authority facts load")
 }
 
 fn compile_pure_source(source: &str) -> edict_syntax::CoreModule {

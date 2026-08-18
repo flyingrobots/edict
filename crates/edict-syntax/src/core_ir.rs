@@ -313,6 +313,9 @@ pub enum CoreNode {
         body: CoreBlock,
     },
     Branch {
+        /// When present, the selected block result becomes this local.
+        /// Statement-only branches leave the binding absent.
+        binding: Option<LocalRef>,
         predicate: CorePredicate,
         then_block: CoreBlock,
         else_block: CoreBlock,

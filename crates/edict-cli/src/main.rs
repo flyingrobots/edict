@@ -1508,15 +1508,22 @@ fn core_node_review(node: &CoreNode) -> Value {
             "body": core_block_review(body),
         }),
         CoreNode::Branch {
+            binding,
             predicate,
             then_block,
             else_block,
-        } => json!({
-            "kind": "branch",
-            "predicate": core_predicate_review(predicate),
-            "then": core_block_review(then_block),
-            "else": core_block_review(else_block),
-        }),
+        } => {
+            let mut review = json!({
+                "kind": "branch",
+                "predicate": core_predicate_review(predicate),
+                "then": core_block_review(then_block),
+                "else": core_block_review(else_block),
+            });
+            if let Some(binding) = binding {
+                review["binding"] = local_ref_review(binding);
+            }
+            review
+        }
     }
 }
 

@@ -49,7 +49,10 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   [COREIR-REQ-003]
 - Core blocks contain explicit locals, ordered nodes, and a result expression.
   Nodes cover local binding, semantic effects, guards, branches, bounded loops,
-  match blocks, and proof obligations. [COREIR-REQ-004]
+  match blocks, and proof obligations. A branch may carry one optional result
+  binding; when present, the selected block result becomes that local and the
+  binding participates in canonical Core identity. [COREIR-REQ-004]
+  [COREIR-REQ-021]
 - The Rust Core IR model and reference canonical encoder represent the first
   semantic effect-node shape: binding, effect coordinate, input expression, and
   deterministic obstruction map. They also represent `require` nodes with

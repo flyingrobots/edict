@@ -892,6 +892,7 @@ impl<'a> TypeChecker<'a> {
                 span,
             } => self.check_let_stmt(
                 intent,
+                output_shape,
                 LetStatement {
                     name,
                     ty: ty.as_ref(),
@@ -1026,6 +1027,7 @@ impl<'a> TypeChecker<'a> {
             None => empty_core_block(),
         };
         state.nodes.push(CoreNode::Branch {
+            binding: None,
             predicate,
             then_block,
             else_block,
@@ -1556,6 +1558,7 @@ impl<'a> TypeChecker<'a> {
     fn check_let_stmt(
         &mut self,
         intent: &ResolvedIntent,
+        output_shape: &TypeShape,
         stmt: LetStatement<'_>,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
@@ -1564,18 +1567,40 @@ impl<'a> TypeChecker<'a> {
         if let Some(handler) = stmt.handler {
             self.check_effectful_let(intent, stmt, handler, env, locals, state);
         } else {
-            self.check_pure_let(intent, stmt, env, locals, state);
+            self.check_pure_let(intent, output_shape, stmt, env, locals, state);
         }
     }
 
     fn check_pure_let(
         &mut self,
         intent: &ResolvedIntent,
+        output_shape: &TypeShape,
         stmt: LetStatement<'_>,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
+        if let Expr::IfYield {
+            pred,
+            then_block,
+            else_block,
+            span,
+        } = stmt.value
+        {
+            self.check_branch_yield_let(
+                intent,
+                output_shape,
+                &stmt,
+                pred,
+                then_block,
+                else_block,
+                *span,
+                env,
+                locals,
+                state,
+            );
+            return;
+        }
         if !self.check_known_effect_profiles(intent, stmt.value) {
             return;
         }
@@ -1601,6 +1626,142 @@ impl<'a> TypeChecker<'a> {
         });
         locals.push(local.clone());
         env.insert(stmt.name.to_owned(), (local, binding_shape));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_branch_yield_let(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        stmt: &LetStatement<'_>,
+        pred: &Expr,
+        then_source: &YieldBlock,
+        else_source: &YieldBlock,
+        span: Span,
+        env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
+        locals: &mut Vec<LocalRef>,
+        state: &mut BodyState,
+    ) {
+        let Some(predicate) = self.check_predicate(pred, env) else {
+            return;
+        };
+        let annotation_shape = match stmt.ty {
+            Some(annotation) => match self.type_ref_shape(annotation, stmt.span, None) {
+                Some(shape) => Some(shape),
+                None => return,
+            },
+            None => None,
+        };
+        let Some((then_block, then_shape)) = self.check_yield_block(
+            intent,
+            output_shape,
+            then_source,
+            env,
+            state,
+            annotation_shape.as_ref(),
+        ) else {
+            return;
+        };
+        let branch_expectation = annotation_shape.as_ref().unwrap_or(&then_shape);
+        let Some((else_block, else_shape)) = self.check_yield_block(
+            intent,
+            output_shape,
+            else_source,
+            env,
+            state,
+            Some(branch_expectation),
+        ) else {
+            return;
+        };
+        let binding_shape = if let Some(annotation_shape) = annotation_shape {
+            if !compatible(&annotation_shape, &then_shape)
+                || !compatible(&annotation_shape, &else_shape)
+            {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "branch-yield results do not match the annotated type",
+                    span,
+                ));
+                return;
+            }
+            annotation_shape
+        } else if compatible(&then_shape, &else_shape) {
+            then_shape
+        } else if compatible(&else_shape, &then_shape) {
+            else_shape
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "branch-yield results do not have a compatible bounded type",
+                span,
+            ));
+            return;
+        };
+
+        let binding = next_local(&mut state.local_index, binding_shape.coord.clone());
+        state.nodes.push(CoreNode::Branch {
+            binding: Some(binding.clone()),
+            predicate,
+            then_block,
+            else_block,
+        });
+        locals.push(binding.clone());
+        env.insert(stmt.name.to_owned(), (binding, binding_shape));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_yield_block(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        block: &YieldBlock,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+        expected: Option<&TypeShape>,
+    ) -> Option<(CoreBlock, TypeShape)> {
+        let error_count = self.errors.len();
+        let mut nested_env = env.clone();
+        let mut nested_locals = Vec::new();
+        let mut nested_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            ..BodyState::default()
+        };
+        for stmt in &block.stmts {
+            if let Stmt::Return { span, .. } = stmt {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "return is not legal inside a branch-yield block",
+                    *span,
+                ));
+                continue;
+            }
+            self.check_body_stmt(
+                intent,
+                output_shape,
+                stmt,
+                &mut nested_env,
+                &mut nested_locals,
+                &mut nested_state,
+            );
+        }
+        let value = self.check_expr_with_expected(&block.value, &nested_env, expected)?;
+        state.local_index = nested_state.local_index;
+        state.obstruction_index = nested_state.obstruction_index;
+        if self.errors.len() != error_count {
+            return None;
+        }
+        Some((
+            CoreBlock {
+                locals: nested_locals,
+                nodes: nested_state.nodes,
+                result: value.expr,
+            },
+            value.ty,
+        ))
     }
 
     fn pure_let_binding_shape(
