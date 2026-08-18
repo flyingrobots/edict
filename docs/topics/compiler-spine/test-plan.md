@@ -52,6 +52,8 @@ Out of scope:
 | CSPINE-REQ-022 | implemented | A validated lawpack plus its exact direct target adapter derive the compiler profile, write-class, effect, and budget facts under the source module's import alias; application compilation must not require a caller-built or handwritten authority-facts substitute. | issue #169, docs/topics/lawpacks/test-plan.md |
 | CSPINE-REQ-023 | implemented | Pure conditional expressions lower to canonical Core only when their predicate is valid and both branches have one compatible bounded type. | issue #192, docs/abi/edict-core.cddl |
 | CSPINE-REQ-024 | implemented | Calls to pure helpers resolve only from explicit digest-bound lawpack facts, lower under their canonical exported coordinate, and reject missing or type-incompatible signatures before Core exists. | issue #192, docs/SPEC_edict-lawpack-abi-v1.md |
+| CSPINE-REQ-025 | implemented | A `for` statement lowers only over a statically bounded list, carries its authored bound into Core, and rejects a bound below the iterable maximum or above the operation step budget. | issue #192, docs/abi/edict-core.cddl |
+| CSPINE-REQ-026 | implemented | Statement conditionals lower to isolated Core branch blocks; branch-local bindings never leak into the enclosing environment, and returns inside a branch reject until explicit result-join semantics exist. | issue #192, docs/abi/edict-core.cddl |
 
 ## Fixtures
 
@@ -89,6 +91,8 @@ Out of scope:
 | CSPINE-TP-023 | implemented | Integration | CSPINE-REQ-003, CSPINE-REQ-004, CSPINE-REQ-022 | The exact Hello Echo source, manifest, exports, and selected adapter derive module-local compiler facts and produce canonical Core without a test-built `CompilerContext`. | hello_echo_source_compiles_to_echo_target_ir_from_exact_lawpack_adapter | fixtures/lawpack/hello-echo/README.md | The same witness continues into Target IR but makes no package or runtime claim. |
 | CSPINE-TP-024 | implemented | Golden path, error handling, and mutation sensitivity | CSPINE-REQ-003, CSPINE-REQ-004, CSPINE-REQ-023 | A pure ternary with compatible bounded branches lowers to a Core `if` expression, swapping the branches moves canonical Core identity, and incompatible branches reject with stable `TypeMismatch` identity. | pure_conditional_expression_lowers_to_core, pure_conditional_branch_mutation_moves_core_digest, pure_conditional_expression_rejects_incompatible_branches | crates/edict-syntax/tests/compiler_spine.rs | This is value selection only; effectful branch-yield and statement control flow remain separate slices. |
 | CSPINE-TP-025 | implemented | Golden path and authority boundary | CSPINE-REQ-003, CSPINE-REQ-004, CSPINE-REQ-024 | An explicitly supplied pure-helper signature lowers a call to its canonical exported coordinate; an absent helper or incompatible argument rejects with stable structured identity. The exact loaded lawpack and source import derive the same fact without a handwritten context. | digest_bound_pure_helper_call_lowers_to_core, missing_pure_helper_rejects_before_core, pure_helper_argument_type_mismatch_rejects_before_core, exact_lawpack_pure_helper_signature_enters_source_compilation | crates/edict-syntax/tests/compiler_spine.rs, crates/edict-syntax/tests/lawpack.rs | The Core call carries the canonical export coordinate; executable semantics remain bound by the imported lawpack digest. |
+| CSPINE-TP-026 | implemented | Golden path, budget guard, and mutation sensitivity | CSPINE-REQ-003, CSPINE-REQ-004, CSPINE-REQ-025 | A literal-bounded list loop lowers to a Core `for` node with a typed binder and nested requirement; too-small and over-budget bounds reject, and changing a safe bound moves Core identity. | bounded_list_loop_lowers_to_core, bounded_list_loop_rejects_unsound_or_over_budget_bounds, bounded_list_loop_bound_mutation_moves_core_digest | crates/edict-syntax/tests/compiler_spine.rs | Coordinate bounds and lawpack cost-template accumulation remain subsequent slices. |
+| CSPINE-TP-027 | implemented | Golden path and scope boundary | CSPINE-REQ-003, CSPINE-REQ-004, CSPINE-REQ-026 | An `if`/`else` statement lowers to isolated Core branch blocks; a branch-local binding is unresolved after the branch and a branch return rejects with stable structured identity. | statement_conditional_lowers_to_isolated_core_branches, statement_conditional_does_not_leak_locals, statement_conditional_rejects_branch_return | crates/edict-syntax/tests/compiler_spine.rs | Else-if chains and branch result joins remain outside this slice. |
 
 ## Determinism Obligations
 
@@ -104,6 +108,6 @@ Out of scope:
 
 - Full target/lawpack/shape artifact loading beyond authority-facts documents
   belongs to later lowerability and lawpack work.
-- Effectful branch-yield, bare effect statements, loops, matches, variants, and
-  effect obstruction payloads are present in the source AST and Core schema but
-  outside the first effectful lowerable subset.
+- Effectful branch-yield, bare effect statements, coordinate-bounded loops,
+  matches, variants, and effect obstruction payloads remain outside the
+  lowerable subset.

@@ -521,7 +521,9 @@ fn resolve_capability_sources(
             } => Some((binding, effect, input)),
             CoreNode::Let { .. }
             | CoreNode::Require { .. }
-            | CoreNode::ExternalActionRequest { .. } => None,
+            | CoreNode::ExternalActionRequest { .. }
+            | CoreNode::For { .. }
+            | CoreNode::Branch { .. } => None,
         })
         .collect::<Vec<_>>();
     if core_effects.len() != target_intent.steps.len() {

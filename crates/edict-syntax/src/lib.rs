@@ -133,7 +133,7 @@ pub use contract_bundle::{
     SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
+    CompareOp, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
     CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
     CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, InputConstraint,
     InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,

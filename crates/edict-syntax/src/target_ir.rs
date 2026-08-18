@@ -654,6 +654,18 @@ fn lower_node(
             state,
             failures,
         ),
+        CoreNode::For { .. } => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "for".to_owned(),
+        }),
+        CoreNode::Branch { .. } => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "branch".to_owned(),
+        }),
     }
 }
 

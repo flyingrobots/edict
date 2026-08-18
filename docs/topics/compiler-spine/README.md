@@ -44,7 +44,11 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
   field access, record literals, equality predicates, string concatenation, and
   pure conditional expressions whose branches have compatible bounded types.
+  Statement conditionals lower to isolated branch blocks, and literal-bounded
+  loops lower over bounded lists when the cap covers the list maximum without
+  exceeding the operation step budget.
   [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017] [CSPINE-REQ-023]
+  [CSPINE-REQ-025] [CSPINE-REQ-026]
 - The fixed-width source scalar set is `I32`, `I64`, `U32`, and `U64`.
   Explicitly suffixed literals retain their exact width and signedness;
   bare literals inherit an unambiguous expected width from supported comparison,
@@ -110,6 +114,7 @@ The following are not implemented by this compiler-spine slice:
 - full lawpack or target-profile manifest loading beyond authority-facts
   documents;
 - full source language lowering.
+- coordinate-bounded loops and pure-helper cost-template accumulation.
 
 Those items remain assigned to later lowerability/admission milestones.
 

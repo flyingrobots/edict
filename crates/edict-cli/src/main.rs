@@ -1186,6 +1186,7 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::UnsupportedSourceShape => "UnsupportedSourceShape",
         CompilerErrorKind::UnresolvedType => "UnresolvedType",
         CompilerErrorKind::UnresolvedFunction => "UnresolvedFunction",
+        CompilerErrorKind::InvalidBound => "InvalidBound",
         CompilerErrorKind::UnknownField => "UnknownField",
         CompilerErrorKind::TypeMismatch => "TypeMismatch",
         CompilerErrorKind::ExpectedPredicate => "ExpectedPredicate",
@@ -1490,6 +1491,31 @@ fn core_node_review(node: &CoreNode) -> Value {
             "reconciliationLaw": resource_ref_review(reconciliation_law),
             "state": "awaitingSettlement",
             "settlementAdmission": "schemaRequired",
+        }),
+        CoreNode::For {
+            binder,
+            iter,
+            bound,
+            body,
+        } => json!({
+            "kind": "for",
+            "binder": local_ref_review(binder),
+            "iter": core_expr_review(iter),
+            "bound": match bound {
+                edict_syntax::CoreBound::Literal(value) => json!({ "kind": "literal", "value": value }),
+                edict_syntax::CoreBound::Coordinate(reference) => json!({ "kind": "coordinate", "ref": reference }),
+            },
+            "body": core_block_review(body),
+        }),
+        CoreNode::Branch {
+            predicate,
+            then_block,
+            else_block,
+        } => json!({
+            "kind": "branch",
+            "predicate": core_predicate_review(predicate),
+            "then": core_block_review(then_block),
+            "else": core_block_review(else_block),
         }),
     }
 }

@@ -12,11 +12,11 @@ use crate::ast::{
     TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBudget,
-    CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
-    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
-    CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
+    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBound,
+    CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent,
+    CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
+    CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
+    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -39,6 +39,7 @@ pub enum CompilerErrorKind {
     UnsupportedSourceShape,
     UnresolvedType,
     UnresolvedFunction,
+    InvalidBound,
     UnknownField,
     TypeMismatch,
     ExpectedPredicate,
@@ -448,6 +449,7 @@ enum TypeKind {
     Int { width: String },
     String { max: u64, canonical: String },
     Bytes { max: u64 },
+    List { item: Box<TypeShape>, max: u64 },
     Record(BTreeMap<String, TypeShape>),
     ExternalActionRequest { settlement: Box<TypeShape> },
 }
@@ -464,6 +466,10 @@ impl TypeShape {
                 canonical: canonical.clone(),
             },
             TypeKind::Bytes { max } => CoreType::Bytes { max: *max },
+            TypeKind::List { item, max } => CoreType::List {
+                item: item.value_type_coord(),
+                max: *max,
+            },
             TypeKind::Record(fields) => CoreType::Record {
                 fields: fields
                     .iter()
@@ -482,6 +488,7 @@ impl TypeShape {
             TypeKind::Int { width } => width.clone(),
             TypeKind::String { max, canonical } => string_type_coord(*max, canonical),
             TypeKind::Bytes { max } => bytes_type_coord(*max),
+            TypeKind::List { item, max } => list_type_coord(&item.value_type_coord(), *max),
             TypeKind::Record(_) | TypeKind::ExternalActionRequest { .. } => self.coord.clone(),
         }
     }
@@ -646,10 +653,29 @@ impl<'a> TypeChecker<'a> {
             }
             TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span, coord_hint),
             TypeRef::BytesTy(Some(bound)) => self.bytes_shape(bound, span, coord_hint),
+            TypeRef::List { elem, max } => {
+                let BoundRef::Int { value, .. } = max else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::InvalidBound,
+                        "list maximum requires a literal bound in the current compiler subset",
+                        span,
+                    ));
+                    return None;
+                };
+                let item = self.type_ref_shape(elem, span, None)?;
+                Some(TypeShape {
+                    coord: coord_hint
+                        .unwrap_or_else(|| list_type_coord(&item.value_type_coord(), *value)),
+                    kind: TypeKind::List {
+                        item: Box::new(item),
+                        max: *value,
+                    },
+                })
+            }
             TypeRef::BytesTy(None)
             | TypeRef::Option(_)
             | TypeRef::CapabilityRef(_)
-            | TypeRef::List { .. }
             | TypeRef::Map { .. }
             | TypeRef::Named { .. }
             | TypeRef::StringTy(None) => {
@@ -831,6 +857,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn check_body_stmt(
         &mut self,
         intent: &ResolvedIntent,
@@ -912,11 +939,223 @@ impl<'a> TypeChecker<'a> {
             Stmt::Require { predicate, arm, .. } => {
                 self.check_require_stmt(predicate, arm, env, state);
             }
-            Stmt::Guarantee { span, .. }
-            | Stmt::Assert { span, .. }
-            | Stmt::If { span, .. }
-            | Stmt::For { span, .. } => self.unsupported_stmt(*span, "statement"),
+            Stmt::For {
+                var,
+                iter,
+                bound,
+                body,
+                span,
+            } => self.check_for_stmt(
+                intent,
+                output_shape,
+                var,
+                iter,
+                bound,
+                body,
+                *span,
+                env,
+                state,
+            ),
+            Stmt::If {
+                cond,
+                then_block,
+                els,
+                span,
+            } => self.check_if_stmt(
+                intent,
+                output_shape,
+                cond,
+                then_block,
+                els.as_deref(),
+                *span,
+                env,
+                state,
+            ),
+            Stmt::Guarantee { span, .. } | Stmt::Assert { span, .. } => {
+                self.unsupported_stmt(*span, "statement");
+            }
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_if_stmt(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        cond: &Expr,
+        then_block: &Block,
+        els: Option<&ElseClause>,
+        span: Span,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+    ) {
+        let Some(predicate) = self.check_predicate(cond, env) else {
+            return;
+        };
+        let then_block =
+            self.check_isolated_statement_block(intent, output_shape, then_block, env, state);
+        let else_block = match els {
+            Some(ElseClause::Block(block)) => {
+                self.check_isolated_statement_block(intent, output_shape, block, env, state)
+            }
+            Some(ElseClause::If(_)) => {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "else-if chains require explicit branch-join lowering",
+                    span,
+                ));
+                empty_core_block()
+            }
+            None => empty_core_block(),
+        };
+        state.nodes.push(CoreNode::Branch {
+            predicate,
+            then_block,
+            else_block,
+        });
+    }
+
+    fn check_isolated_statement_block(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        block: &Block,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+    ) -> CoreBlock {
+        let mut nested_env = env.clone();
+        let mut nested_locals = Vec::new();
+        let mut nested_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            ..BodyState::default()
+        };
+        for stmt in &block.stmts {
+            if let Stmt::Return { span, .. } = stmt {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "return is not legal inside an isolated statement branch",
+                    *span,
+                ));
+                continue;
+            }
+            self.check_body_stmt(
+                intent,
+                output_shape,
+                stmt,
+                &mut nested_env,
+                &mut nested_locals,
+                &mut nested_state,
+            );
+        }
+        state.local_index = nested_state.local_index;
+        state.obstruction_index = nested_state.obstruction_index;
+        CoreBlock {
+            locals: nested_locals,
+            nodes: nested_state.nodes,
+            result: CoreExpr::Const(CoreValue::Null),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_for_stmt(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        var: &str,
+        iter: &Expr,
+        bound: &BoundRef,
+        body: &Block,
+        span: Span,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+    ) {
+        let Some(iter_value) = self.check_expr(iter, env) else {
+            return;
+        };
+        let TypeKind::List { item, max } = &iter_value.ty.kind else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "bounded for requires a statically bounded list",
+                span,
+            ));
+            return;
+        };
+        let BoundRef::Int { value, .. } = bound else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "coordinate loop bounds require an imported constant fact",
+                span,
+            ));
+            return;
+        };
+        if *value < *max {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!("loop bound {value} is below iterable maximum {max}"),
+                span,
+            ));
+            return;
+        }
+        if *value > intent.budget.max_steps {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!(
+                    "loop bound {value} exceeds operation step budget {}",
+                    intent.budget.max_steps
+                ),
+                span,
+            ));
+            return;
+        }
+
+        let binder_shape = item.as_ref().clone();
+        let binder = next_local(&mut state.local_index, binder_shape.value_type_coord());
+        let mut nested_env = env.clone();
+        nested_env.insert(var.to_owned(), (binder.clone(), binder_shape));
+        let mut nested_locals = vec![binder.clone()];
+        let mut nested_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            ..BodyState::default()
+        };
+        for stmt in &body.stmts {
+            if let Stmt::Return { span, .. } = stmt {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "return is not legal inside a bounded for body",
+                    *span,
+                ));
+                continue;
+            }
+            self.check_body_stmt(
+                intent,
+                output_shape,
+                stmt,
+                &mut nested_env,
+                &mut nested_locals,
+                &mut nested_state,
+            );
+        }
+        state.local_index = nested_state.local_index;
+        state.obstruction_index = nested_state.obstruction_index;
+        state.nodes.push(CoreNode::For {
+            binder,
+            iter: iter_value.expr,
+            bound: CoreBound::Literal(*value),
+            body: CoreBlock {
+                locals: nested_locals,
+                nodes: nested_state.nodes,
+                result: CoreExpr::Const(CoreValue::Null),
+            },
+        });
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2420,6 +2659,16 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
         (TypeKind::Int { width: expected }, TypeKind::Int { width: actual }) => expected == actual,
         (TypeKind::Bytes { max: expected }, TypeKind::Bytes { max: actual }) => actual <= expected,
         (
+            TypeKind::List {
+                item: expected_item,
+                max: expected_max,
+            },
+            TypeKind::List {
+                item: actual_item,
+                max: actual_max,
+            },
+        ) => actual_max <= expected_max && compatible(expected_item, actual_item),
+        (
             TypeKind::ExternalActionRequest {
                 settlement: expected,
             },
@@ -2460,6 +2709,18 @@ fn string_type_coord(max: u64, canonical: &str) -> String {
 
 fn bytes_type_coord(max: u64) -> String {
     format!("Bytes<max={max}>")
+}
+
+fn list_type_coord(item: &str, max: u64) -> String {
+    format!("List<{item},max={max}>")
+}
+
+fn empty_core_block() -> CoreBlock {
+    CoreBlock {
+        locals: Vec::new(),
+        nodes: Vec::new(),
+        result: CoreExpr::Const(CoreValue::Null),
+    }
 }
 
 fn builtin_integer_width(name: &str) -> Option<&'static str> {

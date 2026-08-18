@@ -269,6 +269,13 @@ pub struct CoreBlock {
     pub result: CoreExpr,
 }
 
+/// Static maximum carried by bounded Core control flow.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CoreBound {
+    Literal(u64),
+    Coordinate(String),
+}
+
 /// Core node subset used by the first source-to-Core slice.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CoreNode {
@@ -298,6 +305,17 @@ pub enum CoreNode {
         basis: Box<CoreExpr>,
         budget: Box<CoreExternalActionBudget>,
         reconciliation_law: ResourceRef,
+    },
+    For {
+        binder: LocalRef,
+        iter: CoreExpr,
+        bound: CoreBound,
+        body: CoreBlock,
+    },
+    Branch {
+        predicate: CorePredicate,
+        then_block: CoreBlock,
+        else_block: CoreBlock,
     },
 }
 

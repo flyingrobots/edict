@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use edict_syntax::{
     compile_to_core, digest_core_module, load_compiler_context_from_authority_fact_files,
     lower_core, parse_module, resolve_module, type_check, CompilerContext, CompilerErrorKind,
-    CompilerStage, CoreBudget, CoreExpr, CoreNode, CoreObstructionReason, CorePredicate,
+    CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode, CoreObstructionReason, CorePredicate,
     CoreRequireFailureArm, CoreType, PureFunctionFact, WriteClass,
 };
 
@@ -138,6 +138,33 @@ const PURE_HELPER_CALL: &str = "package a.b@1;\n\
       budget <= p.tiny {\n\
       let value: U64 = helpers.bump(input.value);\n\
       return { value };\n\
+    }";
+const BOUNDED_LIST_LOOP: &str = "package a.b@1;\n\
+    type Input = { items: List<U64, max=4>, };\n\
+    type Output = { value: U64, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      for item in input.items bounded 4 {\n\
+        require item <= 10u64 else example.ItemTooLarge;\n\
+      }\n\
+      return { value: 0u64 };\n\
+    }";
+const STATEMENT_CONDITIONAL: &str = "package a.b@1;\n\
+    type Input = { choose: U32, left: U64, right: U64, };\n\
+    type Output = { value: U64, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      if input.choose == 0u32 {\n\
+        let selected: U64 = input.left;\n\
+        require selected <= 10u64 else example.LeftTooLarge;\n\
+      } else {\n\
+        require input.right <= 10u64 else example.RightTooLarge;\n\
+      }\n\
+      return { value: input.left };\n\
     }";
 
 fn hello_context() -> CompilerContext {
@@ -358,6 +385,108 @@ fn pure_helper_argument_type_mismatch_rejects_before_core() {
     assert!(errors
         .iter()
         .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
+fn bounded_list_loop_lowers_to_core() {
+    let module = parse_module(BOUNDED_LIST_LOOP).expect("bounded loop parses");
+    let core = compile_to_core(&module, &pure_context()).expect("bounded loop lowers");
+    let intent = core.intents.get("t").expect("lowered intent");
+    let CoreNode::For {
+        binder,
+        bound,
+        body,
+        ..
+    } = &intent.body.nodes[0]
+    else {
+        panic!("first node is a Core for");
+    };
+
+    assert_eq!(binder.ty, "U64");
+    assert_eq!(bound, &CoreBound::Literal(4));
+    assert!(matches!(body.nodes.as_slice(), [CoreNode::Require { .. }]));
+    assert_eq!(body.result, CoreExpr::Const(edict_syntax::CoreValue::Null));
+}
+
+#[test]
+fn bounded_list_loop_rejects_unsound_or_over_budget_bounds() {
+    for source in [
+        BOUNDED_LIST_LOOP.replace("bounded 4", "bounded 3"),
+        BOUNDED_LIST_LOOP.replace("bounded 4", "bounded 9"),
+    ] {
+        let module = parse_module(&source).expect("invalid bounded loop still parses");
+        let errors =
+            compile_to_core(&module, &pure_context()).expect_err("invalid loop bound rejects");
+        assert!(errors
+            .iter()
+            .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+    }
+}
+
+#[test]
+fn bounded_list_loop_bound_mutation_moves_core_digest() {
+    let original = parse_module(BOUNDED_LIST_LOOP).expect("bounded loop parses");
+    let wider_source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded 5");
+    let wider = parse_module(&wider_source).expect("wider safe bound parses");
+    let original_core = compile_to_core(&original, &pure_context()).expect("original compiles");
+    let wider_core = compile_to_core(&wider, &pure_context()).expect("wider compiles");
+
+    assert_ne!(
+        digest_core_module(&original_core).expect("digest original loop"),
+        digest_core_module(&wider_core).expect("digest wider loop")
+    );
+}
+
+#[test]
+fn statement_conditional_lowers_to_isolated_core_branches() {
+    let module = parse_module(STATEMENT_CONDITIONAL).expect("statement conditional parses");
+    let core = compile_to_core(&module, &pure_context()).expect("statement conditional lowers");
+    let intent = core.intents.get("t").expect("lowered intent");
+    let CoreNode::Branch {
+        predicate,
+        then_block,
+        else_block,
+    } = &intent.body.nodes[0]
+    else {
+        panic!("first node is a Core branch");
+    };
+
+    assert!(matches!(predicate, CorePredicate::Compare { .. }));
+    assert!(matches!(
+        then_block.nodes.as_slice(),
+        [CoreNode::Let { .. }, CoreNode::Require { .. }]
+    ));
+    assert!(matches!(
+        else_block.nodes.as_slice(),
+        [CoreNode::Require { .. }]
+    ));
+}
+
+#[test]
+fn statement_conditional_does_not_leak_locals() {
+    let source =
+        STATEMENT_CONDITIONAL.replace("return { value: input.left }", "return { value: selected }");
+    let module = parse_module(&source).expect("leaking conditional source parses");
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("branch-local binding must not escape");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+}
+
+#[test]
+fn statement_conditional_rejects_branch_return() {
+    let source = STATEMENT_CONDITIONAL.replace(
+        "let selected: U64 = input.left;",
+        "return { value: input.left };",
+    );
+    let module = parse_module(&source).expect("branch return source parses");
+    let errors = compile_to_core(&module, &pure_context()).expect_err("branch return must reject");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnsupportedSourceShape));
 }
 
 #[test]
