@@ -1722,27 +1722,55 @@ impl<'a> TypeChecker<'a> {
             },
             None => None,
         };
-        let Some((then_block, then_shape)) = self.check_yield_block(
-            intent,
-            output_shape,
-            then_source,
-            env,
-            state,
-            annotation_shape.as_ref(),
-        ) else {
-            return;
-        };
-        let branch_expectation = annotation_shape.as_ref().unwrap_or(&then_shape);
-        let Some((else_block, else_shape)) = self.check_yield_block(
-            intent,
-            output_shape,
-            else_source,
-            env,
-            state,
-            Some(branch_expectation),
-        ) else {
-            return;
-        };
+        let baseline_steps = state.accumulated_steps;
+        let (then_block, then_shape, else_block, else_shape) =
+            if annotation_shape.is_none() && is_bare_integer_literal(&then_source.value) {
+                let Some((else_block, else_shape)) =
+                    self.check_yield_block(intent, output_shape, else_source, env, state, None)
+                else {
+                    return;
+                };
+                let else_steps = state.accumulated_steps;
+                state.accumulated_steps = baseline_steps;
+                let Some((then_block, then_shape)) = self.check_yield_block(
+                    intent,
+                    output_shape,
+                    then_source,
+                    env,
+                    state,
+                    Some(&else_shape),
+                ) else {
+                    return;
+                };
+                state.accumulated_steps = else_steps.max(state.accumulated_steps);
+                (then_block, then_shape, else_block, else_shape)
+            } else {
+                let Some((then_block, then_shape)) = self.check_yield_block(
+                    intent,
+                    output_shape,
+                    then_source,
+                    env,
+                    state,
+                    annotation_shape.as_ref(),
+                ) else {
+                    return;
+                };
+                let then_steps = state.accumulated_steps;
+                state.accumulated_steps = baseline_steps;
+                let branch_expectation = annotation_shape.as_ref().unwrap_or(&then_shape);
+                let Some((else_block, else_shape)) = self.check_yield_block(
+                    intent,
+                    output_shape,
+                    else_source,
+                    env,
+                    state,
+                    Some(branch_expectation),
+                ) else {
+                    return;
+                };
+                state.accumulated_steps = then_steps.max(state.accumulated_steps);
+                (then_block, then_shape, else_block, else_shape)
+            };
         let binding_shape = if let Some(annotation_shape) = annotation_shape {
             if !compatible(&annotation_shape, &then_shape)
                 || !compatible(&annotation_shape, &else_shape)
@@ -1797,6 +1825,8 @@ impl<'a> TypeChecker<'a> {
         let mut nested_state = BodyState {
             local_index: state.local_index,
             obstruction_index: state.obstruction_index,
+            step_factor: state.step_factor,
+            accumulated_steps: state.accumulated_steps,
             ..BodyState::default()
         };
         for stmt in &block.stmts {
@@ -1821,6 +1851,7 @@ impl<'a> TypeChecker<'a> {
         let value = self.check_expr_with_expected(&block.value, &nested_env, expected)?;
         state.local_index = nested_state.local_index;
         state.obstruction_index = nested_state.obstruction_index;
+        state.accumulated_steps = nested_state.accumulated_steps;
         if self.errors.len() != error_count {
             return None;
         }

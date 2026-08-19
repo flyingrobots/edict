@@ -1015,6 +1015,71 @@ fn effectful_branch_yield_rejects_incompatible_results() {
 }
 
 #[test]
+fn branch_yield_inside_loop_preserves_cumulative_budget() {
+    let source = "package a.b@1;\n\
+        type Input = { batches: List<List<U64, max=4>, max=4>, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          for batch in input.batches bounded 4 {\n\
+            let retained = if true {\n\
+              for item in batch bounded 4 {\n\
+                require item <= 10u64 else example.TooLarge;\n\
+              }\n\
+              yield batch;\n\
+            } else {\n\
+              yield batch;\n\
+            };\n\
+          }\n\
+          return { value: 0u64 };\n\
+        }";
+    let module = parse_module(source).expect("nested branch-yield loop source parses");
+
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("branch-local loop work keeps the enclosing step factor");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+}
+
+#[test]
+fn branch_yield_bare_integer_inherits_width_from_either_branch() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true { yield 0; } else { yield input.value; };\n\
+          return { value };\n\
+        }";
+    let mirrored = source
+        .replace("yield 0;", "yield __typed;")
+        .replace("yield input.value;", "yield 0;")
+        .replace("yield __typed;", "yield input.value;");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("fixed-width branch-yield source parses");
+        let core = compile_to_core(&module, &pure_context())
+            .expect("either branch supplies the bare integer width");
+        let intent = core.intents.get("t").expect("compiled intent");
+        let CoreNode::Branch {
+            binding: Some(binding),
+            ..
+        } = &intent.body.nodes[0]
+        else {
+            panic!("branch-yield lowers with one binding");
+        };
+
+        assert_eq!(binding.ty, "U64");
+    }
+}
+
+#[test]
 fn branch_yield_rejects_pure_helper_that_is_a_disallowed_write_effect() {
     let module =
         parse_module(PURE_HELPER_BRANCH_YIELD).expect("pure-helper branch-yield source parses");
