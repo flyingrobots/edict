@@ -5,6 +5,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use edict_syntax::{
     compile_to_core, digest_core_module, load_compiler_context_from_authority_fact_files,
@@ -15,6 +16,7 @@ use edict_syntax::{
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
+static TEMP_CASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
@@ -1265,9 +1267,10 @@ fn replace_required(source: &str, needle: &str, replacement: &str) -> String {
 }
 
 fn temp_case_dir(name: &str) -> PathBuf {
+    let sequence = TEMP_CASE_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!(
-        "edict-compiler-spine-{name}-{}",
-        std::process::id()
+        "edict-compiler-spine-{name}-{}-{sequence}",
+        std::process::id(),
     ));
     if dir.exists() {
         fs::remove_dir_all(&dir).expect("remove stale temp compiler-spine directory");
