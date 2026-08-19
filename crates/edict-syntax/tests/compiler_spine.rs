@@ -208,18 +208,22 @@ fn pure_context() -> CompilerContext {
         )
 }
 
+fn example_bounds_lawpack() -> ResourceRef {
+    ResourceRef {
+        coordinate: "example.bounds@1".to_owned(),
+        digest: Some(
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
+        ),
+    }
+}
+
 fn pure_helper_context(parameter_type: &str) -> CompilerContext {
     pure_context().with_pure_function(
         "helpers.bump",
         PureFunctionFact {
-            lawpack: ResourceRef {
-                coordinate: "example.bounds@1".to_owned(),
-                digest: Some(
-                    "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-                        .to_owned(),
-                ),
-            },
+            lawpack: example_bounds_lawpack(),
             coordinate: "example.bounds@1.bump".to_owned(),
+            type_parameters: Vec::new(),
             parameter_types: vec![parameter_type.to_owned()],
             return_type: "U64".to_owned(),
             cost_template: "example.bounds@1.tiny".to_owned(),
@@ -231,10 +235,20 @@ fn coordinate_bound_context() -> CompilerContext {
     pure_context().with_bound(
         "bounds.maxItems",
         BoundFact {
+            lawpack: example_bounds_lawpack(),
             coordinate: "example.bounds@1.maxItems".to_owned(),
             value: 4,
         },
     )
+}
+
+fn coordinate_bounded_loop_source() -> String {
+    BOUNDED_LIST_LOOP
+        .replace(
+            "type Input",
+            "use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as bounds;\n    type Input",
+        )
+        .replace("bounded 4", "bounded bounds.maxItems")
 }
 
 #[test]
@@ -435,6 +449,7 @@ fn malformed_imported_string_policy_rejects_as_unresolved_type() {
             PureFunctionFact {
                 lawpack,
                 coordinate: "example.bounds@1.invalidString".to_owned(),
+                type_parameters: Vec::new(),
                 parameter_types: vec!["U64".to_owned()],
                 return_type: "example.bounds@1.InvalidString".to_owned(),
                 cost_template: "example.bounds@1.tiny".to_owned(),
@@ -584,7 +599,7 @@ fn bounded_list_loop_bound_mutation_moves_core_digest() {
 
 #[test]
 fn digest_bound_coordinate_loop_cap_lowers_to_core() {
-    let source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded bounds.maxItems");
+    let source = coordinate_bounded_loop_source();
     let module = parse_module(&source).expect("coordinate-bounded loop parses");
     let core = compile_to_core(&module, &coordinate_bound_context())
         .expect("coordinate-bounded loop lowers");
@@ -601,7 +616,7 @@ fn digest_bound_coordinate_loop_cap_lowers_to_core() {
 
 #[test]
 fn missing_coordinate_loop_cap_rejects_before_core() {
-    let source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded bounds.maxItems");
+    let source = coordinate_bounded_loop_source();
     let module = parse_module(&source).expect("coordinate-bounded loop parses");
     let errors = compile_to_core(&module, &pure_context()).expect_err("missing bound fact rejects");
 
@@ -611,13 +626,27 @@ fn missing_coordinate_loop_cap_rejects_before_core() {
 }
 
 #[test]
-fn coordinate_loop_cap_rejects_unsound_or_over_budget_fact_values() {
+fn coordinate_bound_fact_without_exact_owning_import_rejects_before_core() {
     let source = BOUNDED_LIST_LOOP.replace("bounded 4", "bounded bounds.maxItems");
+    let module = parse_module(&source).expect("unowned coordinate-bound source parses");
+
+    let errors = compile_to_core(&module, &coordinate_bound_context())
+        .expect_err("bound fact without its exact lawpack import rejects");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
+}
+
+#[test]
+fn coordinate_loop_cap_rejects_unsound_or_over_budget_fact_values() {
+    let source = coordinate_bounded_loop_source();
     let module = parse_module(&source).expect("coordinate-bounded loop parses");
     for value in [3, 9] {
         let context = pure_context().with_bound(
             "bounds.maxItems",
             BoundFact {
+                lawpack: example_bounds_lawpack(),
                 coordinate: "example.bounds@1.maxItems".to_owned(),
                 value,
             },
