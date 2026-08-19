@@ -5,7 +5,7 @@ use std::process::Command;
 
 use serde_json::Value;
 
-const WASMTIME_VERSION: &str = "46.0.1";
+const WASMTIME_VERSION: &str = "46.0.2";
 
 pub(crate) fn provider_runtime_dependencies(root: &Path) -> Result<(), String> {
     let cargo = env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
@@ -34,6 +34,7 @@ pub(crate) fn provider_runtime_dependencies(root: &Path) -> Result<(), String> {
 }
 
 fn check_metadata(metadata: &Value) -> Result<(), String> {
+    let expected_requirement = format!("={WASMTIME_VERSION}");
     let packages = metadata
         .get("packages")
         .and_then(Value::as_array)
@@ -87,16 +88,15 @@ fn check_metadata(metadata: &Value) -> Result<(), String> {
                     "workspace package `{package_name}` must not declare Wasmtime"
                 ));
             }
-            if dependency.get("req").and_then(Value::as_str) != Some("=46.0.1")
+            if dependency.get("req").and_then(Value::as_str) != Some(expected_requirement.as_str())
                 || dependency
                     .get("uses_default_features")
                     .and_then(Value::as_bool)
                     != Some(false)
             {
-                return Err(
-                    "provider host must pin Wasmtime 46.0.1 with default features disabled"
-                        .to_owned(),
-                );
+                return Err(format!(
+                    "provider host must pin Wasmtime {WASMTIME_VERSION} with default features disabled"
+                ));
             }
             let direct_features = string_set(
                 dependency
