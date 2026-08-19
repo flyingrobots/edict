@@ -1044,6 +1044,32 @@ fn effectful_branch_yield_rejects_incompatible_results() {
 }
 
 #[test]
+fn branch_yield_rejects_incompatible_anonymous_record_shapes() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true {\n\
+            yield { a: 1u64 };\n\
+          } else {\n\
+            yield { b: 2u64 };\n\
+          };\n\
+          return { value: selected.a };\n\
+        }";
+    let module = parse_module(source).expect("anonymous-record branch-yield source parses");
+
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("incompatible anonymous-record results reject before Core");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
 fn branch_yield_inside_loop_preserves_cumulative_budget() {
     let source = "package a.b@1;\n\
         type Input = { batches: List<List<U64, max=4>, max=4>, };\n\

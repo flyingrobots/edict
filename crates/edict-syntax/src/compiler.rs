@@ -2993,6 +2993,14 @@ fn next_local(index: &mut usize, ty: String) -> LocalRef {
 }
 
 fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
+    if let (TypeKind::Record(expected), TypeKind::Record(actual)) = (&expected.kind, &actual.kind) {
+        return expected.len() == actual.len()
+            && expected.iter().all(|(name, expected_ty)| {
+                actual
+                    .get(name)
+                    .is_some_and(|actual_ty| compatible(expected_ty, actual_ty))
+            });
+    }
     if expected.coord == actual.coord {
         return true;
     }
@@ -3007,14 +3015,6 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
                 canonical: actual_canonical,
             },
         ) => actual_max <= expected_max && actual_canonical == expected_canonical,
-        (TypeKind::Record(expected), TypeKind::Record(actual)) => {
-            expected.len() == actual.len()
-                && expected.iter().all(|(name, expected_ty)| {
-                    actual
-                        .get(name)
-                        .is_some_and(|actual_ty| compatible(expected_ty, actual_ty))
-                })
-        }
         (TypeKind::Bool, TypeKind::Bool) => true,
         (TypeKind::Int { width: expected }, TypeKind::Int { width: actual }) => expected == actual,
         (TypeKind::Bytes { max: expected }, TypeKind::Bytes { max: actual }) => actual <= expected,
