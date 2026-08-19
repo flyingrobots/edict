@@ -268,6 +268,7 @@ pub fn prepare_lawpack_compilation(
     }
 
     for exported_type in &bundle.exports().types {
+        local_coordinate(&alias, &prefix, &exported_type.coordinate)?;
         compiler_context = compiler_context.with_type_shape(TypeShapeFact {
             lawpack: lawpack.clone(),
             coordinate: exported_type.coordinate.clone(),
