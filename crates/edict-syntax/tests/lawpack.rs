@@ -788,62 +788,13 @@ fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
 
 #[test]
 fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
-    let identity_body = map([
-        (
-            "params",
-            CanonicalValue::Array(vec![local_ref(
-                "arg:0",
-                "value",
-                "hello.echo@1.GreetingKey",
-            )]),
-        ),
-        (
-            "body",
-            map([
-                ("locals", CanonicalValue::Array(Vec::new())),
-                ("bindings", CanonicalValue::Array(Vec::new())),
-                (
-                    "result",
-                    map([
-                        ("kind", text("local")),
-                        (
-                            "ref",
-                            local_ref("arg:0", "value", "hello.echo@1.GreetingKey"),
-                        ),
-                    ]),
-                ),
-            ]),
-        ),
-    ]);
-    let mut exports = hello_echo_exports();
-    array_mut(field_mut(&mut exports, "types")).push(map([
-        ("coordinate", text("hello.echo@1.GreetingKey")),
-        ("definition", text("String<max=32,canonical=raw-utf8>")),
-    ]));
-    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function(
-        "hello.echo@1.identityKey",
-        "edict",
-        ("body", identity_body),
-    ));
+    let exports = typed_helper_exports(true);
     let exports_bytes = encode_canonical_cbor(&exports).expect("encode typed helper exports");
     let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
     let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode typed helper manifest");
     let bundle =
         decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load typed helper lawpack");
-    let source = format!(
-        "package examples.typed_helper@1;\n\
-         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
-         type Input = {{ value: String<max=32>, }};\n\
-         type Output = {{ value: String<max=32>, }};\n\
-         intent apply(input: Input) returns Output\n\
-           profile hello.createGreeting\n\
-           basis none\n\
-           budget <= hello.smallCreateBudget {{\n\
-           let value = hello.identityKey(input.value);\n\
-           return {{ value }};\n\
-         }}",
-        bundle.manifest_digest_review_string()
-    );
+    let source = typed_helper_source(&bundle);
     let module = parse_module(&source).expect("parse typed helper application");
     let adapter =
         decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
@@ -852,6 +803,41 @@ fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
 
     compile_to_core(&module, preparation.compiler_context())
         .expect("compile helper over an exact exported bounded type");
+
+    let missing_type_exports = typed_helper_exports(false);
+    let missing_type_exports_bytes = encode_canonical_cbor(&missing_type_exports)
+        .expect("encode helper exports without its type closure");
+    let missing_type_manifest =
+        hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &missing_type_exports));
+    let missing_type_manifest_bytes = encode_canonical_cbor(&missing_type_manifest)
+        .expect("encode helper manifest without its type closure");
+    let missing_type_bundle =
+        decode_lawpack_bundle(&missing_type_manifest_bytes, &missing_type_exports_bytes)
+            .expect("load helper lawpack without its type closure");
+    let missing_type_source = typed_helper_source(&missing_type_bundle);
+    let missing_type_module =
+        parse_module(&missing_type_source).expect("parse missing-type helper application");
+    let missing_type_adapter =
+        decode_lawpack_adapter(&missing_type_bundle, "echo.dpo@1", ADAPTER_BYTES)
+            .expect("load missing-type adapter");
+    let missing_type_preparation = prepare_lawpack_compilation(
+        &missing_type_module,
+        &missing_type_bundle,
+        &missing_type_adapter,
+    )
+    .expect("derive helper facts without the exported type");
+
+    let errors = compile_to_core(
+        &missing_type_module,
+        missing_type_preparation.compiler_context(),
+    )
+    .expect_err("helper without its exported type closure rejects before Core");
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
 }
 
 #[test]
@@ -1327,6 +1313,66 @@ fn bundle(
 
 fn hello_echo_exports() -> CanonicalValue {
     decode_canonical_cbor(EXPORTS_BYTES).expect("decode fixture exports")
+}
+
+fn typed_helper_exports(include_type: bool) -> CanonicalValue {
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref(
+                "arg:0",
+                "value",
+                "hello.echo@1.GreetingKey",
+            )]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        (
+                            "ref",
+                            local_ref("arg:0", "value", "hello.echo@1.GreetingKey"),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    if include_type {
+        array_mut(field_mut(&mut exports, "types")).push(map([
+            ("coordinate", text("hello.echo@1.GreetingKey")),
+            ("definition", text("String<max=32,canonical=raw-utf8>")),
+        ]));
+    }
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function(
+        "hello.echo@1.identityKey",
+        "edict",
+        ("body", identity_body),
+    ));
+    exports
+}
+
+fn typed_helper_source(bundle: &ValidatedLawpackBundle) -> String {
+    format!(
+        "package examples.typed_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ value: String<max=32>, }};\n\
+         type Output = {{ value: String<max=32>, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let value = hello.identityKey(input.value);\n\
+           return {{ value }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    )
 }
 
 fn request_only_adapter(
