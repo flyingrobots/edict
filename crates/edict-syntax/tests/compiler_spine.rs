@@ -1158,6 +1158,29 @@ fn branch_yield_rejects_pure_helper_that_is_a_disallowed_write_effect() {
 }
 
 #[test]
+fn pure_helper_coordinate_with_effect_authority_rejects_even_when_profile_allows_write() {
+    let module =
+        parse_module(PURE_HELPER_BRANCH_YIELD).expect("pure-helper branch-yield source parses");
+    let context = pure_helper_context("U64")
+        .with_operation_profile_write_classes("p.read", [WriteClass::Read, WriteClass::Replace])
+        .with_effect_write_class("helpers.bump", WriteClass::Replace);
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("effect-authorized coordinate cannot lower as a pure helper");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| error.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::UnsupportedSourceShape]
+    );
+}
+
+#[test]
 fn effectful_branch_yield_mutation_moves_core_digest() {
     let original = compile_to_core(
         &parse_module(EFFECTFUL_BRANCH_YIELD).expect("original parses"),

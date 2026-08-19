@@ -2531,6 +2531,21 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<TypedValue> {
         let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
+        if self
+            .resolved
+            .effect_write_classes
+            .contains_key(&source_coordinate)
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                format!(
+                    "coordinate `{source_coordinate}` is classified as a semantic effect and cannot lower as a pure helper"
+                ),
+                span,
+            ));
+            return None;
+        }
         if !type_args.is_empty() || !fact.type_parameters.is_empty() {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
