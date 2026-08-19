@@ -841,6 +841,40 @@ fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
 }
 
 #[test]
+fn generic_lawpack_helper_rejects_before_core() {
+    let mut exports = typed_helper_exports(true);
+    let helper = array_mut(field_mut(&mut exports, "pureFunctions"))
+        .last_mut()
+        .expect("typed helper export");
+    replace_field(
+        helper,
+        "typeParameters",
+        CanonicalValue::Array(vec![text("T")]),
+    );
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode generic helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode generic helper manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load generic helper lawpack");
+    let source = typed_helper_source(&bundle);
+    let module = parse_module(&source).expect("parse generic helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive generic helper compiler facts");
+
+    let errors = compile_to_core(&module, preparation.compiler_context())
+        .expect_err("generic helper declaration rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnsupportedSourceShape));
+}
+
+#[test]
 fn exact_lawpack_constant_enters_loop_bound_compilation() {
     let mut exports = hello_echo_exports();
     array_mut(field_mut(&mut exports, "constants")).push(map([
@@ -1165,6 +1199,30 @@ fn duplicate_export_coordinates_reject_within_their_category() {
     let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
     let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
         .expect_err("duplicate effect coordinate must reject");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::DuplicateIdentity]
+    );
+}
+
+#[test]
+fn callable_export_coordinates_must_be_disjoint() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function(
+        "hello.echo@1.createGreeting",
+        "component",
+        (
+            "implementation",
+            executable_component("hello.echo.colliding-helper/v1", 0x96),
+        ),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode colliding exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode colliding manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("pure helper and semantic effect coordinates must be disjoint");
 
     assert_eq!(
         failure_kinds(&failures),

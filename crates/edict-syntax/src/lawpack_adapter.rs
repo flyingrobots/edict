@@ -259,6 +259,7 @@ pub fn prepare_lawpack_compilation(
             PureFunctionFact {
                 lawpack: lawpack.clone(),
                 coordinate: function.coordinate.clone(),
+                type_parameters: function.type_parameters.clone(),
                 parameter_types: function.parameter_types.clone(),
                 return_type: function.return_type.clone(),
                 cost_template: function.cost_template.clone(),
@@ -274,7 +275,8 @@ pub fn prepare_lawpack_compilation(
         });
     }
 
-    compiler_context = project_bound_constants(compiler_context, bundle, &alias, &prefix)?;
+    compiler_context =
+        project_bound_constants(compiler_context, bundle, &lawpack, &alias, &prefix)?;
 
     for (coordinate, budget) in &adapter.budgets {
         let local_budget = local_coordinate(&alias, &prefix, coordinate)?;
@@ -299,6 +301,7 @@ pub fn prepare_lawpack_compilation(
 fn project_bound_constants(
     mut context: CompilerContext,
     bundle: &ValidatedLawpackBundle,
+    lawpack: &ResourceRef,
     alias: &str,
     prefix: &str,
 ) -> Result<CompilerContext, Vec<LawpackAdapterFailure>> {
@@ -318,6 +321,7 @@ fn project_bound_constants(
         context = context.with_bound(
             local_coordinate(alias, prefix, &constant.coordinate)?,
             BoundFact {
+                lawpack: lawpack.clone(),
                 coordinate: constant.coordinate.clone(),
                 value,
             },

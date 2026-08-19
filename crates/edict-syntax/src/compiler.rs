@@ -58,6 +58,7 @@ pub enum CompilerErrorKind {
 pub struct PureFunctionFact {
     pub lawpack: ResourceRef,
     pub coordinate: String,
+    pub type_parameters: Vec<String>,
     pub parameter_types: Vec<String>,
     pub return_type: String,
     pub cost_template: String,
@@ -74,6 +75,7 @@ pub struct TypeShapeFact {
 /// Canonical identity plus numeric value for one imported static bound.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoundFact {
+    pub lawpack: ResourceRef,
     pub coordinate: String,
     pub value: u64,
 }
@@ -1155,6 +1157,17 @@ impl<'a> TypeChecker<'a> {
                     ));
                     return;
                 };
+                if !self.lawpack_is_imported(&fact.lawpack) {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::MissingContextFact,
+                        format!(
+                            "loop bound `{source_coordinate}` is not owned by an exact imported lawpack"
+                        ),
+                        span,
+                    ));
+                    return;
+                }
                 (fact.value, CoreBound::Coordinate(fact.coordinate.clone()))
             }
         };
@@ -2517,7 +2530,8 @@ impl<'a> TypeChecker<'a> {
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
-        if !type_args.is_empty() {
+        let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
+        if !type_args.is_empty() || !fact.type_parameters.is_empty() {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnsupportedSourceShape,
@@ -2526,7 +2540,6 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
-        let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
         if args.len() != fact.parameter_types.len() {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -2603,10 +2616,14 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn helper_is_owned(&self, fact: &PureFunctionFact) -> bool {
+        self.lawpack_is_imported(&fact.lawpack)
+    }
+
+    fn lawpack_is_imported(&self, lawpack: &ResourceRef) -> bool {
         self.resolved
             .imports
             .iter()
-            .any(|import| import.kind == CoreImportKind::Lawpack && import.resource == fact.lawpack)
+            .any(|import| import.kind == CoreImportKind::Lawpack && &import.resource == lawpack)
     }
 
     fn resolve_pure_function(

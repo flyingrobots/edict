@@ -742,6 +742,7 @@ fn parse_exports(value: &CanonicalValue) -> Result<LawpackExports, Vec<LawpackVa
     let pure_functions = parse_array_field(&fields, "pureFunctions", path, parse_pure_function)?;
     validate_pure_function_callees(&pure_functions)?;
     let effects = parse_array_field(&fields, "effects", path, parse_semantic_effect)?;
+    validate_callable_coordinates(&pure_functions, &effects)?;
     let obstructions = parse_array_field(&fields, "obstructions", path, parse_obstruction)?;
     let operation_profiles = parse_operation_profiles(
         required(&fields, "operationProfiles", path)?,
@@ -756,6 +757,26 @@ fn parse_exports(value: &CanonicalValue) -> Result<LawpackExports, Vec<LawpackVa
         obstructions,
         operation_profiles,
     })
+}
+
+fn validate_callable_coordinates(
+    pure_functions: &[LawpackPureFunction],
+    effects: &[LawpackSemanticEffect],
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    let pure_coordinates = pure_functions
+        .iter()
+        .map(|function| function.coordinate.as_str())
+        .collect::<BTreeSet<_>>();
+    for (index, effect) in effects.iter().enumerate() {
+        if pure_coordinates.contains(effect.coordinate.as_str()) {
+            return Err(one(failure(
+                LawpackValidationFailureKind::DuplicateIdentity,
+                format!("exports.effects[{index}]"),
+                "callable coordinate disjoint from pureFunctions",
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn validate_pure_function_callees(
