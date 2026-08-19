@@ -46,6 +46,21 @@ const EFFECTFUL_BRANCH_YIELD: &str = "package a.b@1;\n\
       };\n\
       return { id };\n\
     }";
+const PURE_HELPER_BRANCH_YIELD: &str = "package a.b@1;\n\
+    use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+    type Input = { value: U64, };\n\
+    type Output = { value: U64, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let _discarded = if true {\n\
+        yield helpers.bump(input.value);\n\
+      } else {\n\
+        yield input.value;\n\
+      };\n\
+      return { value: input.value };\n\
+    }";
 const DUPLICATE_OBSTRUCTION_FAILURE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
     type Receipt = { id: String<max=16>, };\n\
@@ -948,6 +963,29 @@ fn effectful_branch_yield_rejects_incompatible_results() {
     assert!(errors
         .iter()
         .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
+fn branch_yield_rejects_pure_helper_that_is_a_disallowed_write_effect() {
+    let module =
+        parse_module(PURE_HELPER_BRANCH_YIELD).expect("pure-helper branch-yield source parses");
+    let context = pure_helper_context("U64")
+        .with_operation_profile_write_classes("p.read", [WriteClass::Read])
+        .with_effect_write_class("helpers.bump", WriteClass::Replace);
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("write effect disguised as a pure helper rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| error.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::ProfileEffectMismatch]
+    );
 }
 
 #[test]

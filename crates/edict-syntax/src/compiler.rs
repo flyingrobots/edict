@@ -1650,6 +1650,9 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
+        if !self.check_known_effect_profiles(intent, stmt.value) {
+            return;
+        }
         if let Expr::IfYield {
             pred,
             then_block,
@@ -1669,9 +1672,6 @@ impl<'a> TypeChecker<'a> {
                 locals,
                 state,
             );
-            return;
-        }
-        if !self.check_known_effect_profiles(intent, stmt.value) {
             return;
         }
         let annotation_shape = match stmt.ty {
