@@ -2504,11 +2504,17 @@ impl<'a> TypeChecker<'a> {
             .type_shapes
             .get(coordinate)
             .filter(|fact| &fact.lawpack == lawpack)
-            .and_then(Self::shape_from_imported_type)
+            .and_then(|fact| self.shape_from_imported_type(fact))
     }
 
-    fn shape_from_imported_type(fact: &TypeShapeFact) -> Option<TypeShape> {
-        let mut shape = imported_type_definition_shape(&fact.definition)?;
+    fn shape_from_imported_type(&self, fact: &TypeShapeFact) -> Option<TypeShape> {
+        let mut resolving = BTreeSet::from([fact.coordinate.clone()]);
+        let mut shape = imported_type_definition_shape(
+            &fact.definition,
+            &self.resolved.type_shapes,
+            &fact.lawpack,
+            &mut resolving,
+        )?;
         shape.coord.clone_from(&fact.coordinate);
         Some(shape)
     }
@@ -2875,7 +2881,12 @@ fn string_type_coord(max: u64, canonical: &str) -> String {
     format!("String<max={max},canonical={canonical}>")
 }
 
-fn imported_type_definition_shape(definition: &str) -> Option<TypeShape> {
+fn imported_type_definition_shape(
+    definition: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+    resolving: &mut BTreeSet<String>,
+) -> Option<TypeShape> {
     if definition == "Bool" {
         return Some(TypeShape {
             coord: definition.to_owned(),
@@ -2914,15 +2925,33 @@ fn imported_type_definition_shape(definition: &str) -> Option<TypeShape> {
     }
     let inner = definition
         .strip_prefix("List<")
-        .and_then(|value| value.strip_suffix('>'))?;
-    let (item, max) = inner.rsplit_once(",max=")?;
-    Some(TypeShape {
-        coord: definition.to_owned(),
-        kind: TypeKind::List {
-            item: Box::new(imported_type_definition_shape(item)?),
-            max: max.parse().ok()?,
-        },
-    })
+        .and_then(|value| value.strip_suffix('>'));
+    if let Some(inner) = inner {
+        let (item, max) = inner.rsplit_once(",max=")?;
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::List {
+                item: Box::new(imported_type_definition_shape(
+                    item,
+                    type_shapes,
+                    lawpack,
+                    resolving,
+                )?),
+                max: max.parse().ok()?,
+            },
+        });
+    }
+    let fact = type_shapes
+        .get(definition)
+        .filter(|fact| &fact.lawpack == lawpack)?;
+    if !resolving.insert(definition.to_owned()) {
+        return None;
+    }
+    let mut shape =
+        imported_type_definition_shape(&fact.definition, type_shapes, lawpack, resolving)?;
+    resolving.remove(definition);
+    shape.coord.clone_from(&fact.coordinate);
+    Some(shape)
 }
 
 fn bytes_type_coord(max: u64) -> String {

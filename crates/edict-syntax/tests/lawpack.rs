@@ -841,6 +841,81 @@ fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
 }
 
 #[test]
+fn nested_exported_type_closure_enters_pure_helper_compilation() {
+    let mut exports = typed_helper_exports(true);
+    let types = array_mut(field_mut(&mut exports, "types"));
+    replace_field(
+        types.last_mut().expect("GreetingKey exported type"),
+        "definition",
+        text("List<hello.echo@1.GreetingAtom,max=4>"),
+    );
+    types.push(map([
+        ("coordinate", text("hello.echo@1.GreetingAtom")),
+        ("definition", text("String<max=32,canonical=raw-utf8>")),
+    ]));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode nested typed exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode nested typed manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load nested typed helper lawpack");
+    let source = format!(
+        "package examples.typed_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ values: List<String<max=32>, max=4>, }};\n\
+         type Output = {{ values: List<String<max=32>, max=4>, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let values = hello.identityKey(input.values);\n\
+           return {{ values }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse nested typed helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive nested typed helper compiler facts");
+
+    compile_to_core(&module, preparation.compiler_context())
+        .expect("compile helper through nested exported type closure");
+}
+
+#[test]
+fn exported_type_outside_lawpack_namespace_rejects_before_compiler_facts() {
+    let mut exports = typed_helper_exports(true);
+    let exported_type = array_mut(field_mut(&mut exports, "types"))
+        .last_mut()
+        .expect("GreetingKey exported type");
+    replace_field(
+        exported_type,
+        "coordinate",
+        text("other.package@1.GreetingKey"),
+    );
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode foreign typed exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode foreign typed manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load bundle before adapter namespace validation");
+    let source = typed_helper_source(&bundle);
+    let module = parse_module(&source).expect("parse foreign typed helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+
+    let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect_err("foreign exported type namespace rejects before compiler facts");
+
+    assert_eq!(
+        failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>(),
+        vec![LawpackAdapterFailureKind::InvalidShape]
+    );
+}
+
+#[test]
 fn generic_lawpack_helper_rejects_before_core() {
     let mut exports = typed_helper_exports(true);
     let helper = array_mut(field_mut(&mut exports, "pureFunctions"))

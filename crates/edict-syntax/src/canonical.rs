@@ -786,7 +786,7 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
         .collect::<Vec<_>>();
     let mut requests = Vec::new();
     for intent in module.intents.values() {
-        collect_request_operations(&intent.body, &mut requests);
+        collect_request_operations(&intent.body, &mut requests, 0)?;
     }
     for request in requests {
         if !capability_imports.contains(&request) {
@@ -831,22 +831,35 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
     ]))
 }
 
-fn collect_request_operations<'a>(block: &'a CoreBlock, out: &mut Vec<&'a ResourceRef>) {
+fn collect_request_operations<'a>(
+    block: &'a CoreBlock,
+    out: &mut Vec<&'a ResourceRef>,
+    depth: usize,
+) -> Result<(), CanonicalError> {
+    if depth > MAX_CANONICAL_NESTING_DEPTH {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::NestingLimitExceeded,
+            format!(
+                "Core request traversal nesting exceeds maximum depth {MAX_CANONICAL_NESTING_DEPTH}"
+            ),
+        ));
+    }
     for node in &block.nodes {
         match node {
             CoreNode::ExternalActionRequest { operation, .. } => out.push(operation),
-            CoreNode::For { body, .. } => collect_request_operations(body, out),
+            CoreNode::For { body, .. } => collect_request_operations(body, out, depth + 1)?,
             CoreNode::Branch {
                 then_block,
                 else_block,
                 ..
             } => {
-                collect_request_operations(then_block, out);
-                collect_request_operations(else_block, out);
+                collect_request_operations(then_block, out, depth + 1)?;
+                collect_request_operations(else_block, out, depth + 1)?;
             }
             CoreNode::Let { .. } | CoreNode::Require { .. } | CoreNode::Effect { .. } => {}
         }
     }
+    Ok(())
 }
 
 fn core_import_value(import: &CoreImport) -> Result<CanonicalValue, CanonicalError> {
