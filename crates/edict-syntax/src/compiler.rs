@@ -2873,6 +2873,9 @@ fn imported_type_definition_shape(definition: &str) -> Option<TypeShape> {
         .and_then(|value| value.strip_suffix('>'))
     {
         let (max, canonical) = inner.split_once(",canonical=")?;
+        if !matches!(canonical, "raw-utf8" | "unicode-scalar-nfc") {
+            return None;
+        }
         let max = max.parse().ok()?;
         return Some(TypeShape {
             coord: definition.to_owned(),

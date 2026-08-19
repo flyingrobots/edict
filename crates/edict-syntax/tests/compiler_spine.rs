@@ -12,7 +12,7 @@ use edict_syntax::{
     lower_core, parse_module, resolve_module, type_check, BoundFact, CompilerContext,
     CompilerErrorKind, CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, PureFunctionFact,
-    ResourceRef, WriteClass,
+    ResourceRef, TypeShapeFact, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -141,6 +141,17 @@ const PURE_HELPER_CALL: &str = "package a.b@1;\n\
       basis none\n\
       budget <= p.tiny {\n\
       let value: U64 = helpers.bump(input.value);\n\
+      return { value };\n\
+    }";
+const INVALID_IMPORTED_STRING_HELPER: &str = "package a.b@1;\n\
+    use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+    type Input = { value: U64, };\n\
+    type Output = { value: String<max=32>, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let value = helpers.invalidString(input.value);\n\
       return { value };\n\
     }";
 const BOUNDED_LIST_LOOP: &str = "package a.b@1;\n\
@@ -403,6 +414,44 @@ fn digest_bound_pure_helper_call_lowers_to_core() {
         CoreExpr::Call { callee, type_args, args }
             if callee == "example.bounds@1.bump" && type_args.is_empty() && args.len() == 1
     ));
+}
+
+#[test]
+fn malformed_imported_string_policy_rejects_as_unresolved_type() {
+    let lawpack = ResourceRef {
+        coordinate: "example.bounds@1".to_owned(),
+        digest: Some(
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
+        ),
+    };
+    let context = pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.InvalidString".to_owned(),
+            definition: "String<max=32,canonical=raw-utf8,canonical=unexpected>".to_owned(),
+        })
+        .with_pure_function(
+            "helpers.invalidString",
+            PureFunctionFact {
+                lawpack,
+                coordinate: "example.bounds@1.invalidString".to_owned(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "example.bounds@1.InvalidString".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        );
+    let module = parse_module(INVALID_IMPORTED_STRING_HELPER)
+        .expect("malformed imported type source parses");
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("malformed imported string policy rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
 }
 
 #[test]
