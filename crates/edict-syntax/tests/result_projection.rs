@@ -242,6 +242,7 @@ fn structured_core_effects_cannot_disappear_from_projection_validation() {
         body: CoreBlock {
             locals: Vec::new(),
             nodes: vec![CoreNode::Branch {
+                binding: None,
                 predicate: CorePredicate::True,
                 then_block: CoreBlock {
                     locals: Vec::new(),

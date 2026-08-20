@@ -53,6 +53,7 @@ Out of scope:
 | COREIR-REQ-018 | implemented | A Core intent may bind one optional typed basis expression. The expression participates in canonical bytes and digest when present, while the absent representation preserves existing `basis none` Core bytes. | docs/SPEC_edict-language-v1.md, docs/abi/edict-core.cddl |
 | COREIR-REQ-019 | implemented | Core integer type and value identity preserves exact supported width and signedness, and canonical encoding rejects values outside the declared integer domain. | docs/SPEC_edict-language-v1.md, EDICT-LANG-INTLIT-001 |
 | COREIR-REQ-020 | implemented | Core represents typed external-action requests as deterministic non-callable data and requires each request operation to remain in the exact digest-locked capability-import closure before canonical identity exists. | issue #172, docs/abi/edict-core.cddl |
+| COREIR-REQ-021 | implemented | A Core branch may carry one optional result binding; when present, the selected block result becomes that local and the binding participates in canonical Core identity. | issue #192, docs/abi/edict-core.cddl |
 
 ## Fixtures
 
@@ -60,6 +61,8 @@ Out of scope:
 | --- | --- | --- |
 | docs/abi/edict-core.cddl | Normative Core semantic schema. | Required semantic declarations exist and forbidden byte/hash freeze fields are absent. |
 | fixtures/lang/bounds/bounded-hello.edict | Initial pure local-record source-to-Core fixture. | Compiled Core module canonicalizes deterministically and produces the reviewed Core golden artifacts. |
+| fixtures/core/canonical/statement-branch.core.hex | Test-owned reviewed canonical bytes for the inline `STATEMENT_BRANCH` source in `canonical_encoding.rs`, represented as lowercase hex for text review. | The decoded branch omits `binding`, and the executable encoder reproduces every byte; this fixture is not managed by `cargo xtask core-goldens`. |
+| fixtures/core/canonical/statement-branch.core.sha256 | Test-owned reviewed digest for the inline `STATEMENT_BRANCH` source in `canonical_encoding.rs`. | The executable Core digest reproduces the exact digest committed by the reviewed bytes; this fixture is not managed by `cargo xtask core-goldens`. |
 | fixtures/lang/external-actions/workspace-snapshot.edict | Typed external-request source-to-Core fixture. | Compiled Core preserves the complete request and exact capability closure in generated canonical bytes. |
 | fixtures/core/schema/accepted/core-module-minimal.fields | Accepted Core module field-shape fixture. | Required `core-module` fields are present and no unknown fields appear. |
 | fixtures/core/schema/accepted/core-intent-minimal.fields | Accepted Core intent field-shape fixture. | Required `core-intent` fields are present and no unknown fields appear. |
@@ -105,6 +108,7 @@ Out of scope:
 | COREIR-TP-026 | implemented | Canonical encoding | COREIR-REQ-012, COREIR-REQ-014, COREIR-REQ-018 | Adding or changing an explicit Core basis expression changes canonical Core bytes and digest; the reference-encoded operation Core satisfies the published schema, while omitting basis retains the reviewed `basis none` golden bytes and digest. | explicit_basis_and_semantic_input_mutations_move_target_identity, core_root_accepts_reference_encoded_operation_basis, reviewed_core_golden_bytes_match_executable_encoder, reviewed_core_digest_matches_exact_fixture | fixtures/lang/operations/explicit-basis-u64.edict, fixtures/core/canonical/bounded-hello.core.cbor | Proves basis is semantic while retaining provider-v1 compatibility. |
 | COREIR-TP-027 | implemented | Canonical validation | COREIR-REQ-012, COREIR-REQ-019 | `U64::MAX` and the signed fixed-width minima canonicalize under their exact declared domains; an out-of-range value or a value incompatible with its declared width rejects before canonical identity exists, and the reference-encoded exact-width operation satisfies the published schema. | operation_prerequisite_fixture_preserves_fixed_width_basis_and_lawpack_closure, signed_fixed_width_minima_preserve_exact_domains, out_of_range_u64_and_cross_width_values_reject_before_core, canonical_core_rejects_values_outside_their_declared_integer_domain, core_root_accepts_reference_encoded_operation_basis | fixtures/lang/operations/explicit-basis-u64.edict | Prevents host-width and GraphQL-width narrowing from entering Core. |
 | COREIR-TP-028 | implemented | External request | COREIR-REQ-012, COREIR-REQ-014, COREIR-REQ-017, COREIR-REQ-020 | Request fields survive canonical Core encoding, repeated compilation is byte-identical, authority mutations move Core and Target identity, removing the exact capability import makes the artifact unencodable, request traversal reaches closure inspection at the canonical nesting boundary, excessive nesting returns `NestingLimitExceeded`, and the owner-generated request golden reproduces exact bytes and digest. | workspace_observation_request_compiles_as_non_callable_data, request_artifacts_are_reproducible, every_request_authority_field_moves_core_and_target_identity, request_operation_must_remain_in_core_and_target_capability_closure, nested_request_collection_distinguishes_canonical_depth_boundary, core_goldens_match_executable_encoder | crates/edict-syntax/tests/external_action_requests.rs, fixtures/core/canonical/workspace-snapshot.core.cbor, fixtures/core/canonical/workspace-snapshot.core.sha256 | Request construction performs no external effect; the prepass shares and proves both sides of the public canonical depth boundary. |
+| COREIR-TP-029 | implemented | Branch result identity | COREIR-REQ-004, COREIR-REQ-012, COREIR-REQ-021 | A compiler-produced branch-yield carries one result binding; removing only that binding changes the canonical Core digest. A statement-only branch omits the binding field and retains exact reviewed canonical bytes and digest. | effectful_branch_yield_lowers_to_bound_core_branch, effectful_branch_yield_mutation_moves_core_digest, statement_branch_omits_binding_and_preserves_exact_canonical_identity | crates/edict-syntax/tests/compiler_spine.rs, crates/edict-syntax/tests/canonical_encoding.rs | Statement-only branches omit the binding and retain null block results. |
 
 ## Determinism Obligations
 
@@ -115,7 +119,11 @@ Out of scope:
 - Schema-shape fixtures are checked by extracting required and allowed fields
   from the checked-in CDDL, not by duplicating a prose field list.
 - Golden artifact tests compare behavior-derived bytes and digests against
-  reviewed fixtures that are regenerated through the same executable path.
+  reviewed fixtures. Generator-owned Core fixtures are regenerated with
+  `cargo xtask core-goldens --write`. The statement-branch hex and digest are
+  test-owned: an intentional source or encoder change must regenerate both from
+  the exact `canonical_encoding.rs` test path in one reviewed change, then run
+  that test and `cargo xtask verify`; `core-goldens` does not manage them.
 
 ## Open Gaps
 

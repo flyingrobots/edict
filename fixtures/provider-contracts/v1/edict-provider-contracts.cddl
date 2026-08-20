@@ -394,6 +394,7 @@ guard-node = {
 }
 branch-node = {
   kind: "branch",
+  ? binding: local-ref,
   predicate: core-predicate,
   then: core-block,
   else: core-block,

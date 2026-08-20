@@ -12,7 +12,7 @@ use edict_syntax::{
     lower_core, parse_module, resolve_module, type_check, BoundFact, CompilerContext,
     CompilerErrorKind, CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, PureFunctionFact,
-    PureHelperCostFact, ResourceRef, TypeShapeFact, WriteClass,
+    PureHelperCostFact, ResolvedModule, ResourceRef, TypeShapeFact, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -31,18 +31,35 @@ const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
     }";
 const EFFECTFUL_BRANCH_YIELD: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
+    type Receipt = { id: String<max=16>, };\n\
     type Output = { id: String<max=16>, };\n\
     intent t(input: Input) returns Output\n\
       profile p.effectful\n\
       basis none\n\
       budget <= p.tiny {\n\
       let id = if true {\n\
-        target.replace(input.id) else { rejected(reason) => domain.WriteRejected };\n\
+        let receipt: Receipt = target.replace(input.id)\n\
+          else { rejected(reason) => domain.WriteRejected };\n\
         yield input.id;\n\
       } else {\n\
-        yield input.id;\n\
+        yield \"fallback\";\n\
       };\n\
       return { id };\n\
+    }";
+const PURE_HELPER_BRANCH_YIELD: &str = "package a.b@1;\n\
+    use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+    type Input = { value: U64, };\n\
+    type Output = { value: U64, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let _discarded = if true {\n\
+        yield helpers.bump(input.value);\n\
+      } else {\n\
+        yield input.value;\n\
+      };\n\
+      return { value: input.value };\n\
     }";
 const DUPLICATE_OBSTRUCTION_FAILURE: &str = "package a.b@1;\n\
     type Input = { id: String<max=16>, };\n\
@@ -653,8 +670,23 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
           let value = if true then helpers.short(input.value) else helpers.long(input.value);\n\
           return { value };\n\
         }";
+    let context = bounded_string_helper_context();
+    let mirrored = source
+        .replace("helpers.short(input.value)", "helpers.swap(input.value)")
+        .replace("helpers.long(input.value)", "helpers.short(input.value)")
+        .replace("helpers.swap(input.value)", "helpers.long(input.value)");
+    assert_ne!(mirrored, source, "mirrored helper order changes source");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("bounded helper conditional parses");
+        compile_to_core(&module, &context)
+            .expect("compatible helper conditional compiles in either branch order");
+    }
+}
+
+fn bounded_string_helper_context() -> CompilerContext {
     let lawpack = example_bounds_lawpack();
-    let context = pure_context()
+    pure_context()
         .with_type_shape(TypeShapeFact {
             lawpack: lawpack.clone(),
             coordinate: "example.bounds@1.Short".to_owned(),
@@ -694,19 +726,7 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
                 max_allocated_bytes: 8,
                 max_output_bytes: 8,
             }),
-        );
-
-    for source in [
-        source.to_owned(),
-        source
-            .replace("helpers.short(input.value)", "helpers.swap(input.value)")
-            .replace("helpers.long(input.value)", "helpers.short(input.value)")
-            .replace("helpers.swap(input.value)", "helpers.long(input.value)"),
-    ] {
-        let module = parse_module(&source).expect("bounded helper conditional parses");
-        compile_to_core(&module, &context)
-            .expect("compatible helper conditional compiles in either branch order");
-    }
+        )
 }
 
 #[test]
@@ -1227,6 +1247,7 @@ fn statement_conditional_lowers_to_isolated_core_branches() {
     let core = compile_to_core(&module, &pure_context()).expect("statement conditional lowers");
     let intent = core.intents.get("t").expect("lowered intent");
     let CoreNode::Branch {
+        binding,
         predicate,
         then_block,
         else_block,
@@ -1235,6 +1256,7 @@ fn statement_conditional_lowers_to_isolated_core_branches() {
         panic!("first node is a Core branch");
     };
 
+    assert!(binding.is_none());
     assert!(matches!(predicate, CorePredicate::Compare { .. }));
     assert!(matches!(
         then_block.nodes.as_slice(),
@@ -1533,7 +1555,7 @@ fn effectful_write_intent_lowers_to_typed_core_from_file_backed_facts() {
 }
 
 #[test]
-fn unsupported_effectful_branch_yield_rejects_before_core_lowering() {
+fn effectful_branch_yield_lowers_to_bound_core_branch() {
     let dir = temp_case_dir("effectful-branch-yield");
     let target = write_json(
         &dir,
@@ -1544,20 +1566,544 @@ fn unsupported_effectful_branch_yield_rejects_before_core_lowering() {
     let context =
         load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
             .expect("authority facts load");
-    let module = parse_module(EFFECTFUL_BRANCH_YIELD).expect("unsupported effectful source parses");
+    let module = parse_module(EFFECTFUL_BRANCH_YIELD).expect("effectful branch-yield parses");
+    let core = compile_to_core(&module, &context).expect("effectful branch-yield lowers");
+    let intent = core.intents.get("t").expect("compiled intent");
+    let CoreNode::Branch {
+        binding: Some(binding),
+        then_block,
+        else_block,
+        ..
+    } = &intent.body.nodes[0]
+    else {
+        panic!("branch-yield let lowers to one bound Core branch");
+    };
 
-    let errors =
-        compile_to_core(&module, &context).expect_err("unsupported effectful shape rejects");
+    assert_eq!(binding.ty, "a.b@1.Input.id");
+    assert!(matches!(
+        then_block.nodes.as_slice(),
+        [CoreNode::Effect { .. }]
+    ));
+    assert!(else_block.nodes.is_empty());
+    assert!(matches!(then_block.result, CoreExpr::Field { .. }));
+    assert!(matches!(
+        else_block.result,
+        CoreExpr::Const(edict_syntax::CoreValue::String(ref value)) if value == "fallback"
+    ));
+    assert!(matches!(
+        intent.body.result,
+        CoreExpr::Record { ref fields }
+            if matches!(&fields["id"], CoreExpr::Local { reference } if reference == binding)
+    ));
+}
+
+#[test]
+fn effectful_branch_yield_rejects_incompatible_results() {
+    let source = EFFECTFUL_BRANCH_YIELD.replace("yield \"fallback\"", "yield true");
+    let module = parse_module(&source).expect("incompatible branch-yield parses");
+    let errors = compile_to_core(&module, &effectful_context())
+        .expect_err("incompatible branch results reject");
 
     assert!(errors
         .iter()
-        .all(|err| err.stage == CompilerStage::TypeCheck));
+        .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
+fn branch_yield_rejects_incompatible_anonymous_record_shapes() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true {\n\
+            yield { a: 1u64 };\n\
+          } else {\n\
+            yield { b: 2u64 };\n\
+          };\n\
+          return { value: selected.a };\n\
+        }";
+    let module = parse_module(source).expect("anonymous-record branch-yield source parses");
+
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("incompatible anonymous-record results reject before Core");
+
     assert!(errors
         .iter()
-        .any(|err| err.kind == CompilerErrorKind::UnsupportedSourceShape));
-    assert!(!errors
+        .any(|error| error.kind == CompilerErrorKind::TypeMismatch));
+}
+
+#[test]
+fn branch_yield_inside_loop_preserves_cumulative_budget() {
+    let source = "package a.b@1;\n\
+        type Input = { batches: List<List<U64, max=4>, max=4>, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          for batch in input.batches bounded 4 {\n\
+            let retained = if true {\n\
+              for item in batch bounded 4 {\n\
+                require item <= 10u64 else example.TooLarge;\n\
+              }\n\
+              yield batch;\n\
+            } else {\n\
+              yield batch;\n\
+            };\n\
+          }\n\
+          return { value: 0u64 };\n\
+        }";
+    let module = parse_module(source).expect("nested branch-yield loop source parses");
+
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("branch-local loop work keeps the enclosing step factor");
+
+    assert!(errors
         .iter()
-        .any(|err| err.kind == CompilerErrorKind::ProfileEffectMismatch));
+        .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+
+    let control = source.replace(
+        "for item in batch bounded 4 {\n\
+require item <= 10u64 else example.TooLarge;\n\
+}\n",
+        "",
+    );
+    assert_ne!(control, source, "calibrated loop removal changes source");
+    let control_module = parse_module(&control).expect("branch-yield budget control source parses");
+    compile_to_core(&control_module, &pure_context())
+        .expect("the same source without branch-local loop work stays in budget");
+}
+
+#[test]
+fn branch_yield_does_not_leak_locals() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true {\n\
+            let branch_local = input.value;\n\
+            yield branch_local;\n\
+          } else {\n\
+            yield input.value;\n\
+          };\n\
+          return { value: branch_local };\n\
+        }";
+    let module = parse_module(source).expect("branch-yield leak source parses");
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("branch-yield-local binding must not escape");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+}
+
+#[test]
+fn branch_yield_bare_integer_inherits_width_from_either_branch() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true { yield 0; } else { yield input.value; };\n\
+          return { value };\n\
+        }";
+    let mirrored = source
+        .replace("yield 0;", "yield __typed;")
+        .replace("yield input.value;", "yield 0;")
+        .replace("yield __typed;", "yield input.value;");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("fixed-width branch-yield source parses");
+        let core = compile_to_core(&module, &pure_context())
+            .expect("either branch supplies the bare integer width");
+        let intent = core.intents.get("t").expect("compiled intent");
+        let CoreNode::Branch {
+            binding: Some(binding),
+            ..
+        } = &intent.body.nodes[0]
+        else {
+            panic!("branch-yield lowers with one binding");
+        };
+
+        assert_eq!(binding.ty, "U64");
+    }
+}
+
+#[test]
+fn branch_yield_integer_inference_preserves_source_order_local_identities() {
+    let bare = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true {\n\
+            let then_local = input.value;\n\
+            yield 0;\n\
+          } else {\n\
+            let else_local = input.value;\n\
+            yield else_local;\n\
+          };\n\
+          return { value };\n\
+        }";
+    let typed = bare.replace("yield 0;", "yield 0u64;");
+    assert_ne!(typed, bare, "typed integer mutation changes source");
+
+    let bare_module = parse_module(bare).expect("bare-integer branch-yield source parses");
+    let typed_module = parse_module(&typed).expect("typed-integer branch-yield source parses");
+    let bare_core =
+        compile_to_core(&bare_module, &pure_context()).expect("bare-integer branch-yield compiles");
+    let typed_core = compile_to_core(&typed_module, &pure_context())
+        .expect("typed-integer branch-yield compiles");
+
+    assert_eq!(
+        digest_core_module(&bare_core).expect("bare-integer Core digests"),
+        digest_core_module(&typed_core).expect("typed-integer Core digests")
+    );
+}
+
+#[test]
+fn deeply_nested_branch_yield_integer_inference_compiles() {
+    let mut nested_else = "yield input.value;".to_owned();
+    for depth in (0..24).rev() {
+        nested_else = format!(
+            "let level_{depth} = if true {{ yield 0; }} else {{\n{nested_else}\n}};\n\
+             yield level_{depth};"
+        );
+    }
+    let source = format!(
+        "package a.b@1;\n\
+         type Input = {{ value: U64, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent t(input: Input) returns Output\n\
+           profile p.read\n\
+           basis none\n\
+           budget <= p.tiny {{\n\
+           let selected = if true {{ yield 0; }} else {{\n{nested_else}\n}};\n\
+           return {{ value: selected }};\n\
+         }}"
+    );
+    let module = parse_module(&source).expect("nested branch-yield source parses");
+
+    compile_to_core(&module, &pure_context()).expect("deeply nested bare-integer source compiles");
+}
+
+#[test]
+fn branch_yield_inference_cache_distinguishes_equal_spans() {
+    fn resolved_for(width: &str, suffix: &str, intent_name: &str) -> ResolvedModule {
+        let source = format!(
+            "package a.b@1;\n\
+             type Input{suffix} = {{ value: {width}, }};\n\
+             type Output{suffix} = {{ value: {width}, }};\n\
+             intent {intent_name}(input: Input{suffix}) returns Output{suffix}\n\
+               profile p.read\n\
+               basis none\n\
+               budget <= p.tiny {{\n\
+               let value = if true {{ yield 0; }} else {{ yield input.value; }};\n\
+               return {{ value }};\n\
+             }}"
+        );
+        let module = parse_module(&source).expect("equal-span branch-yield source parses");
+        resolve_module(&module, &pure_context()).expect("equal-span source resolves")
+    }
+
+    let mut resolved = resolved_for("U64", "64", "first");
+    let second = resolved_for("U32", "32", "other");
+    let first_span = match &resolved.intents[0].source.body.stmts[0] {
+        edict_syntax::ast::Stmt::Let {
+            value: edict_syntax::ast::Expr::IfYield { else_block, .. },
+            ..
+        } => else_block.span,
+        _ => panic!("first intent starts with branch-yield let"),
+    };
+    let second_span = match &second.intents[0].source.body.stmts[0] {
+        edict_syntax::ast::Stmt::Let {
+            value: edict_syntax::ast::Expr::IfYield { else_block, .. },
+            ..
+        } => else_block.span,
+        _ => panic!("second intent starts with branch-yield let"),
+    };
+    assert_eq!(first_span, second_span, "fixture reuses diagnostic spans");
+
+    resolved.types.extend(second.types);
+    resolved.intents.extend(second.intents);
+
+    type_check(&resolved).expect("distinct equal-span blocks retain their own inferred widths");
+}
+
+#[test]
+fn branch_yield_record_bare_integer_inherits_field_width_from_either_branch() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true { yield { value: 0 }; } else { yield { value: input.value }; };\n\
+          return selected;\n\
+        }";
+    let mirrored = source
+        .replace("yield { value: 0 };", "yield { value: __typed };")
+        .replace("yield { value: input.value };", "yield { value: 0 };")
+        .replace("yield { value: __typed };", "yield { value: input.value };");
+    assert_ne!(mirrored, source, "mirrored aggregate order changes source");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("aggregate branch-yield source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("either aggregate branch supplies the bare integer field width");
+    }
+}
+
+#[test]
+fn branch_yield_complementary_record_integers_join_structurally() {
+    let source = "package a.b@1;\n\
+        type Input = { a: U64, b: U64, };\n\
+        type Output = { a: U64, b: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true { let then_b = input.b; yield { a: 0, b: then_b }; } else { let else_a = input.a; yield { a: else_a, b: 0 }; };\n\
+          return selected;\n\
+        }";
+    let mirrored = source
+        .replace(
+            "let then_b = input.b; yield { a: 0, b: then_b };",
+            "let then_b = input.a; yield { a: then_b, b: 0 };",
+        )
+        .replace(
+            "let else_a = input.a; yield { a: else_a, b: 0 };",
+            "let else_a = input.b; yield { a: 0, b: else_a };",
+        );
+    assert_ne!(
+        mirrored, source,
+        "mirrored complementary records change source"
+    );
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("complementary record source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("complementary record fields jointly determine integer widths");
+    }
+}
+
+#[test]
+fn deeply_nested_complementary_record_inference_compiles() {
+    let mut nested = String::new();
+    for depth in (0..20).rev() {
+        nested = format!(
+            "let level_{depth} = if true {{\n{nested}\n\
+             yield {{ a: 0, b: input.b }};\n\
+             }} else {{\n\
+             yield {{ a: input.a, b: 0 }};\n\
+             }};"
+        );
+    }
+    let source = format!(
+        "package a.b@1;\n\
+         type Input = {{ a: U64, b: U64, }};\n\
+         type Output = {{ a: U64, b: U64, }};\n\
+         intent t(input: Input) returns Output\n\
+           profile p.read\n\
+           basis none\n\
+           budget <= p.tiny {{\n\
+           {nested}\n\
+           return level_0;\n\
+         }}"
+    );
+    let module = parse_module(&source).expect("nested complementary source parses");
+
+    compile_to_core(&module, &pure_context())
+        .expect("deeply nested complementary record source compiles");
+}
+
+#[test]
+fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: String<max=8>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true { yield helpers.short(input.value); } else { yield helpers.long(input.value); };\n\
+          return { value };\n\
+        }";
+    let mirrored = source
+        .replace("yield helpers.short(input.value);", "yield __wide;")
+        .replace(
+            "yield helpers.long(input.value);",
+            "yield helpers.short(input.value);",
+        )
+        .replace("yield __wide;", "yield helpers.long(input.value);");
+    assert_ne!(mirrored, source, "mirrored branch order changes source");
+    let context = bounded_string_helper_context();
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("bounded-string branch-yield source parses");
+        let core = compile_to_core(&module, &context)
+            .expect("branch-yield chooses the wider compatible string in either order");
+        let intent = core.intents.get("t").expect("compiled intent");
+        let CoreNode::Branch {
+            binding: Some(binding),
+            ..
+        } = &intent.body.nodes[0]
+        else {
+            panic!("branch-yield lowers with one binding");
+        };
+
+        assert_eq!(binding.ty, "example.bounds@1.Long");
+    }
+}
+
+#[test]
+fn branch_yield_records_join_compatible_fields_independently() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { a: String<max=2>, b: String<max=2>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true { yield { a: \"x\", b: \"yy\" }; } else { yield { a: \"xx\", b: \"y\" }; };\n\
+          return selected;\n\
+        }";
+    let mirrored = source
+        .replace("yield { a: \"x\", b: \"yy\" };", "yield __other__;")
+        .replace(
+            "yield { a: \"xx\", b: \"y\" };",
+            "yield { a: \"x\", b: \"yy\" };",
+        )
+        .replace("yield __other__;", "yield { a: \"xx\", b: \"y\" };");
+    assert_ne!(mirrored, source, "mirrored record branches change source");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("fieldwise record join source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("opposing bounded record fields join independently");
+    }
+}
+
+#[test]
+fn branch_yield_lists_join_item_and_length_bounds_independently() {
+    let source = "package a.b@1;\n\
+        type Input = { choose: U32, left: List<String<max=8>, max=16>, right: List<String<max=16>, max=8>, };\n\
+        type Output = { value: List<String<max=16>, max=16>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if input.choose == 0u32 { yield input.left; } else { yield input.right; };\n\
+          return { value };\n\
+        }";
+    let mirrored = source
+        .replace("yield input.left;", "yield __other__;")
+        .replace("yield input.right;", "yield input.left;")
+        .replace("yield __other__;", "yield input.right;");
+    assert_ne!(mirrored, source, "mirrored list branches change source");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("fieldwise list join source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("opposing list item and length bounds join independently");
+    }
+}
+
+#[test]
+fn branch_yield_rejects_pure_helper_that_is_a_disallowed_write_effect() {
+    let module =
+        parse_module(PURE_HELPER_BRANCH_YIELD).expect("pure-helper branch-yield source parses");
+    let context = pure_helper_context("U64")
+        .with_operation_profile_write_classes("p.read", [WriteClass::Read])
+        .with_effect_write_class("helpers.bump", WriteClass::Replace);
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("write effect disguised as a pure helper rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| error.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::ProfileEffectMismatch]
+    );
+}
+
+#[test]
+fn pure_helper_coordinate_with_effect_authority_rejects_even_when_profile_allows_write() {
+    let module =
+        parse_module(PURE_HELPER_BRANCH_YIELD).expect("pure-helper branch-yield source parses");
+    let context = pure_helper_context("U64")
+        .with_operation_profile_write_classes("p.read", [WriteClass::Read, WriteClass::Replace])
+        .with_effect_write_class("helpers.bump", WriteClass::Replace);
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("effect-authorized coordinate cannot lower as a pure helper");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| error.kind)
+            .collect::<Vec<CompilerErrorKind>>(),
+        vec![CompilerErrorKind::UnsupportedSourceShape]
+    );
+}
+
+#[test]
+fn effectful_branch_yield_mutation_moves_core_digest() {
+    let original = compile_to_core(
+        &parse_module(EFFECTFUL_BRANCH_YIELD).expect("original parses"),
+        &effectful_context(),
+    )
+    .expect("original lowers");
+    let swapped_source = EFFECTFUL_BRANCH_YIELD
+        .replace("yield input.id", "yield __placeholder")
+        .replace("yield \"fallback\"", "yield input.id")
+        .replace("yield __placeholder", "yield \"fallback\"");
+    let swapped = compile_to_core(
+        &parse_module(&swapped_source).expect("swapped parses"),
+        &effectful_context(),
+    )
+    .expect("swapped lowers");
+
+    assert_ne!(
+        digest_core_module(&original).expect("digest original branch-yield"),
+        digest_core_module(&swapped).expect("digest swapped branch-yield")
+    );
+
+    let mut unbound = original.clone();
+    let CoreNode::Branch { binding, .. } = &mut unbound
+        .intents
+        .get_mut("t")
+        .expect("unbound intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("first node remains a branch");
+    };
+    *binding = None;
+    assert_ne!(
+        digest_core_module(&original).expect("digest bound branch-yield"),
+        digest_core_module(&unbound).expect("digest unbound branch")
+    );
 }
 
 #[test]
@@ -1852,7 +2398,13 @@ fn initial_core_lowering_makes_no_canonical_or_target_claim() {
 }
 
 fn compile_effectful_source(source: &str) -> edict_syntax::CoreModule {
-    let dir = temp_case_dir("compile-effectful-source");
+    let context = effectful_context();
+    let module = parse_module(source).expect("effectful source parses");
+    compile_to_core(&module, &context).expect("effectful source compiles")
+}
+
+fn effectful_context() -> CompilerContext {
+    let dir = temp_case_dir("effectful-context");
     let target = write_json(
         &dir,
         "target-profile-facts.json",
@@ -1862,8 +2414,8 @@ fn compile_effectful_source(source: &str) -> edict_syntax::CoreModule {
     let context =
         load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
             .expect("authority facts load");
-    let module = parse_module(source).expect("effectful source parses");
-    compile_to_core(&module, &context).expect("effectful source compiles")
+    fs::remove_dir_all(&dir).expect("remove temporary effectful-context directory");
+    context
 }
 
 fn compile_pure_source(source: &str) -> edict_syntax::CoreModule {

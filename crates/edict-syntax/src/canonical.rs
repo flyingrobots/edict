@@ -1108,15 +1108,22 @@ fn core_node_value(node: &CoreNode) -> Result<CanonicalValue, CanonicalError> {
             ("body", core_block_value(body)?),
         ])),
         CoreNode::Branch {
+            binding,
             predicate,
             then_block,
             else_block,
-        } => Ok(map([
-            ("kind", text("branch")),
-            ("predicate", core_predicate_value(predicate)?),
-            ("then", core_block_value(then_block)?),
-            ("else", core_block_value(else_block)?),
-        ])),
+        } => {
+            let mut fields = vec![
+                ("kind", text("branch")),
+                ("predicate", core_predicate_value(predicate)?),
+                ("then", core_block_value(then_block)?),
+                ("else", core_block_value(else_block)?),
+            ];
+            if let Some(binding) = binding {
+                fields.push(("binding", local_ref_value(binding)));
+            }
+            Ok(map(fields))
+        }
     }
 }
 
