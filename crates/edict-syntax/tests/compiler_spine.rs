@@ -210,6 +210,17 @@ fn hello_context() -> CompilerContext {
 }
 
 fn pure_context() -> CompilerContext {
+    pure_context_without_helper_cost().with_budget(
+        "helpers.tiny",
+        CoreBudget {
+            max_steps: 1,
+            max_allocated_bytes: 8,
+            max_output_bytes: 8,
+        },
+    )
+}
+
+fn pure_context_without_helper_cost() -> CompilerContext {
     CompilerContext::new()
         .with_operation_profile("p.read", "continuum.profile.read-only/v1")
         .with_budget(
@@ -667,6 +678,14 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
                 return_type: "example.bounds@1.Long".to_owned(),
                 cost_template: "example.bounds@1.tiny".to_owned(),
             },
+        )
+        .with_budget(
+            "helpers.tiny",
+            CoreBudget {
+                max_steps: 5,
+                max_allocated_bytes: 8,
+                max_output_bytes: 8,
+            },
         );
 
     for source in [
@@ -680,6 +699,117 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
         compile_to_core(&module, &context)
             .expect("compatible helper conditional compiles in either branch order");
     }
+}
+
+#[test]
+fn pure_helper_costs_are_charged_at_call_sites_and_inside_loops() {
+    let direct = parse_module(PURE_HELPER_CALL).expect("direct helper source parses");
+    let direct_context = pure_helper_context("U64").with_budget(
+        "helpers.tiny",
+        CoreBudget {
+            max_steps: 9,
+            max_allocated_bytes: 8,
+            max_output_bytes: 8,
+        },
+    );
+    let direct_errors = compile_to_core(&direct, &direct_context)
+        .expect_err("helper cost above the operation step budget rejects");
+    assert!(direct_errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+
+    for helper_cost in [
+        CoreBudget {
+            max_steps: 1,
+            max_allocated_bytes: 1_025,
+            max_output_bytes: 8,
+        },
+        CoreBudget {
+            max_steps: 1,
+            max_allocated_bytes: 8,
+            max_output_bytes: 257,
+        },
+    ] {
+        let context = pure_helper_context("U64").with_budget("helpers.tiny", helper_cost);
+        let errors = compile_to_core(&direct, &context)
+            .expect_err("every helper cost dimension is budgeted");
+        assert!(errors
+            .iter()
+            .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+    }
+
+    let missing_cost_context = pure_context_without_helper_cost().with_pure_function(
+        "helpers.bump",
+        PureFunctionFact {
+            lawpack: example_bounds_lawpack(),
+            coordinate: "example.bounds@1.bump".to_owned(),
+            type_parameters: Vec::new(),
+            parameter_types: vec!["U64".to_owned()],
+            return_type: "U64".to_owned(),
+            cost_template: "example.bounds@1.tiny".to_owned(),
+        },
+    );
+    let missing_cost_errors = compile_to_core(&direct, &missing_cost_context)
+        .expect_err("unresolved helper cost template rejects");
+    assert!(missing_cost_errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
+
+    let loop_source = EXPORTED_LIST_LOOP.replace(
+        "require value == value else example.InvalidValue;",
+        "let bumped: U64 = helpers.bump(0u64);\n        require bumped == bumped else example.InvalidValue;",
+    );
+    let loop_module = parse_module(&loop_source).expect("loop helper source parses");
+    let loop_errors = compile_to_core(&loop_module, &loop_helper_context())
+        .expect_err("helper cost is multiplied by the enclosing loop bound");
+    assert!(loop_errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+}
+
+fn loop_helper_context() -> CompilerContext {
+    let lawpack = example_bounds_lawpack();
+    pure_context()
+        .with_budget(
+            "helpers.tiny",
+            CoreBudget {
+                max_steps: 2,
+                max_allocated_bytes: 8,
+                max_output_bytes: 8,
+            },
+        )
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.Key".to_owned(),
+            definition: "String<max=32,canonical=raw-utf8>".to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.KeyList".to_owned(),
+            definition: "List<example.bounds@1.Key,max=4>".to_owned(),
+        })
+        .with_pure_function(
+            "helpers.identityList",
+            PureFunctionFact {
+                lawpack: lawpack.clone(),
+                coordinate: "example.bounds@1.identityList".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["example.bounds@1.KeyList".to_owned()],
+                return_type: "example.bounds@1.KeyList".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        )
+        .with_pure_function(
+            "helpers.bump",
+            PureFunctionFact {
+                lawpack,
+                coordinate: "example.bounds@1.bump".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "U64".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        )
 }
 
 #[test]

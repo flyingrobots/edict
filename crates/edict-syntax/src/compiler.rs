@@ -198,6 +198,7 @@ pub struct ResolvedModule {
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
     pub type_shapes: BTreeMap<String, TypeShapeFact>,
     pub bounds: BTreeMap<String, BoundFact>,
+    pub budgets: BTreeMap<String, CoreBudget>,
     pub types: Vec<ResolvedTypeDecl>,
     pub intents: Vec<ResolvedIntent>,
 }
@@ -310,6 +311,7 @@ pub fn resolve_module(
             pure_functions: context.pure_functions.clone(),
             type_shapes: context.type_shapes.clone(),
             bounds: context.bounds.clone(),
+            budgets: context.budgets.clone(),
             types,
             intents,
         },
@@ -544,6 +546,47 @@ struct BodyState {
     obstruction_index: usize,
     step_factor: u64,
     accumulated_steps: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct HelperCost {
+    steps: u64,
+    allocated_bytes: u64,
+    output_bytes: u64,
+}
+
+impl HelperCost {
+    fn checked_add(self, other: Self) -> Option<Self> {
+        Some(Self {
+            steps: self.steps.checked_add(other.steps)?,
+            allocated_bytes: self.allocated_bytes.checked_add(other.allocated_bytes)?,
+            output_bytes: self.output_bytes.checked_add(other.output_bytes)?,
+        })
+    }
+
+    fn checked_mul(self, factor: u64) -> Option<Self> {
+        Some(Self {
+            steps: self.steps.checked_mul(factor)?,
+            allocated_bytes: self.allocated_bytes.checked_mul(factor)?,
+            output_bytes: self.output_bytes.checked_mul(factor)?,
+        })
+    }
+
+    fn component_max(self, other: Self) -> Self {
+        Self {
+            steps: self.steps.max(other.steps),
+            allocated_bytes: self.allocated_bytes.max(other.allocated_bytes),
+            output_bytes: self.output_bytes.max(other.output_bytes),
+        }
+    }
+
+    fn from_budget(budget: &CoreBudget) -> Self {
+        Self {
+            steps: budget.max_steps,
+            allocated_bytes: budget.max_allocated_bytes,
+            output_bytes: budget.max_output_bytes,
+        }
+    }
 }
 
 impl Default for BodyState {
@@ -804,6 +847,7 @@ impl<'a> TypeChecker<'a> {
         let param = &source.params[0];
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
+        self.check_helper_cost_budget(intent)?;
         let input_binding = LocalRef {
             id: CORE_APPLICATION_INPUT_LOCAL_ID.to_owned(),
             alpha_name: "$arg0".to_owned(),
@@ -875,6 +919,384 @@ impl<'a> TypeChecker<'a> {
             }
         }
         out
+    }
+
+    fn check_helper_cost_budget(&mut self, intent: &ResolvedIntent) -> Option<()> {
+        let mut cost = self.helper_cost_for_block(&intent.source.body)?;
+        for clause in &intent.source.clauses {
+            let clause_cost = match clause {
+                IntentClause::Basis(Some(expr)) => self.helper_cost_for_expr(expr)?,
+                IntentClause::Where(predicates) => {
+                    self.helper_cost_for_exprs_at(predicates, intent.source.span)?
+                }
+                IntentClause::Profile(_)
+                | IntentClause::Implements(_)
+                | IntentClause::Basis(None)
+                | IntentClause::Footprint(_)
+                | IntentClause::Budget(_) => HelperCost::default(),
+            };
+            cost = self.checked_helper_cost_add(cost, clause_cost, intent.source.span)?;
+        }
+        if cost.steps > intent.budget.max_steps
+            || cost.allocated_bytes > intent.budget.max_allocated_bytes
+            || cost.output_bytes > intent.budget.max_output_bytes
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!(
+                    "pure-helper cost steps={}, allocatedBytes={}, outputBytes={} exceeds operation budget",
+                    cost.steps, cost.allocated_bytes, cost.output_bytes
+                ),
+                intent.source.span,
+            ));
+            return None;
+        }
+        Some(())
+    }
+
+    fn helper_cost_for_block(&mut self, block: &Block) -> Option<HelperCost> {
+        let mut cost = HelperCost::default();
+        for stmt in &block.stmts {
+            let stmt_cost = self.helper_cost_for_stmt(stmt)?;
+            cost = self.checked_helper_cost_add(cost, stmt_cost, block.span)?;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_stmt(&mut self, stmt: &Stmt) -> Option<HelperCost> {
+        match stmt {
+            Stmt::Let {
+                value, els, span, ..
+            } => {
+                let value_cost = self.helper_cost_for_expr(value)?;
+                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
+                self.checked_helper_cost_add(value_cost, handler_cost, *span)
+            }
+            Stmt::Effect { call, els, span } => {
+                let call_cost = self.helper_cost_for_expr(call)?;
+                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
+                self.checked_helper_cost_add(call_cost, handler_cost, *span)
+            }
+            Stmt::ExternalActionRequest {
+                operation,
+                authority_scope,
+                basis,
+                max_settlement_bytes,
+                max_attempts,
+                span,
+                ..
+            } => self.helper_cost_for_exprs_at(
+                [
+                    operation,
+                    authority_scope,
+                    basis,
+                    max_settlement_bytes,
+                    max_attempts,
+                ],
+                *span,
+            ),
+            Stmt::Require {
+                predicate,
+                arm,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(predicate)?;
+                let arm_cost = self.helper_cost_for_require_arm(arm)?;
+                self.checked_helper_cost_add(predicate_cost, arm_cost, *span)
+            }
+            Stmt::Guarantee {
+                predicate,
+                obstruction,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(predicate)?;
+                let obstruction_cost = self.helper_cost_for_target(obstruction.as_ref())?;
+                self.checked_helper_cost_add(predicate_cost, obstruction_cost, *span)
+            }
+            Stmt::Assert { predicate, .. }
+            | Stmt::Return {
+                value: predicate, ..
+            } => self.helper_cost_for_expr(predicate),
+            Stmt::If {
+                cond,
+                then_block,
+                els,
+                span,
+            } => {
+                let cond_cost = self.helper_cost_for_expr(cond)?;
+                let then_cost = self.helper_cost_for_block(then_block)?;
+                let else_cost = match els.as_deref() {
+                    Some(ElseClause::Block(block)) => self.helper_cost_for_block(block)?,
+                    Some(ElseClause::If(stmt)) => self.helper_cost_for_stmt(stmt)?,
+                    None => HelperCost::default(),
+                };
+                self.checked_helper_cost_add(cond_cost, then_cost.component_max(else_cost), *span)
+            }
+            Stmt::For {
+                iter,
+                bound,
+                body,
+                span,
+                ..
+            } => {
+                let iter_cost = self.helper_cost_for_expr(iter)?;
+                let body_cost = self.helper_cost_for_block(body)?;
+                let factor = self.helper_cost_loop_bound(bound).unwrap_or(0);
+                let body_cost = self.checked_helper_cost_mul(body_cost, factor, *span)?;
+                self.checked_helper_cost_add(iter_cost, body_cost, *span)
+            }
+        }
+    }
+
+    fn helper_cost_for_expr(&mut self, expr: &Expr) -> Option<HelperCost> {
+        match expr {
+            Expr::Ident { .. }
+            | Expr::Int { .. }
+            | Expr::Str { .. }
+            | Expr::Bool { .. }
+            | Expr::Digest { .. } => Some(HelperCost::default()),
+            Expr::Field { base, .. } | Expr::Unary { operand: base, .. } => {
+                self.helper_cost_for_expr(base)
+            }
+            Expr::Call {
+                callee, args, span, ..
+            } => {
+                let nested = self.helper_cost_for_exprs_at(
+                    std::iter::once(callee.as_ref()).chain(args.iter()),
+                    *span,
+                )?;
+                let own = self.helper_cost_for_call(callee, *span)?;
+                self.checked_helper_cost_add(nested, own, *span)
+            }
+            Expr::Binary { lhs, rhs, span, .. } => {
+                let left = self.helper_cost_for_expr(lhs)?;
+                let right = self.helper_cost_for_expr(rhs)?;
+                self.checked_helper_cost_add(left, right, *span)
+            }
+            Expr::Record { entries, span } => {
+                let mut cost = HelperCost::default();
+                for entry in entries {
+                    let entry_cost = match entry {
+                        RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                            self.helper_cost_for_expr(value)?
+                        }
+                        RecordEntry::Shorthand { .. } => HelperCost::default(),
+                    };
+                    cost = self.checked_helper_cost_add(cost, entry_cost, *span)?;
+                }
+                Some(cost)
+            }
+            Expr::If {
+                cond,
+                then,
+                els,
+                span,
+            } => {
+                let cond_cost = self.helper_cost_for_expr(cond)?;
+                let then_cost = self.helper_cost_for_expr(then)?;
+                let else_cost = self.helper_cost_for_expr(els)?;
+                self.checked_helper_cost_add(cond_cost, then_cost.component_max(else_cost), *span)
+            }
+            Expr::IfYield {
+                pred,
+                then_block,
+                else_block,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(pred)?;
+                let then_cost = self.helper_cost_for_yield_block(then_block)?;
+                let else_cost = self.helper_cost_for_yield_block(else_block)?;
+                self.checked_helper_cost_add(
+                    predicate_cost,
+                    then_cost.component_max(else_cost),
+                    *span,
+                )
+            }
+            Expr::VariantLit { payload, .. } => payload
+                .as_deref()
+                .map_or(Some(HelperCost::default()), |value| {
+                    self.helper_cost_for_expr(value)
+                }),
+            Expr::Match {
+                scrutinee,
+                arms,
+                span,
+            } => {
+                let scrutinee_cost = self.helper_cost_for_expr(scrutinee)?;
+                let mut arm_cost = HelperCost::default();
+                for arm in arms {
+                    arm_cost = arm_cost.component_max(self.helper_cost_for_expr(&arm.body)?);
+                }
+                self.checked_helper_cost_add(scrutinee_cost, arm_cost, *span)
+            }
+        }
+    }
+
+    fn helper_cost_for_exprs_at<'b, I>(&mut self, exprs: I, span: Span) -> Option<HelperCost>
+    where
+        I: IntoIterator<Item = &'b Expr>,
+    {
+        let mut cost = HelperCost::default();
+        for expr in exprs {
+            let expr_cost = self.helper_cost_for_expr(expr)?;
+            cost = self.checked_helper_cost_add(cost, expr_cost, span)?;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_call(&mut self, callee: &Expr, span: Span) -> Option<HelperCost> {
+        let Some(source_coordinate) = plain_callee_coordinate(callee) else {
+            return Some(HelperCost::default());
+        };
+        let Some(fact) = self.resolved.pure_functions.get(&source_coordinate) else {
+            return Some(HelperCost::default());
+        };
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
+            return Some(HelperCost::default());
+        }
+        let Some((source_alias, _)) = source_coordinate.split_once('.') else {
+            return Some(HelperCost::default());
+        };
+        let Some(cost_suffix) = fact
+            .cost_template
+            .strip_prefix(&fact.lawpack.coordinate)
+            .and_then(|suffix| suffix.strip_prefix('.'))
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "pure helper `{source_coordinate}` cost template is outside its owning lawpack"
+                ),
+                span,
+            ));
+            return None;
+        };
+        let source_cost = format!("{source_alias}.{cost_suffix}");
+        if !self.fact_matches_source_import(&source_cost, &fact.cost_template, &fact.lawpack) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("pure helper `{source_coordinate}` cost template is not imported"),
+                span,
+            ));
+            return None;
+        }
+        let Some(cost) = self.resolved.budgets.get(&source_cost) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("pure helper `{source_coordinate}` cost template is unresolved"),
+                span,
+            ));
+            return None;
+        };
+        Some(HelperCost::from_budget(cost))
+    }
+
+    fn helper_cost_for_yield_block(
+        &mut self,
+        block: &crate::ast::YieldBlock,
+    ) -> Option<HelperCost> {
+        let statements = Block {
+            stmts: block.stmts.clone(),
+            span: block.span,
+        };
+        let statement_cost = self.helper_cost_for_block(&statements)?;
+        let value_cost = self.helper_cost_for_expr(&block.value)?;
+        self.checked_helper_cost_add(statement_cost, value_cost, block.span)
+    }
+
+    fn helper_cost_for_handler(
+        &mut self,
+        handler: Option<&ObstructionHandler>,
+    ) -> Option<HelperCost> {
+        match handler {
+            Some(ObstructionHandler::Single(target)) => self.helper_cost_for_target(Some(target)),
+            Some(ObstructionHandler::Map(arms)) => {
+                let mut cost = HelperCost::default();
+                for arm in arms {
+                    cost = cost.component_max(self.helper_cost_for_target(Some(&arm.target))?);
+                }
+                Some(cost)
+            }
+            None => Some(HelperCost::default()),
+        }
+    }
+
+    fn helper_cost_for_require_arm(&mut self, arm: &RequireElseArm) -> Option<HelperCost> {
+        match arm {
+            RequireElseArm::Terminal(target) => self.helper_cost_for_target(Some(target)),
+            RequireElseArm::ContinueObstructed(arm) => {
+                let reason = self.helper_cost_for_expr(&arm.reason)?;
+                let mut payload = HelperCost::default();
+                for entry in &arm.payload {
+                    let entry_cost = match entry {
+                        RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                            self.helper_cost_for_expr(value)?
+                        }
+                        RecordEntry::Shorthand { .. } => HelperCost::default(),
+                    };
+                    payload = self.checked_helper_cost_add(payload, entry_cost, arm.span)?;
+                }
+                self.checked_helper_cost_add(reason, payload, arm.span)
+            }
+        }
+    }
+
+    fn helper_cost_for_target(&mut self, target: Option<&ObstructionTarget>) -> Option<HelperCost> {
+        target
+            .and_then(|target| target.payload.as_ref())
+            .map_or(Some(HelperCost::default()), |payload| {
+                self.helper_cost_for_expr(payload)
+            })
+    }
+
+    fn helper_cost_loop_bound(&self, bound: &BoundRef) -> Option<u64> {
+        match bound {
+            BoundRef::Int { value, .. } => Some(*value),
+            BoundRef::Coord(path) => {
+                let source_coordinate = path.join(".");
+                let fact = self.resolved.bounds.get(&source_coordinate)?;
+                self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack)
+                    .then_some(fact.value)
+            }
+        }
+    }
+
+    fn checked_helper_cost_add(
+        &mut self,
+        left: HelperCost,
+        right: HelperCost,
+        span: Span,
+    ) -> Option<HelperCost> {
+        left.checked_add(right).or_else(|| {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "pure-helper cost accumulation overflows u64",
+                span,
+            ));
+            None
+        })
+    }
+
+    fn checked_helper_cost_mul(
+        &mut self,
+        cost: HelperCost,
+        factor: u64,
+        span: Span,
+    ) -> Option<HelperCost> {
+        cost.checked_mul(factor).or_else(|| {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "bounded-loop helper cost multiplication overflows u64",
+                span,
+            ));
+            None
+        })
     }
 
     fn check_body(

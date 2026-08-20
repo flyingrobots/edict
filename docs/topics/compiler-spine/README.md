@@ -95,9 +95,13 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   lawpack. The preparation path derives those facts, including primitive or
   bounded exported signature types, from the validated export closure, while
   Core records the canonical helper coordinate. Missing helpers, substituted
-  import digests, and incompatible arguments reject before Core; the imported
-  lawpack digest remains the helper implementation and type-closure identity.
-  [CSPINE-REQ-024]
+  import digests, mismatched source aliases or export suffixes, incompatible
+  arguments, and missing cost templates reject before Core. Conservative helper
+  steps, allocation, and output costs add across sequential calls, take the
+  component-wise maximum across exclusive branches, and multiply through
+  enclosing bounded loops. The imported lawpack digest remains the helper
+  implementation and type-closure identity. [CSPINE-REQ-024]
+  [CSPINE-REQ-029] [CSPINE-REQ-031]
 - Coordinate loop bounds resolve only from explicit compiler facts. Exact
   lawpack preparation projects exported `U32` and `U64` constants through the
   source alias, uses their numeric values for static soundness and budget
@@ -121,7 +125,6 @@ The following are not implemented by this compiler-spine slice:
 - full lawpack or target-profile manifest loading beyond authority-facts
   documents;
 - full source language lowering.
-- pure-helper cost-template accumulation.
 
 Those items remain assigned to later lowerability/admission milestones.
 
