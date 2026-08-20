@@ -1900,6 +1900,36 @@ fn branch_yield_complementary_record_integers_join_structurally() {
 }
 
 #[test]
+fn nested_complementary_record_inference_remains_bounded() {
+    let mut nested = String::new();
+    for depth in (0..20).rev() {
+        nested = format!(
+            "let level_{depth} = if true {{\n{nested}\n\
+             yield {{ a: 0, b: input.b }};\n\
+             }} else {{\n\
+             yield {{ a: input.a, b: 0 }};\n\
+             }};"
+        );
+    }
+    let source = format!(
+        "package a.b@1;\n\
+         type Input = {{ a: U64, b: U64, }};\n\
+         type Output = {{ a: U64, b: U64, }};\n\
+         intent t(input: Input) returns Output\n\
+           profile p.read\n\
+           basis none\n\
+           budget <= p.tiny {{\n\
+           {nested}\n\
+           return level_0;\n\
+         }}"
+    );
+    let module = parse_module(&source).expect("nested complementary source parses");
+
+    compile_to_core(&module, &pure_context())
+        .expect("nested complementary inference stays within bounded compiler work");
+}
+
+#[test]
 fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
     let source = "package a.b@1;\n\
         use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\

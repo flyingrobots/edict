@@ -646,6 +646,7 @@ struct TypeChecker<'a> {
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
     inferred_yield_shapes: BTreeMap<usize, TypeShape>,
+    inferred_yield_envs: BTreeMap<usize, BTreeMap<String, (LocalRef, TypeShape)>>,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -656,6 +657,7 @@ impl<'a> TypeChecker<'a> {
             named_types: BTreeMap::new(),
             core_types: BTreeMap::new(),
             inferred_yield_shapes: BTreeMap::new(),
+            inferred_yield_envs: BTreeMap::new(),
         }
     }
 
@@ -2457,7 +2459,7 @@ impl<'a> TypeChecker<'a> {
 
     #[allow(clippy::too_many_arguments)]
     fn infer_joint_yield_shape(
-        &self,
+        &mut self,
         intent: &ResolvedIntent,
         output_shape: &TypeShape,
         then_block: &YieldBlock,
@@ -2471,13 +2473,17 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn infer_yield_block_env(
-        &self,
+        &mut self,
         intent: &ResolvedIntent,
         output_shape: &TypeShape,
         block: &YieldBlock,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         state: &BodyState,
     ) -> Option<BTreeMap<String, (LocalRef, TypeShape)>> {
+        let cache_key = std::ptr::from_ref(block).addr();
+        if let Some(env) = self.inferred_yield_envs.get(&cache_key) {
+            return Some(env.clone());
+        }
         let mut checker = self.clone();
         let error_count = checker.errors.len();
         let mut nested_env = env.clone();
@@ -2502,7 +2508,16 @@ impl<'a> TypeChecker<'a> {
                 &mut nested_state,
             );
         }
-        (checker.errors.len() == error_count).then_some(nested_env)
+        if checker.errors.len() != error_count {
+            return None;
+        }
+        self.inferred_yield_shapes
+            .append(&mut checker.inferred_yield_shapes);
+        self.inferred_yield_envs
+            .append(&mut checker.inferred_yield_envs);
+        self.inferred_yield_envs
+            .insert(cache_key, nested_env.clone());
+        Some(nested_env)
     }
 
     fn infer_joint_expr_shape(
