@@ -498,6 +498,29 @@ fn pure_helper_fact_without_exact_owning_import_rejects_before_core() {
 }
 
 #[test]
+fn pure_helper_fact_with_foreign_coordinate_rejects_before_core() {
+    let module = parse_module(PURE_HELPER_CALL).expect("pure-helper source parses");
+    let context = pure_helper_context("U64").with_pure_function(
+        "helpers.bump",
+        PureFunctionFact {
+            lawpack: example_bounds_lawpack(),
+            coordinate: "other.package@1.bump".to_owned(),
+            type_parameters: Vec::new(),
+            parameter_types: vec!["U64".to_owned()],
+            return_type: "U64".to_owned(),
+            cost_template: "example.bounds@1.tiny".to_owned(),
+        },
+    );
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("foreign helper coordinate rejects despite exact lawpack resource");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedFunction));
+}
+
+#[test]
 fn pure_helper_argument_type_mismatch_rejects_before_core() {
     let module = parse_module(PURE_HELPER_CALL).expect("pure-helper source parses");
     let errors = compile_to_core(&module, &pure_helper_context("Bool"))
@@ -632,6 +655,27 @@ fn coordinate_bound_fact_without_exact_owning_import_rejects_before_core() {
 
     let errors = compile_to_core(&module, &coordinate_bound_context())
         .expect_err("bound fact without its exact lawpack import rejects");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
+}
+
+#[test]
+fn coordinate_bound_fact_with_foreign_coordinate_rejects_before_core() {
+    let source = coordinate_bounded_loop_source();
+    let module = parse_module(&source).expect("coordinate-bounded loop source parses");
+    let context = coordinate_bound_context().with_bound(
+        "bounds.maxItems",
+        BoundFact {
+            lawpack: example_bounds_lawpack(),
+            coordinate: "other.package@1.maxItems".to_owned(),
+            value: 4,
+        },
+    );
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("foreign bound coordinate rejects despite exact lawpack resource");
 
     assert!(errors
         .iter()

@@ -1155,7 +1155,9 @@ impl<'a> TypeChecker<'a> {
                     ));
                     return;
                 };
-                if !self.lawpack_is_imported(&fact.lawpack) {
+                if !self.lawpack_is_imported(&fact.lawpack)
+                    || !coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
+                {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,
                         CompilerErrorKind::MissingContextFact,
@@ -2425,6 +2427,7 @@ impl<'a> TypeChecker<'a> {
 
     fn helper_is_owned(&self, fact: &PureFunctionFact) -> bool {
         self.lawpack_is_imported(&fact.lawpack)
+            && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
     }
 
     fn lawpack_is_imported(&self, lawpack: &ResourceRef) -> bool {
@@ -2503,7 +2506,10 @@ impl<'a> TypeChecker<'a> {
         self.resolved
             .type_shapes
             .get(coordinate)
-            .filter(|fact| &fact.lawpack == lawpack)
+            .filter(|fact| {
+                &fact.lawpack == lawpack
+                    && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
+            })
             .and_then(|fact| self.shape_from_imported_type(fact))
     }
 
@@ -2857,6 +2863,13 @@ fn requestable_operation_family(coordinate: &str) -> bool {
         .split(['.', '@'])
         .next()
         .is_some_and(|root| root.eq_ignore_ascii_case("workspace"))
+}
+
+fn coordinate_is_below_lawpack(coordinate: &str, lawpack: &ResourceRef) -> bool {
+    let prefix = format!("{}.", lawpack.coordinate);
+    coordinate
+        .strip_prefix(&prefix)
+        .is_some_and(|suffix| !suffix.is_empty())
 }
 
 fn comparable(left: &TypeShape, right: &TypeShape) -> bool {
