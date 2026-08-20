@@ -2343,6 +2343,10 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         state: &BodyState,
     ) -> Option<TypeShape> {
+        // A yield block may introduce types, locals, effects, and diagnostics, so
+        // the complete checker state is the smallest existing isolation boundary.
+        // Discarding this bounded clone keeps inference observational: the real
+        // blocks still lower once, in source order, into the authoritative state.
         let mut inference_checker = self.clone();
         let inference_error_count = inference_checker.errors.len();
         let mut inference_state = BodyState {

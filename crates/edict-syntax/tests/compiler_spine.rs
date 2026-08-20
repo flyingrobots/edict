@@ -2163,8 +2163,11 @@ fn effectful_context() -> CompilerContext {
         effectful_target_profile_facts(),
     );
     let lawpack = write_json(&dir, "lawpack-facts.json", effectful_lawpack_facts());
-    load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
-        .expect("authority facts load")
+    let context =
+        load_compiler_context_from_authority_fact_files([target.as_path(), lawpack.as_path()])
+            .expect("authority facts load");
+    fs::remove_dir_all(&dir).expect("remove temporary effectful-context directory");
+    context
 }
 
 fn compile_pure_source(source: &str) -> edict_syntax::CoreModule {
