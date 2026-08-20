@@ -645,6 +645,7 @@ struct TypeChecker<'a> {
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
+    inferred_yield_shapes: BTreeMap<(usize, usize), TypeShape>,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -654,6 +655,7 @@ impl<'a> TypeChecker<'a> {
             errors: Vec::new(),
             named_types: BTreeMap::new(),
             core_types: BTreeMap::new(),
+            inferred_yield_shapes: BTreeMap::new(),
         }
     }
 
@@ -2343,10 +2345,16 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         state: &BodyState,
     ) -> Option<TypeShape> {
+        let cache_key = (block.span.start, block.span.end);
+        if let Some(shape) = self.inferred_yield_shapes.get(&cache_key) {
+            return Some(shape.clone());
+        }
         // A yield block may introduce types, locals, effects, and diagnostics, so
         // the complete checker state is the smallest existing isolation boundary.
-        // Discarding this bounded clone keeps inference observational: the real
-        // blocks still lower once, in source order, into the authoritative state.
+        // Discarding this clone keeps inference observational: the real blocks
+        // still lower once, in source order, into the authoritative state. Share
+        // successful nested shape results back into this compilation so a nested
+        // bare-integer branch cannot trigger exponential repeated inference.
         let mut inference_checker = self.clone();
         let inference_error_count = inference_checker.errors.len();
         let mut inference_state = BodyState {
@@ -2359,6 +2367,11 @@ impl<'a> TypeChecker<'a> {
         let shape = inference_checker
             .check_yield_block(intent, output_shape, block, env, &mut inference_state, None)
             .map(|(_, shape)| shape);
+        self.inferred_yield_shapes
+            .append(&mut inference_checker.inferred_yield_shapes);
+        if let Some(shape) = &shape {
+            self.inferred_yield_shapes.insert(cache_key, shape.clone());
+        }
         if shape.is_none() {
             self.errors.extend(
                 inference_checker

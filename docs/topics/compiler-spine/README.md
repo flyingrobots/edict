@@ -94,7 +94,9 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
   Incompatible branch results reject before Core exists. Unsupported effect
   calls and bare effect statements still reject with stable compiler stage and
-  kind identities before Core lowering.
+  kind identities before Core lowering. Bare-integer width inference memoizes
+  successful yield-block shapes within one compilation, so nested valid
+  branches do not cause exponential repeated checking.
   [CSPINE-REQ-032]
   [CSPINE-REQ-012]
 - Duplicate failure keys in an obstruction map reject with

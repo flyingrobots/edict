@@ -1772,6 +1772,33 @@ fn branch_yield_integer_inference_preserves_source_order_local_identities() {
 }
 
 #[test]
+fn nested_branch_yield_integer_inference_remains_bounded() {
+    let mut nested_else = "yield input.value;".to_owned();
+    for depth in (0..24).rev() {
+        nested_else = format!(
+            "let level_{depth} = if true {{ yield 0; }} else {{\n{nested_else}\n}};\n\
+             yield level_{depth};"
+        );
+    }
+    let source = format!(
+        "package a.b@1;\n\
+         type Input = {{ value: U64, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent t(input: Input) returns Output\n\
+           profile p.read\n\
+           basis none\n\
+           budget <= p.tiny {{\n\
+           let selected = if true {{ yield 0; }} else {{\n{nested_else}\n}};\n\
+           return {{ value: selected }};\n\
+         }}"
+    );
+    let module = parse_module(&source).expect("nested branch-yield source parses");
+
+    compile_to_core(&module, &pure_context())
+        .expect("nested bare-integer inference stays within bounded compiler work");
+}
+
+#[test]
 fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
     let source = "package a.b@1;\n\
         use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
