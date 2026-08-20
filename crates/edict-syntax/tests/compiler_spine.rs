@@ -1665,6 +1665,43 @@ fn branch_yield_inside_loop_preserves_cumulative_budget() {
     assert!(errors
         .iter()
         .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+
+    let control = source.replace(
+        "for item in batch bounded 4 {\n\
+require item <= 10u64 else example.TooLarge;\n\
+}\n",
+        "",
+    );
+    assert_ne!(control, source, "calibrated loop removal changes source");
+    let control_module = parse_module(&control).expect("branch-yield budget control source parses");
+    compile_to_core(&control_module, &pure_context())
+        .expect("the same source without branch-local loop work stays in budget");
+}
+
+#[test]
+fn branch_yield_does_not_leak_locals() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true {\n\
+            let branch_local = input.value;\n\
+            yield branch_local;\n\
+          } else {\n\
+            yield input.value;\n\
+          };\n\
+          return { value: branch_local };\n\
+        }";
+    let module = parse_module(source).expect("branch-yield leak source parses");
+    let errors = compile_to_core(&module, &pure_context())
+        .expect_err("branch-yield-local binding must not escape");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
 }
 
 #[test]

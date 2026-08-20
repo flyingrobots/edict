@@ -81,6 +81,17 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   [CSPINE-REQ-015]
 - A branch-yield `let` lowers to a Core branch with one optional result binding;
   each selected block retains its own locals, effects, and yielded result.
+  The accepted shape is:
+
+  ```edict
+  let name = if predicate {
+    supported_statement;
+    yield value;
+  } else {
+    yield other_value;
+  };
+  ```
+
   Incompatible branch results reject before Core exists. Unsupported effect
   calls and bare effect statements still reject with stable compiler stage and
   kind identities before Core lowering.
