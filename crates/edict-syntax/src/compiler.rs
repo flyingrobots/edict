@@ -1142,34 +1142,8 @@ impl<'a> TypeChecker<'a> {
             ));
             return;
         };
-        let (value, core_bound) = match bound {
-            BoundRef::Int { value, .. } => (*value, CoreBound::Literal(*value)),
-            BoundRef::Coord(path) => {
-                let source_coordinate = path.join(".");
-                let Some(fact) = self.resolved.bounds.get(&source_coordinate) else {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        CompilerErrorKind::MissingContextFact,
-                        format!("loop bound `{source_coordinate}` has no compiler context fact"),
-                        span,
-                    ));
-                    return;
-                };
-                if !self.lawpack_is_imported(&fact.lawpack)
-                    || !coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
-                {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        CompilerErrorKind::MissingContextFact,
-                        format!(
-                            "loop bound `{source_coordinate}` is not owned by an exact imported lawpack"
-                        ),
-                        span,
-                    ));
-                    return;
-                }
-                (fact.value, CoreBound::Coordinate(fact.coordinate.clone()))
-            }
+        let Some((value, core_bound)) = self.resolve_loop_bound(bound, span) else {
+            return;
         };
         if value < *max {
             self.errors.push(error(
@@ -1230,6 +1204,37 @@ impl<'a> TypeChecker<'a> {
                 result: CoreExpr::Const(CoreValue::Null),
             },
         });
+    }
+
+    fn resolve_loop_bound(&mut self, bound: &BoundRef, span: Span) -> Option<(u64, CoreBound)> {
+        let BoundRef::Coord(path) = bound else {
+            let BoundRef::Int { value, .. } = bound else {
+                unreachable!("BoundRef is exhaustively matched")
+            };
+            return Some((*value, CoreBound::Literal(*value)));
+        };
+        let source_coordinate = path.join(".");
+        let Some(fact) = self.resolved.bounds.get(&source_coordinate) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("loop bound `{source_coordinate}` has no compiler context fact"),
+                span,
+            ));
+            return None;
+        };
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "loop bound `{source_coordinate}` is not owned by an exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some((fact.value, CoreBound::Coordinate(fact.coordinate.clone())))
     }
 
     fn charge_loop_work(
@@ -2425,16 +2430,29 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
-    fn helper_is_owned(&self, fact: &PureFunctionFact) -> bool {
-        self.lawpack_is_imported(&fact.lawpack)
-            && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
-    }
-
-    fn lawpack_is_imported(&self, lawpack: &ResourceRef) -> bool {
-        self.resolved
-            .imports
-            .iter()
-            .any(|import| import.kind == CoreImportKind::Lawpack && &import.resource == lawpack)
+    fn fact_matches_source_import(
+        &self,
+        source_coordinate: &str,
+        fact_coordinate: &str,
+        lawpack: &ResourceRef,
+    ) -> bool {
+        let Some((source_alias, source_suffix)) = source_coordinate.split_once('.') else {
+            return false;
+        };
+        let Some(fact_suffix) = fact_coordinate
+            .strip_prefix(&lawpack.coordinate)
+            .and_then(|suffix| suffix.strip_prefix('.'))
+        else {
+            return false;
+        };
+        !source_alias.is_empty()
+            && !source_suffix.is_empty()
+            && source_suffix == fact_suffix
+            && self.resolved.imports.iter().any(|import| {
+                import.kind == CoreImportKind::Lawpack
+                    && &import.resource == lawpack
+                    && import.alias.as_deref() == Some(source_alias)
+            })
     }
 
     fn resolve_pure_function(
@@ -2465,7 +2483,7 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        if !self.helper_is_owned(&fact) {
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnresolvedFunction,
@@ -2535,15 +2553,25 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<TypedValue> {
         let predicate = self.check_predicate(cond, env)?;
-        let (then_value, else_value) = if expected.is_none() && is_bare_integer_literal(then) {
-            let else_value = self.check_expr_with_expected(els, env, None)?;
-            let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
-            (then_value, else_value)
-        } else {
-            let then_value = self.check_expr_with_expected(then, env, expected)?;
-            let branch_expectation = expected.unwrap_or(&then_value.ty);
-            let else_value = self.check_expr_with_expected(els, env, Some(branch_expectation))?;
-            (then_value, else_value)
+        let (then_value, else_value) = match expected {
+            Some(expected) => (
+                self.check_expr_with_expected(then, env, Some(expected))?,
+                self.check_expr_with_expected(els, env, Some(expected))?,
+            ),
+            None if is_bare_integer_literal(then) => {
+                let else_value = self.check_expr_with_expected(els, env, None)?;
+                let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
+                (then_value, else_value)
+            }
+            None if is_bare_integer_literal(els) => {
+                let then_value = self.check_expr_with_expected(then, env, None)?;
+                let else_value = self.check_expr_with_expected(els, env, Some(&then_value.ty))?;
+                (then_value, else_value)
+            }
+            None => (
+                self.check_expr_with_expected(then, env, None)?,
+                self.check_expr_with_expected(els, env, None)?,
+            ),
         };
 
         let ty = if let Some(expected) = expected {

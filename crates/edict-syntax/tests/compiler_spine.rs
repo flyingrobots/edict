@@ -593,6 +593,96 @@ fn pure_helper_fact_with_foreign_coordinate_rejects_before_core() {
 }
 
 #[test]
+fn pure_helper_source_qualifier_must_match_the_owning_import() {
+    for (source_coordinate, canonical_coordinate) in [
+        ("wrong.bump", "example.bounds@1.bump"),
+        ("helpers.other", "example.bounds@1.bump"),
+    ] {
+        let source = PURE_HELPER_CALL.replace("helpers.bump", source_coordinate);
+        let module = parse_module(&source).expect("misqualified helper source parses");
+        let context = pure_context().with_pure_function(
+            source_coordinate,
+            PureFunctionFact {
+                lawpack: example_bounds_lawpack(),
+                coordinate: canonical_coordinate.to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "U64".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        );
+
+        let errors = compile_to_core(&module, &context)
+            .expect_err("wrong helper alias or suffix rejects before Core");
+
+        assert!(errors
+            .iter()
+            .any(|error| error.kind == CompilerErrorKind::UnresolvedFunction));
+    }
+}
+
+#[test]
+fn compatible_helper_conditionals_are_branch_order_independent() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: String<max=8>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true then helpers.short(input.value) else helpers.long(input.value);\n\
+          return { value };\n\
+        }";
+    let lawpack = example_bounds_lawpack();
+    let context = pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.Short".to_owned(),
+            definition: "String<max=4,canonical=raw-utf8>".to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.Long".to_owned(),
+            definition: "String<max=8,canonical=raw-utf8>".to_owned(),
+        })
+        .with_pure_function(
+            "helpers.short",
+            PureFunctionFact {
+                lawpack: lawpack.clone(),
+                coordinate: "example.bounds@1.short".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "example.bounds@1.Short".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        )
+        .with_pure_function(
+            "helpers.long",
+            PureFunctionFact {
+                lawpack,
+                coordinate: "example.bounds@1.long".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "example.bounds@1.Long".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        );
+
+    for source in [
+        source.to_owned(),
+        source
+            .replace("helpers.short(input.value)", "helpers.swap(input.value)")
+            .replace("helpers.long(input.value)", "helpers.short(input.value)")
+            .replace("helpers.swap(input.value)", "helpers.long(input.value)"),
+    ] {
+        let module = parse_module(&source).expect("bounded helper conditional parses");
+        compile_to_core(&module, &context)
+            .expect("compatible helper conditional compiles in either branch order");
+    }
+}
+
+#[test]
 fn pure_helper_argument_type_mismatch_rejects_before_core() {
     let module = parse_module(PURE_HELPER_CALL).expect("pure-helper source parses");
     let errors = compile_to_core(&module, &pure_helper_context("Bool"))
@@ -783,6 +873,27 @@ fn coordinate_bound_fact_with_foreign_coordinate_rejects_before_core() {
 
     let errors = compile_to_core(&module, &context)
         .expect_err("foreign bound coordinate rejects despite exact lawpack resource");
+
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
+}
+
+#[test]
+fn coordinate_bound_source_qualifier_must_match_the_owning_import() {
+    let source = coordinate_bounded_loop_source().replace("bounds.maxItems", "wrong.maxItems");
+    let module = parse_module(&source).expect("misqualified coordinate-bound source parses");
+    let context = pure_context().with_bound(
+        "wrong.maxItems",
+        BoundFact {
+            lawpack: example_bounds_lawpack(),
+            coordinate: "example.bounds@1.maxItems".to_owned(),
+            value: 4,
+        },
+    );
+
+    let errors = compile_to_core(&module, &context)
+        .expect_err("wrong coordinate-bound alias rejects before Core");
 
     assert!(errors
         .iter()
