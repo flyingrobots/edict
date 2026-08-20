@@ -69,9 +69,11 @@ The current executable Rust surfaces touching lawpacks are:
 - Canonical manifests and export surfaces reject non-canonical bytes, missing
   or unknown fields, malformed typed digests, substituted exports, invalid
   discriminants, duplicate identities, unmappable failure names, opaque Edict
-  helper bodies, unbounded executable components, and runtime effects with no
-  target-adapter descriptor. The successful wrapper exposes typed values but
-  cannot be fabricated or mutated by callers. [LAWPACKS-REQ-005]
+  helper bodies, signature-incompatible parameters, locals, bindings, calls or
+  results, recursive pure-helper call graphs, unbounded executable components,
+  and runtime effects with no target-adapter descriptor. The successful wrapper
+  exposes typed values but cannot be fabricated or mutated by callers.
+  [LAWPACKS-REQ-005] [LAWPACKS-REQ-014]
 - Dependency validation resolves the complete supplied set by `(id, version)`,
   detects cycles independent of input ordering, then corroborates every edge
   against the exact resolved manifest digest. Public application builds
@@ -87,8 +89,9 @@ The current executable Rust surfaces touching lawpacks are:
   semantic effects is request-only and must carry its own exact budget
   obligation and target configuration. Compilation preserves the
   profile-to-budget association and rejects source that selects another
-  profile's budget. Edict preserves those references but does not interpret
-  their target-owned semantics.
+  profile's budget. The exact adapter budget set also covers every exported
+  pure helper's cost template. Edict preserves those references but does not
+  interpret their target-owned semantics.
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
   [LAWPACKS-REQ-008]

@@ -740,6 +740,7 @@ fn parse_exports(value: &CanonicalValue) -> Result<LawpackExports, Vec<LawpackVa
     let types = parse_array_field(&fields, "types", path, parse_exported_type)?;
     let constants = parse_array_field(&fields, "constants", path, parse_exported_constant)?;
     let pure_functions = parse_array_field(&fields, "pureFunctions", path, parse_pure_function)?;
+    validate_pure_function_signatures(&pure_functions, &types)?;
     validate_pure_function_callees(&pure_functions)?;
     let effects = parse_array_field(&fields, "effects", path, parse_semantic_effect)?;
     validate_callable_coordinates(&pure_functions, &effects)?;
@@ -779,6 +780,602 @@ fn validate_callable_coordinates(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PureLocalSignature {
+    id: String,
+    alpha_name: String,
+    ty: String,
+}
+
+fn validate_pure_function_signatures(
+    pure_functions: &[LawpackPureFunction],
+    exported_types: &[LawpackExportedType],
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    let signatures = pure_functions
+        .iter()
+        .map(|function| (function.coordinate.as_str(), function))
+        .collect::<BTreeMap<_, _>>();
+    let type_definitions = exported_types
+        .iter()
+        .map(|exported| (exported.coordinate.as_str(), exported.definition.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    for (index, function) in pure_functions.iter().enumerate() {
+        let LawpackPureFunctionImplementation::Edict { body } = &function.implementation else {
+            continue;
+        };
+        validate_pure_function_signature(
+            function,
+            body,
+            &format!("exports.pureFunctions[{index}].body"),
+            &signatures,
+            &type_definitions,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_pure_function_signature(
+    function: &LawpackPureFunction,
+    value: &CanonicalValue,
+    path: &str,
+    signatures: &BTreeMap<&str, &LawpackPureFunction>,
+    type_definitions: &BTreeMap<&str, &str>,
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    let fields = pure_map(value, path, &["params", "body"])?;
+    let params = pure_array(
+        required(&fields, "params", path)?,
+        &format!("{path}.params"),
+    )?;
+    if params.len() != function.parameter_types.len() {
+        return Err(pure_body_failure(
+            &format!("{path}.params"),
+            "parameter count equal to the exported signature",
+        ));
+    }
+
+    let mut scope = BTreeMap::new();
+    for (index, (param, expected_type)) in params.iter().zip(&function.parameter_types).enumerate()
+    {
+        let param_path = format!("{path}.params[{index}]");
+        let param = parse_pure_local_signature(param, &param_path)?;
+        ensure_exact_type(&param.ty, expected_type, &format!("{param_path}.type"))?;
+        insert_pure_local(&mut scope, param, &param_path)?;
+    }
+
+    let block_path = format!("{path}.body");
+    let block = pure_map(
+        required(&fields, "body", path)?,
+        &block_path,
+        &["locals", "bindings", "result"],
+    )?;
+    let locals = pure_array(
+        required(&block, "locals", &block_path)?,
+        &format!("{block_path}.locals"),
+    )?;
+    let mut declared_locals = BTreeMap::new();
+    for (index, local) in locals.iter().enumerate() {
+        let local_path = format!("{block_path}.locals[{index}]");
+        let local = parse_pure_local_signature(local, &local_path)?;
+        if scope.contains_key(&local.id) {
+            return Err(pure_body_failure(
+                &local_path,
+                "a local identity disjoint from the function parameters",
+            ));
+        }
+        insert_pure_local(&mut declared_locals, local, &local_path)?;
+    }
+
+    let bindings = pure_array(
+        required(&block, "bindings", &block_path)?,
+        &format!("{block_path}.bindings"),
+    )?;
+    if bindings.len() != declared_locals.len() {
+        return Err(pure_body_failure(
+            &format!("{block_path}.bindings"),
+            "exactly one ordered binding for every declared body local",
+        ));
+    }
+    let mut bound_locals = BTreeSet::new();
+    for (index, binding) in bindings.iter().enumerate() {
+        let binding_path = format!("{block_path}.bindings[{index}]");
+        let binding_fields = pure_map(binding, &binding_path, &["kind", "binding", "value"])?;
+        pure_discriminant(&binding_fields, "kind", &binding_path, "let")?;
+        let binding_ref = parse_pure_local_signature(
+            required(&binding_fields, "binding", &binding_path)?,
+            &format!("{binding_path}.binding"),
+        )?;
+        let Some(declared) = declared_locals.get(&binding_ref.id) else {
+            return Err(pure_body_failure(
+                &format!("{binding_path}.binding"),
+                "an exactly declared body local",
+            ));
+        };
+        if declared != &binding_ref || !bound_locals.insert(binding_ref.id.clone()) {
+            return Err(pure_body_failure(
+                &format!("{binding_path}.binding"),
+                "the exact next unbound body local",
+            ));
+        }
+        validate_typed_core_expr(
+            required(&binding_fields, "value", &binding_path)?,
+            &format!("{binding_path}.value"),
+            &scope,
+            signatures,
+            type_definitions,
+            Some(&binding_ref.ty),
+        )?;
+        scope.insert(binding_ref.id.clone(), binding_ref);
+    }
+
+    validate_typed_core_expr(
+        required(&block, "result", &block_path)?,
+        &format!("{block_path}.result"),
+        &scope,
+        signatures,
+        type_definitions,
+        Some(&function.return_type),
+    )?;
+    Ok(())
+}
+
+fn parse_pure_local_signature(
+    value: &CanonicalValue,
+    path: &str,
+) -> Result<PureLocalSignature, Vec<LawpackValidationFailure>> {
+    let fields = pure_map(value, path, &["id", "alphaName", "type"])?;
+    Ok(PureLocalSignature {
+        id: pure_nonempty_text(&fields, "id", path)?,
+        alpha_name: pure_nonempty_text(&fields, "alphaName", path)?,
+        ty: pure_nonempty_text(&fields, "type", path)?,
+    })
+}
+
+fn insert_pure_local(
+    locals: &mut BTreeMap<String, PureLocalSignature>,
+    local: PureLocalSignature,
+    path: &str,
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    if locals.insert(local.id.clone(), local).is_some() {
+        return Err(pure_body_failure(path, "a unique local identity"));
+    }
+    Ok(())
+}
+
+// Keeping the closed Core expression algebra together makes it auditable
+// against `docs/abi/edict-core.cddl`; each arm applies the same signature scope.
+#[allow(clippy::too_many_lines)]
+fn validate_typed_core_expr(
+    value: &CanonicalValue,
+    path: &str,
+    scope: &BTreeMap<String, PureLocalSignature>,
+    signatures: &BTreeMap<&str, &LawpackPureFunction>,
+    type_definitions: &BTreeMap<&str, &str>,
+    expected: Option<&str>,
+) -> Result<Option<String>, Vec<LawpackValidationFailure>> {
+    let fields = string_keyed_map(value, path).map_err(as_pure_body_failure)?;
+    let kind = required_text(&fields, "kind", path).map_err(as_pure_body_failure)?;
+    let actual = match kind.as_str() {
+        "local" => {
+            let reference = parse_pure_local_signature(
+                required(&fields, "ref", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.ref"),
+            )?;
+            let Some(in_scope) = scope.get(&reference.id) else {
+                return Err(pure_body_failure(
+                    &format!("{path}.ref"),
+                    "an in-scope local reference",
+                ));
+            };
+            if in_scope != &reference {
+                return Err(pure_body_failure(
+                    &format!("{path}.ref"),
+                    "the exact in-scope local identity, alpha name, and type",
+                ));
+            }
+            Some(reference.ty)
+        }
+        "const" => infer_core_value_type(
+            required(&fields, "value", path).map_err(as_pure_body_failure)?,
+            &format!("{path}.value"),
+            expected,
+            type_definitions,
+        )?,
+        "record" => {
+            require_type_family(expected, type_definitions, "record", path)?;
+            let values = string_keyed_map(
+                required(&fields, "fields", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.fields"),
+            )
+            .map_err(as_pure_body_failure)?;
+            for (field, value) in values {
+                validate_typed_core_expr(
+                    value,
+                    &format!("{path}.fields.{field}"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                    None,
+                )?;
+            }
+            expected.map(str::to_owned)
+        }
+        "field" => {
+            validate_typed_core_expr(
+                required(&fields, "base", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.base"),
+                scope,
+                signatures,
+                type_definitions,
+                None,
+            )?;
+            expected.map(str::to_owned)
+        }
+        "variant" => {
+            let ty = required_nonempty_text(&fields, "type", path).map_err(as_pure_body_failure)?;
+            if let Some(payload) = fields.get("payload") {
+                validate_typed_core_expr(
+                    payload,
+                    &format!("{path}.payload"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                    None,
+                )?;
+            }
+            Some(ty)
+        }
+        "match" => {
+            validate_typed_core_expr(
+                required(&fields, "scrutinee", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.scrutinee"),
+                scope,
+                signatures,
+                type_definitions,
+                None,
+            )?;
+            let arms = pure_array(
+                required(&fields, "arms", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.arms"),
+            )?;
+            let mut inferred = expected.map(str::to_owned);
+            for (index, arm) in arms.iter().enumerate() {
+                let arm_path = format!("{path}.arms[{index}]");
+                let arm_fields = pure_map(arm, &arm_path, &["case", "binder", "body"])?;
+                let mut arm_scope = scope.clone();
+                if let Some(binder) = arm_fields.get("binder") {
+                    let binder = parse_pure_local_signature(binder, &format!("{arm_path}.binder"))?;
+                    insert_pure_local(&mut arm_scope, binder, &format!("{arm_path}.binder"))?;
+                }
+                let arm_type = validate_typed_core_expr(
+                    required(&arm_fields, "body", &arm_path).map_err(as_pure_body_failure)?,
+                    &format!("{arm_path}.body"),
+                    &arm_scope,
+                    signatures,
+                    type_definitions,
+                    inferred.as_deref(),
+                )?;
+                if inferred.is_none() {
+                    inferred = arm_type;
+                }
+            }
+            inferred
+        }
+        "call" => {
+            let callee =
+                required_nonempty_text(&fields, "callee", path).map_err(as_pure_body_failure)?;
+            let Some(signature) = signatures.get(callee.as_str()) else {
+                return Err(pure_body_failure(
+                    &format!("{path}.callee"),
+                    "the coordinate of an exported pure function",
+                ));
+            };
+            let type_args = pure_array(
+                required(&fields, "typeArgs", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.typeArgs"),
+            )?;
+            if type_args.len() != signature.type_parameters.len() {
+                return Err(pure_body_failure(
+                    &format!("{path}.typeArgs"),
+                    "type argument count equal to the callee signature",
+                ));
+            }
+            let type_args = type_args
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    nonempty_text(value, &format!("{path}.typeArgs[{index}]"))
+                        .map_err(as_pure_body_failure)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let substitutions = signature
+                .type_parameters
+                .iter()
+                .zip(&type_args)
+                .map(|(parameter, argument)| (parameter.as_str(), argument.as_str()))
+                .collect::<BTreeMap<_, _>>();
+            let args = pure_array(
+                required(&fields, "args", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.args"),
+            )?;
+            if args.len() != signature.parameter_types.len() {
+                return Err(pure_body_failure(
+                    &format!("{path}.args"),
+                    "argument count equal to the callee signature",
+                ));
+            }
+            for (index, (arg, parameter_type)) in
+                args.iter().zip(&signature.parameter_types).enumerate()
+            {
+                let parameter_type = substitutions
+                    .get(parameter_type.as_str())
+                    .copied()
+                    .unwrap_or(parameter_type);
+                validate_typed_core_expr(
+                    arg,
+                    &format!("{path}.args[{index}]"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                    Some(parameter_type),
+                )?;
+            }
+            Some(
+                substitutions
+                    .get(signature.return_type.as_str())
+                    .copied()
+                    .unwrap_or(signature.return_type.as_str())
+                    .to_owned(),
+            )
+        }
+        "list" => {
+            require_type_family(expected, type_definitions, "list", path)?;
+            let values = pure_array(
+                required(&fields, "values", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.values"),
+            )?;
+            for (index, value) in values.iter().enumerate() {
+                validate_typed_core_expr(
+                    value,
+                    &format!("{path}.values[{index}]"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                    None,
+                )?;
+            }
+            expected.map(str::to_owned)
+        }
+        "map" => {
+            require_type_family(expected, type_definitions, "map", path)?;
+            let entries = pure_array(
+                required(&fields, "entries", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.entries"),
+            )?;
+            for (index, entry) in entries.iter().enumerate() {
+                let pair = pure_array(entry, &format!("{path}.entries[{index}]"))?;
+                for (part, value) in pair.iter().enumerate() {
+                    validate_typed_core_expr(
+                        value,
+                        &format!("{path}.entries[{index}][{part}]"),
+                        scope,
+                        signatures,
+                        type_definitions,
+                        None,
+                    )?;
+                }
+            }
+            expected.map(str::to_owned)
+        }
+        "if" => {
+            validate_typed_core_predicate(
+                required(&fields, "predicate", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.predicate"),
+                scope,
+                signatures,
+                type_definitions,
+            )?;
+            let then_type = validate_typed_core_expr(
+                required(&fields, "then", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.then"),
+                scope,
+                signatures,
+                type_definitions,
+                expected,
+            )?;
+            let branch_expected = expected.or(then_type.as_deref());
+            validate_typed_core_expr(
+                required(&fields, "else", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.else"),
+                scope,
+                signatures,
+                type_definitions,
+                branch_expected,
+            )?;
+            expected.map(str::to_owned).or(then_type)
+        }
+        _ => return Err(pure_body_failure(path, "a typed Core pure expression")),
+    };
+    if let (Some(actual), Some(expected)) = (actual.as_deref(), expected) {
+        ensure_exact_type(actual, expected, path)?;
+    }
+    Ok(actual)
+}
+
+fn validate_typed_core_predicate(
+    value: &CanonicalValue,
+    path: &str,
+    scope: &BTreeMap<String, PureLocalSignature>,
+    signatures: &BTreeMap<&str, &LawpackPureFunction>,
+    type_definitions: &BTreeMap<&str, &str>,
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    let fields = string_keyed_map(value, path).map_err(as_pure_body_failure)?;
+    let kind = required_text(&fields, "kind", path).map_err(as_pure_body_failure)?;
+    match kind.as_str() {
+        "true" | "false" => Ok(()),
+        "not" => validate_typed_core_predicate(
+            required(&fields, "value", path).map_err(as_pure_body_failure)?,
+            &format!("{path}.value"),
+            scope,
+            signatures,
+            type_definitions,
+        ),
+        "all" | "any" => {
+            let values = pure_array(
+                required(&fields, "values", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.values"),
+            )?;
+            for (index, predicate) in values.iter().enumerate() {
+                validate_typed_core_predicate(
+                    predicate,
+                    &format!("{path}.values[{index}]"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                )?;
+            }
+            Ok(())
+        }
+        "compare" => {
+            let left = validate_typed_core_expr(
+                required(&fields, "left", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.left"),
+                scope,
+                signatures,
+                type_definitions,
+                None,
+            )?;
+            validate_typed_core_expr(
+                required(&fields, "right", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.right"),
+                scope,
+                signatures,
+                type_definitions,
+                left.as_deref(),
+            )?;
+            Ok(())
+        }
+        "call" => {
+            let args = pure_array(
+                required(&fields, "args", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.args"),
+            )?;
+            for (index, arg) in args.iter().enumerate() {
+                validate_typed_core_expr(
+                    arg,
+                    &format!("{path}.args[{index}]"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                    None,
+                )?;
+            }
+            Ok(())
+        }
+        "obstruction" => {
+            validate_typed_core_expr(
+                required(&fields, "payload", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.payload"),
+                scope,
+                signatures,
+                type_definitions,
+                None,
+            )?;
+            Ok(())
+        }
+        _ => Err(pure_body_failure(path, "a typed Core predicate")),
+    }
+}
+
+fn infer_core_value_type(
+    value: &CanonicalValue,
+    path: &str,
+    expected: Option<&str>,
+    type_definitions: &BTreeMap<&str, &str>,
+) -> Result<Option<String>, Vec<LawpackValidationFailure>> {
+    let fields = string_keyed_map(value, path).map_err(as_pure_body_failure)?;
+    let kind = required_text(&fields, "kind", path).map_err(as_pure_body_failure)?;
+    let inferred = match kind.as_str() {
+        "bool" => Some("Bool".to_owned()),
+        "int" => {
+            Some(required_nonempty_text(&fields, "width", path).map_err(as_pure_body_failure)?)
+        }
+        "string" => {
+            require_type_family(expected, type_definitions, "string", path)?;
+            expected.map(str::to_owned)
+        }
+        "bytes" => {
+            require_type_family(expected, type_definitions, "bytes", path)?;
+            expected.map(str::to_owned)
+        }
+        "null" => {
+            require_type_family(expected, type_definitions, "option", path)?;
+            expected.map(str::to_owned)
+        }
+        "record" => {
+            require_type_family(expected, type_definitions, "record", path)?;
+            expected.map(str::to_owned)
+        }
+        "variant" => {
+            Some(required_nonempty_text(&fields, "type", path).map_err(as_pure_body_failure)?)
+        }
+        "list" => {
+            require_type_family(expected, type_definitions, "list", path)?;
+            expected.map(str::to_owned)
+        }
+        "map" => {
+            require_type_family(expected, type_definitions, "map", path)?;
+            expected.map(str::to_owned)
+        }
+        "capability" => expected.map(str::to_owned),
+        _ => return Err(pure_body_failure(path, "a typed Core canonical value")),
+    };
+    Ok(inferred)
+}
+
+fn ensure_exact_type(
+    actual: &str,
+    expected: &str,
+    path: &str,
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    if actual == expected {
+        Ok(())
+    } else {
+        Err(pure_body_failure(
+            path,
+            &format!("type `{expected}` from the exported helper signature"),
+        ))
+    }
+}
+
+fn require_type_family(
+    expected: Option<&str>,
+    type_definitions: &BTreeMap<&str, &str>,
+    family: &str,
+    path: &str,
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    let Some(expected) = expected else {
+        return Ok(());
+    };
+    let definition = type_definitions.get(expected).copied().unwrap_or(expected);
+    let matches = match family {
+        "string" => definition == "String" || definition.starts_with("String<"),
+        "bytes" => definition == "Bytes" || definition.starts_with("Bytes<"),
+        "option" => definition.starts_with("Option<"),
+        "record" => definition.trim_start().starts_with('{'),
+        "list" => definition.starts_with("List<"),
+        "map" => definition.starts_with("Map<"),
+        _ => false,
+    };
+    if matches {
+        Ok(())
+    } else {
+        Err(pure_body_failure(
+            path,
+            &format!("a {family} value compatible with type `{expected}`"),
+        ))
+    }
+}
+
 fn validate_pure_function_callees(
     pure_functions: &[LawpackPureFunction],
 ) -> Result<(), Vec<LawpackValidationFailure>> {
@@ -795,7 +1392,97 @@ fn validate_pure_function_callees(
             )?;
         }
     }
+    validate_pure_function_call_graph(pure_functions)
+}
+
+fn validate_pure_function_call_graph(
+    pure_functions: &[LawpackPureFunction],
+) -> Result<(), Vec<LawpackValidationFailure>> {
+    let mut call_graph = pure_functions
+        .iter()
+        .map(|function| (function.coordinate.clone(), BTreeSet::new()))
+        .collect::<BTreeMap<_, _>>();
+    for function in pure_functions {
+        let LawpackPureFunctionImplementation::Edict { body } = &function.implementation else {
+            continue;
+        };
+        let callees = call_graph
+            .get_mut(&function.coordinate)
+            .expect("every exported pure function has one call-graph node");
+        collect_pure_callees(body, callees);
+    }
+
+    let mut visiting = BTreeSet::new();
+    let mut visited = BTreeSet::new();
+    for coordinate in call_graph.keys() {
+        if visit_pure_function(coordinate, &call_graph, &mut visiting, &mut visited) {
+            return Err(pure_body_failure(
+                "exports.pureFunctions",
+                "an acyclic pure-helper call graph",
+            ));
+        }
+    }
     Ok(())
+}
+
+fn collect_pure_callees(value: &CanonicalValue, callees: &mut BTreeSet<String>) {
+    match value {
+        CanonicalValue::Array(values) => {
+            for value in values {
+                collect_pure_callees(value, callees);
+            }
+        }
+        CanonicalValue::Map(entries) => {
+            let kind = entries.iter().find_map(|(key, value)| match (key, value) {
+                (CanonicalValue::Text(key), CanonicalValue::Text(value)) if key == "kind" => {
+                    Some(value.as_str())
+                }
+                _ => None,
+            });
+            if kind == Some("call") {
+                if let Some(callee) = entries.iter().find_map(|(key, value)| match (key, value) {
+                    (CanonicalValue::Text(key), CanonicalValue::Text(value)) if key == "callee" => {
+                        Some(value.clone())
+                    }
+                    _ => None,
+                }) {
+                    callees.insert(callee);
+                }
+            }
+            for (_, value) in entries {
+                collect_pure_callees(value, callees);
+            }
+        }
+        CanonicalValue::Null
+        | CanonicalValue::Bool(_)
+        | CanonicalValue::Integer(_)
+        | CanonicalValue::Bytes(_)
+        | CanonicalValue::Text(_) => {}
+    }
+}
+
+fn visit_pure_function(
+    coordinate: &str,
+    call_graph: &BTreeMap<String, BTreeSet<String>>,
+    visiting: &mut BTreeSet<String>,
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    if visited.contains(coordinate) {
+        return false;
+    }
+    if !visiting.insert(coordinate.to_owned()) {
+        return true;
+    }
+    if call_graph.get(coordinate).is_some_and(|callees| {
+        callees
+            .iter()
+            .any(|callee| visit_pure_function(callee, call_graph, visiting, visited))
+    }) {
+        return true;
+    }
+    visiting.remove(coordinate);
+    visited.insert(coordinate.to_owned());
+    false
 }
 
 fn validate_pure_callees_in_value(

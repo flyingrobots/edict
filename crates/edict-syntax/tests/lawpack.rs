@@ -459,6 +459,57 @@ fn request_only_profile_requires_an_exact_target_configuration() {
 }
 
 #[test]
+fn adapter_budget_closure_includes_dedicated_pure_helper_cost_templates() {
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        ("ref", local_ref("arg:0", "value", "U64")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    let mut helper = pure_function_with_types(
+        "hello.echo@1.identityU64",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", identity_body),
+    );
+    replace_field(
+        &mut helper,
+        "costTemplate",
+        text("hello.echo@1.identityBudget"),
+    );
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(helper);
+
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let helper_budget = map_mut(field_mut(&mut adapter, "budgets"))
+        .first()
+        .map(|(_coordinate, budget)| budget.clone())
+        .expect("existing adapter budget");
+    map_mut(field_mut(&mut adapter, "budgets"))
+        .push((text("hello.echo@1.identityBudget"), helper_budget));
+
+    let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode adapter");
+    decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect("dedicated helper budget belongs to the exact adapter closure");
+}
+
+#[test]
 fn lawpack_adapter_corroborates_footprint_cost_and_failure_obligations() {
     for (field, replacement, expected) in [
         (
@@ -1209,6 +1260,299 @@ fn edict_pure_helpers_reject_effectful_and_unresolved_callees() {
             failure_kinds(&failures),
             vec![LawpackValidationFailureKind::InvalidPureFunctionBody],
             "callee {callee}"
+        );
+    }
+}
+
+#[test]
+fn edict_pure_helper_body_must_match_its_exported_signature() {
+    let body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("const")),
+                        (
+                            "value",
+                            map([("kind", text("string")), ("value", text("wrong"))]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidIdentity",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("helper body return type must match its exported signature");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+#[test]
+fn edict_pure_helper_signature_checks_params_locals_bindings_and_calls() {
+    let cases = [
+        (
+            "parameter",
+            map([
+                (
+                    "params",
+                    CanonicalValue::Array(vec![local_ref("arg:0", "value", "Bool")]),
+                ),
+                (
+                    "body",
+                    map([
+                        ("locals", CanonicalValue::Array(Vec::new())),
+                        ("bindings", CanonicalValue::Array(Vec::new())),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:0", "value", "Bool")),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "local",
+            map([
+                (
+                    "params",
+                    CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+                ),
+                (
+                    "body",
+                    map([
+                        ("locals", CanonicalValue::Array(Vec::new())),
+                        ("bindings", CanonicalValue::Array(Vec::new())),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:missing", "value", "U64")),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "binding",
+            map([
+                ("params", CanonicalValue::Array(Vec::new())),
+                (
+                    "body",
+                    map([
+                        (
+                            "locals",
+                            CanonicalValue::Array(vec![local_ref("local:0", "value", "U64")]),
+                        ),
+                        (
+                            "bindings",
+                            CanonicalValue::Array(vec![map([
+                                ("kind", text("let")),
+                                ("binding", local_ref("local:0", "value", "U64")),
+                                (
+                                    "value",
+                                    map([
+                                        ("kind", text("const")),
+                                        (
+                                            "value",
+                                            map([
+                                                ("kind", text("bool")),
+                                                ("value", CanonicalValue::Bool(true)),
+                                            ]),
+                                        ),
+                                    ]),
+                                ),
+                            ])]),
+                        ),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("local:0", "value", "U64")),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ];
+
+    for (label, body) in cases {
+        let mut exports = hello_echo_exports();
+        let parameter_types: &[&str] = if label == "binding" { &[] } else { &["U64"] };
+        array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+            "hello.echo@1.invalidBody",
+            parameter_types,
+            "U64",
+            "edict",
+            ("body", body),
+        ));
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+
+        let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+            .expect_err("invalid helper signature closure must reject");
+        assert_eq!(
+            failure_kinds(&failures),
+            vec![LawpackValidationFailureKind::InvalidPureFunctionBody],
+            "{label}"
+        );
+    }
+
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        ("ref", local_ref("arg:0", "value", "U64")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let caller_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "Bool")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("call")),
+                        ("callee", text("hello.echo@1.identityU64")),
+                        ("typeArgs", CanonicalValue::Array(Vec::new())),
+                        (
+                            "args",
+                            CanonicalValue::Array(vec![map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:0", "value", "Bool")),
+                            ])]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    let functions = array_mut(field_mut(&mut exports, "pureFunctions"));
+    functions.push(pure_function_with_types(
+        "hello.echo@1.identityU64",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", identity_body),
+    ));
+    functions.push(pure_function_with_types(
+        "hello.echo@1.invalidCaller",
+        &["Bool"],
+        "U64",
+        "edict",
+        ("body", caller_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("call arguments must match the callee signature");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
+fn edict_pure_helper_call_graph_must_be_acyclic() {
+    for (coordinates, callees) in [
+        (
+            vec!["hello.echo@1.selfRecursive"],
+            vec!["hello.echo@1.selfRecursive"],
+        ),
+        (
+            vec!["hello.echo@1.mutualLeft", "hello.echo@1.mutualRight"],
+            vec!["hello.echo@1.mutualRight", "hello.echo@1.mutualLeft"],
+        ),
+    ] {
+        let mut exports = hello_echo_exports();
+        for (coordinate, callee) in coordinates.iter().zip(&callees) {
+            let body = map([
+                ("params", CanonicalValue::Array(Vec::new())),
+                (
+                    "body",
+                    map([
+                        ("locals", CanonicalValue::Array(Vec::new())),
+                        ("bindings", CanonicalValue::Array(Vec::new())),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("call")),
+                                ("callee", text(callee)),
+                                ("typeArgs", CanonicalValue::Array(Vec::new())),
+                                ("args", CanonicalValue::Array(Vec::new())),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]);
+            array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+                coordinate,
+                &[],
+                "U64",
+                "edict",
+                ("body", body),
+            ));
+        }
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+
+        let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+            .expect_err("recursive helper call graph must reject");
+
+        assert_eq!(
+            failure_kinds(&failures),
+            vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
         );
     }
 }

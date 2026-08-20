@@ -548,7 +548,12 @@ fn validate_adapter_closure(
     )?;
 
     let intrinsic_prefix = format!("{}.", descriptor.accepted_target_profile.id);
-    let mut required_budgets = BTreeSet::new();
+    let mut required_budgets = bundle
+        .exports()
+        .pure_functions
+        .iter()
+        .map(|function| function.cost_template.as_str())
+        .collect::<BTreeSet<_>>();
     for (coordinate, effect) in effects {
         let exported = runtime_effects.get(coordinate.as_str()).ok_or_else(|| {
             one(failure(
