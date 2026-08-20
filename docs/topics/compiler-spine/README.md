@@ -42,8 +42,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   basis, `budget <=`, `where` predicates, pure `let` bindings, one annotated
   effectful `let ... else` shape, lowerable `require ... else` obstruction
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
-  field access, record literals, equality predicates, and string concatenation.
-  [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017]
+  field access, record literals, equality predicates, string concatenation, and
+  pure conditional expressions whose branches have compatible bounded types.
+  Statement conditionals lower to isolated branch blocks, and literal- or
+  coordinate-bounded loops lower over bounded lists when the resolved cap
+  covers the list maximum and cumulative sequential/nested loop work stays
+  within the operation step budget.
+  [CSPINE-REQ-006] [CSPINE-REQ-011] [CSPINE-REQ-017] [CSPINE-REQ-023]
+  [CSPINE-REQ-025] [CSPINE-REQ-026]
 - The fixed-width source scalar set is `I32`, `I64`, `U32`, and `U64`.
   Explicitly suffixed literals retain their exact width and signedness;
   bare literals inherit an unambiguous expected width from supported comparison,
@@ -85,6 +91,27 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 - File-backed authority facts can supply the same profile, budget, profile
   write-class, and effect write-class facts consumed by the compiler spine.
   [CSPINE-REQ-010]
+- Pure-helper calls resolve only from compiler facts owned by an exact imported
+  lawpack. The preparation path derives those facts, including primitive or
+  bounded exported signature types, from the validated export closure, while
+  Core records the canonical helper coordinate. Missing helpers, substituted
+  import digests, mismatched source aliases or export suffixes, incompatible
+  arguments, unowned or digest-substituted cost facts, and missing cost templates
+  reject before Core. Conservative helper steps, allocation, and output costs
+  add across sequential calls, take the component-wise maximum across exclusive
+  branches, and multiply through enclosing bounded loops. Helper steps and
+  structural loop work combine on each control-flow path before exclusive
+  branch maxima are selected, preserving branch correlation under the shared
+  operation step budget. Imported type-alias traversal rejects beyond a
+  deterministic depth of 128 rather than risking unbounded recursion. The imported lawpack
+  digest remains the helper implementation, cost, and type-closure identity.
+  [CSPINE-REQ-024]
+  [CSPINE-REQ-029] [CSPINE-REQ-031]
+- Coordinate loop bounds resolve only from explicit compiler facts. Exact
+  lawpack preparation projects exported `U32` and `U64` constants through the
+  source alias, uses their numeric values for static soundness and budget
+  checks, and preserves their canonical exported coordinates in Core.
+  [CSPINE-REQ-027]
 - The lowerer output carries no embedded canonical bytes, exact digest, target
   IR, or admission fields. Canonical encoding is a separate Core IR surface, and
   reviewed golden bytes and exact digests are separate Core IR artifacts.

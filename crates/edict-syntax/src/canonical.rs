@@ -784,15 +784,11 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
         .filter(|import| import.kind == CoreImportKind::Capability)
         .map(|import| &import.resource)
         .collect::<Vec<_>>();
-    for request in module
-        .intents
-        .values()
-        .flat_map(|intent| &intent.body.nodes)
-        .filter_map(|node| match node {
-            CoreNode::ExternalActionRequest { operation, .. } => Some(operation),
-            CoreNode::Let { .. } | CoreNode::Require { .. } | CoreNode::Effect { .. } => None,
-        })
-    {
+    let mut requests = Vec::new();
+    for intent in module.intents.values() {
+        collect_request_operations(&intent.body, &mut requests, 0)?;
+    }
+    for request in requests {
         if !capability_imports.contains(&request) {
             return Err(CanonicalError::new(
                 CanonicalErrorKind::UnsupportedValue,
@@ -833,6 +829,37 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
             sorted_text_set(module.required_core_capabilities.iter().map(String::as_str)),
         ),
     ]))
+}
+
+fn collect_request_operations<'a>(
+    block: &'a CoreBlock,
+    out: &mut Vec<&'a ResourceRef>,
+    depth: usize,
+) -> Result<(), CanonicalError> {
+    if depth > MAX_CANONICAL_NESTING_DEPTH {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::NestingLimitExceeded,
+            format!(
+                "Core request traversal nesting exceeds maximum depth {MAX_CANONICAL_NESTING_DEPTH}"
+            ),
+        ));
+    }
+    for node in &block.nodes {
+        match node {
+            CoreNode::ExternalActionRequest { operation, .. } => out.push(operation),
+            CoreNode::For { body, .. } => collect_request_operations(body, out, depth + 1)?,
+            CoreNode::Branch {
+                then_block,
+                else_block,
+                ..
+            } => {
+                collect_request_operations(then_block, out, depth + 1)?;
+                collect_request_operations(else_block, out, depth + 1)?;
+            }
+            CoreNode::Let { .. } | CoreNode::Require { .. } | CoreNode::Effect { .. } => {}
+        }
+    }
+    Ok(())
 }
 
 fn core_import_value(import: &CoreImport) -> Result<CanonicalValue, CanonicalError> {
@@ -1068,6 +1095,39 @@ fn core_node_value(node: &CoreNode) -> Result<CanonicalValue, CanonicalError> {
             ("state", text("awaitingSettlement")),
             ("settlementAdmission", text("schemaRequired")),
         ])),
+        CoreNode::For {
+            binder,
+            iter,
+            bound,
+            body,
+        } => Ok(map([
+            ("kind", text("for")),
+            ("binder", local_ref_value(binder)),
+            ("iter", core_expr_value(iter)?),
+            ("bound", core_bound_value(bound)),
+            ("body", core_block_value(body)?),
+        ])),
+        CoreNode::Branch {
+            predicate,
+            then_block,
+            else_block,
+        } => Ok(map([
+            ("kind", text("branch")),
+            ("predicate", core_predicate_value(predicate)?),
+            ("then", core_block_value(then_block)?),
+            ("else", core_block_value(else_block)?),
+        ])),
+    }
+}
+
+fn core_bound_value(bound: &crate::core_ir::CoreBound) -> CanonicalValue {
+    match bound {
+        crate::core_ir::CoreBound::Literal(value) => {
+            map([("kind", text("literal")), ("value", uint(*value))])
+        }
+        crate::core_ir::CoreBound::Coordinate(reference) => {
+            map([("kind", text("coordinate")), ("ref", text(reference))])
+        }
     }
 }
 
@@ -1156,6 +1216,16 @@ fn core_expr_value(expr: &CoreExpr) -> Result<CanonicalValue, CanonicalError> {
                 array(type_args.iter().map(String::as_str).map(text)),
             ),
             ("args", array_results(args.iter().map(core_expr_value))?),
+        ]),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => map([
+            ("kind", text("if")),
+            ("predicate", core_predicate_value(predicate)?),
+            ("then", core_expr_value(then_value)?),
+            ("else", core_expr_value(else_value)?),
         ]),
     })
 }

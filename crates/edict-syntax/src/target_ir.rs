@@ -654,6 +654,18 @@ fn lower_node(
             state,
             failures,
         ),
+        CoreNode::For { .. } => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "for".to_owned(),
+        }),
+        CoreNode::Branch { .. } => failures.push(TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+            intent: Some(intent_name.to_owned()),
+            node_index: Some(node_index),
+            detail: "branch".to_owned(),
+        }),
     }
 }
 
@@ -763,6 +775,15 @@ fn expr_references_step_output(expr: &CoreExpr, step_outputs: &BTreeSet<String>)
         CoreExpr::Call { args, .. } => args
             .iter()
             .any(|arg| expr_references_step_output(arg, step_outputs)),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            predicate_references_step_output(predicate, step_outputs)
+                || expr_references_step_output(then_value, step_outputs)
+                || expr_references_step_output(else_value, step_outputs)
+        }
     }
 }
 

@@ -12,11 +12,11 @@ use crate::ast::{
     TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBudget,
-    CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm,
-    CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
-    CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
+    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBound,
+    CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent,
+    CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
+    CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
+    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -38,6 +38,8 @@ pub enum CompilerErrorKind {
     MissingContextFact,
     UnsupportedSourceShape,
     UnresolvedType,
+    UnresolvedFunction,
+    InvalidBound,
     UnknownField,
     TypeMismatch,
     ExpectedPredicate,
@@ -45,6 +47,45 @@ pub enum CompilerErrorKind {
     UnrequestableExternalOperation,
     DuplicateObstructionFailure,
     DuplicateObstructionPayloadField,
+}
+
+/// Deterministic signature and canonical identity for one imported pure helper.
+///
+/// The owning digest-bound lawpack remains the source of executable helper
+/// semantics. This fact only makes its reviewed signature and canonical export
+/// coordinate available to source resolution and type checking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PureFunctionFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub type_parameters: Vec<String>,
+    pub parameter_types: Vec<String>,
+    pub return_type: String,
+    pub cost_template: String,
+}
+
+/// Canonical identity and Core definition for one imported lawpack type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeShapeFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub definition: String,
+}
+
+/// Canonical identity plus numeric value for one imported static bound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub value: u64,
+}
+
+/// Conservative pure-helper cost owned by one exact imported lawpack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PureHelperCostFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub budget: CoreBudget,
 }
 
 /// A compiler-spine failure with stable stage/kind identity.
@@ -66,6 +107,10 @@ pub struct CompilerContext {
     operation_profile_write_classes: BTreeMap<String, BTreeSet<WriteClass>>,
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
+    pure_functions: BTreeMap<String, PureFunctionFact>,
+    pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
+    type_shapes: BTreeMap<String, TypeShapeFact>,
+    bounds: BTreeMap<String, BoundFact>,
     budgets: BTreeMap<String, CoreBudget>,
 }
 
@@ -125,6 +170,39 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub fn with_pure_function(
+        mut self,
+        source_coordinate: impl Into<String>,
+        fact: PureFunctionFact,
+    ) -> Self {
+        self.pure_functions.insert(source_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
+    pub fn with_pure_helper_cost(
+        mut self,
+        source_coordinate: impl Into<String>,
+        fact: PureHelperCostFact,
+    ) -> Self {
+        self.pure_helper_costs
+            .insert(source_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
+    pub fn with_type_shape(mut self, fact: TypeShapeFact) -> Self {
+        self.type_shapes.insert(fact.coordinate.clone(), fact);
+        self
+    }
+
+    #[must_use]
+    pub fn with_bound(mut self, source_coordinate: impl Into<String>, fact: BoundFact) -> Self {
+        self.bounds.insert(source_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_budget(mut self, source_coordinate: impl Into<String>, budget: CoreBudget) -> Self {
         self.budgets.insert(source_coordinate.into(), budget);
         self
@@ -137,6 +215,11 @@ pub struct ResolvedModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
+    pub pure_functions: BTreeMap<String, PureFunctionFact>,
+    pub pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
+    pub type_shapes: BTreeMap<String, TypeShapeFact>,
+    pub bounds: BTreeMap<String, BoundFact>,
+    pub budgets: BTreeMap<String, CoreBudget>,
     pub types: Vec<ResolvedTypeDecl>,
     pub intents: Vec<ResolvedIntent>,
 }
@@ -246,6 +329,11 @@ pub fn resolve_module(
             coordinate,
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
+            pure_functions: context.pure_functions.clone(),
+            pure_helper_costs: context.pure_helper_costs.clone(),
+            type_shapes: context.type_shapes.clone(),
+            bounds: context.bounds.clone(),
+            budgets: context.budgets.clone(),
             types,
             intents,
         },
@@ -421,6 +509,7 @@ enum TypeKind {
     Int { width: String },
     String { max: u64, canonical: String },
     Bytes { max: u64 },
+    List { item: Box<TypeShape>, max: u64 },
     Record(BTreeMap<String, TypeShape>),
     ExternalActionRequest { settlement: Box<TypeShape> },
 }
@@ -437,6 +526,10 @@ impl TypeShape {
                 canonical: canonical.clone(),
             },
             TypeKind::Bytes { max } => CoreType::Bytes { max: *max },
+            TypeKind::List { item, max } => CoreType::List {
+                item: item.value_type_coord(),
+                max: *max,
+            },
             TypeKind::Record(fields) => CoreType::Record {
                 fields: fields
                     .iter()
@@ -455,6 +548,7 @@ impl TypeShape {
             TypeKind::Int { width } => width.clone(),
             TypeKind::String { max, canonical } => string_type_coord(*max, canonical),
             TypeKind::Bytes { max } => bytes_type_coord(*max),
+            TypeKind::List { item, max } => list_type_coord(&item.value_type_coord(), *max),
             TypeKind::Record(_) | TypeKind::ExternalActionRequest { .. } => self.coord.clone(),
         }
     }
@@ -466,12 +560,68 @@ struct TypedValue {
     ty: TypeShape,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct BodyState {
     nodes: Vec<CoreNode>,
     result: Option<CoreExpr>,
     local_index: usize,
     obstruction_index: usize,
+    step_factor: u64,
+    accumulated_steps: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct HelperCost {
+    steps: u64,
+    allocated_bytes: u64,
+    output_bytes: u64,
+}
+
+impl HelperCost {
+    fn checked_add(self, other: Self) -> Option<Self> {
+        Some(Self {
+            steps: self.steps.checked_add(other.steps)?,
+            allocated_bytes: self.allocated_bytes.checked_add(other.allocated_bytes)?,
+            output_bytes: self.output_bytes.checked_add(other.output_bytes)?,
+        })
+    }
+
+    fn checked_mul(self, factor: u64) -> Option<Self> {
+        Some(Self {
+            steps: self.steps.checked_mul(factor)?,
+            allocated_bytes: self.allocated_bytes.checked_mul(factor)?,
+            output_bytes: self.output_bytes.checked_mul(factor)?,
+        })
+    }
+
+    fn component_max(self, other: Self) -> Self {
+        Self {
+            steps: self.steps.max(other.steps),
+            allocated_bytes: self.allocated_bytes.max(other.allocated_bytes),
+            output_bytes: self.output_bytes.max(other.output_bytes),
+        }
+    }
+
+    fn from_budget(budget: &CoreBudget) -> Self {
+        Self {
+            steps: budget.max_steps,
+            allocated_bytes: budget.max_allocated_bytes,
+            output_bytes: budget.max_output_bytes,
+        }
+    }
+}
+
+impl Default for BodyState {
+    fn default() -> Self {
+        Self {
+            nodes: Vec::new(),
+            result: None,
+            local_index: 0,
+            obstruction_index: 0,
+            step_factor: 1,
+            accumulated_steps: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -619,10 +769,29 @@ impl<'a> TypeChecker<'a> {
             }
             TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span, coord_hint),
             TypeRef::BytesTy(Some(bound)) => self.bytes_shape(bound, span, coord_hint),
+            TypeRef::List { elem, max } => {
+                let BoundRef::Int { value, .. } = max else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "coordinate list bounds require bound proof in a later stage",
+                        span,
+                    ));
+                    return None;
+                };
+                let item = self.type_ref_shape(elem, span, None)?;
+                Some(TypeShape {
+                    coord: coord_hint
+                        .unwrap_or_else(|| list_type_coord(&item.value_type_coord(), *value)),
+                    kind: TypeKind::List {
+                        item: Box::new(item),
+                        max: *value,
+                    },
+                })
+            }
             TypeRef::BytesTy(None)
             | TypeRef::Option(_)
             | TypeRef::CapabilityRef(_)
-            | TypeRef::List { .. }
             | TypeRef::Map { .. }
             | TypeRef::Named { .. }
             | TypeRef::StringTy(None) => {
@@ -700,6 +869,7 @@ impl<'a> TypeChecker<'a> {
         let param = &source.params[0];
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
+        self.check_helper_cost_budget(intent)?;
         let input_binding = LocalRef {
             id: CORE_APPLICATION_INPUT_LOCAL_ID.to_owned(),
             alpha_name: "$arg0".to_owned(),
@@ -773,6 +943,415 @@ impl<'a> TypeChecker<'a> {
         out
     }
 
+    fn check_helper_cost_budget(&mut self, intent: &ResolvedIntent) -> Option<HelperCost> {
+        let mut cost = self.helper_cost_for_block(&intent.source.body)?;
+        for clause in &intent.source.clauses {
+            let clause_cost = match clause {
+                IntentClause::Basis(Some(expr)) => self.helper_cost_for_expr(expr)?,
+                IntentClause::Where(predicates) => {
+                    self.helper_cost_for_exprs_at(predicates, intent.source.span)?
+                }
+                IntentClause::Profile(_)
+                | IntentClause::Implements(_)
+                | IntentClause::Basis(None)
+                | IntentClause::Footprint(_)
+                | IntentClause::Budget(_) => HelperCost::default(),
+            };
+            cost = self.checked_helper_cost_add(cost, clause_cost, intent.source.span)?;
+        }
+        if cost.steps > intent.budget.max_steps
+            || cost.allocated_bytes > intent.budget.max_allocated_bytes
+            || cost.output_bytes > intent.budget.max_output_bytes
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!(
+                    "pure-helper cost steps={}, allocatedBytes={}, outputBytes={} exceeds operation budget",
+                    cost.steps, cost.allocated_bytes, cost.output_bytes
+                ),
+                intent.source.span,
+            ));
+            return None;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_block(&mut self, block: &Block) -> Option<HelperCost> {
+        let mut cost = HelperCost::default();
+        for stmt in &block.stmts {
+            let stmt_cost = self.helper_cost_for_stmt(stmt)?;
+            cost = self.checked_helper_cost_add(cost, stmt_cost, block.span)?;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_stmt(&mut self, stmt: &Stmt) -> Option<HelperCost> {
+        match stmt {
+            Stmt::Let {
+                value, els, span, ..
+            } => {
+                let value_cost = self.helper_cost_for_expr(value)?;
+                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
+                self.checked_helper_cost_add(value_cost, handler_cost, *span)
+            }
+            Stmt::Effect { call, els, span } => {
+                let call_cost = self.helper_cost_for_expr(call)?;
+                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
+                self.checked_helper_cost_add(call_cost, handler_cost, *span)
+            }
+            Stmt::ExternalActionRequest {
+                operation,
+                authority_scope,
+                basis,
+                max_settlement_bytes,
+                max_attempts,
+                span,
+                ..
+            } => self.helper_cost_for_exprs_at(
+                [
+                    operation,
+                    authority_scope,
+                    basis,
+                    max_settlement_bytes,
+                    max_attempts,
+                ],
+                *span,
+            ),
+            Stmt::Require {
+                predicate,
+                arm,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(predicate)?;
+                let arm_cost = self.helper_cost_for_require_arm(arm)?;
+                self.checked_helper_cost_add(predicate_cost, arm_cost, *span)
+            }
+            Stmt::Guarantee {
+                predicate,
+                obstruction,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(predicate)?;
+                let obstruction_cost = self.helper_cost_for_target(obstruction.as_ref())?;
+                self.checked_helper_cost_add(predicate_cost, obstruction_cost, *span)
+            }
+            Stmt::Assert { predicate, .. }
+            | Stmt::Return {
+                value: predicate, ..
+            } => self.helper_cost_for_expr(predicate),
+            Stmt::If {
+                cond,
+                then_block,
+                els,
+                span,
+            } => {
+                let cond_cost = self.helper_cost_for_expr(cond)?;
+                let then_cost = self.helper_cost_for_block(then_block)?;
+                let else_cost = match els.as_deref() {
+                    Some(ElseClause::Block(block)) => self.helper_cost_for_block(block)?,
+                    Some(ElseClause::If(stmt)) => self.helper_cost_for_stmt(stmt)?,
+                    None => HelperCost::default(),
+                };
+                self.checked_helper_cost_add(cond_cost, then_cost.component_max(else_cost), *span)
+            }
+            Stmt::For {
+                iter,
+                bound,
+                body,
+                span,
+                ..
+            } => {
+                let iter_cost = self.helper_cost_for_expr(iter)?;
+                let body_cost = self.helper_cost_for_block(body)?;
+                let Some(factor) = self.helper_cost_loop_bound(bound) else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::MissingContextFact,
+                        "bounded-loop helper cost requires a resolvable loop bound",
+                        *span,
+                    ));
+                    return None;
+                };
+                let body_cost = self.checked_helper_cost_mul(body_cost, factor, *span)?;
+                let loop_cost = HelperCost {
+                    steps: factor,
+                    ..HelperCost::default()
+                };
+                let body_and_loop = self.checked_helper_cost_add(body_cost, loop_cost, *span)?;
+                self.checked_helper_cost_add(iter_cost, body_and_loop, *span)
+            }
+        }
+    }
+
+    fn helper_cost_for_expr(&mut self, expr: &Expr) -> Option<HelperCost> {
+        match expr {
+            Expr::Ident { .. }
+            | Expr::Int { .. }
+            | Expr::Str { .. }
+            | Expr::Bool { .. }
+            | Expr::Digest { .. } => Some(HelperCost::default()),
+            Expr::Field { base, .. } | Expr::Unary { operand: base, .. } => {
+                self.helper_cost_for_expr(base)
+            }
+            Expr::Call {
+                callee, args, span, ..
+            } => {
+                let nested = self.helper_cost_for_exprs_at(
+                    std::iter::once(callee.as_ref()).chain(args.iter()),
+                    *span,
+                )?;
+                let own = self.helper_cost_for_call(callee, *span)?;
+                self.checked_helper_cost_add(nested, own, *span)
+            }
+            Expr::Binary { lhs, rhs, span, .. } => {
+                let left = self.helper_cost_for_expr(lhs)?;
+                let right = self.helper_cost_for_expr(rhs)?;
+                self.checked_helper_cost_add(left, right, *span)
+            }
+            Expr::Record { entries, span } => {
+                let mut cost = HelperCost::default();
+                for entry in entries {
+                    let entry_cost = match entry {
+                        RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                            self.helper_cost_for_expr(value)?
+                        }
+                        RecordEntry::Shorthand { .. } => HelperCost::default(),
+                    };
+                    cost = self.checked_helper_cost_add(cost, entry_cost, *span)?;
+                }
+                Some(cost)
+            }
+            Expr::If {
+                cond,
+                then,
+                els,
+                span,
+            } => {
+                let cond_cost = self.helper_cost_for_expr(cond)?;
+                let then_cost = self.helper_cost_for_expr(then)?;
+                let else_cost = self.helper_cost_for_expr(els)?;
+                self.checked_helper_cost_add(cond_cost, then_cost.component_max(else_cost), *span)
+            }
+            Expr::IfYield {
+                pred,
+                then_block,
+                else_block,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(pred)?;
+                let then_cost = self.helper_cost_for_yield_block(then_block)?;
+                let else_cost = self.helper_cost_for_yield_block(else_block)?;
+                self.checked_helper_cost_add(
+                    predicate_cost,
+                    then_cost.component_max(else_cost),
+                    *span,
+                )
+            }
+            Expr::VariantLit { payload, .. } => payload
+                .as_deref()
+                .map_or(Some(HelperCost::default()), |value| {
+                    self.helper_cost_for_expr(value)
+                }),
+            Expr::Match {
+                scrutinee,
+                arms,
+                span,
+            } => {
+                let scrutinee_cost = self.helper_cost_for_expr(scrutinee)?;
+                let mut arm_cost = HelperCost::default();
+                for arm in arms {
+                    arm_cost = arm_cost.component_max(self.helper_cost_for_expr(&arm.body)?);
+                }
+                self.checked_helper_cost_add(scrutinee_cost, arm_cost, *span)
+            }
+        }
+    }
+
+    fn helper_cost_for_exprs_at<'b, I>(&mut self, exprs: I, span: Span) -> Option<HelperCost>
+    where
+        I: IntoIterator<Item = &'b Expr>,
+    {
+        let mut cost = HelperCost::default();
+        for expr in exprs {
+            let expr_cost = self.helper_cost_for_expr(expr)?;
+            cost = self.checked_helper_cost_add(cost, expr_cost, span)?;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_call(&mut self, callee: &Expr, span: Span) -> Option<HelperCost> {
+        let Some(source_coordinate) = plain_callee_coordinate(callee) else {
+            return Some(HelperCost::default());
+        };
+        let Some(fact) = self.resolved.pure_functions.get(&source_coordinate) else {
+            return Some(HelperCost::default());
+        };
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
+            return Some(HelperCost::default());
+        }
+        let Some((source_alias, _)) = source_coordinate.split_once('.') else {
+            return Some(HelperCost::default());
+        };
+        let Some(cost_suffix) = fact
+            .cost_template
+            .strip_prefix(&fact.lawpack.coordinate)
+            .and_then(|suffix| suffix.strip_prefix('.'))
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "pure helper `{source_coordinate}` cost template is outside its owning lawpack"
+                ),
+                span,
+            ));
+            return None;
+        };
+        let source_cost = format!("{source_alias}.{cost_suffix}");
+        if !self.fact_matches_source_import(&source_cost, &fact.cost_template, &fact.lawpack) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("pure helper `{source_coordinate}` cost template is not imported"),
+                span,
+            ));
+            return None;
+        }
+        let Some(cost_fact) = self.resolved.pure_helper_costs.get(&source_cost) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("pure helper `{source_coordinate}` cost template is unresolved"),
+                span,
+            ));
+            return None;
+        };
+        if cost_fact.coordinate != fact.cost_template
+            || cost_fact.lawpack != fact.lawpack
+            || !self.fact_matches_source_import(
+                &source_cost,
+                &cost_fact.coordinate,
+                &cost_fact.lawpack,
+            )
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "pure helper `{source_coordinate}` cost template is not owned by its exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some(HelperCost::from_budget(&cost_fact.budget))
+    }
+
+    fn helper_cost_for_yield_block(
+        &mut self,
+        block: &crate::ast::YieldBlock,
+    ) -> Option<HelperCost> {
+        let statements = Block {
+            stmts: block.stmts.clone(),
+            span: block.span,
+        };
+        let statement_cost = self.helper_cost_for_block(&statements)?;
+        let value_cost = self.helper_cost_for_expr(&block.value)?;
+        self.checked_helper_cost_add(statement_cost, value_cost, block.span)
+    }
+
+    fn helper_cost_for_handler(
+        &mut self,
+        handler: Option<&ObstructionHandler>,
+    ) -> Option<HelperCost> {
+        match handler {
+            Some(ObstructionHandler::Single(target)) => self.helper_cost_for_target(Some(target)),
+            Some(ObstructionHandler::Map(arms)) => {
+                let mut cost = HelperCost::default();
+                for arm in arms {
+                    cost = cost.component_max(self.helper_cost_for_target(Some(&arm.target))?);
+                }
+                Some(cost)
+            }
+            None => Some(HelperCost::default()),
+        }
+    }
+
+    fn helper_cost_for_require_arm(&mut self, arm: &RequireElseArm) -> Option<HelperCost> {
+        match arm {
+            RequireElseArm::Terminal(target) => self.helper_cost_for_target(Some(target)),
+            RequireElseArm::ContinueObstructed(arm) => {
+                let reason = self.helper_cost_for_expr(&arm.reason)?;
+                let mut payload = HelperCost::default();
+                for entry in &arm.payload {
+                    let entry_cost = match entry {
+                        RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                            self.helper_cost_for_expr(value)?
+                        }
+                        RecordEntry::Shorthand { .. } => HelperCost::default(),
+                    };
+                    payload = self.checked_helper_cost_add(payload, entry_cost, arm.span)?;
+                }
+                self.checked_helper_cost_add(reason, payload, arm.span)
+            }
+        }
+    }
+
+    fn helper_cost_for_target(&mut self, target: Option<&ObstructionTarget>) -> Option<HelperCost> {
+        target
+            .and_then(|target| target.payload.as_ref())
+            .map_or(Some(HelperCost::default()), |payload| {
+                self.helper_cost_for_expr(payload)
+            })
+    }
+
+    fn helper_cost_loop_bound(&self, bound: &BoundRef) -> Option<u64> {
+        match bound {
+            BoundRef::Int { value, .. } => Some(*value),
+            BoundRef::Coord(path) => {
+                let source_coordinate = path.join(".");
+                let fact = self.resolved.bounds.get(&source_coordinate)?;
+                self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack)
+                    .then_some(fact.value)
+            }
+        }
+    }
+
+    fn checked_helper_cost_add(
+        &mut self,
+        left: HelperCost,
+        right: HelperCost,
+        span: Span,
+    ) -> Option<HelperCost> {
+        left.checked_add(right).or_else(|| {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "pure-helper cost accumulation overflows u64",
+                span,
+            ));
+            None
+        })
+    }
+
+    fn checked_helper_cost_mul(
+        &mut self,
+        cost: HelperCost,
+        factor: u64,
+        span: Span,
+    ) -> Option<HelperCost> {
+        cost.checked_mul(factor).or_else(|| {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "bounded-loop helper cost multiplication overflows u64",
+                span,
+            ));
+            None
+        })
+    }
+
     fn check_body(
         &mut self,
         intent: &ResolvedIntent,
@@ -804,6 +1383,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn check_body_stmt(
         &mut self,
         intent: &ResolvedIntent,
@@ -885,11 +1465,283 @@ impl<'a> TypeChecker<'a> {
             Stmt::Require { predicate, arm, .. } => {
                 self.check_require_stmt(predicate, arm, env, state);
             }
-            Stmt::Guarantee { span, .. }
-            | Stmt::Assert { span, .. }
-            | Stmt::If { span, .. }
-            | Stmt::For { span, .. } => self.unsupported_stmt(*span, "statement"),
+            Stmt::For {
+                var,
+                iter,
+                bound,
+                body,
+                span,
+            } => self.check_for_stmt(
+                intent,
+                output_shape,
+                var,
+                iter,
+                bound,
+                body,
+                *span,
+                env,
+                state,
+            ),
+            Stmt::If {
+                cond,
+                then_block,
+                els,
+                span,
+            } => self.check_if_stmt(
+                intent,
+                output_shape,
+                cond,
+                then_block,
+                els.as_deref(),
+                *span,
+                env,
+                state,
+            ),
+            Stmt::Guarantee { span, .. } | Stmt::Assert { span, .. } => {
+                self.unsupported_stmt(*span, "statement");
+            }
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_if_stmt(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        cond: &Expr,
+        then_block: &Block,
+        els: Option<&ElseClause>,
+        span: Span,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+    ) {
+        let Some(predicate) = self.check_predicate(cond, env) else {
+            return;
+        };
+        let baseline_steps = state.accumulated_steps;
+        let then_block =
+            self.check_isolated_statement_block(intent, output_shape, then_block, env, state);
+        let then_steps = state.accumulated_steps;
+        state.accumulated_steps = baseline_steps;
+        let else_block = match els {
+            Some(ElseClause::Block(block)) => {
+                self.check_isolated_statement_block(intent, output_shape, block, env, state)
+            }
+            Some(ElseClause::If(_)) => {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "else-if chains require explicit branch-join lowering",
+                    span,
+                ));
+                empty_core_block()
+            }
+            None => empty_core_block(),
+        };
+        state.accumulated_steps = then_steps.max(state.accumulated_steps);
+        state.nodes.push(CoreNode::Branch {
+            predicate,
+            then_block,
+            else_block,
+        });
+    }
+
+    fn check_isolated_statement_block(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        block: &Block,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+    ) -> CoreBlock {
+        let mut nested_env = env.clone();
+        let mut nested_locals = Vec::new();
+        let mut nested_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            step_factor: state.step_factor,
+            accumulated_steps: state.accumulated_steps,
+            ..BodyState::default()
+        };
+        for stmt in &block.stmts {
+            if let Stmt::Return { span, .. } = stmt {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "return is not legal inside an isolated statement branch",
+                    *span,
+                ));
+                continue;
+            }
+            self.check_body_stmt(
+                intent,
+                output_shape,
+                stmt,
+                &mut nested_env,
+                &mut nested_locals,
+                &mut nested_state,
+            );
+        }
+        state.local_index = nested_state.local_index;
+        state.obstruction_index = nested_state.obstruction_index;
+        state.accumulated_steps = nested_state.accumulated_steps;
+        CoreBlock {
+            locals: nested_locals,
+            nodes: nested_state.nodes,
+            result: CoreExpr::Const(CoreValue::Null),
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_for_stmt(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        var: &str,
+        iter: &Expr,
+        bound: &BoundRef,
+        body: &Block,
+        span: Span,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+    ) {
+        let Some(iter_value) = self.check_expr(iter, env) else {
+            return;
+        };
+        let TypeKind::List { item, max } = &iter_value.ty.kind else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "bounded for requires a statically bounded list",
+                span,
+            ));
+            return;
+        };
+        let Some((value, core_bound)) = self.resolve_loop_bound(bound, span) else {
+            return;
+        };
+        if value < *max {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!("loop bound {value} is below iterable maximum {max}"),
+                span,
+            ));
+            return;
+        }
+        let Some((loop_steps, accumulated_steps)) =
+            self.charge_loop_work(intent, state, value, span)
+        else {
+            return;
+        };
+
+        let binder_shape = item.as_ref().clone();
+        let binder = next_local(&mut state.local_index, binder_shape.coord.clone());
+        let mut nested_env = env.clone();
+        nested_env.insert(var.to_owned(), (binder.clone(), binder_shape));
+        let mut nested_locals = vec![binder.clone()];
+        let mut nested_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            step_factor: loop_steps,
+            accumulated_steps,
+            ..BodyState::default()
+        };
+        for stmt in &body.stmts {
+            if let Stmt::Return { span, .. } = stmt {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "return is not legal inside a bounded for body",
+                    *span,
+                ));
+                continue;
+            }
+            self.check_body_stmt(
+                intent,
+                output_shape,
+                stmt,
+                &mut nested_env,
+                &mut nested_locals,
+                &mut nested_state,
+            );
+        }
+        state.local_index = nested_state.local_index;
+        state.obstruction_index = nested_state.obstruction_index;
+        state.accumulated_steps = nested_state.accumulated_steps;
+        state.nodes.push(CoreNode::For {
+            binder,
+            iter: iter_value.expr,
+            bound: core_bound,
+            body: CoreBlock {
+                locals: nested_locals,
+                nodes: nested_state.nodes,
+                result: CoreExpr::Const(CoreValue::Null),
+            },
+        });
+    }
+
+    fn resolve_loop_bound(&mut self, bound: &BoundRef, span: Span) -> Option<(u64, CoreBound)> {
+        let path = match bound {
+            BoundRef::Int { value, .. } => return Some((*value, CoreBound::Literal(*value))),
+            BoundRef::Coord(path) => path,
+        };
+        let source_coordinate = path.join(".");
+        let Some(fact) = self.resolved.bounds.get(&source_coordinate) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("loop bound `{source_coordinate}` has no compiler context fact"),
+                span,
+            ));
+            return None;
+        };
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "loop bound `{source_coordinate}` is not owned by an exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some((fact.value, CoreBound::Coordinate(fact.coordinate.clone())))
+    }
+
+    fn charge_loop_work(
+        &mut self,
+        intent: &ResolvedIntent,
+        state: &BodyState,
+        bound: u64,
+        span: Span,
+    ) -> Option<(u64, u64)> {
+        let loop_steps = state.step_factor.checked_mul(bound);
+        let accumulated_steps =
+            loop_steps.and_then(|steps| state.accumulated_steps.checked_add(steps));
+        let Some((loop_steps, accumulated_steps)) = loop_steps.zip(accumulated_steps) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "cumulative loop step accounting overflows u64",
+                span,
+            ));
+            return None;
+        };
+        if accumulated_steps > intent.budget.max_steps {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!(
+                    "cumulative loop work {accumulated_steps} exceeds operation step budget {}",
+                    intent.budget.max_steps
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some((loop_steps, accumulated_steps))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1928,11 +2780,21 @@ impl<'a> TypeChecker<'a> {
                 span,
             } => self.check_string_concat(lhs, rhs, env, *span),
             Expr::Record { entries, span } => self.check_record(entries, env, expected, *span),
+            Expr::Call {
+                callee,
+                type_args,
+                args,
+                span,
+            } => self.check_pure_call(callee, type_args, args, env, expected, *span),
+            Expr::If {
+                cond,
+                then,
+                els,
+                span,
+            } => self.check_pure_conditional(cond, then, els, env, expected, *span),
             Expr::Binary { .. }
             | Expr::Digest { .. }
-            | Expr::Call { .. }
             | Expr::Unary { .. }
-            | Expr::If { .. }
             | Expr::IfYield { .. }
             | Expr::VariantLit { .. }
             | Expr::Match { .. } => {
@@ -1945,6 +2807,280 @@ impl<'a> TypeChecker<'a> {
                 None
             }
         }
+    }
+
+    fn check_pure_call(
+        &mut self,
+        callee: &Expr,
+        type_args: &[TypeRef],
+        args: &[Expr],
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
+        if !type_args.is_empty() || !fact.type_parameters.is_empty() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "generic pure-helper calls are outside the initial lowerable subset",
+                span,
+            ));
+            return None;
+        }
+        if args.len() != fact.parameter_types.len() {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!(
+                    "pure helper `{source_coordinate}` expects {} arguments, got {}",
+                    fact.parameter_types.len(),
+                    args.len()
+                ),
+                span,
+            ));
+            return None;
+        }
+
+        let mut core_args = Vec::with_capacity(args.len());
+        for (arg, parameter_type) in args.iter().zip(&fact.parameter_types) {
+            let Some(parameter_shape) =
+                self.shape_for_helper_coordinate(parameter_type, &fact.lawpack)
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "pure helper `{source_coordinate}` parameter type `{parameter_type}` is not available in the module type closure"
+                    ),
+                    span,
+                ));
+                return None;
+            };
+            let value = self.check_expr_with_expected(arg, env, Some(&parameter_shape))?;
+            if !compatible(&parameter_shape, &value.ty) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    format!("argument does not match pure helper `{source_coordinate}` signature"),
+                    expr_span(arg),
+                ));
+                return None;
+            }
+            core_args.push(value.expr);
+        }
+
+        let Some(return_shape) = self.shape_for_helper_coordinate(&fact.return_type, &fact.lawpack)
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "pure helper `{source_coordinate}` return type `{}` is not available in the module type closure",
+                    fact.return_type
+                ),
+                span,
+            ));
+            return None;
+        };
+        if expected.is_some_and(|expected| !compatible(expected, &return_shape)) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!("pure helper `{source_coordinate}` return type does not match its use"),
+                span,
+            ));
+            return None;
+        }
+
+        Some(TypedValue {
+            expr: CoreExpr::Call {
+                callee: fact.coordinate,
+                type_args: Vec::new(),
+                args: core_args,
+            },
+            ty: return_shape,
+        })
+    }
+
+    fn fact_matches_source_import(
+        &self,
+        source_coordinate: &str,
+        fact_coordinate: &str,
+        lawpack: &ResourceRef,
+    ) -> bool {
+        let Some((source_alias, source_suffix)) = source_coordinate.split_once('.') else {
+            return false;
+        };
+        let Some(fact_suffix) = fact_coordinate
+            .strip_prefix(&lawpack.coordinate)
+            .and_then(|suffix| suffix.strip_prefix('.'))
+        else {
+            return false;
+        };
+        !source_alias.is_empty()
+            && !source_suffix.is_empty()
+            && source_suffix == fact_suffix
+            && self.resolved.imports.iter().any(|import| {
+                import.kind == CoreImportKind::Lawpack
+                    && &import.resource == lawpack
+                    && import.alias.as_deref() == Some(source_alias)
+            })
+    }
+
+    fn resolve_pure_function(
+        &mut self,
+        callee: &Expr,
+        span: Span,
+    ) -> Option<(String, PureFunctionFact)> {
+        let Some(source_coordinate) = plain_callee_coordinate(callee) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                "pure-helper callee is not a stable imported coordinate",
+                span,
+            ));
+            return None;
+        };
+        let Some(fact) = self
+            .resolved
+            .pure_functions
+            .get(&source_coordinate)
+            .cloned()
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                format!("pure helper `{source_coordinate}` has no compiler context fact"),
+                span,
+            ));
+            return None;
+        };
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedFunction,
+                format!(
+                    "pure helper `{source_coordinate}` is not owned by an exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some((source_coordinate, fact))
+    }
+
+    fn shape_for_coordinate(&self, coordinate: &str) -> Option<TypeShape> {
+        if coordinate == "Bool" {
+            return Some(TypeShape {
+                coord: "Bool".to_owned(),
+                kind: TypeKind::Bool,
+            });
+        }
+        if let Some(width) = builtin_integer_width(coordinate) {
+            return Some(integer_shape(width));
+        }
+        self.named_types
+            .values()
+            .find(|shape| shape.coord == coordinate)
+            .cloned()
+    }
+
+    fn shape_for_helper_coordinate(
+        &self,
+        coordinate: &str,
+        lawpack: &ResourceRef,
+    ) -> Option<TypeShape> {
+        if coordinate == "Bool" || builtin_integer_width(coordinate).is_some() {
+            return self.shape_for_coordinate(coordinate);
+        }
+        self.resolved
+            .type_shapes
+            .get(coordinate)
+            .filter(|fact| {
+                &fact.lawpack == lawpack
+                    && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
+            })
+            .and_then(|fact| self.shape_from_imported_type(fact))
+    }
+
+    fn shape_from_imported_type(&self, fact: &TypeShapeFact) -> Option<TypeShape> {
+        let mut resolving = BTreeSet::from([fact.coordinate.clone()]);
+        let mut shape = imported_type_definition_shape(
+            &fact.definition,
+            &self.resolved.type_shapes,
+            &fact.lawpack,
+            &mut resolving,
+            1,
+        )?;
+        shape.coord.clone_from(&fact.coordinate);
+        Some(shape)
+    }
+
+    fn check_pure_conditional(
+        &mut self,
+        cond: &Expr,
+        then: &Expr,
+        els: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        let predicate = self.check_predicate(cond, env)?;
+        let (then_value, else_value) = match expected {
+            Some(expected) => (
+                self.check_expr_with_expected(then, env, Some(expected))?,
+                self.check_expr_with_expected(els, env, Some(expected))?,
+            ),
+            None if is_bare_integer_literal(then) => {
+                let else_value = self.check_expr_with_expected(els, env, None)?;
+                let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
+                (then_value, else_value)
+            }
+            None if is_bare_integer_literal(els) => {
+                let then_value = self.check_expr_with_expected(then, env, None)?;
+                let else_value = self.check_expr_with_expected(els, env, Some(&then_value.ty))?;
+                (then_value, else_value)
+            }
+            None => (
+                self.check_expr_with_expected(then, env, None)?,
+                self.check_expr_with_expected(els, env, None)?,
+            ),
+        };
+
+        let ty = if let Some(expected) = expected {
+            if !compatible(expected, &then_value.ty) || !compatible(expected, &else_value.ty) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "conditional branches do not match the expected type",
+                    span,
+                ));
+                return None;
+            }
+            expected.clone()
+        } else if compatible(&then_value.ty, &else_value.ty) {
+            then_value.ty.clone()
+        } else if compatible(&else_value.ty, &then_value.ty) {
+            else_value.ty.clone()
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "conditional branches do not have a compatible bounded type",
+                span,
+            ));
+            return None;
+        };
+
+        Some(TypedValue {
+            expr: CoreExpr::If {
+                predicate: Box::new(predicate),
+                then_value: Box::new(then_value.expr),
+                else_value: Box::new(else_value.expr),
+            },
+            ty,
+        })
     }
 
     fn check_integer_literal(
@@ -2205,6 +3341,16 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
         (TypeKind::Int { width: expected }, TypeKind::Int { width: actual }) => expected == actual,
         (TypeKind::Bytes { max: expected }, TypeKind::Bytes { max: actual }) => actual <= expected,
         (
+            TypeKind::List {
+                item: expected_item,
+                max: expected_max,
+            },
+            TypeKind::List {
+                item: actual_item,
+                max: actual_max,
+            },
+        ) => actual_max <= expected_max && compatible(expected_item, actual_item),
+        (
             TypeKind::ExternalActionRequest {
                 settlement: expected,
             },
@@ -2219,6 +3365,13 @@ fn requestable_operation_family(coordinate: &str) -> bool {
         .split(['.', '@'])
         .next()
         .is_some_and(|root| root.eq_ignore_ascii_case("workspace"))
+}
+
+fn coordinate_is_below_lawpack(coordinate: &str, lawpack: &ResourceRef) -> bool {
+    let prefix = format!("{}.", lawpack.coordinate);
+    coordinate
+        .strip_prefix(&prefix)
+        .is_some_and(|suffix| !suffix.is_empty())
 }
 
 fn comparable(left: &TypeShape, right: &TypeShape) -> bool {
@@ -2243,8 +3396,104 @@ fn string_type_coord(max: u64, canonical: &str) -> String {
     format!("String<max={max},canonical={canonical}>")
 }
 
+fn imported_type_definition_shape(
+    definition: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+    resolving: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<TypeShape> {
+    const MAX_IMPORTED_TYPE_DEPTH: usize = 128;
+    if depth > MAX_IMPORTED_TYPE_DEPTH {
+        return None;
+    }
+    if definition == "Bool" {
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::Bool,
+        });
+    }
+    if let Some(width) = builtin_integer_width(definition) {
+        return Some(integer_shape(width));
+    }
+    if let Some(inner) = definition
+        .strip_prefix("String<max=")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let (max, canonical) = inner.split_once(",canonical=")?;
+        if !matches!(canonical, "raw-utf8" | "unicode-scalar-nfc") {
+            return None;
+        }
+        let max = max.parse().ok()?;
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::String {
+                max,
+                canonical: canonical.to_owned(),
+            },
+        });
+    }
+    if let Some(max) = definition
+        .strip_prefix("Bytes<max=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|value| value.parse().ok())
+    {
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::Bytes { max },
+        });
+    }
+    let inner = definition
+        .strip_prefix("List<")
+        .and_then(|value| value.strip_suffix('>'));
+    if let Some(inner) = inner {
+        let (item, max) = inner.rsplit_once(",max=")?;
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::List {
+                item: Box::new(imported_type_definition_shape(
+                    item,
+                    type_shapes,
+                    lawpack,
+                    resolving,
+                    depth + 1,
+                )?),
+                max: max.parse().ok()?,
+            },
+        });
+    }
+    let fact = type_shapes.get(definition).filter(|fact| {
+        &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
+    })?;
+    if !resolving.insert(definition.to_owned()) {
+        return None;
+    }
+    let mut shape = imported_type_definition_shape(
+        &fact.definition,
+        type_shapes,
+        lawpack,
+        resolving,
+        depth + 1,
+    )?;
+    resolving.remove(definition);
+    shape.coord.clone_from(&fact.coordinate);
+    Some(shape)
+}
+
 fn bytes_type_coord(max: u64) -> String {
     format!("Bytes<max={max}>")
+}
+
+fn list_type_coord(item: &str, max: u64) -> String {
+    format!("List<{item},max={max}>")
+}
+
+fn empty_core_block() -> CoreBlock {
+    CoreBlock {
+        locals: Vec::new(),
+        nodes: Vec::new(),
+        result: CoreExpr::Const(CoreValue::Null),
+    }
 }
 
 fn builtin_integer_width(name: &str) -> Option<&'static str> {

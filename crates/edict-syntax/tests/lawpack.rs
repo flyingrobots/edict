@@ -7,10 +7,10 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
     digest_core_module, digest_target_ir_artifact, encode_canonical_cbor, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
-    validate_lawpack_dependency_graph, CanonicalValue, CompilerErrorKind, CompilerStage,
-    LawpackAdapterFailureKind, LawpackExecutionClass, LawpackPureFunctionImplementation,
-    LawpackValidationFailureKind, LawpackVerifierClass, TargetLoweringStatus,
-    ValidatedLawpackBundle,
+    validate_lawpack_dependency_graph, CanonicalValue, CompilerErrorKind, CompilerStage, CoreBound,
+    CoreExpr, CoreNode, LawpackAdapterFailureKind, LawpackExecutionClass,
+    LawpackPureFunctionImplementation, LawpackValidationFailureKind, LawpackVerifierClass,
+    TargetLoweringStatus, ValidatedLawpackBundle,
 };
 use sha2::{Digest, Sha256};
 
@@ -459,6 +459,57 @@ fn request_only_profile_requires_an_exact_target_configuration() {
 }
 
 #[test]
+fn adapter_budget_closure_includes_dedicated_pure_helper_cost_templates() {
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        ("ref", local_ref("arg:0", "value", "U64")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    let mut helper = pure_function_with_types(
+        "hello.echo@1.identityU64",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", identity_body),
+    );
+    replace_field(
+        &mut helper,
+        "costTemplate",
+        text("hello.echo@1.identityBudget"),
+    );
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(helper);
+
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode canonical adapter");
+    let helper_budget = map_mut(field_mut(&mut adapter, "budgets"))
+        .first()
+        .map(|(_coordinate, budget)| budget.clone())
+        .expect("existing adapter budget");
+    map_mut(field_mut(&mut adapter, "budgets"))
+        .push((text("hello.echo@1.identityBudget"), helper_budget));
+
+    let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
+    let bytes = encode_canonical_cbor(&adapter).expect("encode adapter");
+    decode_lawpack_adapter(&bundle, "echo.dpo@1", &bytes)
+        .expect("dedicated helper budget belongs to the exact adapter closure");
+}
+
+#[test]
 fn lawpack_adapter_corroborates_footprint_cost_and_failure_obligations() {
     for (field, replacement, expected) in [
         (
@@ -719,6 +770,421 @@ fn all_hash_bound_helper_and_verifier_variants_load() {
 }
 
 #[test]
+fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        ("ref", local_ref("arg:0", "value", "U64")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.identityU64",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", identity_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode pure-helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode pure-helper manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load pure-helper lawpack");
+    let source = format!(
+        "package examples.pure_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ value: U64, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let value: U64 = hello.identityU64(input.value);\n\
+           return {{ value }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse pure-helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive pure-helper compiler fact");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile exact lawpack helper call");
+    let intent = core.intents.get("apply").expect("lowered apply intent");
+    let CoreNode::Let { value, .. } = &intent.body.nodes[0] else {
+        panic!("pure helper is a Core let");
+    };
+
+    assert!(matches!(
+        value,
+        CoreExpr::Call { callee, args, .. }
+            if callee == "hello.echo@1.identityU64" && args.len() == 1
+    ));
+}
+
+#[test]
+fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
+    let exports = typed_helper_exports(true);
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode typed helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode typed helper manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load typed helper lawpack");
+    let source = typed_helper_source(&bundle);
+    let module = parse_module(&source).expect("parse typed helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive typed helper compiler facts");
+
+    compile_to_core(&module, preparation.compiler_context())
+        .expect("compile helper over an exact exported bounded type");
+
+    let missing_type_exports = typed_helper_exports(false);
+    let missing_type_exports_bytes = encode_canonical_cbor(&missing_type_exports)
+        .expect("encode helper exports without its type closure");
+    let missing_type_manifest =
+        hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &missing_type_exports));
+    let missing_type_manifest_bytes = encode_canonical_cbor(&missing_type_manifest)
+        .expect("encode helper manifest without its type closure");
+    let missing_type_bundle =
+        decode_lawpack_bundle(&missing_type_manifest_bytes, &missing_type_exports_bytes)
+            .expect("load helper lawpack without its type closure");
+    let missing_type_source = typed_helper_source(&missing_type_bundle);
+    let missing_type_module =
+        parse_module(&missing_type_source).expect("parse missing-type helper application");
+    let missing_type_adapter =
+        decode_lawpack_adapter(&missing_type_bundle, "echo.dpo@1", ADAPTER_BYTES)
+            .expect("load missing-type adapter");
+    let missing_type_preparation = prepare_lawpack_compilation(
+        &missing_type_module,
+        &missing_type_bundle,
+        &missing_type_adapter,
+    )
+    .expect("derive helper facts without the exported type");
+
+    let errors = compile_to_core(
+        &missing_type_module,
+        missing_type_preparation.compiler_context(),
+    )
+    .expect_err("helper without its exported type closure rejects before Core");
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+}
+
+#[test]
+fn nested_exported_type_closure_enters_pure_helper_compilation() {
+    let mut exports = typed_helper_exports(true);
+    let types = array_mut(field_mut(&mut exports, "types"));
+    replace_field(
+        types.last_mut().expect("GreetingKey exported type"),
+        "definition",
+        text("List<hello.echo@1.GreetingAtom,max=4>"),
+    );
+    types.push(map([
+        ("coordinate", text("hello.echo@1.GreetingAtom")),
+        ("definition", text("String<max=32,canonical=raw-utf8>")),
+    ]));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode nested typed exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode nested typed manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load nested typed helper lawpack");
+    let source = typed_helper_list_source(&bundle.manifest_digest_review_string());
+    let module = parse_module(&source).expect("parse nested typed helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive nested typed helper compiler facts");
+
+    compile_to_core(&module, preparation.compiler_context())
+        .expect("compile helper through nested exported type closure");
+
+    let mut missing_nested_exports = exports;
+    let mut removed = array_mut(field_mut(&mut missing_nested_exports, "types"))
+        .pop()
+        .expect("remove GreetingAtom while retaining nested GreetingKey");
+    assert_eq!(
+        field_mut(&mut removed, "coordinate"),
+        &text("hello.echo@1.GreetingAtom")
+    );
+    let missing_nested_exports_bytes = encode_canonical_cbor(&missing_nested_exports)
+        .expect("encode exports without nested type dependency");
+    let missing_nested_manifest =
+        hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &missing_nested_exports));
+    let missing_nested_manifest_bytes = encode_canonical_cbor(&missing_nested_manifest)
+        .expect("encode manifest without nested type dependency");
+    let missing_nested_bundle = decode_lawpack_bundle(
+        &missing_nested_manifest_bytes,
+        &missing_nested_exports_bytes,
+    )
+    .expect("load helper lawpack without nested type dependency");
+    let missing_nested_source =
+        typed_helper_list_source(&missing_nested_bundle.manifest_digest_review_string());
+    let missing_nested_module =
+        parse_module(&missing_nested_source).expect("parse missing nested type application");
+    let missing_nested_adapter =
+        decode_lawpack_adapter(&missing_nested_bundle, "echo.dpo@1", ADAPTER_BYTES)
+            .expect("load missing nested type adapter");
+    let missing_nested_preparation = prepare_lawpack_compilation(
+        &missing_nested_module,
+        &missing_nested_bundle,
+        &missing_nested_adapter,
+    )
+    .expect("derive helper facts without nested type dependency");
+
+    let errors = compile_to_core(
+        &missing_nested_module,
+        missing_nested_preparation.compiler_context(),
+    )
+    .expect_err("missing nested exported type rejects before Core");
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+}
+
+#[test]
+fn exported_type_outside_lawpack_namespace_rejects_before_compiler_facts() {
+    let mut exports = typed_helper_exports(true);
+    let exported_type = array_mut(field_mut(&mut exports, "types"))
+        .last_mut()
+        .expect("GreetingKey exported type");
+    replace_field(
+        exported_type,
+        "coordinate",
+        text("other.package@1.GreetingKey"),
+    );
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode foreign typed exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode foreign typed manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load bundle before adapter namespace validation");
+    let source = typed_helper_source(&bundle);
+    let module = parse_module(&source).expect("parse foreign typed helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+
+    let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect_err("foreign exported type namespace rejects before compiler facts");
+
+    assert_eq!(
+        failures
+            .iter()
+            .map(|failure| failure.kind)
+            .collect::<Vec<_>>(),
+        vec![LawpackAdapterFailureKind::InvalidShape]
+    );
+}
+
+#[test]
+fn generic_lawpack_helper_rejects_before_core() {
+    let mut exports = typed_helper_exports(true);
+    let helper = array_mut(field_mut(&mut exports, "pureFunctions"))
+        .last_mut()
+        .expect("typed helper export");
+    replace_field(
+        helper,
+        "typeParameters",
+        CanonicalValue::Array(vec![text("T")]),
+    );
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode generic helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode generic helper manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load generic helper lawpack");
+    let source = typed_helper_source(&bundle);
+    let module = parse_module(&source).expect("parse generic helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive generic helper compiler facts");
+
+    let errors = compile_to_core(&module, preparation.compiler_context())
+        .expect_err("generic helper declaration rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnsupportedSourceShape));
+}
+
+#[test]
+fn exact_lawpack_constant_enters_loop_bound_compilation() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U64")),
+        ("value", CanonicalValue::Integer(4)),
+    ]));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode bound exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode bound manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load bound lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ items: List<U64, max=4>, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           for item in input.items bounded hello.maxItems {{\n\
+             require item <= 10u64 else example.ItemTooLarge;\n\
+           }}\n\
+           return {{ value: 0u64 }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse coordinate-bounded application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive digest-bound constant fact");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile coordinate-bounded loop");
+    let intent = core.intents.get("apply").expect("lowered apply intent");
+    let CoreNode::For { bound, .. } = &intent.body.nodes[0] else {
+        panic!("first node is a Core for");
+    };
+
+    assert_eq!(
+        bound,
+        &CoreBound::Coordinate("hello.echo@1.maxItems".to_owned())
+    );
+}
+
+#[test]
+fn exact_lawpack_u32_constant_enters_loop_bound_compilation() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U32")),
+        ("value", CanonicalValue::Integer(4)),
+    ]));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode U32 bound exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode U32 bound manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load U32 bound lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ items: List<U64, max=4>, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           for item in input.items bounded hello.maxItems {{\n\
+             require item <= 10u64 else example.ItemTooLarge;\n\
+           }}\n\
+           return {{ value: 0u64 }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse U32 coordinate-bounded application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation =
+        prepare_lawpack_compilation(&module, &bundle, &adapter).expect("derive U32 constant fact");
+
+    compile_to_core(&module, preparation.compiler_context())
+        .expect("compile U32 coordinate-bounded loop");
+}
+
+#[test]
+fn exact_lawpack_numeric_constants_reject_type_and_budget_violations() {
+    let mut oversized_u32_exports = hello_echo_exports();
+    array_mut(field_mut(&mut oversized_u32_exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U32")),
+        ("value", CanonicalValue::Integer(i128::from(u32::MAX) + 1)),
+    ]));
+    let exports_bytes =
+        encode_canonical_cbor(&oversized_u32_exports).expect("encode oversized U32 exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &oversized_u32_exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode oversized U32 manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load syntactically canonical oversized U32 lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse exact lawpack import");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect_err("oversized U32 bound must reject preparation");
+    assert_eq!(failures[0].kind, LawpackAdapterFailureKind::InvalidShape);
+
+    let mut over_budget_exports = hello_echo_exports();
+    array_mut(field_mut(&mut over_budget_exports, "constants")).push(map([
+        ("coordinate", text("hello.echo@1.maxItems")),
+        ("type", text("U64")),
+        ("value", CanonicalValue::Integer(65)),
+    ]));
+    let exports_bytes =
+        encode_canonical_cbor(&over_budget_exports).expect("encode over-budget exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &over_budget_exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode over-budget manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load over-budget lawpack");
+    let source = format!(
+        "package examples.bound_loop@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ items: List<U64, max=4>, }};\n\
+         type Output = {{ value: U64, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           for item in input.items bounded hello.maxItems {{\n\
+             require item <= 10u64 else example.ItemTooLarge;\n\
+           }}\n\
+           return {{ value: 0u64 }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse over-budget application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive over-budget constant fact");
+    let errors = compile_to_core(&module, preparation.compiler_context())
+        .expect_err("over-budget U64 bound must reject compilation");
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+}
+
+#[test]
 fn edict_pure_helpers_reject_effectful_and_unresolved_callees() {
     for callee in ["hello.echo@1.createGreeting", "hello.echo@1.notExported"] {
         let mut exports = hello_echo_exports();
@@ -773,6 +1239,552 @@ fn edict_pure_helpers_reject_effectful_and_unresolved_callees() {
             failure_kinds(&failures),
             vec![LawpackValidationFailureKind::InvalidPureFunctionBody],
             "callee {callee}"
+        );
+    }
+}
+
+#[test]
+fn edict_pure_helper_body_must_match_its_exported_signature() {
+    let body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("const")),
+                        (
+                            "value",
+                            map([("kind", text("string")), ("value", text("wrong"))]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidIdentity",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("helper body return type must match its exported signature");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[allow(clippy::too_many_lines)]
+#[test]
+fn edict_pure_helper_signature_checks_params_locals_bindings_and_calls() {
+    let cases = [
+        (
+            "parameter",
+            map([
+                (
+                    "params",
+                    CanonicalValue::Array(vec![local_ref("arg:0", "value", "Bool")]),
+                ),
+                (
+                    "body",
+                    map([
+                        ("locals", CanonicalValue::Array(Vec::new())),
+                        ("bindings", CanonicalValue::Array(Vec::new())),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:0", "value", "Bool")),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "local",
+            map([
+                (
+                    "params",
+                    CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+                ),
+                (
+                    "body",
+                    map([
+                        ("locals", CanonicalValue::Array(Vec::new())),
+                        ("bindings", CanonicalValue::Array(Vec::new())),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:missing", "value", "U64")),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+        (
+            "binding",
+            map([
+                ("params", CanonicalValue::Array(Vec::new())),
+                (
+                    "body",
+                    map([
+                        (
+                            "locals",
+                            CanonicalValue::Array(vec![local_ref("local:0", "value", "U64")]),
+                        ),
+                        (
+                            "bindings",
+                            CanonicalValue::Array(vec![map([
+                                ("kind", text("let")),
+                                ("binding", local_ref("local:0", "value", "U64")),
+                                (
+                                    "value",
+                                    map([
+                                        ("kind", text("const")),
+                                        (
+                                            "value",
+                                            map([
+                                                ("kind", text("bool")),
+                                                ("value", CanonicalValue::Bool(true)),
+                                            ]),
+                                        ),
+                                    ]),
+                                ),
+                            ])]),
+                        ),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("local:0", "value", "U64")),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ];
+
+    for (label, body) in cases {
+        let mut exports = hello_echo_exports();
+        let parameter_types: &[&str] = if label == "binding" { &[] } else { &["U64"] };
+        array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+            "hello.echo@1.invalidBody",
+            parameter_types,
+            "U64",
+            "edict",
+            ("body", body),
+        ));
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+
+        let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+            .expect_err("invalid helper signature closure must reject");
+        assert_eq!(
+            failure_kinds(&failures),
+            vec![LawpackValidationFailureKind::InvalidPureFunctionBody],
+            "{label}"
+        );
+    }
+
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "U64")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        ("ref", local_ref("arg:0", "value", "U64")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let caller_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "Bool")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("call")),
+                        ("callee", text("hello.echo@1.identityU64")),
+                        ("typeArgs", CanonicalValue::Array(Vec::new())),
+                        (
+                            "args",
+                            CanonicalValue::Array(vec![map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:0", "value", "Bool")),
+                            ])]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    let functions = array_mut(field_mut(&mut exports, "pureFunctions"));
+    functions.push(pure_function_with_types(
+        "hello.echo@1.identityU64",
+        &["U64"],
+        "U64",
+        "edict",
+        ("body", identity_body),
+    ));
+    functions.push(pure_function_with_types(
+        "hello.echo@1.invalidCaller",
+        &["Bool"],
+        "U64",
+        "edict",
+        ("body", caller_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("call arguments must match the callee signature");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
+fn edict_pure_helper_collection_constants_obey_bounded_item_types() {
+    let list_body = map([
+        ("params", CanonicalValue::Array(Vec::new())),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("const")),
+                        (
+                            "value",
+                            map([
+                                ("kind", text("list")),
+                                (
+                                    "values",
+                                    CanonicalValue::Array(vec![
+                                        map([
+                                            ("kind", text("int")),
+                                            ("width", text("U64")),
+                                            ("value", CanonicalValue::Integer(1)),
+                                        ]),
+                                        map([
+                                            ("kind", text("int")),
+                                            ("width", text("U64")),
+                                            ("value", CanonicalValue::Integer(2)),
+                                        ]),
+                                    ]),
+                                ),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).push(map([
+        ("coordinate", text("hello.echo@1.OneU64")),
+        ("definition", text("List<U64,max=1>")),
+    ]));
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidList",
+        &[],
+        "hello.echo@1.OneU64",
+        "edict",
+        ("body", list_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode list exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode list manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("over-bound list constant must reject");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
+fn edict_pure_helper_field_results_come_from_the_base_record() {
+    let field_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "hello.echo@1.Counter")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("field")),
+                        (
+                            "base",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:0", "value", "hello.echo@1.Counter")),
+                            ]),
+                        ),
+                        ("field", text("missing")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).push(map([
+        ("coordinate", text("hello.echo@1.Counter")),
+        ("definition", text("{ count: U64, }")),
+    ]));
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidField",
+        &["hello.echo@1.Counter"],
+        "U64",
+        "edict",
+        ("body", field_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode field exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode field manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("unknown field must reject");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
+fn edict_pure_helper_constants_obey_scalar_map_and_variant_types() {
+    let cases = [
+        (
+            "integer",
+            "U32",
+            None,
+            map([
+                ("kind", text("int")),
+                ("width", text("U32")),
+                ("value", CanonicalValue::Integer(-1)),
+            ]),
+        ),
+        (
+            "string",
+            "hello.echo@1.OneByte",
+            Some("String<max=1,canonical=raw-utf8>"),
+            map([("kind", text("string")), ("value", text("too long"))]),
+        ),
+        (
+            "map",
+            "hello.echo@1.OneEntry",
+            Some("Map<U64,U64,max=1>"),
+            map([
+                ("kind", text("map")),
+                (
+                    "entries",
+                    CanonicalValue::Array(vec![
+                        CanonicalValue::Array(vec![core_u64(1), core_u64(10)]),
+                        CanonicalValue::Array(vec![core_u64(2), core_u64(20)]),
+                    ]),
+                ),
+            ]),
+        ),
+    ];
+
+    for (label, return_type, definition, value) in cases {
+        let mut exports = hello_echo_exports();
+        if let Some(definition) = definition {
+            array_mut(field_mut(&mut exports, "types")).push(map([
+                ("coordinate", text(return_type)),
+                ("definition", text(definition)),
+            ]));
+        }
+        array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+            &format!("hello.echo@1.invalid{label}"),
+            &[],
+            return_type,
+            "edict",
+            (
+                "body",
+                pure_body(Vec::new(), map([("kind", text("const")), ("value", value)])),
+            ),
+        ));
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode invalid exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode invalid manifest");
+
+        let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+            .expect_err("out-of-domain helper constant must reject");
+        assert_eq!(
+            failure_kinds(&failures),
+            vec![LawpackValidationFailureKind::InvalidPureFunctionBody],
+            "{label}"
+        );
+    }
+
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).push(map([
+        ("coordinate", text("hello.echo@1.Choice")),
+        ("definition", text("variant { Present(U64), Empty, }")),
+    ]));
+    let invalid_variant = map([
+        ("kind", text("variant")),
+        ("type", text("hello.echo@1.Choice")),
+        ("case", text("Missing")),
+    ]);
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidVariant",
+        &[],
+        "hello.echo@1.Choice",
+        "edict",
+        ("body", pure_body(Vec::new(), invalid_variant)),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode variant exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode variant manifest");
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("unknown variant case must reject");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
+fn edict_pure_helper_call_graph_depth_is_bounded() {
+    for count in [128, 129] {
+        let mut exports = hello_echo_exports();
+        let functions = array_mut(field_mut(&mut exports, "pureFunctions"));
+        for index in 0..count {
+            let result = if index + 1 == count {
+                map([("kind", text("const")), ("value", core_u64(0))])
+            } else {
+                map([
+                    ("kind", text("call")),
+                    ("callee", text(&format!("hello.echo@1.chain{}", index + 1))),
+                    ("typeArgs", CanonicalValue::Array(Vec::new())),
+                    ("args", CanonicalValue::Array(Vec::new())),
+                ])
+            };
+            functions.push(pure_function_with_types(
+                &format!("hello.echo@1.chain{index}"),
+                &[],
+                "U64",
+                "edict",
+                ("body", pure_body(Vec::new(), result)),
+            ));
+        }
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode deep helper graph");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode deep graph manifest");
+
+        if count == 128 {
+            decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+                .expect("helper graph at the depth boundary is accepted");
+        } else {
+            let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+                .expect_err("over-depth helper graph must reject without recursion failure");
+            assert_eq!(
+                failure_kinds(&failures),
+                vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+            );
+        }
+    }
+}
+
+#[test]
+fn edict_pure_helper_call_graph_must_be_acyclic() {
+    for (coordinates, callees) in [
+        (
+            vec!["hello.echo@1.selfRecursive"],
+            vec!["hello.echo@1.selfRecursive"],
+        ),
+        (
+            vec!["hello.echo@1.mutualLeft", "hello.echo@1.mutualRight"],
+            vec!["hello.echo@1.mutualRight", "hello.echo@1.mutualLeft"],
+        ),
+    ] {
+        let mut exports = hello_echo_exports();
+        for (coordinate, callee) in coordinates.iter().zip(&callees) {
+            let body = map([
+                ("params", CanonicalValue::Array(Vec::new())),
+                (
+                    "body",
+                    map([
+                        ("locals", CanonicalValue::Array(Vec::new())),
+                        ("bindings", CanonicalValue::Array(Vec::new())),
+                        (
+                            "result",
+                            map([
+                                ("kind", text("call")),
+                                ("callee", text(callee)),
+                                ("typeArgs", CanonicalValue::Array(Vec::new())),
+                                ("args", CanonicalValue::Array(Vec::new())),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]);
+            array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+                coordinate,
+                &[],
+                "U64",
+                "edict",
+                ("body", body),
+            ));
+        }
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode manifest");
+
+        let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+            .expect_err("recursive helper call graph must reject");
+
+        assert_eq!(
+            failure_kinds(&failures),
+            vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
         );
     }
 }
@@ -899,6 +1911,30 @@ fn duplicate_export_coordinates_reject_within_their_category() {
 }
 
 #[test]
+fn callable_export_coordinates_must_be_disjoint() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function(
+        "hello.echo@1.createGreeting",
+        "component",
+        (
+            "implementation",
+            executable_component("hello.echo.colliding-helper/v1", 0x96),
+        ),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode colliding exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode colliding manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("pure helper and semantic effect coordinates must be disjoint");
+
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::DuplicateIdentity]
+    );
+}
+
+#[test]
 fn edict_pure_helper_body_must_match_the_closed_pure_core_schema() {
     let mut exports = hello_echo_exports();
     array_mut(field_mut(&mut exports, "pureFunctions")).push(map([
@@ -909,7 +1945,7 @@ fn edict_pure_helper_body_must_match_the_closed_pure_core_schema() {
             CanonicalValue::Array(vec![text("hello.echo@1.GreetingKey")]),
         ),
         ("returnType", text("hello.echo@1.GreetingKey")),
-        ("costTemplate", text("hello.echo@1.tiny")),
+        ("costTemplate", text("hello.echo@1.smallCreateBudget")),
         ("determinismClass", text("total")),
         ("source", text("edict")),
         ("body", map([("opaque", text("not Core"))])),
@@ -1041,6 +2077,82 @@ fn hello_echo_exports() -> CanonicalValue {
     decode_canonical_cbor(EXPORTS_BYTES).expect("decode fixture exports")
 }
 
+fn typed_helper_exports(include_type: bool) -> CanonicalValue {
+    let identity_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref(
+                "arg:0",
+                "value",
+                "hello.echo@1.GreetingKey",
+            )]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("local")),
+                        (
+                            "ref",
+                            local_ref("arg:0", "value", "hello.echo@1.GreetingKey"),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    if include_type {
+        array_mut(field_mut(&mut exports, "types")).push(map([
+            ("coordinate", text("hello.echo@1.GreetingKey")),
+            ("definition", text("String<max=32,canonical=raw-utf8>")),
+        ]));
+    }
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function(
+        "hello.echo@1.identityKey",
+        "edict",
+        ("body", identity_body),
+    ));
+    exports
+}
+
+fn typed_helper_source(bundle: &ValidatedLawpackBundle) -> String {
+    format!(
+        "package examples.typed_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ value: String<max=32>, }};\n\
+         type Output = {{ value: String<max=32>, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let value = hello.identityKey(input.value);\n\
+           return {{ value }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    )
+}
+
+fn typed_helper_list_source(manifest_digest: &str) -> String {
+    format!(
+        "package examples.typed_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{manifest_digest}\" as hello;\n\
+         type Input = {{ values: List<String<max=32>, max=4>, }};\n\
+         type Output = {{ values: List<String<max=32>, max=4>, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let values = hello.identityKey(input.values);\n\
+           return {{ values }};\n\
+         }}"
+    )
+}
+
 fn request_only_adapter(
     budget_obligation: Option<&str>,
     include_target_configuration: bool,
@@ -1094,18 +2206,56 @@ fn pure_function(
     source: &str,
     implementation: (&str, CanonicalValue),
 ) -> CanonicalValue {
+    pure_function_with_types(
+        coordinate,
+        &["hello.echo@1.GreetingKey"],
+        "hello.echo@1.GreetingKey",
+        source,
+        implementation,
+    )
+}
+
+fn pure_function_with_types(
+    coordinate: &str,
+    parameter_types: &[&str],
+    return_type: &str,
+    source: &str,
+    implementation: (&str, CanonicalValue),
+) -> CanonicalValue {
     map([
         ("coordinate", text(coordinate)),
         ("typeParameters", CanonicalValue::Array(Vec::new())),
         (
             "parameterTypes",
-            CanonicalValue::Array(vec![text("hello.echo@1.GreetingKey")]),
+            CanonicalValue::Array(parameter_types.iter().copied().map(text).collect()),
         ),
-        ("returnType", text("hello.echo@1.GreetingKey")),
-        ("costTemplate", text("hello.echo@1.tiny")),
+        ("returnType", text(return_type)),
+        ("costTemplate", text("hello.echo@1.smallCreateBudget")),
         ("determinismClass", text("total")),
         ("source", text(source)),
         implementation,
+    ])
+}
+
+fn pure_body(params: Vec<CanonicalValue>, result: CanonicalValue) -> CanonicalValue {
+    map([
+        ("params", CanonicalValue::Array(params)),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                ("result", result),
+            ]),
+        ),
+    ])
+}
+
+fn core_u64(value: i128) -> CanonicalValue {
+    map([
+        ("kind", text("int")),
+        ("width", text("U64")),
+        ("value", CanonicalValue::Integer(value)),
     ])
 }
 

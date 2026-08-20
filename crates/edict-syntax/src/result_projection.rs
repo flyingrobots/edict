@@ -508,22 +508,26 @@ fn resolve_capability_sources(
     target_intent: &TargetIrIntent,
     intent_name: &str,
 ) -> Result<(CapabilityByLocal, CapabilityByStep), ResultProjectionFailure> {
-    let core_effects = core_intent
-        .body
-        .nodes
-        .iter()
-        .filter_map(|node| match node {
+    let mut core_effects = Vec::new();
+    for node in &core_intent.body.nodes {
+        match node {
             CoreNode::Effect {
                 binding,
                 effect,
                 input,
                 ..
-            } => Some((binding, effect, input)),
+            } => core_effects.push((binding, effect, input)),
             CoreNode::Let { .. }
             | CoreNode::Require { .. }
-            | CoreNode::ExternalActionRequest { .. } => None,
-        })
-        .collect::<Vec<_>>();
+            | CoreNode::ExternalActionRequest { .. } => {}
+            CoreNode::For { .. } | CoreNode::Branch { .. } => {
+                return Err(failure(
+                    ResultProjectionFailureKind::CoreTargetMismatch,
+                    format!("{intent_name}.structuredControl"),
+                ));
+            }
+        }
+    }
     if core_effects.len() != target_intent.steps.len() {
         return Err(failure(
             ResultProjectionFailureKind::CoreTargetMismatch,
@@ -610,7 +614,7 @@ fn project_core_expression(
             };
             Ok(ResultProjectionExpr::Source { source, path })
         }
-        CoreExpr::Const(_) | CoreExpr::Call { .. } => Err(failure(
+        CoreExpr::Const(_) | CoreExpr::Call { .. } | CoreExpr::If { .. } => Err(failure(
             ResultProjectionFailureKind::UnsupportedExpression,
             "result expression",
         )),
@@ -627,7 +631,10 @@ fn source_path(expression: &CoreExpr) -> Result<(&LocalRef, Vec<String>), Result
     path.reverse();
     match current {
         CoreExpr::Local { reference } => Ok((reference, path)),
-        CoreExpr::Const(_) | CoreExpr::Record { .. } | CoreExpr::Call { .. } => Err(failure(
+        CoreExpr::Const(_)
+        | CoreExpr::Record { .. }
+        | CoreExpr::Call { .. }
+        | CoreExpr::If { .. } => Err(failure(
             ResultProjectionFailureKind::UnsupportedExpression,
             "projection source",
         )),

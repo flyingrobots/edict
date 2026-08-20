@@ -1185,6 +1185,8 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::MissingContextFact => "MissingContextFact",
         CompilerErrorKind::UnsupportedSourceShape => "UnsupportedSourceShape",
         CompilerErrorKind::UnresolvedType => "UnresolvedType",
+        CompilerErrorKind::UnresolvedFunction => "UnresolvedFunction",
+        CompilerErrorKind::InvalidBound => "InvalidBound",
         CompilerErrorKind::UnknownField => "UnknownField",
         CompilerErrorKind::TypeMismatch => "TypeMismatch",
         CompilerErrorKind::ExpectedPredicate => "ExpectedPredicate",
@@ -1490,6 +1492,31 @@ fn core_node_review(node: &CoreNode) -> Value {
             "state": "awaitingSettlement",
             "settlementAdmission": "schemaRequired",
         }),
+        CoreNode::For {
+            binder,
+            iter,
+            bound,
+            body,
+        } => json!({
+            "kind": "for",
+            "binder": local_ref_review(binder),
+            "iter": core_expr_review(iter),
+            "bound": match bound {
+                edict_syntax::CoreBound::Literal(value) => json!({ "kind": "literal", "value": value }),
+                edict_syntax::CoreBound::Coordinate(reference) => json!({ "kind": "coordinate", "ref": reference }),
+            },
+            "body": core_block_review(body),
+        }),
+        CoreNode::Branch {
+            predicate,
+            then_block,
+            else_block,
+        } => json!({
+            "kind": "branch",
+            "predicate": core_predicate_review(predicate),
+            "then": core_block_review(then_block),
+            "else": core_block_review(else_block),
+        }),
     }
 }
 
@@ -1563,6 +1590,16 @@ fn core_expr_review(expr: &CoreExpr) -> Value {
             "callee": callee,
             "typeArgs": type_args,
             "args": args.iter().map(core_expr_review).collect::<Vec<_>>(),
+        }),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => json!({
+            "kind": "if",
+            "predicate": core_predicate_review(predicate),
+            "then": core_expr_review(then_value),
+            "else": core_expr_review(else_value),
         }),
     }
 }

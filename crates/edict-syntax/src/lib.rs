@@ -118,9 +118,9 @@ pub use canonical::{
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
-    compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
-    CompilerErrorKind, CompilerStage, ResolvedIntent, ResolvedModule, ResolvedTypeDecl,
-    TypedIntent, TypedModule,
+    compile_to_core, lower_core, resolve_module, type_check, BoundFact, CompilerContext,
+    CompilerError, CompilerErrorKind, CompilerStage, PureFunctionFact, PureHelperCostFact,
+    ResolvedIntent, ResolvedModule, ResolvedTypeDecl, TypeShapeFact, TypedIntent, TypedModule,
 };
 pub use contract_bundle::{
     assemble_contract_bundle, assemble_contract_bundle_from_target_ir,
@@ -133,7 +133,7 @@ pub use contract_bundle::{
     SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
+    CompareOp, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
     CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
     CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, InputConstraint,
     InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
