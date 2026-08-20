@@ -12,7 +12,7 @@ use edict_syntax::{
     lower_core, parse_module, resolve_module, type_check, BoundFact, CompilerContext,
     CompilerErrorKind, CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, PureFunctionFact,
-    PureHelperCostFact, ResourceRef, TypeShapeFact, WriteClass,
+    PureHelperCostFact, ResolvedModule, ResourceRef, TypeShapeFact, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -1796,6 +1796,74 @@ fn nested_branch_yield_integer_inference_remains_bounded() {
 
     compile_to_core(&module, &pure_context())
         .expect("nested bare-integer inference stays within bounded compiler work");
+}
+
+#[test]
+fn branch_yield_inference_cache_distinguishes_equal_spans() {
+    fn resolved_for(width: &str, suffix: &str, intent_name: &str) -> ResolvedModule {
+        let source = format!(
+            "package a.b@1;\n\
+             type Input{suffix} = {{ value: {width}, }};\n\
+             type Output{suffix} = {{ value: {width}, }};\n\
+             intent {intent_name}(input: Input{suffix}) returns Output{suffix}\n\
+               profile p.read\n\
+               basis none\n\
+               budget <= p.tiny {{\n\
+               let value = if true {{ yield 0; }} else {{ yield input.value; }};\n\
+               return {{ value }};\n\
+             }}"
+        );
+        let module = parse_module(&source).expect("equal-span branch-yield source parses");
+        resolve_module(&module, &pure_context()).expect("equal-span source resolves")
+    }
+
+    let mut resolved = resolved_for("U64", "64", "first");
+    let second = resolved_for("U32", "32", "other");
+    let first_span = match &resolved.intents[0].source.body.stmts[0] {
+        edict_syntax::ast::Stmt::Let {
+            value: edict_syntax::ast::Expr::IfYield { else_block, .. },
+            ..
+        } => else_block.span,
+        _ => panic!("first intent starts with branch-yield let"),
+    };
+    let second_span = match &second.intents[0].source.body.stmts[0] {
+        edict_syntax::ast::Stmt::Let {
+            value: edict_syntax::ast::Expr::IfYield { else_block, .. },
+            ..
+        } => else_block.span,
+        _ => panic!("second intent starts with branch-yield let"),
+    };
+    assert_eq!(first_span, second_span, "fixture reuses diagnostic spans");
+
+    resolved.types.extend(second.types);
+    resolved.intents.extend(second.intents);
+
+    type_check(&resolved).expect("distinct equal-span blocks retain their own inferred widths");
+}
+
+#[test]
+fn branch_yield_record_bare_integer_inherits_field_width_from_either_branch() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true { yield { value: 0 }; } else { yield { value: input.value }; };\n\
+          return selected;\n\
+        }";
+    let mirrored = source
+        .replace("yield { value: 0 };", "yield { value: __typed };")
+        .replace("yield { value: input.value };", "yield { value: 0 };")
+        .replace("yield { value: __typed };", "yield { value: input.value };");
+    assert_ne!(mirrored, source, "mirrored aggregate order changes source");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("aggregate branch-yield source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("either aggregate branch supplies the bare integer field width");
+    }
 }
 
 #[test]

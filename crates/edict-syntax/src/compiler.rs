@@ -645,7 +645,7 @@ struct TypeChecker<'a> {
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
-    inferred_yield_shapes: BTreeMap<(usize, usize), TypeShape>,
+    inferred_yield_shapes: BTreeMap<usize, TypeShape>,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -2219,7 +2219,7 @@ impl<'a> TypeChecker<'a> {
         };
         let baseline_steps = state.accumulated_steps;
         let (then_block, then_shape, else_block, else_shape) =
-            if annotation_shape.is_none() && is_bare_integer_literal(&then_source.value) {
+            if annotation_shape.is_none() && contains_contextual_bare_integer(&then_source.value) {
                 let Some(inferred_else_shape) =
                     self.infer_yield_block_shape(intent, output_shape, else_source, env, state)
                 else {
@@ -2259,7 +2259,7 @@ impl<'a> TypeChecker<'a> {
                 state.accumulated_steps = baseline_steps;
                 let branch_expectation = if annotation_shape.is_some() {
                     annotation_shape.as_ref()
-                } else if is_bare_integer_literal(&else_source.value) {
+                } else if contains_contextual_bare_integer(&else_source.value) {
                     Some(&then_shape)
                 } else {
                     None
@@ -2345,7 +2345,7 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         state: &BodyState,
     ) -> Option<TypeShape> {
-        let cache_key = (block.span.start, block.span.end);
+        let cache_key = std::ptr::from_ref(block).addr();
         if let Some(shape) = self.inferred_yield_shapes.get(&cache_key) {
             return Some(shape.clone());
         }
@@ -3563,6 +3563,35 @@ fn is_bare_integer_literal(expr: &Expr) -> bool {
             ..
         } => matches!(operand.as_ref(), Expr::Int { suffix: None, .. }),
         _ => false,
+    }
+}
+
+fn contains_contextual_bare_integer(expr: &Expr) -> bool {
+    if is_bare_integer_literal(expr) {
+        return true;
+    }
+    match expr {
+        Expr::Record { entries, .. } => entries.iter().any(|entry| match entry {
+            RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                contains_contextual_bare_integer(value)
+            }
+            RecordEntry::Shorthand { .. } => false,
+        }),
+        Expr::If { then, els, .. } => {
+            contains_contextual_bare_integer(then) || contains_contextual_bare_integer(els)
+        }
+        Expr::Ident { .. }
+        | Expr::Int { .. }
+        | Expr::Str { .. }
+        | Expr::Bool { .. }
+        | Expr::Digest { .. }
+        | Expr::Field { .. }
+        | Expr::Call { .. }
+        | Expr::Unary { .. }
+        | Expr::Binary { .. }
+        | Expr::IfYield { .. }
+        | Expr::VariantLit { .. }
+        | Expr::Match { .. } => false,
     }
 }
 
