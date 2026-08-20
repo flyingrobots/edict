@@ -671,14 +671,13 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
           return { value };\n\
         }";
     let context = bounded_string_helper_context();
+    let mirrored = source
+        .replace("helpers.short(input.value)", "helpers.swap(input.value)")
+        .replace("helpers.long(input.value)", "helpers.short(input.value)")
+        .replace("helpers.swap(input.value)", "helpers.long(input.value)");
+    assert_ne!(mirrored, source, "mirrored helper order changes source");
 
-    for source in [
-        source.to_owned(),
-        source
-            .replace("helpers.short(input.value)", "helpers.swap(input.value)")
-            .replace("helpers.long(input.value)", "helpers.short(input.value)")
-            .replace("helpers.swap(input.value)", "helpers.long(input.value)"),
-    ] {
+    for source in [source.to_owned(), mirrored] {
         let module = parse_module(&source).expect("bounded helper conditional parses");
         compile_to_core(&module, &context)
             .expect("compatible helper conditional compiles in either branch order");
@@ -1757,6 +1756,7 @@ fn branch_yield_integer_inference_preserves_source_order_local_identities() {
           return { value };\n\
         }";
     let typed = bare.replace("yield 0;", "yield 0u64;");
+    assert_ne!(typed, bare, "typed integer mutation changes source");
 
     let bare_module = parse_module(bare).expect("bare-integer branch-yield source parses");
     let typed_module = parse_module(&typed).expect("typed-integer branch-yield source parses");
@@ -1818,6 +1818,7 @@ fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
             "yield helpers.short(input.value);",
         )
         .replace("yield __wide;", "yield helpers.long(input.value);");
+    assert_ne!(mirrored, source, "mirrored branch order changes source");
     let context = bounded_string_helper_context();
 
     for source in [source.to_owned(), mirrored] {

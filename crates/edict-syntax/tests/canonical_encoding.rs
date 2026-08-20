@@ -8,13 +8,102 @@
 mod common;
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 
 use common::{bounded_hello_core, hello_context, BOUNDED_HELLO};
 use edict_syntax::{
-    compile_to_core, decode_canonical_cbor, encode_canonical_cbor, encode_core_module,
-    parse_module, CanonicalErrorKind, CanonicalValue, CoreImport, CoreImportKind, CoreNode,
-    CorePredicate, InputConstraint, InputConstraintSource, ResourceRef,
+    compile_to_core, decode_canonical_cbor, digest_core_module, encode_canonical_cbor,
+    encode_core_module, parse_module, CanonicalErrorKind, CanonicalValue, CompilerContext,
+    CoreBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, InputConstraint,
+    InputConstraintSource, ResourceRef,
 };
+
+const STATEMENT_BRANCH: &str = "package a.b@1;\n\
+    type Input = { choose: U32, value: U64, };\n\
+    type Output = { value: U64, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      if input.choose == 0u32 {\n\
+        require input.value <= 10u64 else example.TooLarge;\n\
+      } else {\n\
+        require input.value == input.value else example.Impossible;\n\
+      }\n\
+      return { value: input.value };\n\
+    }";
+const STATEMENT_BRANCH_BYTES_HEX: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/core/canonical/statement-branch.core.hex"
+));
+const STATEMENT_BRANCH_DIGEST: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../fixtures/core/canonical/statement-branch.core.sha256"
+));
+
+fn statement_branch_context() -> CompilerContext {
+    CompilerContext::new()
+        .with_operation_profile("p.read", "continuum.profile.read-only/v1")
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 64,
+                max_allocated_bytes: 4096,
+                max_output_bytes: 1024,
+            },
+        )
+}
+
+fn find_branch_map(value: &CanonicalValue) -> Option<&[(CanonicalValue, CanonicalValue)]> {
+    match value {
+        CanonicalValue::Map(entries) => {
+            let is_branch = entries.iter().any(|(key, value)| {
+                key == &CanonicalValue::Text("kind".to_owned())
+                    && value == &CanonicalValue::Text("branch".to_owned())
+            });
+            if is_branch {
+                Some(entries)
+            } else {
+                entries.iter().find_map(|(_, value)| find_branch_map(value))
+            }
+        }
+        CanonicalValue::Array(values) => values.iter().find_map(find_branch_map),
+        CanonicalValue::Null
+        | CanonicalValue::Bool(_)
+        | CanonicalValue::Integer(_)
+        | CanonicalValue::Bytes(_)
+        | CanonicalValue::Text(_) => None,
+    }
+}
+
+#[test]
+fn statement_branch_omits_binding_and_preserves_exact_canonical_identity() {
+    let module = parse_module(STATEMENT_BRANCH).expect("statement branch parses");
+    let core = compile_to_core(&module, &statement_branch_context())
+        .expect("statement branch compiles to Core");
+    let bytes = encode_core_module(&core).expect("statement branch Core encodes");
+    let decoded = decode_canonical_cbor(&bytes).expect("statement branch bytes decode");
+    let branch = find_branch_map(&decoded).expect("canonical Core contains branch node");
+    let actual_hex = bytes.iter().fold(
+        String::with_capacity(bytes.len() * 2),
+        |mut output, byte| {
+            write!(&mut output, "{byte:02x}").expect("writing bytes to String cannot fail");
+            output
+        },
+    );
+
+    assert!(branch
+        .iter()
+        .all(|(key, _)| { key != &CanonicalValue::Text("binding".to_owned()) }));
+    assert_eq!(actual_hex, STATEMENT_BRANCH_BYTES_HEX.trim());
+    assert_eq!(
+        format!(
+            "{}\n",
+            digest_core_module(&core).expect("statement branch Core digests")
+        ),
+        STATEMENT_BRANCH_DIGEST
+    );
+}
 
 #[test]
 fn canonical_core_bytes_are_independent_of_map_construction_order() {

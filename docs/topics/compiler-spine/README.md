@@ -44,7 +44,7 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
   field access, record literals, equality predicates, string concatenation, and
   pure conditional expressions whose branches have compatible bounded types,
-  and effectful branch-yield lets whose isolated blocks use already-supported
+  and branch-yield lets whose isolated blocks use already-supported
   statements and produce compatible bounded values. Statement conditionals
   lower to isolated branch blocks, and literal- or
   coordinate-bounded loops lower over bounded lists when the resolved cap
