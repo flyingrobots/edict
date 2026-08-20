@@ -1997,6 +1997,31 @@ fn branch_yield_records_join_compatible_fields_independently() {
 }
 
 #[test]
+fn branch_yield_lists_join_item_and_length_bounds_independently() {
+    let source = "package a.b@1;\n\
+        type Input = { choose: U32, left: List<String<max=8>, max=16>, right: List<String<max=16>, max=8>, };\n\
+        type Output = { value: List<String<max=16>, max=16>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if input.choose == 0u32 { yield input.left; } else { yield input.right; };\n\
+          return { value };\n\
+        }";
+    let mirrored = source
+        .replace("yield input.left;", "yield __other__;")
+        .replace("yield input.right;", "yield input.left;")
+        .replace("yield __other__;", "yield input.right;");
+    assert_ne!(mirrored, source, "mirrored list branches change source");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("fieldwise list join source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("opposing list item and length bounds join independently");
+    }
+}
+
+#[test]
 fn branch_yield_rejects_pure_helper_that_is_a_disallowed_write_effect() {
     let module =
         parse_module(PURE_HELPER_BRANCH_YIELD).expect("pure-helper branch-yield source parses");

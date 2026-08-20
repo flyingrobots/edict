@@ -3864,6 +3864,34 @@ fn record_entries_by_name(entries: &[RecordEntry]) -> Option<BTreeMap<&str, &Rec
 }
 
 fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
+    if let (
+        TypeKind::List {
+            item: left_item,
+            max: left_max,
+        },
+        TypeKind::List {
+            item: right_item,
+            max: right_max,
+        },
+    ) = (&left.kind, &right.kind)
+    {
+        let joined_item = compatible_shape(left_item, right_item)?;
+        let joined_max = (*left_max).max(*right_max);
+        let coord = if joined_item == **left_item && joined_max == *left_max {
+            left.coord.clone()
+        } else if joined_item == **right_item && joined_max == *right_max {
+            right.coord.clone()
+        } else {
+            list_type_coord(&joined_item.value_type_coord(), joined_max)
+        };
+        return Some(TypeShape {
+            coord,
+            kind: TypeKind::List {
+                item: Box::new(joined_item),
+                max: joined_max,
+            },
+        });
+    }
     if let (TypeKind::Record(left_fields), TypeKind::Record(right_fields)) =
         (&left.kind, &right.kind)
     {
