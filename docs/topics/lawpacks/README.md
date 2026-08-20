@@ -106,8 +106,10 @@ The current executable Rust surfaces touching lawpacks are:
   [LAWPACKS-REQ-013]
 - Before an inline Edict helper becomes a compiler fact, its closed Core body
   is checked against the exported signature. Parameters, locals, bindings,
-  calls, record fields, bounded collection items, and the final result must all
-  have the declared types; helper calls must also form an acyclic graph.
+  calls, integer domains, bounded strings and bytes, record fields, variant
+  cases and payloads, bounded collection entries, and the final result must all
+  have the declared types. Helper calls must also form an acyclic graph no
+  deeper than 128 calls, checked without recursive graph traversal.
   [LAWPACKS-REQ-014]
 - The Hello Echo golden generator compiles the exact source and lawpack closure,
   lowers the resulting Core module, and pins canonical Core and Target IR bytes

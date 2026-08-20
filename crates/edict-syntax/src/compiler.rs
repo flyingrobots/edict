@@ -869,7 +869,7 @@ impl<'a> TypeChecker<'a> {
         let param = &source.params[0];
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
-        let helper_cost = self.check_helper_cost_budget(intent)?;
+        self.check_helper_cost_budget(intent)?;
         let input_binding = LocalRef {
             id: CORE_APPLICATION_INPUT_LOCAL_ID.to_owned(),
             alpha_name: "$arg0".to_owned(),
@@ -904,13 +904,7 @@ impl<'a> TypeChecker<'a> {
             None => None,
         };
         let input_constraints = self.input_constraints(source, &env);
-        let body = self.check_body(
-            intent,
-            &output_shape,
-            &mut env,
-            &mut locals,
-            helper_cost.steps,
-        )?;
+        let body = self.check_body(intent, &output_shape, &mut env, &mut locals)?;
 
         Some(TypedIntent {
             name: intent.name.clone(),
@@ -1080,7 +1074,12 @@ impl<'a> TypeChecker<'a> {
                     return None;
                 };
                 let body_cost = self.checked_helper_cost_mul(body_cost, factor, *span)?;
-                self.checked_helper_cost_add(iter_cost, body_cost, *span)
+                let loop_cost = HelperCost {
+                    steps: factor,
+                    ..HelperCost::default()
+                };
+                let body_and_loop = self.checked_helper_cost_add(body_cost, loop_cost, *span)?;
+                self.checked_helper_cost_add(iter_cost, body_and_loop, *span)
             }
         }
     }
@@ -1359,13 +1358,9 @@ impl<'a> TypeChecker<'a> {
         output_shape: &TypeShape,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
-        helper_steps: u64,
     ) -> Option<CoreBlock> {
         let source = &intent.source;
-        let mut state = BodyState {
-            accumulated_steps: helper_steps,
-            ..BodyState::default()
-        };
+        let mut state = BodyState::default();
 
         for stmt in &source.body.stmts {
             self.check_body_stmt(intent, output_shape, stmt, env, locals, &mut state);
@@ -3016,6 +3011,7 @@ impl<'a> TypeChecker<'a> {
             &self.resolved.type_shapes,
             &fact.lawpack,
             &mut resolving,
+            1,
         )?;
         shape.coord.clone_from(&fact.coordinate);
         Some(shape)
@@ -3405,7 +3401,12 @@ fn imported_type_definition_shape(
     type_shapes: &BTreeMap<String, TypeShapeFact>,
     lawpack: &ResourceRef,
     resolving: &mut BTreeSet<String>,
+    depth: usize,
 ) -> Option<TypeShape> {
+    const MAX_IMPORTED_TYPE_DEPTH: usize = 128;
+    if depth > MAX_IMPORTED_TYPE_DEPTH {
+        return None;
+    }
     if definition == "Bool" {
         return Some(TypeShape {
             coord: definition.to_owned(),
@@ -3455,6 +3456,7 @@ fn imported_type_definition_shape(
                     type_shapes,
                     lawpack,
                     resolving,
+                    depth + 1,
                 )?),
                 max: max.parse().ok()?,
             },
@@ -3466,8 +3468,13 @@ fn imported_type_definition_shape(
     if !resolving.insert(definition.to_owned()) {
         return None;
     }
-    let mut shape =
-        imported_type_definition_shape(&fact.definition, type_shapes, lawpack, resolving)?;
+    let mut shape = imported_type_definition_shape(
+        &fact.definition,
+        type_shapes,
+        lawpack,
+        resolving,
+        depth + 1,
+    )?;
     resolving.remove(definition);
     shape.coord.clone_from(&fact.coordinate);
     Some(shape)

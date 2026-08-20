@@ -12,7 +12,7 @@ use crate::canonical::{
     decode_canonical_cbor, digest_canonical_value, sha256_review_string, CanonicalErrorKind,
     CanonicalValue,
 };
-use crate::core_ir::CORE_API_VERSION;
+use crate::core_ir::{parse_core_integer, CORE_API_VERSION};
 use crate::parser::is_keyword;
 
 /// Lawpack manifest ABI supported by this loader.
@@ -1036,15 +1036,34 @@ fn validate_typed_core_expr(
         }
         "variant" => {
             let ty = required_nonempty_text(&fields, "type", path).map_err(as_pure_body_failure)?;
-            if let Some(payload) = fields.get("payload") {
-                validate_typed_core_expr(
-                    payload,
-                    &format!("{path}.payload"),
-                    scope,
-                    signatures,
-                    type_definitions,
-                    None,
-                )?;
+            let case =
+                required_nonempty_text(&fields, "case", path).map_err(as_pure_body_failure)?;
+            let cases = variant_type_cases(&ty, type_definitions)
+                .ok_or_else(|| pure_body_failure(path, "an exact exported variant type"))?;
+            let Some(payload_type) = cases.get(&case) else {
+                return Err(pure_body_failure(
+                    &format!("{path}.case"),
+                    "a case declared by the variant type",
+                ));
+            };
+            match (fields.get("payload"), payload_type) {
+                (Some(payload), Some(payload_type)) => {
+                    validate_typed_core_expr(
+                        payload,
+                        &format!("{path}.payload"),
+                        scope,
+                        signatures,
+                        type_definitions,
+                        Some(payload_type),
+                    )?;
+                }
+                (None, None) => {}
+                _ => {
+                    return Err(pure_body_failure(
+                        &format!("{path}.payload"),
+                        "payload presence and type declared by the variant case",
+                    ));
+                }
             }
             Some(ty)
         }
@@ -1184,18 +1203,39 @@ fn validate_typed_core_expr(
                 required(&fields, "entries", path).map_err(as_pure_body_failure)?,
                 &format!("{path}.entries"),
             )?;
+            let (key_type, value_type, max) = expected
+                .and_then(|expected| map_type_parts(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact bounded map type"))?;
+            if entries.len() as u64 > max {
+                return Err(pure_body_failure(
+                    &format!("{path}.entries"),
+                    &format!("at most {max} map entries"),
+                ));
+            }
             for (index, entry) in entries.iter().enumerate() {
                 let pair = pure_array(entry, &format!("{path}.entries[{index}]"))?;
-                for (part, value) in pair.iter().enumerate() {
-                    validate_typed_core_expr(
-                        value,
-                        &format!("{path}.entries[{index}][{part}]"),
-                        scope,
-                        signatures,
-                        type_definitions,
-                        None,
-                    )?;
+                if pair.len() != 2 {
+                    return Err(pure_body_failure(
+                        &format!("{path}.entries[{index}]"),
+                        "one key and one value",
+                    ));
                 }
+                validate_typed_core_expr(
+                    &pair[0],
+                    &format!("{path}.entries[{index}][0]"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                    Some(&key_type),
+                )?;
+                validate_typed_core_expr(
+                    &pair[1],
+                    &format!("{path}.entries[{index}][1]"),
+                    scope,
+                    signatures,
+                    type_definitions,
+                    Some(&value_type),
+                )?;
             }
             expected.map(str::to_owned)
         }
@@ -1319,6 +1359,7 @@ fn validate_typed_core_predicate(
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn infer_core_value_type(
     value: &CanonicalValue,
     path: &str,
@@ -1330,14 +1371,50 @@ fn infer_core_value_type(
     let inferred = match kind.as_str() {
         "bool" => Some("Bool".to_owned()),
         "int" => {
-            Some(required_nonempty_text(&fields, "width", path).map_err(as_pure_body_failure)?)
+            let width =
+                required_nonempty_text(&fields, "width", path).map_err(as_pure_body_failure)?;
+            let integer = match required(&fields, "value", path).map_err(as_pure_body_failure)? {
+                CanonicalValue::Integer(integer) => *integer,
+                _ => return Err(pure_body_failure(&format!("{path}.value"), "an integer")),
+            };
+            if parse_core_integer(&width, &integer.to_string()) != Some(integer) {
+                return Err(pure_body_failure(
+                    &format!("{path}.value"),
+                    &format!("an integer inside the declared `{width}` domain"),
+                ));
+            }
+            Some(width)
         }
         "string" => {
             require_type_family(expected, type_definitions, "string", path)?;
+            let value = required_text(&fields, "value", path).map_err(as_pure_body_failure)?;
+            let max = expected
+                .and_then(|expected| string_type_max(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact bounded string type"))?;
+            if value.len() as u64 > max {
+                return Err(pure_body_failure(
+                    &format!("{path}.value"),
+                    &format!("at most {max} UTF-8 bytes"),
+                ));
+            }
             expected.map(str::to_owned)
         }
         "bytes" => {
             require_type_family(expected, type_definitions, "bytes", path)?;
+            let CanonicalValue::Bytes(value) =
+                required(&fields, "value", path).map_err(as_pure_body_failure)?
+            else {
+                return Err(pure_body_failure(&format!("{path}.value"), "a byte string"));
+            };
+            let max = expected
+                .and_then(|expected| bytes_type_max(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact bounded bytes type"))?;
+            if value.len() as u64 > max {
+                return Err(pure_body_failure(
+                    &format!("{path}.value"),
+                    &format!("at most {max} bytes"),
+                ));
+            }
             expected.map(str::to_owned)
         }
         "null" => {
@@ -1375,7 +1452,35 @@ fn infer_core_value_type(
             expected.map(str::to_owned)
         }
         "variant" => {
-            Some(required_nonempty_text(&fields, "type", path).map_err(as_pure_body_failure)?)
+            let ty = required_nonempty_text(&fields, "type", path).map_err(as_pure_body_failure)?;
+            let case =
+                required_nonempty_text(&fields, "case", path).map_err(as_pure_body_failure)?;
+            let cases = variant_type_cases(&ty, type_definitions)
+                .ok_or_else(|| pure_body_failure(path, "an exact exported variant type"))?;
+            let Some(payload_type) = cases.get(&case) else {
+                return Err(pure_body_failure(
+                    &format!("{path}.case"),
+                    "a case declared by the variant type",
+                ));
+            };
+            match (fields.get("payload"), payload_type) {
+                (Some(payload), Some(payload_type)) => {
+                    infer_core_value_type(
+                        payload,
+                        &format!("{path}.payload"),
+                        Some(payload_type),
+                        type_definitions,
+                    )?;
+                }
+                (None, None) => {}
+                _ => {
+                    return Err(pure_body_failure(
+                        &format!("{path}.payload"),
+                        "payload presence and type declared by the variant case",
+                    ));
+                }
+            }
+            Some(ty)
         }
         "list" => {
             require_type_family(expected, type_definitions, "list", path)?;
@@ -1404,6 +1509,47 @@ fn infer_core_value_type(
         }
         "map" => {
             require_type_family(expected, type_definitions, "map", path)?;
+            let entries = pure_array(
+                required(&fields, "entries", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.entries"),
+            )?;
+            let (key_type, value_type, max) = expected
+                .and_then(|expected| map_type_parts(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact bounded map type"))?;
+            if entries.len() as u64 > max {
+                return Err(pure_body_failure(
+                    &format!("{path}.entries"),
+                    &format!("at most {max} map entries"),
+                ));
+            }
+            let mut keys = BTreeSet::new();
+            for (index, entry) in entries.iter().enumerate() {
+                let pair = pure_array(entry, &format!("{path}.entries[{index}]"))?;
+                if pair.len() != 2 {
+                    return Err(pure_body_failure(
+                        &format!("{path}.entries[{index}]"),
+                        "one key and one value",
+                    ));
+                }
+                if !keys.insert(pair[0].clone()) {
+                    return Err(pure_body_failure(
+                        &format!("{path}.entries[{index}][0]"),
+                        "a unique canonical map key",
+                    ));
+                }
+                infer_core_value_type(
+                    &pair[0],
+                    &format!("{path}.entries[{index}][0]"),
+                    Some(&key_type),
+                    type_definitions,
+                )?;
+                infer_core_value_type(
+                    &pair[1],
+                    &format!("{path}.entries[{index}][1]"),
+                    Some(&value_type),
+                    type_definitions,
+                )?;
+            }
             expected.map(str::to_owned)
         }
         "capability" => expected.map(str::to_owned),
@@ -1469,8 +1615,8 @@ fn split_top_level(value: &str, delimiter: char) -> Vec<&str> {
     let mut parts = Vec::new();
     for (index, character) in value.char_indices() {
         match character {
-            '<' | '{' => depth = depth.saturating_add(1),
-            '>' | '}' => depth = depth.saturating_sub(1),
+            '<' | '{' | '(' | '[' => depth = depth.saturating_add(1),
+            '>' | '}' | ')' | ']' => depth = depth.saturating_sub(1),
             _ if character == delimiter && depth == 0 => {
                 parts.push(value[start..index].trim());
                 start = index + character.len_utf8();
@@ -1482,6 +1628,30 @@ fn split_top_level(value: &str, delimiter: char) -> Vec<&str> {
     parts
 }
 
+fn string_type_max(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<u64> {
+    let definition = resolved_type_definition(ty, type_definitions);
+    let inner = definition.strip_prefix("String<")?.strip_suffix('>')?;
+    split_top_level(inner, ',')
+        .into_iter()
+        .find_map(parse_named_max)
+}
+
+fn bytes_type_max(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<u64> {
+    let definition = resolved_type_definition(ty, type_definitions);
+    let inner = definition.strip_prefix("Bytes<")?.strip_suffix('>')?;
+    parse_named_max(inner)
+}
+
+fn parse_named_max(value: &str) -> Option<u64> {
+    value
+        .split_once('=')
+        .filter(|(name, _)| name.trim() == "max")?
+        .1
+        .trim()
+        .parse()
+        .ok()
+}
+
 fn list_type_parts(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<(String, u64)> {
     let definition = resolved_type_definition(ty, type_definitions);
     let inner = definition.strip_prefix("List<")?.strip_suffix('>')?;
@@ -1489,14 +1659,25 @@ fn list_type_parts(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<
     if parts.len() != 2 {
         return None;
     }
-    let max = parts[1]
-        .split_once('=')
-        .filter(|(name, _)| name.trim() == "max")?
-        .1
-        .trim()
-        .parse()
-        .ok()?;
+    let max = parse_named_max(parts[1])?;
     Some((parts[0].to_owned(), max))
+}
+
+fn map_type_parts(
+    ty: &str,
+    type_definitions: &BTreeMap<&str, &str>,
+) -> Option<(String, String, u64)> {
+    let definition = resolved_type_definition(ty, type_definitions);
+    let inner = definition.strip_prefix("Map<")?.strip_suffix('>')?;
+    let parts = split_top_level(inner, ',');
+    if parts.len() != 3 {
+        return None;
+    }
+    Some((
+        parts[0].to_owned(),
+        parts[1].to_owned(),
+        parse_named_max(parts[2])?,
+    ))
 }
 
 fn record_type_fields(
@@ -1525,6 +1706,36 @@ fn record_type_fields(
     Some(fields)
 }
 
+fn variant_type_cases(
+    ty: &str,
+    type_definitions: &BTreeMap<&str, &str>,
+) -> Option<BTreeMap<String, Option<String>>> {
+    let definition = resolved_type_definition(ty, type_definitions);
+    let inner = definition
+        .strip_prefix("variant")?
+        .trim()
+        .strip_prefix('{')?
+        .strip_suffix('}')?;
+    let mut cases = BTreeMap::new();
+    for part in split_top_level(inner, ',') {
+        if part.is_empty() {
+            continue;
+        }
+        let part = part.trim();
+        let (name, payload) = match part.split_once('(') {
+            Some((name, payload)) => (
+                name.trim(),
+                Some(payload.trim().strip_suffix(')')?.trim().to_owned()),
+            ),
+            None => (part, None),
+        };
+        if name.is_empty() || cases.insert(name.to_owned(), payload).is_some() {
+            return None;
+        }
+    }
+    (!cases.is_empty()).then_some(cases)
+}
+
 fn validate_pure_function_callees(
     pure_functions: &[LawpackPureFunction],
 ) -> Result<(), Vec<LawpackValidationFailure>> {
@@ -1547,6 +1758,8 @@ fn validate_pure_function_callees(
 fn validate_pure_function_call_graph(
     pure_functions: &[LawpackPureFunction],
 ) -> Result<(), Vec<LawpackValidationFailure>> {
+    const MAX_HELPER_CALL_DEPTH: usize = 128;
+
     let mut call_graph = pure_functions
         .iter()
         .map(|function| (function.coordinate.clone(), BTreeSet::new()))
@@ -1561,14 +1774,34 @@ fn validate_pure_function_call_graph(
         collect_pure_callees(body, callees);
     }
 
-    let mut visiting = BTreeSet::new();
     let mut visited = BTreeSet::new();
-    for coordinate in call_graph.keys() {
-        if visit_pure_function(coordinate, &call_graph, &mut visiting, &mut visited) {
-            return Err(pure_body_failure(
-                "exports.pureFunctions",
-                "an acyclic pure-helper call graph",
-            ));
+    for root in call_graph.keys() {
+        if visited.contains(root) {
+            continue;
+        }
+        let mut visiting = BTreeSet::new();
+        let mut stack = vec![(root.clone(), false, 1_usize)];
+        while let Some((coordinate, exiting, depth)) = stack.pop() {
+            if exiting {
+                visiting.remove(&coordinate);
+                visited.insert(coordinate);
+                continue;
+            }
+            if visited.contains(&coordinate) {
+                continue;
+            }
+            if depth > MAX_HELPER_CALL_DEPTH || !visiting.insert(coordinate.clone()) {
+                return Err(pure_body_failure(
+                    "exports.pureFunctions",
+                    "an acyclic pure-helper call graph no deeper than 128 calls",
+                ));
+            }
+            stack.push((coordinate.clone(), true, depth));
+            if let Some(callees) = call_graph.get(&coordinate) {
+                for callee in callees.iter().rev() {
+                    stack.push((callee.clone(), false, depth + 1));
+                }
+            }
         }
     }
     Ok(())
@@ -1608,30 +1841,6 @@ fn collect_pure_callees(value: &CanonicalValue, callees: &mut BTreeSet<String>) 
         | CanonicalValue::Bytes(_)
         | CanonicalValue::Text(_) => {}
     }
-}
-
-fn visit_pure_function(
-    coordinate: &str,
-    call_graph: &BTreeMap<String, BTreeSet<String>>,
-    visiting: &mut BTreeSet<String>,
-    visited: &mut BTreeSet<String>,
-) -> bool {
-    if visited.contains(coordinate) {
-        return false;
-    }
-    if !visiting.insert(coordinate.to_owned()) {
-        return true;
-    }
-    if call_graph.get(coordinate).is_some_and(|callees| {
-        callees
-            .iter()
-            .any(|callee| visit_pure_function(callee, call_graph, visiting, visited))
-    }) {
-        return true;
-    }
-    visiting.remove(coordinate);
-    visited.insert(coordinate.to_owned());
-    false
 }
 
 fn validate_pure_callees_in_value(

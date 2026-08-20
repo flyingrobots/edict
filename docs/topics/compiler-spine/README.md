@@ -100,7 +100,10 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   reject before Core. Conservative helper steps, allocation, and output costs
   add across sequential calls, take the component-wise maximum across exclusive
   branches, and multiply through enclosing bounded loops. Helper steps and
-  structural loop work share the operation step budget. The imported lawpack
+  structural loop work combine on each control-flow path before exclusive
+  branch maxima are selected, preserving branch correlation under the shared
+  operation step budget. Imported type-alias traversal rejects beyond a
+  deterministic depth of 128 rather than risking unbounded recursion. The imported lawpack
   digest remains the helper implementation, cost, and type-closure identity.
   [CSPINE-REQ-024]
   [CSPINE-REQ-029] [CSPINE-REQ-031]

@@ -1598,6 +1598,143 @@ fn edict_pure_helper_field_results_come_from_the_base_record() {
 }
 
 #[test]
+fn edict_pure_helper_constants_obey_scalar_map_and_variant_types() {
+    let cases = [
+        (
+            "integer",
+            "U32",
+            None,
+            map([
+                ("kind", text("int")),
+                ("width", text("U32")),
+                ("value", CanonicalValue::Integer(-1)),
+            ]),
+        ),
+        (
+            "string",
+            "hello.echo@1.OneByte",
+            Some("String<max=1,canonical=raw-utf8>"),
+            map([("kind", text("string")), ("value", text("too long"))]),
+        ),
+        (
+            "map",
+            "hello.echo@1.OneEntry",
+            Some("Map<U64,U64,max=1>"),
+            map([
+                ("kind", text("map")),
+                (
+                    "entries",
+                    CanonicalValue::Array(vec![
+                        CanonicalValue::Array(vec![core_u64(1), core_u64(10)]),
+                        CanonicalValue::Array(vec![core_u64(2), core_u64(20)]),
+                    ]),
+                ),
+            ]),
+        ),
+    ];
+
+    for (label, return_type, definition, value) in cases {
+        let mut exports = hello_echo_exports();
+        if let Some(definition) = definition {
+            array_mut(field_mut(&mut exports, "types")).push(map([
+                ("coordinate", text(return_type)),
+                ("definition", text(definition)),
+            ]));
+        }
+        array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+            &format!("hello.echo@1.invalid{label}"),
+            &[],
+            return_type,
+            "edict",
+            (
+                "body",
+                pure_body(Vec::new(), map([("kind", text("const")), ("value", value)])),
+            ),
+        ));
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode invalid exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode invalid manifest");
+
+        let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+            .expect_err("out-of-domain helper constant must reject");
+        assert_eq!(
+            failure_kinds(&failures),
+            vec![LawpackValidationFailureKind::InvalidPureFunctionBody],
+            "{label}"
+        );
+    }
+
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).push(map([
+        ("coordinate", text("hello.echo@1.Choice")),
+        ("definition", text("variant { Present(U64), Empty, }")),
+    ]));
+    let invalid_variant = map([
+        ("kind", text("variant")),
+        ("type", text("hello.echo@1.Choice")),
+        ("case", text("Missing")),
+    ]);
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidVariant",
+        &[],
+        "hello.echo@1.Choice",
+        "edict",
+        ("body", pure_body(Vec::new(), invalid_variant)),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode variant exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode variant manifest");
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("unknown variant case must reject");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
+fn edict_pure_helper_call_graph_depth_is_bounded() {
+    for count in [128, 129] {
+        let mut exports = hello_echo_exports();
+        let functions = array_mut(field_mut(&mut exports, "pureFunctions"));
+        for index in 0..count {
+            let result = if index + 1 == count {
+                map([("kind", text("const")), ("value", core_u64(0))])
+            } else {
+                map([
+                    ("kind", text("call")),
+                    ("callee", text(&format!("hello.echo@1.chain{}", index + 1))),
+                    ("typeArgs", CanonicalValue::Array(Vec::new())),
+                    ("args", CanonicalValue::Array(Vec::new())),
+                ])
+            };
+            functions.push(pure_function_with_types(
+                &format!("hello.echo@1.chain{index}"),
+                &[],
+                "U64",
+                "edict",
+                ("body", pure_body(Vec::new(), result)),
+            ));
+        }
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode deep helper graph");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode deep graph manifest");
+
+        if count == 128 {
+            decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+                .expect("helper graph at the depth boundary is accepted");
+        } else {
+            let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+                .expect_err("over-depth helper graph must reject without recursion failure");
+            assert_eq!(
+                failure_kinds(&failures),
+                vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+            );
+        }
+    }
+}
+
+#[test]
 fn edict_pure_helper_call_graph_must_be_acyclic() {
     for (coordinates, callees) in [
         (
@@ -2097,6 +2234,28 @@ fn pure_function_with_types(
         ("determinismClass", text("total")),
         ("source", text(source)),
         implementation,
+    ])
+}
+
+fn pure_body(params: Vec<CanonicalValue>, result: CanonicalValue) -> CanonicalValue {
+    map([
+        ("params", CanonicalValue::Array(params)),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                ("result", result),
+            ]),
+        ),
+    ])
+}
+
+fn core_u64(value: i128) -> CanonicalValue {
+    map([
+        ("kind", text("int")),
+        ("width", text("U64")),
+        ("value", CanonicalValue::Integer(value)),
     ])
 }
 

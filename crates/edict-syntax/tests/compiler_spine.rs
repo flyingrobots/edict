@@ -781,6 +781,91 @@ fn pure_helper_costs_are_charged_at_call_sites_and_inside_loops() {
 }
 
 #[test]
+fn mutually_exclusive_helper_and_loop_work_share_branch_correlation() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+        type Input = { choose: U32, values: List<U64, max=4>, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          if input.choose == 0u32 {\n\
+            let bumped: U64 = helpers.bump(0u64);\n\
+            require bumped == bumped else example.InvalidValue;\n\
+          } else {\n\
+            for value in input.values bounded 4 {\n\
+              require value == value else example.InvalidValue;\n\
+            }\n\
+          }\n\
+          return { value: 0u64 };\n\
+        }";
+    let module = parse_module(source).expect("branch-correlated cost source parses");
+    let context = pure_helper_context("U64").with_pure_helper_cost(
+        "helpers.tiny",
+        example_helper_cost(CoreBudget {
+            max_steps: 5,
+            max_allocated_bytes: 8,
+            max_output_bytes: 8,
+        }),
+    );
+
+    compile_to_core(&module, &context)
+        .expect("mutually exclusive helper and loop work is charged per path");
+}
+
+#[test]
+fn imported_type_alias_depth_rejects_with_a_structured_error() {
+    let module = parse_module(PURE_HELPER_CALL).expect("pure helper source parses");
+    let lawpack = example_bounds_lawpack();
+    for count in [128, 129] {
+        let mut context = pure_context()
+            .with_pure_function(
+                "helpers.bump",
+                PureFunctionFact {
+                    lawpack: lawpack.clone(),
+                    coordinate: "example.bounds@1.bump".to_owned(),
+                    type_parameters: Vec::new(),
+                    parameter_types: vec!["U64".to_owned()],
+                    return_type: "example.bounds@1.Alias0".to_owned(),
+                    cost_template: "example.bounds@1.tiny".to_owned(),
+                },
+            )
+            .with_pure_helper_cost(
+                "helpers.tiny",
+                example_helper_cost(CoreBudget {
+                    max_steps: 1,
+                    max_allocated_bytes: 8,
+                    max_output_bytes: 8,
+                }),
+            );
+        for index in 0..count {
+            context = context.with_type_shape(TypeShapeFact {
+                lawpack: lawpack.clone(),
+                coordinate: format!("example.bounds@1.Alias{index}"),
+                definition: if index + 1 == count {
+                    "U64".to_owned()
+                } else {
+                    format!("example.bounds@1.Alias{}", index + 1)
+                },
+            });
+        }
+
+        if count == 128 {
+            compile_to_core(&module, &context)
+                .expect("imported alias chain at the depth boundary compiles");
+        } else {
+            let errors = compile_to_core(&module, &context).expect_err(
+                "over-depth imported alias chain must reject without recursion failure",
+            );
+            assert!(errors
+                .iter()
+                .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+        }
+    }
+}
+
+#[test]
 fn unresolved_loop_bound_fails_closed_during_helper_cost_accounting() {
     let source = EXPORTED_LIST_LOOP
         .replace("bounded 4", "bounded helpers.maxItems")
