@@ -670,8 +670,24 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
           let value = if true then helpers.short(input.value) else helpers.long(input.value);\n\
           return { value };\n\
         }";
+    let context = bounded_string_helper_context();
+
+    for source in [
+        source.to_owned(),
+        source
+            .replace("helpers.short(input.value)", "helpers.swap(input.value)")
+            .replace("helpers.long(input.value)", "helpers.short(input.value)")
+            .replace("helpers.swap(input.value)", "helpers.long(input.value)"),
+    ] {
+        let module = parse_module(&source).expect("bounded helper conditional parses");
+        compile_to_core(&module, &context)
+            .expect("compatible helper conditional compiles in either branch order");
+    }
+}
+
+fn bounded_string_helper_context() -> CompilerContext {
     let lawpack = example_bounds_lawpack();
-    let context = pure_context()
+    pure_context()
         .with_type_shape(TypeShapeFact {
             lawpack: lawpack.clone(),
             coordinate: "example.bounds@1.Short".to_owned(),
@@ -711,19 +727,7 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
                 max_allocated_bytes: 8,
                 max_output_bytes: 8,
             }),
-        );
-
-    for source in [
-        source.to_owned(),
-        source
-            .replace("helpers.short(input.value)", "helpers.swap(input.value)")
-            .replace("helpers.long(input.value)", "helpers.short(input.value)")
-            .replace("helpers.swap(input.value)", "helpers.long(input.value)"),
-    ] {
-        let module = parse_module(&source).expect("bounded helper conditional parses");
-        compile_to_core(&module, &context)
-            .expect("compatible helper conditional compiles in either branch order");
-    }
+        )
 }
 
 #[test]
@@ -1694,6 +1698,45 @@ fn branch_yield_bare_integer_inherits_width_from_either_branch() {
         };
 
         assert_eq!(binding.ty, "U64");
+    }
+}
+
+#[test]
+fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: String<max=8>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true { yield helpers.short(input.value); } else { yield helpers.long(input.value); };\n\
+          return { value };\n\
+        }";
+    let mirrored = source
+        .replace("yield helpers.short(input.value);", "yield __wide;")
+        .replace(
+            "yield helpers.long(input.value);",
+            "yield helpers.short(input.value);",
+        )
+        .replace("yield __wide;", "yield helpers.long(input.value);");
+    let context = bounded_string_helper_context();
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("bounded-string branch-yield source parses");
+        let core = compile_to_core(&module, &context)
+            .expect("branch-yield chooses the wider compatible string in either order");
+        let intent = core.intents.get("t").expect("compiled intent");
+        let CoreNode::Branch {
+            binding: Some(binding),
+            ..
+        } = &intent.body.nodes[0]
+        else {
+            panic!("branch-yield lowers with one binding");
+        };
+
+        assert_eq!(binding.ty, "example.bounds@1.Long");
     }
 }
 

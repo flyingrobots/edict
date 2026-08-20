@@ -2250,14 +2250,20 @@ impl<'a> TypeChecker<'a> {
                 };
                 let then_steps = state.accumulated_steps;
                 state.accumulated_steps = baseline_steps;
-                let branch_expectation = annotation_shape.as_ref().unwrap_or(&then_shape);
+                let branch_expectation = if annotation_shape.is_some() {
+                    annotation_shape.as_ref()
+                } else if is_bare_integer_literal(&else_source.value) {
+                    Some(&then_shape)
+                } else {
+                    None
+                };
                 let Some((else_block, else_shape)) = self.check_yield_block(
                     intent,
                     output_shape,
                     else_source,
                     env,
                     state,
-                    Some(branch_expectation),
+                    branch_expectation,
                 ) else {
                     return;
                 };
