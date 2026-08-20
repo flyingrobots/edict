@@ -560,7 +560,7 @@ struct TypedValue {
     ty: TypeShape,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct BodyState {
     nodes: Vec<CoreNode>,
     result: Option<CoreExpr>,
@@ -639,7 +639,7 @@ struct LetStatement<'a> {
     span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
     errors: Vec<CompilerError>,
@@ -2218,24 +2218,29 @@ impl<'a> TypeChecker<'a> {
         let baseline_steps = state.accumulated_steps;
         let (then_block, then_shape, else_block, else_shape) =
             if annotation_shape.is_none() && is_bare_integer_literal(&then_source.value) {
-                let Some((else_block, else_shape)) =
-                    self.check_yield_block(intent, output_shape, else_source, env, state, None)
+                let Some(inferred_else_shape) =
+                    self.infer_yield_block_shape(intent, output_shape, else_source, env, state)
                 else {
                     return;
                 };
-                let else_steps = state.accumulated_steps;
-                state.accumulated_steps = baseline_steps;
                 let Some((then_block, then_shape)) = self.check_yield_block(
                     intent,
                     output_shape,
                     then_source,
                     env,
                     state,
-                    Some(&else_shape),
+                    Some(&inferred_else_shape),
                 ) else {
                     return;
                 };
-                state.accumulated_steps = else_steps.max(state.accumulated_steps);
+                let then_steps = state.accumulated_steps;
+                state.accumulated_steps = baseline_steps;
+                let Some((else_block, else_shape)) =
+                    self.check_yield_block(intent, output_shape, else_source, env, state, None)
+                else {
+                    return;
+                };
+                state.accumulated_steps = then_steps.max(state.accumulated_steps);
                 (then_block, then_shape, else_block, else_shape)
             } else {
                 let Some((then_block, then_shape)) = self.check_yield_block(
@@ -2270,30 +2275,12 @@ impl<'a> TypeChecker<'a> {
                 state.accumulated_steps = then_steps.max(state.accumulated_steps);
                 (then_block, then_shape, else_block, else_shape)
             };
-        let binding_shape = if let Some(annotation_shape) = annotation_shape {
-            if !compatible(&annotation_shape, &then_shape)
-                || !compatible(&annotation_shape, &else_shape)
-            {
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::TypeMismatch,
-                    "branch-yield results do not match the annotated type",
-                    span,
-                ));
-                return;
-            }
-            annotation_shape
-        } else if compatible(&then_shape, &else_shape) {
-            then_shape
-        } else if compatible(&else_shape, &then_shape) {
-            else_shape
-        } else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::TypeMismatch,
-                "branch-yield results do not have a compatible bounded type",
-                span,
-            ));
+        let Some(binding_shape) = self.branch_yield_binding_shape(
+            annotation_shape.as_ref(),
+            &then_shape,
+            &else_shape,
+            span,
+        ) else {
             return;
         };
 
@@ -2306,6 +2293,72 @@ impl<'a> TypeChecker<'a> {
         });
         locals.push(binding.clone());
         env.insert(stmt.name.to_owned(), (binding, binding_shape));
+    }
+
+    fn branch_yield_binding_shape(
+        &mut self,
+        annotation_shape: Option<&TypeShape>,
+        then_shape: &TypeShape,
+        else_shape: &TypeShape,
+        span: Span,
+    ) -> Option<TypeShape> {
+        if let Some(annotation_shape) = annotation_shape {
+            if !compatible(annotation_shape, then_shape)
+                || !compatible(annotation_shape, else_shape)
+            {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "branch-yield results do not match the annotated type",
+                    span,
+                ));
+                return None;
+            }
+            Some(annotation_shape.clone())
+        } else if compatible(then_shape, else_shape) {
+            Some(then_shape.clone())
+        } else if compatible(else_shape, then_shape) {
+            Some(else_shape.clone())
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "branch-yield results do not have a compatible bounded type",
+                span,
+            ));
+            None
+        }
+    }
+
+    fn infer_yield_block_shape(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        block: &YieldBlock,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &BodyState,
+    ) -> Option<TypeShape> {
+        let mut inference_checker = self.clone();
+        let inference_error_count = inference_checker.errors.len();
+        let mut inference_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            step_factor: state.step_factor,
+            accumulated_steps: state.accumulated_steps,
+            ..BodyState::default()
+        };
+        let shape = inference_checker
+            .check_yield_block(intent, output_shape, block, env, &mut inference_state, None)
+            .map(|(_, shape)| shape);
+        if shape.is_none() {
+            self.errors.extend(
+                inference_checker
+                    .errors
+                    .into_iter()
+                    .skip(inference_error_count),
+            );
+        }
+        shape
     }
 
     #[allow(clippy::too_many_arguments)]

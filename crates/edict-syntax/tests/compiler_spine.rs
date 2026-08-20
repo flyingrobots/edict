@@ -1702,6 +1702,39 @@ fn branch_yield_bare_integer_inherits_width_from_either_branch() {
 }
 
 #[test]
+fn branch_yield_integer_inference_preserves_source_order_local_identities() {
+    let bare = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true {\n\
+            let then_local = input.value;\n\
+            yield 0;\n\
+          } else {\n\
+            let else_local = input.value;\n\
+            yield else_local;\n\
+          };\n\
+          return { value };\n\
+        }";
+    let typed = bare.replace("yield 0;", "yield 0u64;");
+
+    let bare_module = parse_module(bare).expect("bare-integer branch-yield source parses");
+    let typed_module = parse_module(&typed).expect("typed-integer branch-yield source parses");
+    let bare_core =
+        compile_to_core(&bare_module, &pure_context()).expect("bare-integer branch-yield compiles");
+    let typed_core = compile_to_core(&typed_module, &pure_context())
+        .expect("typed-integer branch-yield compiles");
+
+    assert_eq!(
+        digest_core_module(&bare_core).expect("bare-integer Core digests"),
+        digest_core_module(&typed_core).expect("typed-integer Core digests")
+    );
+}
+
+#[test]
 fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
     let source = "package a.b@1;\n\
         use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
