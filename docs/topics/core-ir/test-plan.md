@@ -61,8 +61,8 @@ Out of scope:
 | --- | --- | --- |
 | docs/abi/edict-core.cddl | Normative Core semantic schema. | Required semantic declarations exist and forbidden byte/hash freeze fields are absent. |
 | fixtures/lang/bounds/bounded-hello.edict | Initial pure local-record source-to-Core fixture. | Compiled Core module canonicalizes deterministically and produces the reviewed Core golden artifacts. |
-| fixtures/core/canonical/statement-branch.core.hex | Reviewed canonical bytes for a compiler-produced statement-only branch, represented as lowercase hex for text review. | The decoded branch omits `binding`, and the executable encoder reproduces every byte. |
-| fixtures/core/canonical/statement-branch.core.sha256 | Reviewed digest for the statement-only branch artifact. | The executable Core digest reproduces the exact digest committed by the reviewed bytes. |
+| fixtures/core/canonical/statement-branch.core.hex | Test-owned reviewed canonical bytes for the inline `STATEMENT_BRANCH` source in `canonical_encoding.rs`, represented as lowercase hex for text review. | The decoded branch omits `binding`, and the executable encoder reproduces every byte; this fixture is not managed by `cargo xtask core-goldens`. |
+| fixtures/core/canonical/statement-branch.core.sha256 | Test-owned reviewed digest for the inline `STATEMENT_BRANCH` source in `canonical_encoding.rs`. | The executable Core digest reproduces the exact digest committed by the reviewed bytes; this fixture is not managed by `cargo xtask core-goldens`. |
 | fixtures/lang/external-actions/workspace-snapshot.edict | Typed external-request source-to-Core fixture. | Compiled Core preserves the complete request and exact capability closure in generated canonical bytes. |
 | fixtures/core/schema/accepted/core-module-minimal.fields | Accepted Core module field-shape fixture. | Required `core-module` fields are present and no unknown fields appear. |
 | fixtures/core/schema/accepted/core-intent-minimal.fields | Accepted Core intent field-shape fixture. | Required `core-intent` fields are present and no unknown fields appear. |
@@ -119,7 +119,11 @@ Out of scope:
 - Schema-shape fixtures are checked by extracting required and allowed fields
   from the checked-in CDDL, not by duplicating a prose field list.
 - Golden artifact tests compare behavior-derived bytes and digests against
-  reviewed fixtures that are regenerated through the same executable path.
+  reviewed fixtures. Generator-owned Core fixtures are regenerated with
+  `cargo xtask core-goldens --write`. The statement-branch hex and digest are
+  test-owned: an intentional source or encoder change must regenerate both from
+  the exact `canonical_encoding.rs` test path in one reviewed change, then run
+  that test and `cargo xtask verify`; `core-goldens` does not manage them.
 
 ## Open Gaps
 

@@ -2419,6 +2419,10 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         state: &BodyState,
     ) -> Option<TypeShape> {
+        // `resolved` is a shared borrow for this checker's whole lifetime, so
+        // every reachable `YieldBlock` stays immutable and alive. That makes
+        // its address a stable per-compilation identity; owned or replaceable
+        // AST storage must use a different cache key.
         let cache_key = std::ptr::from_ref(block).addr();
         if let Some(shape) = self.inferred_yield_shapes.get(&cache_key) {
             return Some(shape.clone());
@@ -2480,6 +2484,10 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         state: &BodyState,
     ) -> Option<BTreeMap<String, (LocalRef, TypeShape)>> {
+        // `resolved` is a shared borrow for this checker's whole lifetime, so
+        // every reachable `YieldBlock` stays immutable and alive. That makes
+        // its address a stable per-compilation identity; owned or replaceable
+        // AST storage must use a different cache key.
         let cache_key = std::ptr::from_ref(block).addr();
         if let Some(env) = self.inferred_yield_envs.get(&cache_key) {
             return Some(env.clone());

@@ -1772,7 +1772,7 @@ fn branch_yield_integer_inference_preserves_source_order_local_identities() {
 }
 
 #[test]
-fn nested_branch_yield_integer_inference_remains_bounded() {
+fn deeply_nested_branch_yield_integer_inference_compiles() {
     let mut nested_else = "yield input.value;".to_owned();
     for depth in (0..24).rev() {
         nested_else = format!(
@@ -1794,8 +1794,7 @@ fn nested_branch_yield_integer_inference_remains_bounded() {
     );
     let module = parse_module(&source).expect("nested branch-yield source parses");
 
-    compile_to_core(&module, &pure_context())
-        .expect("nested bare-integer inference stays within bounded compiler work");
+    compile_to_core(&module, &pure_context()).expect("deeply nested bare-integer source compiles");
 }
 
 #[test]
@@ -1900,7 +1899,7 @@ fn branch_yield_complementary_record_integers_join_structurally() {
 }
 
 #[test]
-fn nested_complementary_record_inference_remains_bounded() {
+fn deeply_nested_complementary_record_inference_compiles() {
     let mut nested = String::new();
     for depth in (0..20).rev() {
         nested = format!(
@@ -1926,7 +1925,7 @@ fn nested_complementary_record_inference_remains_bounded() {
     let module = parse_module(&source).expect("nested complementary source parses");
 
     compile_to_core(&module, &pure_context())
-        .expect("nested complementary inference stays within bounded compiler work");
+        .expect("deeply nested complementary record source compiles");
 }
 
 #[test]
