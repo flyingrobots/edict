@@ -508,24 +508,26 @@ fn resolve_capability_sources(
     target_intent: &TargetIrIntent,
     intent_name: &str,
 ) -> Result<(CapabilityByLocal, CapabilityByStep), ResultProjectionFailure> {
-    let core_effects = core_intent
-        .body
-        .nodes
-        .iter()
-        .filter_map(|node| match node {
+    let mut core_effects = Vec::new();
+    for node in &core_intent.body.nodes {
+        match node {
             CoreNode::Effect {
                 binding,
                 effect,
                 input,
                 ..
-            } => Some((binding, effect, input)),
+            } => core_effects.push((binding, effect, input)),
             CoreNode::Let { .. }
             | CoreNode::Require { .. }
-            | CoreNode::ExternalActionRequest { .. }
-            | CoreNode::For { .. }
-            | CoreNode::Branch { .. } => None,
-        })
-        .collect::<Vec<_>>();
+            | CoreNode::ExternalActionRequest { .. } => {}
+            CoreNode::For { .. } | CoreNode::Branch { .. } => {
+                return Err(failure(
+                    ResultProjectionFailureKind::CoreTargetMismatch,
+                    format!("{intent_name}.structuredControl"),
+                ));
+            }
+        }
+    }
     if core_effects.len() != target_intent.steps.len() {
         return Err(failure(
             ResultProjectionFailureKind::CoreTargetMismatch,

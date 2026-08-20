@@ -80,6 +80,14 @@ pub struct BoundFact {
     pub value: u64,
 }
 
+/// Conservative pure-helper cost owned by one exact imported lawpack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PureHelperCostFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub budget: CoreBudget,
+}
+
 /// A compiler-spine failure with stable stage/kind identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerError {
@@ -100,6 +108,7 @@ pub struct CompilerContext {
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
+    pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     type_shapes: BTreeMap<String, TypeShapeFact>,
     bounds: BTreeMap<String, BoundFact>,
     budgets: BTreeMap<String, CoreBudget>,
@@ -171,6 +180,17 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub fn with_pure_helper_cost(
+        mut self,
+        source_coordinate: impl Into<String>,
+        fact: PureHelperCostFact,
+    ) -> Self {
+        self.pure_helper_costs
+            .insert(source_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_type_shape(mut self, fact: TypeShapeFact) -> Self {
         self.type_shapes.insert(fact.coordinate.clone(), fact);
         self
@@ -196,8 +216,10 @@ pub struct ResolvedModule {
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
+    pub pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     pub type_shapes: BTreeMap<String, TypeShapeFact>,
     pub bounds: BTreeMap<String, BoundFact>,
+    pub budgets: BTreeMap<String, CoreBudget>,
     pub types: Vec<ResolvedTypeDecl>,
     pub intents: Vec<ResolvedIntent>,
 }
@@ -308,8 +330,10 @@ pub fn resolve_module(
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
             pure_functions: context.pure_functions.clone(),
+            pure_helper_costs: context.pure_helper_costs.clone(),
             type_shapes: context.type_shapes.clone(),
             bounds: context.bounds.clone(),
+            budgets: context.budgets.clone(),
             types,
             intents,
         },
@@ -544,6 +568,47 @@ struct BodyState {
     obstruction_index: usize,
     step_factor: u64,
     accumulated_steps: u64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct HelperCost {
+    steps: u64,
+    allocated_bytes: u64,
+    output_bytes: u64,
+}
+
+impl HelperCost {
+    fn checked_add(self, other: Self) -> Option<Self> {
+        Some(Self {
+            steps: self.steps.checked_add(other.steps)?,
+            allocated_bytes: self.allocated_bytes.checked_add(other.allocated_bytes)?,
+            output_bytes: self.output_bytes.checked_add(other.output_bytes)?,
+        })
+    }
+
+    fn checked_mul(self, factor: u64) -> Option<Self> {
+        Some(Self {
+            steps: self.steps.checked_mul(factor)?,
+            allocated_bytes: self.allocated_bytes.checked_mul(factor)?,
+            output_bytes: self.output_bytes.checked_mul(factor)?,
+        })
+    }
+
+    fn component_max(self, other: Self) -> Self {
+        Self {
+            steps: self.steps.max(other.steps),
+            allocated_bytes: self.allocated_bytes.max(other.allocated_bytes),
+            output_bytes: self.output_bytes.max(other.output_bytes),
+        }
+    }
+
+    fn from_budget(budget: &CoreBudget) -> Self {
+        Self {
+            steps: budget.max_steps,
+            allocated_bytes: budget.max_allocated_bytes,
+            output_bytes: budget.max_output_bytes,
+        }
+    }
 }
 
 impl Default for BodyState {
@@ -804,6 +869,7 @@ impl<'a> TypeChecker<'a> {
         let param = &source.params[0];
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
+        self.check_helper_cost_budget(intent)?;
         let input_binding = LocalRef {
             id: CORE_APPLICATION_INPUT_LOCAL_ID.to_owned(),
             alpha_name: "$arg0".to_owned(),
@@ -875,6 +941,415 @@ impl<'a> TypeChecker<'a> {
             }
         }
         out
+    }
+
+    fn check_helper_cost_budget(&mut self, intent: &ResolvedIntent) -> Option<HelperCost> {
+        let mut cost = self.helper_cost_for_block(&intent.source.body)?;
+        for clause in &intent.source.clauses {
+            let clause_cost = match clause {
+                IntentClause::Basis(Some(expr)) => self.helper_cost_for_expr(expr)?,
+                IntentClause::Where(predicates) => {
+                    self.helper_cost_for_exprs_at(predicates, intent.source.span)?
+                }
+                IntentClause::Profile(_)
+                | IntentClause::Implements(_)
+                | IntentClause::Basis(None)
+                | IntentClause::Footprint(_)
+                | IntentClause::Budget(_) => HelperCost::default(),
+            };
+            cost = self.checked_helper_cost_add(cost, clause_cost, intent.source.span)?;
+        }
+        if cost.steps > intent.budget.max_steps
+            || cost.allocated_bytes > intent.budget.max_allocated_bytes
+            || cost.output_bytes > intent.budget.max_output_bytes
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                format!(
+                    "pure-helper cost steps={}, allocatedBytes={}, outputBytes={} exceeds operation budget",
+                    cost.steps, cost.allocated_bytes, cost.output_bytes
+                ),
+                intent.source.span,
+            ));
+            return None;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_block(&mut self, block: &Block) -> Option<HelperCost> {
+        let mut cost = HelperCost::default();
+        for stmt in &block.stmts {
+            let stmt_cost = self.helper_cost_for_stmt(stmt)?;
+            cost = self.checked_helper_cost_add(cost, stmt_cost, block.span)?;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_stmt(&mut self, stmt: &Stmt) -> Option<HelperCost> {
+        match stmt {
+            Stmt::Let {
+                value, els, span, ..
+            } => {
+                let value_cost = self.helper_cost_for_expr(value)?;
+                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
+                self.checked_helper_cost_add(value_cost, handler_cost, *span)
+            }
+            Stmt::Effect { call, els, span } => {
+                let call_cost = self.helper_cost_for_expr(call)?;
+                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
+                self.checked_helper_cost_add(call_cost, handler_cost, *span)
+            }
+            Stmt::ExternalActionRequest {
+                operation,
+                authority_scope,
+                basis,
+                max_settlement_bytes,
+                max_attempts,
+                span,
+                ..
+            } => self.helper_cost_for_exprs_at(
+                [
+                    operation,
+                    authority_scope,
+                    basis,
+                    max_settlement_bytes,
+                    max_attempts,
+                ],
+                *span,
+            ),
+            Stmt::Require {
+                predicate,
+                arm,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(predicate)?;
+                let arm_cost = self.helper_cost_for_require_arm(arm)?;
+                self.checked_helper_cost_add(predicate_cost, arm_cost, *span)
+            }
+            Stmt::Guarantee {
+                predicate,
+                obstruction,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(predicate)?;
+                let obstruction_cost = self.helper_cost_for_target(obstruction.as_ref())?;
+                self.checked_helper_cost_add(predicate_cost, obstruction_cost, *span)
+            }
+            Stmt::Assert { predicate, .. }
+            | Stmt::Return {
+                value: predicate, ..
+            } => self.helper_cost_for_expr(predicate),
+            Stmt::If {
+                cond,
+                then_block,
+                els,
+                span,
+            } => {
+                let cond_cost = self.helper_cost_for_expr(cond)?;
+                let then_cost = self.helper_cost_for_block(then_block)?;
+                let else_cost = match els.as_deref() {
+                    Some(ElseClause::Block(block)) => self.helper_cost_for_block(block)?,
+                    Some(ElseClause::If(stmt)) => self.helper_cost_for_stmt(stmt)?,
+                    None => HelperCost::default(),
+                };
+                self.checked_helper_cost_add(cond_cost, then_cost.component_max(else_cost), *span)
+            }
+            Stmt::For {
+                iter,
+                bound,
+                body,
+                span,
+                ..
+            } => {
+                let iter_cost = self.helper_cost_for_expr(iter)?;
+                let body_cost = self.helper_cost_for_block(body)?;
+                let Some(factor) = self.helper_cost_loop_bound(bound) else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::MissingContextFact,
+                        "bounded-loop helper cost requires a resolvable loop bound",
+                        *span,
+                    ));
+                    return None;
+                };
+                let body_cost = self.checked_helper_cost_mul(body_cost, factor, *span)?;
+                let loop_cost = HelperCost {
+                    steps: factor,
+                    ..HelperCost::default()
+                };
+                let body_and_loop = self.checked_helper_cost_add(body_cost, loop_cost, *span)?;
+                self.checked_helper_cost_add(iter_cost, body_and_loop, *span)
+            }
+        }
+    }
+
+    fn helper_cost_for_expr(&mut self, expr: &Expr) -> Option<HelperCost> {
+        match expr {
+            Expr::Ident { .. }
+            | Expr::Int { .. }
+            | Expr::Str { .. }
+            | Expr::Bool { .. }
+            | Expr::Digest { .. } => Some(HelperCost::default()),
+            Expr::Field { base, .. } | Expr::Unary { operand: base, .. } => {
+                self.helper_cost_for_expr(base)
+            }
+            Expr::Call {
+                callee, args, span, ..
+            } => {
+                let nested = self.helper_cost_for_exprs_at(
+                    std::iter::once(callee.as_ref()).chain(args.iter()),
+                    *span,
+                )?;
+                let own = self.helper_cost_for_call(callee, *span)?;
+                self.checked_helper_cost_add(nested, own, *span)
+            }
+            Expr::Binary { lhs, rhs, span, .. } => {
+                let left = self.helper_cost_for_expr(lhs)?;
+                let right = self.helper_cost_for_expr(rhs)?;
+                self.checked_helper_cost_add(left, right, *span)
+            }
+            Expr::Record { entries, span } => {
+                let mut cost = HelperCost::default();
+                for entry in entries {
+                    let entry_cost = match entry {
+                        RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                            self.helper_cost_for_expr(value)?
+                        }
+                        RecordEntry::Shorthand { .. } => HelperCost::default(),
+                    };
+                    cost = self.checked_helper_cost_add(cost, entry_cost, *span)?;
+                }
+                Some(cost)
+            }
+            Expr::If {
+                cond,
+                then,
+                els,
+                span,
+            } => {
+                let cond_cost = self.helper_cost_for_expr(cond)?;
+                let then_cost = self.helper_cost_for_expr(then)?;
+                let else_cost = self.helper_cost_for_expr(els)?;
+                self.checked_helper_cost_add(cond_cost, then_cost.component_max(else_cost), *span)
+            }
+            Expr::IfYield {
+                pred,
+                then_block,
+                else_block,
+                span,
+            } => {
+                let predicate_cost = self.helper_cost_for_expr(pred)?;
+                let then_cost = self.helper_cost_for_yield_block(then_block)?;
+                let else_cost = self.helper_cost_for_yield_block(else_block)?;
+                self.checked_helper_cost_add(
+                    predicate_cost,
+                    then_cost.component_max(else_cost),
+                    *span,
+                )
+            }
+            Expr::VariantLit { payload, .. } => payload
+                .as_deref()
+                .map_or(Some(HelperCost::default()), |value| {
+                    self.helper_cost_for_expr(value)
+                }),
+            Expr::Match {
+                scrutinee,
+                arms,
+                span,
+            } => {
+                let scrutinee_cost = self.helper_cost_for_expr(scrutinee)?;
+                let mut arm_cost = HelperCost::default();
+                for arm in arms {
+                    arm_cost = arm_cost.component_max(self.helper_cost_for_expr(&arm.body)?);
+                }
+                self.checked_helper_cost_add(scrutinee_cost, arm_cost, *span)
+            }
+        }
+    }
+
+    fn helper_cost_for_exprs_at<'b, I>(&mut self, exprs: I, span: Span) -> Option<HelperCost>
+    where
+        I: IntoIterator<Item = &'b Expr>,
+    {
+        let mut cost = HelperCost::default();
+        for expr in exprs {
+            let expr_cost = self.helper_cost_for_expr(expr)?;
+            cost = self.checked_helper_cost_add(cost, expr_cost, span)?;
+        }
+        Some(cost)
+    }
+
+    fn helper_cost_for_call(&mut self, callee: &Expr, span: Span) -> Option<HelperCost> {
+        let Some(source_coordinate) = plain_callee_coordinate(callee) else {
+            return Some(HelperCost::default());
+        };
+        let Some(fact) = self.resolved.pure_functions.get(&source_coordinate) else {
+            return Some(HelperCost::default());
+        };
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
+            return Some(HelperCost::default());
+        }
+        let Some((source_alias, _)) = source_coordinate.split_once('.') else {
+            return Some(HelperCost::default());
+        };
+        let Some(cost_suffix) = fact
+            .cost_template
+            .strip_prefix(&fact.lawpack.coordinate)
+            .and_then(|suffix| suffix.strip_prefix('.'))
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "pure helper `{source_coordinate}` cost template is outside its owning lawpack"
+                ),
+                span,
+            ));
+            return None;
+        };
+        let source_cost = format!("{source_alias}.{cost_suffix}");
+        if !self.fact_matches_source_import(&source_cost, &fact.cost_template, &fact.lawpack) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("pure helper `{source_coordinate}` cost template is not imported"),
+                span,
+            ));
+            return None;
+        }
+        let Some(cost_fact) = self.resolved.pure_helper_costs.get(&source_cost) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("pure helper `{source_coordinate}` cost template is unresolved"),
+                span,
+            ));
+            return None;
+        };
+        if cost_fact.coordinate != fact.cost_template
+            || cost_fact.lawpack != fact.lawpack
+            || !self.fact_matches_source_import(
+                &source_cost,
+                &cost_fact.coordinate,
+                &cost_fact.lawpack,
+            )
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "pure helper `{source_coordinate}` cost template is not owned by its exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some(HelperCost::from_budget(&cost_fact.budget))
+    }
+
+    fn helper_cost_for_yield_block(
+        &mut self,
+        block: &crate::ast::YieldBlock,
+    ) -> Option<HelperCost> {
+        let statements = Block {
+            stmts: block.stmts.clone(),
+            span: block.span,
+        };
+        let statement_cost = self.helper_cost_for_block(&statements)?;
+        let value_cost = self.helper_cost_for_expr(&block.value)?;
+        self.checked_helper_cost_add(statement_cost, value_cost, block.span)
+    }
+
+    fn helper_cost_for_handler(
+        &mut self,
+        handler: Option<&ObstructionHandler>,
+    ) -> Option<HelperCost> {
+        match handler {
+            Some(ObstructionHandler::Single(target)) => self.helper_cost_for_target(Some(target)),
+            Some(ObstructionHandler::Map(arms)) => {
+                let mut cost = HelperCost::default();
+                for arm in arms {
+                    cost = cost.component_max(self.helper_cost_for_target(Some(&arm.target))?);
+                }
+                Some(cost)
+            }
+            None => Some(HelperCost::default()),
+        }
+    }
+
+    fn helper_cost_for_require_arm(&mut self, arm: &RequireElseArm) -> Option<HelperCost> {
+        match arm {
+            RequireElseArm::Terminal(target) => self.helper_cost_for_target(Some(target)),
+            RequireElseArm::ContinueObstructed(arm) => {
+                let reason = self.helper_cost_for_expr(&arm.reason)?;
+                let mut payload = HelperCost::default();
+                for entry in &arm.payload {
+                    let entry_cost = match entry {
+                        RecordEntry::Field { value, .. } | RecordEntry::Spread(value) => {
+                            self.helper_cost_for_expr(value)?
+                        }
+                        RecordEntry::Shorthand { .. } => HelperCost::default(),
+                    };
+                    payload = self.checked_helper_cost_add(payload, entry_cost, arm.span)?;
+                }
+                self.checked_helper_cost_add(reason, payload, arm.span)
+            }
+        }
+    }
+
+    fn helper_cost_for_target(&mut self, target: Option<&ObstructionTarget>) -> Option<HelperCost> {
+        target
+            .and_then(|target| target.payload.as_ref())
+            .map_or(Some(HelperCost::default()), |payload| {
+                self.helper_cost_for_expr(payload)
+            })
+    }
+
+    fn helper_cost_loop_bound(&self, bound: &BoundRef) -> Option<u64> {
+        match bound {
+            BoundRef::Int { value, .. } => Some(*value),
+            BoundRef::Coord(path) => {
+                let source_coordinate = path.join(".");
+                let fact = self.resolved.bounds.get(&source_coordinate)?;
+                self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack)
+                    .then_some(fact.value)
+            }
+        }
+    }
+
+    fn checked_helper_cost_add(
+        &mut self,
+        left: HelperCost,
+        right: HelperCost,
+        span: Span,
+    ) -> Option<HelperCost> {
+        left.checked_add(right).or_else(|| {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "pure-helper cost accumulation overflows u64",
+                span,
+            ));
+            None
+        })
+    }
+
+    fn checked_helper_cost_mul(
+        &mut self,
+        cost: HelperCost,
+        factor: u64,
+        span: Span,
+    ) -> Option<HelperCost> {
+        cost.checked_mul(factor).or_else(|| {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "bounded-loop helper cost multiplication overflows u64",
+                span,
+            ));
+            None
+        })
     }
 
     fn check_body(
@@ -1144,32 +1619,8 @@ impl<'a> TypeChecker<'a> {
             ));
             return;
         };
-        let (value, core_bound) = match bound {
-            BoundRef::Int { value, .. } => (*value, CoreBound::Literal(*value)),
-            BoundRef::Coord(path) => {
-                let source_coordinate = path.join(".");
-                let Some(fact) = self.resolved.bounds.get(&source_coordinate) else {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        CompilerErrorKind::MissingContextFact,
-                        format!("loop bound `{source_coordinate}` has no compiler context fact"),
-                        span,
-                    ));
-                    return;
-                };
-                if !self.lawpack_is_imported(&fact.lawpack) {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        CompilerErrorKind::MissingContextFact,
-                        format!(
-                            "loop bound `{source_coordinate}` is not owned by an exact imported lawpack"
-                        ),
-                        span,
-                    ));
-                    return;
-                }
-                (fact.value, CoreBound::Coordinate(fact.coordinate.clone()))
-            }
+        let Some((value, core_bound)) = self.resolve_loop_bound(bound, span) else {
+            return;
         };
         if value < *max {
             self.errors.push(error(
@@ -1187,7 +1638,7 @@ impl<'a> TypeChecker<'a> {
         };
 
         let binder_shape = item.as_ref().clone();
-        let binder = next_local(&mut state.local_index, binder_shape.value_type_coord());
+        let binder = next_local(&mut state.local_index, binder_shape.coord.clone());
         let mut nested_env = env.clone();
         nested_env.insert(var.to_owned(), (binder.clone(), binder_shape));
         let mut nested_locals = vec![binder.clone()];
@@ -1230,6 +1681,35 @@ impl<'a> TypeChecker<'a> {
                 result: CoreExpr::Const(CoreValue::Null),
             },
         });
+    }
+
+    fn resolve_loop_bound(&mut self, bound: &BoundRef, span: Span) -> Option<(u64, CoreBound)> {
+        let path = match bound {
+            BoundRef::Int { value, .. } => return Some((*value, CoreBound::Literal(*value))),
+            BoundRef::Coord(path) => path,
+        };
+        let source_coordinate = path.join(".");
+        let Some(fact) = self.resolved.bounds.get(&source_coordinate) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!("loop bound `{source_coordinate}` has no compiler context fact"),
+                span,
+            ));
+            return None;
+        };
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "loop bound `{source_coordinate}` is not owned by an exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some((fact.value, CoreBound::Coordinate(fact.coordinate.clone())))
     }
 
     fn charge_loop_work(
@@ -2630,15 +3110,29 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
-    fn helper_is_owned(&self, fact: &PureFunctionFact) -> bool {
-        self.lawpack_is_imported(&fact.lawpack)
-    }
-
-    fn lawpack_is_imported(&self, lawpack: &ResourceRef) -> bool {
-        self.resolved
-            .imports
-            .iter()
-            .any(|import| import.kind == CoreImportKind::Lawpack && &import.resource == lawpack)
+    fn fact_matches_source_import(
+        &self,
+        source_coordinate: &str,
+        fact_coordinate: &str,
+        lawpack: &ResourceRef,
+    ) -> bool {
+        let Some((source_alias, source_suffix)) = source_coordinate.split_once('.') else {
+            return false;
+        };
+        let Some(fact_suffix) = fact_coordinate
+            .strip_prefix(&lawpack.coordinate)
+            .and_then(|suffix| suffix.strip_prefix('.'))
+        else {
+            return false;
+        };
+        !source_alias.is_empty()
+            && !source_suffix.is_empty()
+            && source_suffix == fact_suffix
+            && self.resolved.imports.iter().any(|import| {
+                import.kind == CoreImportKind::Lawpack
+                    && &import.resource == lawpack
+                    && import.alias.as_deref() == Some(source_alias)
+            })
     }
 
     fn resolve_pure_function(
@@ -2669,7 +3163,7 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        if !self.helper_is_owned(&fact) {
+        if !self.fact_matches_source_import(&source_coordinate, &fact.coordinate, &fact.lawpack) {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnresolvedFunction,
@@ -2710,7 +3204,10 @@ impl<'a> TypeChecker<'a> {
         self.resolved
             .type_shapes
             .get(coordinate)
-            .filter(|fact| &fact.lawpack == lawpack)
+            .filter(|fact| {
+                &fact.lawpack == lawpack
+                    && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
+            })
             .and_then(|fact| self.shape_from_imported_type(fact))
     }
 
@@ -2721,6 +3218,7 @@ impl<'a> TypeChecker<'a> {
             &self.resolved.type_shapes,
             &fact.lawpack,
             &mut resolving,
+            1,
         )?;
         shape.coord.clone_from(&fact.coordinate);
         Some(shape)
@@ -2736,15 +3234,25 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<TypedValue> {
         let predicate = self.check_predicate(cond, env)?;
-        let (then_value, else_value) = if expected.is_none() && is_bare_integer_literal(then) {
-            let else_value = self.check_expr_with_expected(els, env, None)?;
-            let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
-            (then_value, else_value)
-        } else {
-            let then_value = self.check_expr_with_expected(then, env, expected)?;
-            let branch_expectation = expected.unwrap_or(&then_value.ty);
-            let else_value = self.check_expr_with_expected(els, env, Some(branch_expectation))?;
-            (then_value, else_value)
+        let (then_value, else_value) = match expected {
+            Some(expected) => (
+                self.check_expr_with_expected(then, env, Some(expected))?,
+                self.check_expr_with_expected(els, env, Some(expected))?,
+            ),
+            None if is_bare_integer_literal(then) => {
+                let else_value = self.check_expr_with_expected(els, env, None)?;
+                let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
+                (then_value, else_value)
+            }
+            None if is_bare_integer_literal(els) => {
+                let then_value = self.check_expr_with_expected(then, env, None)?;
+                let else_value = self.check_expr_with_expected(els, env, Some(&then_value.ty))?;
+                (then_value, else_value)
+            }
+            None => (
+                self.check_expr_with_expected(then, env, None)?,
+                self.check_expr_with_expected(els, env, None)?,
+            ),
         };
 
         let ty = if let Some(expected) = expected {
@@ -3066,6 +3574,13 @@ fn requestable_operation_family(coordinate: &str) -> bool {
         .is_some_and(|root| root.eq_ignore_ascii_case("workspace"))
 }
 
+fn coordinate_is_below_lawpack(coordinate: &str, lawpack: &ResourceRef) -> bool {
+    let prefix = format!("{}.", lawpack.coordinate);
+    coordinate
+        .strip_prefix(&prefix)
+        .is_some_and(|suffix| !suffix.is_empty())
+}
+
 fn comparable(left: &TypeShape, right: &TypeShape) -> bool {
     compatible(left, right) || compatible(right, left)
 }
@@ -3093,7 +3608,12 @@ fn imported_type_definition_shape(
     type_shapes: &BTreeMap<String, TypeShapeFact>,
     lawpack: &ResourceRef,
     resolving: &mut BTreeSet<String>,
+    depth: usize,
 ) -> Option<TypeShape> {
+    const MAX_IMPORTED_TYPE_DEPTH: usize = 128;
+    if depth > MAX_IMPORTED_TYPE_DEPTH {
+        return None;
+    }
     if definition == "Bool" {
         return Some(TypeShape {
             coord: definition.to_owned(),
@@ -3143,19 +3663,25 @@ fn imported_type_definition_shape(
                     type_shapes,
                     lawpack,
                     resolving,
+                    depth + 1,
                 )?),
                 max: max.parse().ok()?,
             },
         });
     }
-    let fact = type_shapes
-        .get(definition)
-        .filter(|fact| &fact.lawpack == lawpack)?;
+    let fact = type_shapes.get(definition).filter(|fact| {
+        &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
+    })?;
     if !resolving.insert(definition.to_owned()) {
         return None;
     }
-    let mut shape =
-        imported_type_definition_shape(&fact.definition, type_shapes, lawpack, resolving)?;
+    let mut shape = imported_type_definition_shape(
+        &fact.definition,
+        type_shapes,
+        lawpack,
+        resolving,
+        depth + 1,
+    )?;
     resolving.remove(definition);
     shape.coord.clone_from(&fact.coordinate);
     Some(shape)

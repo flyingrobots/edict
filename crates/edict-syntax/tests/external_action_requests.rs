@@ -398,39 +398,49 @@ fn request_operation_must_remain_in_core_and_target_capability_closure() {
 }
 
 #[test]
-fn nested_request_collection_enforces_canonical_depth_before_closure_checks() {
-    let mut core = compile_source(&baseline_source());
-    core.imports.clear();
-    let intent = core
-        .intents
-        .get_mut("observe")
-        .expect("observe intent exists");
-    let request = intent.body.nodes.remove(0);
-    let mut nested = CoreBlock {
-        locals: Vec::new(),
-        nodes: vec![request],
-        result: CoreExpr::Const(CoreValue::Null),
-    };
-    for depth in 0..=MAX_CANONICAL_NESTING_DEPTH {
-        nested = CoreBlock {
+fn nested_request_collection_distinguishes_canonical_depth_boundary() {
+    let nested_core = |loop_count: usize| {
+        let mut core = compile_source(&baseline_source());
+        core.imports.clear();
+        let intent = core
+            .intents
+            .get_mut("observe")
+            .expect("observe intent exists");
+        let request = intent.body.nodes.remove(0);
+        let mut nested = CoreBlock {
             locals: Vec::new(),
-            nodes: vec![CoreNode::For {
-                binder: LocalRef {
-                    id: format!("nested.{depth}"),
-                    alpha_name: format!("$nested{depth}"),
-                    ty: "U64".to_owned(),
-                },
-                iter: CoreExpr::Const(CoreValue::Null),
-                bound: CoreBound::Literal(0),
-                body: nested,
-            }],
+            nodes: vec![request],
             result: CoreExpr::Const(CoreValue::Null),
         };
-    }
-    intent.body = nested;
+        for depth in 0..loop_count {
+            nested = CoreBlock {
+                locals: Vec::new(),
+                nodes: vec![CoreNode::For {
+                    binder: LocalRef {
+                        id: format!("nested.{depth}"),
+                        alpha_name: format!("$nested{depth}"),
+                        ty: "U64".to_owned(),
+                    },
+                    iter: CoreExpr::Const(CoreValue::Null),
+                    bound: CoreBound::Literal(0),
+                    body: nested,
+                }],
+                result: CoreExpr::Const(CoreValue::Null),
+            };
+        }
+        intent.body = nested;
+        core
+    };
 
     assert_eq!(
-        encode_core_module(&core)
+        encode_core_module(&nested_core(MAX_CANONICAL_NESTING_DEPTH))
+            .expect_err("at-limit traversal reaches request closure validation")
+            .kind(),
+        edict_syntax::CanonicalErrorKind::UnsupportedValue
+    );
+
+    assert_eq!(
+        encode_core_module(&nested_core(MAX_CANONICAL_NESTING_DEPTH + 1))
             .expect_err("excessive nested request traversal rejects before closure checks")
             .kind(),
         edict_syntax::CanonicalErrorKind::NestingLimitExceeded
