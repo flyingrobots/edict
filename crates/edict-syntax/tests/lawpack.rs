@@ -909,20 +909,7 @@ fn nested_exported_type_closure_enters_pure_helper_compilation() {
     let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode nested typed manifest");
     let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
         .expect("load nested typed helper lawpack");
-    let source = format!(
-        "package examples.typed_helper@1;\n\
-         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
-         type Input = {{ values: List<String<max=32>, max=4>, }};\n\
-         type Output = {{ values: List<String<max=32>, max=4>, }};\n\
-         intent apply(input: Input) returns Output\n\
-           profile hello.createGreeting\n\
-           basis none\n\
-           budget <= hello.smallCreateBudget {{\n\
-           let values = hello.identityKey(input.values);\n\
-           return {{ values }};\n\
-         }}",
-        bundle.manifest_digest_review_string()
-    );
+    let source = typed_helper_list_source(&bundle.manifest_digest_review_string());
     let module = parse_module(&source).expect("parse nested typed helper application");
     let adapter =
         decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
@@ -933,9 +920,13 @@ fn nested_exported_type_closure_enters_pure_helper_compilation() {
         .expect("compile helper through nested exported type closure");
 
     let mut missing_nested_exports = exports;
-    array_mut(field_mut(&mut missing_nested_exports, "types"))
+    let mut removed = array_mut(field_mut(&mut missing_nested_exports, "types"))
         .pop()
         .expect("remove GreetingAtom while retaining nested GreetingKey");
+    assert_eq!(
+        field_mut(&mut removed, "coordinate"),
+        &text("hello.echo@1.GreetingAtom")
+    );
     let missing_nested_exports_bytes = encode_canonical_cbor(&missing_nested_exports)
         .expect("encode exports without nested type dependency");
     let missing_nested_manifest =
@@ -947,20 +938,8 @@ fn nested_exported_type_closure_enters_pure_helper_compilation() {
         &missing_nested_exports_bytes,
     )
     .expect("load helper lawpack without nested type dependency");
-    let missing_nested_source = format!(
-        "package examples.typed_helper@1;\n\
-         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
-         type Input = {{ values: List<String<max=32>, max=4>, }};\n\
-         type Output = {{ values: List<String<max=32>, max=4>, }};\n\
-         intent apply(input: Input) returns Output\n\
-           profile hello.createGreeting\n\
-           basis none\n\
-           budget <= hello.smallCreateBudget {{\n\
-           let values = hello.identityKey(input.values);\n\
-           return {{ values }};\n\
-         }}",
-        missing_nested_bundle.manifest_digest_review_string()
-    );
+    let missing_nested_source =
+        typed_helper_list_source(&missing_nested_bundle.manifest_digest_review_string());
     let missing_nested_module =
         parse_module(&missing_nested_source).expect("parse missing nested type application");
     let missing_nested_adapter =
@@ -1902,6 +1881,22 @@ fn typed_helper_source(bundle: &ValidatedLawpackBundle) -> String {
            return {{ value }};\n\
          }}",
         bundle.manifest_digest_review_string()
+    )
+}
+
+fn typed_helper_list_source(manifest_digest: &str) -> String {
+    format!(
+        "package examples.typed_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{manifest_digest}\" as hello;\n\
+         type Input = {{ values: List<String<max=32>, max=4>, }};\n\
+         type Output = {{ values: List<String<max=32>, max=4>, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let values = hello.identityKey(input.values);\n\
+           return {{ values }};\n\
+         }}"
     )
 }
 

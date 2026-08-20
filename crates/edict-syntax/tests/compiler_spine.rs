@@ -764,6 +764,10 @@ fn pure_helper_costs_are_charged_at_call_sites_and_inside_loops() {
         .iter()
         .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
 
+    let control = parse_module(EXPORTED_LIST_LOOP).expect("loop control source parses");
+    compile_to_core(&control, &loop_helper_context())
+        .expect("outside-loop identity helper plus structural loop work fits the budget");
+
     let loop_source = EXPORTED_LIST_LOOP.replace(
         "require value == value else example.InvalidValue;",
         "let bumped: U64 = helpers.bump(0u64);\n        require bumped == bumped else example.InvalidValue;",
@@ -774,6 +778,28 @@ fn pure_helper_costs_are_charged_at_call_sites_and_inside_loops() {
     assert!(loop_errors
         .iter()
         .any(|error| error.kind == CompilerErrorKind::InvalidBound));
+}
+
+#[test]
+fn unresolved_loop_bound_fails_closed_during_helper_cost_accounting() {
+    let source = EXPORTED_LIST_LOOP
+        .replace("bounded 4", "bounded helpers.maxItems")
+        .replace(
+            "require value == value else example.InvalidValue;",
+            "let bumped: U64 = helpers.bump(0u64);\n        require bumped == bumped else example.InvalidValue;",
+        );
+    let module = parse_module(&source).expect("unresolved helper-loop bound source parses");
+
+    let errors = compile_to_core(&module, &loop_helper_context())
+        .expect_err("helper cost accounting must reject an unresolved loop bound itself");
+
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].stage, CompilerStage::TypeCheck);
+    assert_eq!(errors[0].kind, CompilerErrorKind::MissingContextFact);
+    assert_eq!(
+        errors[0].message,
+        "bounded-loop helper cost requires a resolvable loop bound"
+    );
 }
 
 #[test]

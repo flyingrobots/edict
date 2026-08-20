@@ -1070,7 +1070,15 @@ impl<'a> TypeChecker<'a> {
             } => {
                 let iter_cost = self.helper_cost_for_expr(iter)?;
                 let body_cost = self.helper_cost_for_block(body)?;
-                let factor = self.helper_cost_loop_bound(bound).unwrap_or(0);
+                let Some(factor) = self.helper_cost_loop_bound(bound) else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::MissingContextFact,
+                        "bounded-loop helper cost requires a resolvable loop bound",
+                        *span,
+                    ));
+                    return None;
+                };
                 let body_cost = self.checked_helper_cost_mul(body_cost, factor, *span)?;
                 self.checked_helper_cost_add(iter_cost, body_cost, *span)
             }
@@ -1679,11 +1687,9 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn resolve_loop_bound(&mut self, bound: &BoundRef, span: Span) -> Option<(u64, CoreBound)> {
-        let BoundRef::Coord(path) = bound else {
-            let BoundRef::Int { value, .. } = bound else {
-                unreachable!("BoundRef is exhaustively matched")
-            };
-            return Some((*value, CoreBound::Literal(*value)));
+        let path = match bound {
+            BoundRef::Int { value, .. } => return Some((*value, CoreBound::Literal(*value))),
+            BoundRef::Coord(path) => path,
         };
         let source_coordinate = path.join(".");
         let Some(fact) = self.resolved.bounds.get(&source_coordinate) else {

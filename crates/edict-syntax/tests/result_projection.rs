@@ -6,7 +6,7 @@ use edict_syntax::{
     decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle, decode_result_projection,
     digest_core_module, digest_result_projection, emit_result_projection, encode_canonical_cbor,
     encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
-    verify_result_projection, CanonicalValue, CoreBlock, CoreExpr, CoreModule, CoreNode,
+    verify_result_projection, CanonicalValue, CoreBlock, CoreBound, CoreExpr, CoreModule, CoreNode,
     CorePredicate, LocalRef, ResultProjection, ResultProjectionExpr, ResultProjectionFailureKind,
     ResultProjectionSource, TargetIrArtifact, TargetIrLoweringFacts, TargetLoweringReport,
     TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
@@ -231,16 +231,29 @@ fn structured_core_effects_cannot_disappear_from_projection_validation() {
     core_intent.body.result = CoreExpr::Local {
         reference: input.clone(),
     };
-    core_intent.body.nodes = vec![CoreNode::Branch {
-        predicate: CorePredicate::True,
-        then_block: CoreBlock {
-            locals: Vec::new(),
-            nodes: vec![effect],
-            result: CoreExpr::Const(edict_syntax::CoreValue::Null),
+    core_intent.body.nodes = vec![CoreNode::For {
+        binder: LocalRef {
+            id: "nested.effect".to_owned(),
+            alpha_name: "$nestedEffect".to_owned(),
+            ty: "U64".to_owned(),
         },
-        else_block: CoreBlock {
+        iter: CoreExpr::Const(edict_syntax::CoreValue::Null),
+        bound: CoreBound::Literal(1),
+        body: CoreBlock {
             locals: Vec::new(),
-            nodes: Vec::new(),
+            nodes: vec![CoreNode::Branch {
+                predicate: CorePredicate::True,
+                then_block: CoreBlock {
+                    locals: Vec::new(),
+                    nodes: vec![effect],
+                    result: CoreExpr::Const(edict_syntax::CoreValue::Null),
+                },
+                else_block: CoreBlock {
+                    locals: Vec::new(),
+                    nodes: Vec::new(),
+                    result: CoreExpr::Const(edict_syntax::CoreValue::Null),
+                },
+            }],
             result: CoreExpr::Const(edict_syntax::CoreValue::Null),
         },
     }];
