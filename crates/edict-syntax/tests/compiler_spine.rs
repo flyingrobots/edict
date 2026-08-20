@@ -1969,6 +1969,34 @@ fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
 }
 
 #[test]
+fn branch_yield_records_join_compatible_fields_independently() {
+    let source = "package a.b@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { a: String<max=2>, b: String<max=2>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true { yield { a: \"x\", b: \"yy\" }; } else { yield { a: \"xx\", b: \"y\" }; };\n\
+          return selected;\n\
+        }";
+    let mirrored = source
+        .replace("yield { a: \"x\", b: \"yy\" };", "yield __other__;")
+        .replace(
+            "yield { a: \"xx\", b: \"y\" };",
+            "yield { a: \"x\", b: \"yy\" };",
+        )
+        .replace("yield __other__;", "yield { a: \"xx\", b: \"y\" };");
+    assert_ne!(mirrored, source, "mirrored record branches change source");
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("fieldwise record join source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("opposing bounded record fields join independently");
+    }
+}
+
+#[test]
 fn branch_yield_rejects_pure_helper_that_is_a_disallowed_write_effect() {
     let module =
         parse_module(PURE_HELPER_BRANCH_YIELD).expect("pure-helper branch-yield source parses");

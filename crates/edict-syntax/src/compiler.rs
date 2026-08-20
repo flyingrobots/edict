@@ -2396,10 +2396,8 @@ impl<'a> TypeChecker<'a> {
                 return None;
             }
             Some(annotation_shape.clone())
-        } else if compatible(then_shape, else_shape) {
-            Some(then_shape.clone())
-        } else if compatible(else_shape, then_shape) {
-            Some(else_shape.clone())
+        } else if let Some(shape) = compatible_shape(then_shape, else_shape) {
+            Some(shape)
         } else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -3866,6 +3864,29 @@ fn record_entries_by_name(entries: &[RecordEntry]) -> Option<BTreeMap<&str, &Rec
 }
 
 fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
+    if let (TypeKind::Record(left_fields), TypeKind::Record(right_fields)) =
+        (&left.kind, &right.kind)
+    {
+        if left_fields.len() != right_fields.len() {
+            return None;
+        }
+        let mut joined_fields = BTreeMap::new();
+        for (name, left_field) in left_fields {
+            let right_field = right_fields.get(name)?;
+            joined_fields.insert(name.clone(), compatible_shape(left_field, right_field)?);
+        }
+        let coord = if &joined_fields == left_fields {
+            left.coord.clone()
+        } else if &joined_fields == right_fields {
+            right.coord.clone()
+        } else {
+            "anonymous.record".to_owned()
+        };
+        return Some(TypeShape {
+            coord,
+            kind: TypeKind::Record(joined_fields),
+        });
+    }
     if compatible(left, right) {
         Some(left.clone())
     } else if compatible(right, left) {
