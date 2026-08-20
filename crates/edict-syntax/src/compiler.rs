@@ -2954,9 +2954,9 @@ fn imported_type_definition_shape(
             },
         });
     }
-    let fact = type_shapes
-        .get(definition)
-        .filter(|fact| &fact.lawpack == lawpack)?;
+    let fact = type_shapes.get(definition).filter(|fact| {
+        &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
+    })?;
     if !resolving.insert(definition.to_owned()) {
         return None;
     }

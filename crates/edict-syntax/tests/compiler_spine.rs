@@ -470,6 +470,64 @@ fn malformed_imported_string_policy_rejects_as_unresolved_type() {
 }
 
 #[test]
+fn nested_imported_type_fact_with_foreign_coordinate_rejects_before_core() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+        type Input = { values: List<String<max=32>, max=4>, };\n\
+        type Output = { values: List<String<max=32>, max=4>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let values = helpers.identityList(input.values);\n\
+          return { values };\n\
+        }";
+    let lawpack = example_bounds_lawpack();
+    let context = pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.Key".to_owned(),
+            definition: "String<max=32,canonical=raw-utf8>".to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.KeyList".to_owned(),
+            definition: "List<example.bounds@1.Key,max=4>".to_owned(),
+        })
+        .with_pure_function(
+            "helpers.identityList",
+            PureFunctionFact {
+                lawpack: lawpack.clone(),
+                coordinate: "example.bounds@1.identityList".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["example.bounds@1.KeyList".to_owned()],
+                return_type: "example.bounds@1.KeyList".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        );
+    let module = parse_module(source).expect("nested imported type source parses");
+    let mut resolved = resolve_module(&module, &context).expect("source resolves");
+    resolved.type_shapes.insert(
+        "example.bounds@1.Key".to_owned(),
+        TypeShapeFact {
+            lawpack,
+            coordinate: "other.package@1.Key".to_owned(),
+            definition: "String<max=32,canonical=raw-utf8>".to_owned(),
+        },
+    );
+
+    let errors =
+        type_check(&resolved).expect_err("foreign nested type coordinate rejects before Core");
+
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+}
+
+#[test]
 fn missing_pure_helper_rejects_before_core() {
     let module = parse_module(PURE_HELPER_CALL).expect("pure-helper source parses");
     let errors = compile_to_core(&module, &pure_context()).expect_err("missing helper rejects");

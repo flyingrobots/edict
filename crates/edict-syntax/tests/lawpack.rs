@@ -880,6 +880,59 @@ fn nested_exported_type_closure_enters_pure_helper_compilation() {
 
     compile_to_core(&module, preparation.compiler_context())
         .expect("compile helper through nested exported type closure");
+
+    let mut missing_nested_exports = exports;
+    array_mut(field_mut(&mut missing_nested_exports, "types"))
+        .pop()
+        .expect("remove GreetingAtom while retaining nested GreetingKey");
+    let missing_nested_exports_bytes = encode_canonical_cbor(&missing_nested_exports)
+        .expect("encode exports without nested type dependency");
+    let missing_nested_manifest =
+        hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &missing_nested_exports));
+    let missing_nested_manifest_bytes = encode_canonical_cbor(&missing_nested_manifest)
+        .expect("encode manifest without nested type dependency");
+    let missing_nested_bundle = decode_lawpack_bundle(
+        &missing_nested_manifest_bytes,
+        &missing_nested_exports_bytes,
+    )
+    .expect("load helper lawpack without nested type dependency");
+    let missing_nested_source = format!(
+        "package examples.typed_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ values: List<String<max=32>, max=4>, }};\n\
+         type Output = {{ values: List<String<max=32>, max=4>, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let values = hello.identityKey(input.values);\n\
+           return {{ values }};\n\
+         }}",
+        missing_nested_bundle.manifest_digest_review_string()
+    );
+    let missing_nested_module =
+        parse_module(&missing_nested_source).expect("parse missing nested type application");
+    let missing_nested_adapter =
+        decode_lawpack_adapter(&missing_nested_bundle, "echo.dpo@1", ADAPTER_BYTES)
+            .expect("load missing nested type adapter");
+    let missing_nested_preparation = prepare_lawpack_compilation(
+        &missing_nested_module,
+        &missing_nested_bundle,
+        &missing_nested_adapter,
+    )
+    .expect("derive helper facts without nested type dependency");
+
+    let errors = compile_to_core(
+        &missing_nested_module,
+        missing_nested_preparation.compiler_context(),
+    )
+    .expect_err("missing nested exported type rejects before Core");
+    assert!(errors
+        .iter()
+        .all(|error| error.stage == CompilerStage::TypeCheck));
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
 }
 
 #[test]
