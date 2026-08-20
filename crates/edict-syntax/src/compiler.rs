@@ -1187,7 +1187,7 @@ impl<'a> TypeChecker<'a> {
         };
 
         let binder_shape = item.as_ref().clone();
-        let binder = next_local(&mut state.local_index, binder_shape.value_type_coord());
+        let binder = next_local(&mut state.local_index, binder_shape.coord.clone());
         let mut nested_env = env.clone();
         nested_env.insert(var.to_owned(), (binder.clone(), binder_shape));
         let mut nested_locals = vec![binder.clone()];

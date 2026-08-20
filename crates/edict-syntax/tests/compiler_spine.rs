@@ -166,6 +166,20 @@ const BOUNDED_LIST_LOOP: &str = "package a.b@1;\n\
       }\n\
       return { value: 0u64 };\n\
     }";
+const EXPORTED_LIST_LOOP: &str = "package a.b@1;\n\
+    use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+    type Input = { values: List<String<max=32>, max=4>, };\n\
+    type Output = { value: U64, };\n\
+    intent t(input: Input) returns Output\n\
+      profile p.read\n\
+      basis none\n\
+      budget <= p.tiny {\n\
+      let values = helpers.identityList(input.values);\n\
+      for value in values bounded 4 {\n\
+        require value == value else example.InvalidValue;\n\
+      }\n\
+      return { value: 0u64 };\n\
+    }";
 const STATEMENT_CONDITIONAL: &str = "package a.b@1;\n\
     type Input = { choose: U32, left: U64, right: U64, };\n\
     type Output = { value: U64, };\n\
@@ -611,6 +625,41 @@ fn bounded_list_loop_lowers_to_core() {
     assert_eq!(bound, &CoreBound::Literal(4));
     assert!(matches!(body.nodes.as_slice(), [CoreNode::Require { .. }]));
     assert_eq!(body.result, CoreExpr::Const(edict_syntax::CoreValue::Null));
+}
+
+#[test]
+fn exported_list_loop_preserves_the_declared_item_coordinate() {
+    let lawpack = example_bounds_lawpack();
+    let context = pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.Key".to_owned(),
+            definition: "String<max=32,canonical=raw-utf8>".to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.KeyList".to_owned(),
+            definition: "List<example.bounds@1.Key,max=4>".to_owned(),
+        })
+        .with_pure_function(
+            "helpers.identityList",
+            PureFunctionFact {
+                lawpack,
+                coordinate: "example.bounds@1.identityList".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["example.bounds@1.KeyList".to_owned()],
+                return_type: "example.bounds@1.KeyList".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        );
+    let module = parse_module(EXPORTED_LIST_LOOP).expect("exported-list loop parses");
+    let core = compile_to_core(&module, &context).expect("exported-list loop lowers");
+    let intent = core.intents.get("t").expect("lowered intent");
+    let CoreNode::For { binder, .. } = &intent.body.nodes[1] else {
+        panic!("second node is a Core for");
+    };
+
+    assert_eq!(binder.ty, "example.bounds@1.Key");
 }
 
 #[test]
