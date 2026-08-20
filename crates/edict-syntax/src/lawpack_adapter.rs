@@ -11,7 +11,9 @@ use crate::ast::{ImportKind, Module};
 use crate::canonical::{
     decode_canonical_cbor, digest_canonical_value, sha256_review_string, CanonicalValue,
 };
-use crate::compiler::{BoundFact, CompilerContext, PureFunctionFact, TypeShapeFact};
+use crate::compiler::{
+    BoundFact, CompilerContext, PureFunctionFact, PureHelperCostFact, TypeShapeFact,
+};
 use crate::core_ir::{CoreBudget, ResourceRef};
 use crate::lawpack::{
     LawpackExecutionClass, LawpackResourceRef, LawpackSemanticEffect, LawpackTargetAdapter,
@@ -281,7 +283,16 @@ pub fn prepare_lawpack_compilation(
 
     for (coordinate, budget) in &adapter.budgets {
         let local_budget = local_coordinate(&alias, &prefix, coordinate)?;
-        compiler_context = compiler_context.with_budget(local_budget, budget.clone());
+        compiler_context = compiler_context
+            .with_budget(local_budget.clone(), budget.clone())
+            .with_pure_helper_cost(
+                local_budget,
+                PureHelperCostFact {
+                    lawpack: lawpack.clone(),
+                    coordinate: coordinate.clone(),
+                    budget: budget.clone(),
+                },
+            );
     }
 
     Ok(PreparedLawpackCompilation {

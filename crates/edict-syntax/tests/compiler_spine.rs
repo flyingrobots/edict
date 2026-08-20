@@ -12,7 +12,7 @@ use edict_syntax::{
     lower_core, parse_module, resolve_module, type_check, BoundFact, CompilerContext,
     CompilerErrorKind, CompilerStage, CoreBound, CoreBudget, CoreExpr, CoreNode,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, PureFunctionFact,
-    ResourceRef, TypeShapeFact, WriteClass,
+    PureHelperCostFact, ResourceRef, TypeShapeFact, WriteClass,
 };
 
 const BOUNDED_HELLO: &str = include_str!("../../../fixtures/lang/bounds/bounded-hello.edict");
@@ -210,13 +210,13 @@ fn hello_context() -> CompilerContext {
 }
 
 fn pure_context() -> CompilerContext {
-    pure_context_without_helper_cost().with_budget(
+    pure_context_without_helper_cost().with_pure_helper_cost(
         "helpers.tiny",
-        CoreBudget {
+        example_helper_cost(CoreBudget {
             max_steps: 1,
             max_allocated_bytes: 8,
             max_output_bytes: 8,
-        },
+        }),
     )
 }
 
@@ -239,6 +239,14 @@ fn example_bounds_lawpack() -> ResourceRef {
         digest: Some(
             "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
         ),
+    }
+}
+
+fn example_helper_cost(budget: CoreBudget) -> PureHelperCostFact {
+    PureHelperCostFact {
+        lawpack: example_bounds_lawpack(),
+        coordinate: "example.bounds@1.tiny".to_owned(),
+        budget,
     }
 }
 
@@ -679,13 +687,13 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
                 cost_template: "example.bounds@1.tiny".to_owned(),
             },
         )
-        .with_budget(
+        .with_pure_helper_cost(
             "helpers.tiny",
-            CoreBudget {
+            example_helper_cost(CoreBudget {
                 max_steps: 5,
                 max_allocated_bytes: 8,
                 max_output_bytes: 8,
-            },
+            }),
         );
 
     for source in [
@@ -704,13 +712,13 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
 #[test]
 fn pure_helper_costs_are_charged_at_call_sites_and_inside_loops() {
     let direct = parse_module(PURE_HELPER_CALL).expect("direct helper source parses");
-    let direct_context = pure_helper_context("U64").with_budget(
+    let direct_context = pure_helper_context("U64").with_pure_helper_cost(
         "helpers.tiny",
-        CoreBudget {
+        example_helper_cost(CoreBudget {
             max_steps: 9,
             max_allocated_bytes: 8,
             max_output_bytes: 8,
-        },
+        }),
     );
     let direct_errors = compile_to_core(&direct, &direct_context)
         .expect_err("helper cost above the operation step budget rejects");
@@ -730,7 +738,8 @@ fn pure_helper_costs_are_charged_at_call_sites_and_inside_loops() {
             max_output_bytes: 257,
         },
     ] {
-        let context = pure_helper_context("U64").with_budget("helpers.tiny", helper_cost);
+        let context = pure_helper_context("U64")
+            .with_pure_helper_cost("helpers.tiny", example_helper_cost(helper_cost));
         let errors = compile_to_core(&direct, &context)
             .expect_err("every helper cost dimension is budgeted");
         assert!(errors
@@ -761,22 +770,73 @@ fn pure_helper_costs_are_charged_at_call_sites_and_inside_loops() {
     );
     let loop_module = parse_module(&loop_source).expect("loop helper source parses");
     let loop_errors = compile_to_core(&loop_module, &loop_helper_context())
-        .expect_err("helper cost is multiplied by the enclosing loop bound");
+        .expect_err("structural loop work and helper costs share one step budget");
     assert!(loop_errors
         .iter()
         .any(|error| error.kind == CompilerErrorKind::InvalidBound));
 }
 
-fn loop_helper_context() -> CompilerContext {
-    let lawpack = example_bounds_lawpack();
-    pure_context()
+#[test]
+fn pure_helper_cost_requires_exact_lawpack_ownership() {
+    let module = parse_module(PURE_HELPER_CALL).expect("direct helper source parses");
+    let context = pure_context_without_helper_cost()
         .with_budget(
             "helpers.tiny",
             CoreBudget {
-                max_steps: 2,
+                max_steps: 1,
                 max_allocated_bytes: 8,
                 max_output_bytes: 8,
             },
+        )
+        .with_pure_function(
+            "helpers.bump",
+            PureFunctionFact {
+                lawpack: example_bounds_lawpack(),
+                coordinate: "example.bounds@1.bump".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "U64".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        );
+    let errors = compile_to_core(&module, &context)
+        .expect_err("an unowned raw budget cannot authorize an imported helper cost");
+    assert!(errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
+
+    let mut foreign_lawpack = example_bounds_lawpack();
+    foreign_lawpack.digest =
+        Some("sha256:2222222222222222222222222222222222222222222222222222222222222222".to_owned());
+    let foreign_context = pure_helper_context("U64").with_pure_helper_cost(
+        "helpers.tiny",
+        PureHelperCostFact {
+            lawpack: foreign_lawpack,
+            coordinate: "example.bounds@1.tiny".to_owned(),
+            budget: CoreBudget {
+                max_steps: 1,
+                max_allocated_bytes: 8,
+                max_output_bytes: 8,
+            },
+        },
+    );
+    let foreign_errors = compile_to_core(&module, &foreign_context)
+        .expect_err("another lawpack digest cannot supply the helper cost value");
+    assert!(foreign_errors
+        .iter()
+        .any(|error| error.kind == CompilerErrorKind::MissingContextFact));
+}
+
+fn loop_helper_context() -> CompilerContext {
+    let lawpack = example_bounds_lawpack();
+    pure_context()
+        .with_pure_helper_cost(
+            "helpers.tiny",
+            example_helper_cost(CoreBudget {
+                max_steps: 1,
+                max_allocated_bytes: 8,
+                max_output_bytes: 8,
+            }),
         )
         .with_type_shape(TypeShapeFact {
             lawpack: lawpack.clone(),

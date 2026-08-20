@@ -80,6 +80,14 @@ pub struct BoundFact {
     pub value: u64,
 }
 
+/// Conservative pure-helper cost owned by one exact imported lawpack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PureHelperCostFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub budget: CoreBudget,
+}
+
 /// A compiler-spine failure with stable stage/kind identity.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CompilerError {
@@ -100,6 +108,7 @@ pub struct CompilerContext {
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
+    pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     type_shapes: BTreeMap<String, TypeShapeFact>,
     bounds: BTreeMap<String, BoundFact>,
     budgets: BTreeMap<String, CoreBudget>,
@@ -171,6 +180,17 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub fn with_pure_helper_cost(
+        mut self,
+        source_coordinate: impl Into<String>,
+        fact: PureHelperCostFact,
+    ) -> Self {
+        self.pure_helper_costs
+            .insert(source_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_type_shape(mut self, fact: TypeShapeFact) -> Self {
         self.type_shapes.insert(fact.coordinate.clone(), fact);
         self
@@ -196,6 +216,7 @@ pub struct ResolvedModule {
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
+    pub pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     pub type_shapes: BTreeMap<String, TypeShapeFact>,
     pub bounds: BTreeMap<String, BoundFact>,
     pub budgets: BTreeMap<String, CoreBudget>,
@@ -309,6 +330,7 @@ pub fn resolve_module(
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
             pure_functions: context.pure_functions.clone(),
+            pure_helper_costs: context.pure_helper_costs.clone(),
             type_shapes: context.type_shapes.clone(),
             bounds: context.bounds.clone(),
             budgets: context.budgets.clone(),
@@ -847,7 +869,7 @@ impl<'a> TypeChecker<'a> {
         let param = &source.params[0];
         let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
         let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
-        self.check_helper_cost_budget(intent)?;
+        let helper_cost = self.check_helper_cost_budget(intent)?;
         let input_binding = LocalRef {
             id: CORE_APPLICATION_INPUT_LOCAL_ID.to_owned(),
             alpha_name: "$arg0".to_owned(),
@@ -882,7 +904,13 @@ impl<'a> TypeChecker<'a> {
             None => None,
         };
         let input_constraints = self.input_constraints(source, &env);
-        let body = self.check_body(intent, &output_shape, &mut env, &mut locals)?;
+        let body = self.check_body(
+            intent,
+            &output_shape,
+            &mut env,
+            &mut locals,
+            helper_cost.steps,
+        )?;
 
         Some(TypedIntent {
             name: intent.name.clone(),
@@ -921,7 +949,7 @@ impl<'a> TypeChecker<'a> {
         out
     }
 
-    fn check_helper_cost_budget(&mut self, intent: &ResolvedIntent) -> Option<()> {
+    fn check_helper_cost_budget(&mut self, intent: &ResolvedIntent) -> Option<HelperCost> {
         let mut cost = self.helper_cost_for_block(&intent.source.body)?;
         for clause in &intent.source.clauses {
             let clause_cost = match clause {
@@ -952,7 +980,7 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
-        Some(())
+        Some(cost)
     }
 
     fn helper_cost_for_block(&mut self, block: &Block) -> Option<HelperCost> {
@@ -1183,7 +1211,7 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
-        let Some(cost) = self.resolved.budgets.get(&source_cost) else {
+        let Some(cost_fact) = self.resolved.pure_helper_costs.get(&source_cost) else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::MissingContextFact,
@@ -1192,7 +1220,25 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        Some(HelperCost::from_budget(cost))
+        if cost_fact.coordinate != fact.cost_template
+            || cost_fact.lawpack != fact.lawpack
+            || !self.fact_matches_source_import(
+                &source_cost,
+                &cost_fact.coordinate,
+                &cost_fact.lawpack,
+            )
+        {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                format!(
+                    "pure helper `{source_coordinate}` cost template is not owned by its exact imported lawpack"
+                ),
+                span,
+            ));
+            return None;
+        }
+        Some(HelperCost::from_budget(&cost_fact.budget))
     }
 
     fn helper_cost_for_yield_block(
@@ -1305,9 +1351,13 @@ impl<'a> TypeChecker<'a> {
         output_shape: &TypeShape,
         env: &mut BTreeMap<String, (LocalRef, TypeShape)>,
         locals: &mut Vec<LocalRef>,
+        helper_steps: u64,
     ) -> Option<CoreBlock> {
         let source = &intent.source;
-        let mut state = BodyState::default();
+        let mut state = BodyState {
+            accumulated_steps: helper_steps,
+            ..BodyState::default()
+        };
 
         for stmt in &source.body.stmts {
             self.check_body_stmt(intent, output_shape, stmt, env, locals, &mut state);
