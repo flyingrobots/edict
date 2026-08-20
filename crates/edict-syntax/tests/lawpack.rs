@@ -1482,6 +1482,122 @@ fn edict_pure_helper_signature_checks_params_locals_bindings_and_calls() {
 }
 
 #[test]
+fn edict_pure_helper_collection_constants_obey_bounded_item_types() {
+    let list_body = map([
+        ("params", CanonicalValue::Array(Vec::new())),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("const")),
+                        (
+                            "value",
+                            map([
+                                ("kind", text("list")),
+                                (
+                                    "values",
+                                    CanonicalValue::Array(vec![
+                                        map([
+                                            ("kind", text("int")),
+                                            ("width", text("U64")),
+                                            ("value", CanonicalValue::Integer(1)),
+                                        ]),
+                                        map([
+                                            ("kind", text("int")),
+                                            ("width", text("U64")),
+                                            ("value", CanonicalValue::Integer(2)),
+                                        ]),
+                                    ]),
+                                ),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).push(map([
+        ("coordinate", text("hello.echo@1.OneU64")),
+        ("definition", text("List<U64,max=1>")),
+    ]));
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidList",
+        &[],
+        "hello.echo@1.OneU64",
+        "edict",
+        ("body", list_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode list exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode list manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("over-bound list constant must reject");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
+fn edict_pure_helper_field_results_come_from_the_base_record() {
+    let field_body = map([
+        (
+            "params",
+            CanonicalValue::Array(vec![local_ref("arg:0", "value", "hello.echo@1.Counter")]),
+        ),
+        (
+            "body",
+            map([
+                ("locals", CanonicalValue::Array(Vec::new())),
+                ("bindings", CanonicalValue::Array(Vec::new())),
+                (
+                    "result",
+                    map([
+                        ("kind", text("field")),
+                        (
+                            "base",
+                            map([
+                                ("kind", text("local")),
+                                ("ref", local_ref("arg:0", "value", "hello.echo@1.Counter")),
+                            ]),
+                        ),
+                        ("field", text("missing")),
+                    ]),
+                ),
+            ]),
+        ),
+    ]);
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).push(map([
+        ("coordinate", text("hello.echo@1.Counter")),
+        ("definition", text("{ count: U64, }")),
+    ]));
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.invalidField",
+        &["hello.echo@1.Counter"],
+        "U64",
+        "edict",
+        ("body", field_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode field exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode field manifest");
+
+    let failures = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect_err("unknown field must reject");
+    assert_eq!(
+        failure_kinds(&failures),
+        vec![LawpackValidationFailureKind::InvalidPureFunctionBody]
+    );
+}
+
+#[test]
 fn edict_pure_helper_call_graph_must_be_acyclic() {
     for (coordinates, callees) in [
         (

@@ -987,6 +987,19 @@ fn validate_typed_core_expr(
                 &format!("{path}.fields"),
             )
             .map_err(as_pure_body_failure)?;
+            let expected_fields = expected
+                .and_then(|expected| record_type_fields(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact exported record type"))?;
+            if values.len() != expected_fields.len()
+                || values
+                    .keys()
+                    .any(|field| !expected_fields.contains_key(*field))
+            {
+                return Err(pure_body_failure(
+                    &format!("{path}.fields"),
+                    "exactly the fields declared by the result record type",
+                ));
+            }
             for (field, value) in values {
                 validate_typed_core_expr(
                     value,
@@ -994,21 +1007,32 @@ fn validate_typed_core_expr(
                     scope,
                     signatures,
                     type_definitions,
-                    None,
+                    expected_fields.get(field).map(String::as_str),
                 )?;
             }
             expected.map(str::to_owned)
         }
         "field" => {
-            validate_typed_core_expr(
+            let base_type = validate_typed_core_expr(
                 required(&fields, "base", path).map_err(as_pure_body_failure)?,
                 &format!("{path}.base"),
                 scope,
                 signatures,
                 type_definitions,
                 None,
-            )?;
-            expected.map(str::to_owned)
+            )?
+            .ok_or_else(|| pure_body_failure(&format!("{path}.base"), "a typed record"))?;
+            let field =
+                required_nonempty_text(&fields, "field", path).map_err(as_pure_body_failure)?;
+            let field_type = record_type_fields(&base_type, type_definitions)
+                .and_then(|record| record.get(&field).cloned())
+                .ok_or_else(|| {
+                    pure_body_failure(
+                        &format!("{path}.field"),
+                        "a field declared by the base record type",
+                    )
+                })?;
+            Some(field_type)
         }
         "variant" => {
             let ty = required_nonempty_text(&fields, "type", path).map_err(as_pure_body_failure)?;
@@ -1133,6 +1157,15 @@ fn validate_typed_core_expr(
                 required(&fields, "values", path).map_err(as_pure_body_failure)?,
                 &format!("{path}.values"),
             )?;
+            let (item_type, max) = expected
+                .and_then(|expected| list_type_parts(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact bounded list type"))?;
+            if values.len() as u64 > max {
+                return Err(pure_body_failure(
+                    &format!("{path}.values"),
+                    &format!("at most {max} list items"),
+                ));
+            }
             for (index, value) in values.iter().enumerate() {
                 validate_typed_core_expr(
                     value,
@@ -1140,7 +1173,7 @@ fn validate_typed_core_expr(
                     scope,
                     signatures,
                     type_definitions,
-                    None,
+                    Some(&item_type),
                 )?;
             }
             expected.map(str::to_owned)
@@ -1313,6 +1346,32 @@ fn infer_core_value_type(
         }
         "record" => {
             require_type_family(expected, type_definitions, "record", path)?;
+            let values = string_keyed_map(
+                required(&fields, "fields", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.fields"),
+            )
+            .map_err(as_pure_body_failure)?;
+            let expected_fields = expected
+                .and_then(|expected| record_type_fields(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact exported record type"))?;
+            if values.len() != expected_fields.len()
+                || values
+                    .keys()
+                    .any(|field| !expected_fields.contains_key(*field))
+            {
+                return Err(pure_body_failure(
+                    &format!("{path}.fields"),
+                    "exactly the fields declared by the value type",
+                ));
+            }
+            for (field, value) in values {
+                infer_core_value_type(
+                    value,
+                    &format!("{path}.fields.{field}"),
+                    expected_fields.get(field).map(String::as_str),
+                    type_definitions,
+                )?;
+            }
             expected.map(str::to_owned)
         }
         "variant" => {
@@ -1320,6 +1379,27 @@ fn infer_core_value_type(
         }
         "list" => {
             require_type_family(expected, type_definitions, "list", path)?;
+            let values = pure_array(
+                required(&fields, "values", path).map_err(as_pure_body_failure)?,
+                &format!("{path}.values"),
+            )?;
+            let (item_type, max) = expected
+                .and_then(|expected| list_type_parts(expected, type_definitions))
+                .ok_or_else(|| pure_body_failure(path, "an exact bounded list type"))?;
+            if values.len() as u64 > max {
+                return Err(pure_body_failure(
+                    &format!("{path}.values"),
+                    &format!("at most {max} list items"),
+                ));
+            }
+            for (index, value) in values.iter().enumerate() {
+                infer_core_value_type(
+                    value,
+                    &format!("{path}.values[{index}]"),
+                    Some(&item_type),
+                    type_definitions,
+                )?;
+            }
             expected.map(str::to_owned)
         }
         "map" => {
@@ -1374,6 +1454,75 @@ fn require_type_family(
             &format!("a {family} value compatible with type `{expected}`"),
         ))
     }
+}
+
+fn resolved_type_definition<'a>(
+    ty: &'a str,
+    type_definitions: &'a BTreeMap<&str, &str>,
+) -> &'a str {
+    type_definitions.get(ty).copied().unwrap_or(ty).trim()
+}
+
+fn split_top_level(value: &str, delimiter: char) -> Vec<&str> {
+    let mut depth = 0_u32;
+    let mut start = 0;
+    let mut parts = Vec::new();
+    for (index, character) in value.char_indices() {
+        match character {
+            '<' | '{' => depth = depth.saturating_add(1),
+            '>' | '}' => depth = depth.saturating_sub(1),
+            _ if character == delimiter && depth == 0 => {
+                parts.push(value[start..index].trim());
+                start = index + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(value[start..].trim());
+    parts
+}
+
+fn list_type_parts(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<(String, u64)> {
+    let definition = resolved_type_definition(ty, type_definitions);
+    let inner = definition.strip_prefix("List<")?.strip_suffix('>')?;
+    let parts = split_top_level(inner, ',');
+    if parts.len() != 2 {
+        return None;
+    }
+    let max = parts[1]
+        .split_once('=')
+        .filter(|(name, _)| name.trim() == "max")?
+        .1
+        .trim()
+        .parse()
+        .ok()?;
+    Some((parts[0].to_owned(), max))
+}
+
+fn record_type_fields(
+    ty: &str,
+    type_definitions: &BTreeMap<&str, &str>,
+) -> Option<BTreeMap<String, String>> {
+    let definition = resolved_type_definition(ty, type_definitions);
+    let inner = definition.strip_prefix('{')?.strip_suffix('}')?;
+    let mut fields = BTreeMap::new();
+    for part in split_top_level(inner, ',') {
+        if part.is_empty() {
+            continue;
+        }
+        let (name, field_type) = part.split_once(':')?;
+        let name = name.trim();
+        let field_type = field_type.trim();
+        if name.is_empty()
+            || field_type.is_empty()
+            || fields
+                .insert(name.to_owned(), field_type.to_owned())
+                .is_some()
+        {
+            return None;
+        }
+    }
+    Some(fields)
 }
 
 fn validate_pure_function_callees(
