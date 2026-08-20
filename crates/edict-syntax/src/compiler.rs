@@ -2275,10 +2275,14 @@ impl<'a> TypeChecker<'a> {
                 state.accumulated_steps = then_steps.max(state.accumulated_steps);
                 (then_block, then_shape, else_block, else_shape)
             };
-        let Some(binding_shape) = self.branch_yield_binding_shape(
+        let Some(binding_shape) = self.join_branch_shapes(
             annotation_shape.as_ref(),
             &then_shape,
             &else_shape,
+            (
+                "branch-yield results do not match the annotated type",
+                "branch-yield results do not have a compatible bounded type",
+            ),
             span,
         ) else {
             return;
@@ -2295,11 +2299,12 @@ impl<'a> TypeChecker<'a> {
         env.insert(stmt.name.to_owned(), (binding, binding_shape));
     }
 
-    fn branch_yield_binding_shape(
+    fn join_branch_shapes(
         &mut self,
         annotation_shape: Option<&TypeShape>,
         then_shape: &TypeShape,
         else_shape: &TypeShape,
+        messages: (&'static str, &'static str),
         span: Span,
     ) -> Option<TypeShape> {
         if let Some(annotation_shape) = annotation_shape {
@@ -2309,7 +2314,7 @@ impl<'a> TypeChecker<'a> {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
                     CompilerErrorKind::TypeMismatch,
-                    "branch-yield results do not match the annotated type",
+                    messages.0,
                     span,
                 ));
                 return None;
@@ -2323,7 +2328,7 @@ impl<'a> TypeChecker<'a> {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::TypeMismatch,
-                "branch-yield results do not have a compatible bounded type",
+                messages.1,
                 span,
             ));
             None
@@ -3314,30 +3319,16 @@ impl<'a> TypeChecker<'a> {
             ),
         };
 
-        let ty = if let Some(expected) = expected {
-            if !compatible(expected, &then_value.ty) || !compatible(expected, &else_value.ty) {
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::TypeMismatch,
-                    "conditional branches do not match the expected type",
-                    span,
-                ));
-                return None;
-            }
-            expected.clone()
-        } else if compatible(&then_value.ty, &else_value.ty) {
-            then_value.ty.clone()
-        } else if compatible(&else_value.ty, &then_value.ty) {
-            else_value.ty.clone()
-        } else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::TypeMismatch,
+        let ty = self.join_branch_shapes(
+            expected,
+            &then_value.ty,
+            &else_value.ty,
+            (
+                "conditional branches do not match the expected type",
                 "conditional branches do not have a compatible bounded type",
-                span,
-            ));
-            return None;
-        };
+            ),
+            span,
+        )?;
 
         Some(TypedValue {
             expr: CoreExpr::If {
