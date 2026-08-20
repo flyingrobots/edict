@@ -2218,65 +2218,20 @@ impl<'a> TypeChecker<'a> {
             None => None,
         };
         let baseline_steps = state.accumulated_steps;
-        let (then_block, then_shape, else_block, else_shape) =
-            if annotation_shape.is_none() && contains_contextual_bare_integer(&then_source.value) {
-                let Some(inferred_else_shape) =
-                    self.infer_yield_block_shape(intent, output_shape, else_source, env, state)
-                else {
-                    return;
-                };
-                let Some((then_block, then_shape)) = self.check_yield_block(
-                    intent,
-                    output_shape,
-                    then_source,
-                    env,
-                    state,
-                    Some(&inferred_else_shape),
-                ) else {
-                    return;
-                };
-                let then_steps = state.accumulated_steps;
-                state.accumulated_steps = baseline_steps;
-                let Some((else_block, else_shape)) =
-                    self.check_yield_block(intent, output_shape, else_source, env, state, None)
-                else {
-                    return;
-                };
-                state.accumulated_steps = then_steps.max(state.accumulated_steps);
-                (then_block, then_shape, else_block, else_shape)
-            } else {
-                let Some((then_block, then_shape)) = self.check_yield_block(
-                    intent,
-                    output_shape,
-                    then_source,
-                    env,
-                    state,
-                    annotation_shape.as_ref(),
-                ) else {
-                    return;
-                };
-                let then_steps = state.accumulated_steps;
-                state.accumulated_steps = baseline_steps;
-                let branch_expectation = if annotation_shape.is_some() {
-                    annotation_shape.as_ref()
-                } else if contains_contextual_bare_integer(&else_source.value) {
-                    Some(&then_shape)
-                } else {
-                    None
-                };
-                let Some((else_block, else_shape)) = self.check_yield_block(
-                    intent,
-                    output_shape,
-                    else_source,
-                    env,
-                    state,
-                    branch_expectation,
-                ) else {
-                    return;
-                };
-                state.accumulated_steps = then_steps.max(state.accumulated_steps);
-                (then_block, then_shape, else_block, else_shape)
-            };
+        let Some((then_block, then_shape, else_block, else_shape)) = self
+            .check_branch_yield_blocks(
+                intent,
+                output_shape,
+                then_source,
+                else_source,
+                env,
+                state,
+                baseline_steps,
+                annotation_shape.as_ref(),
+            )
+        else {
+            return;
+        };
         let Some(binding_shape) = self.join_branch_shapes(
             annotation_shape.as_ref(),
             &then_shape,
@@ -2299,6 +2254,123 @@ impl<'a> TypeChecker<'a> {
         });
         locals.push(binding.clone());
         env.insert(stmt.name.to_owned(), (binding, binding_shape));
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn check_branch_yield_blocks(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        then_source: &YieldBlock,
+        else_source: &YieldBlock,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+        baseline_steps: u64,
+        annotation_shape: Option<&TypeShape>,
+    ) -> Option<(CoreBlock, TypeShape, CoreBlock, TypeShape)> {
+        let joint_shape = if annotation_shape.is_none()
+            && contains_contextual_bare_integer(&then_source.value)
+            && contains_contextual_bare_integer(&else_source.value)
+        {
+            self.infer_joint_yield_shape(intent, output_shape, then_source, else_source, env, state)
+        } else {
+            None
+        };
+        let (then_block, then_shape, else_block, else_shape) = if let Some(joint_shape) =
+            joint_shape
+        {
+            self.check_yield_blocks_with_shared_expected(
+                intent,
+                output_shape,
+                then_source,
+                else_source,
+                env,
+                state,
+                baseline_steps,
+                &joint_shape,
+            )?
+        } else if annotation_shape.is_none() && contains_contextual_bare_integer(&then_source.value)
+        {
+            let inferred_else_shape =
+                self.infer_yield_block_shape(intent, output_shape, else_source, env, state)?;
+            let (then_block, then_shape) = self.check_yield_block(
+                intent,
+                output_shape,
+                then_source,
+                env,
+                state,
+                Some(&inferred_else_shape),
+            )?;
+            let then_steps = state.accumulated_steps;
+            state.accumulated_steps = baseline_steps;
+            let (else_block, else_shape) =
+                self.check_yield_block(intent, output_shape, else_source, env, state, None)?;
+            state.accumulated_steps = then_steps.max(state.accumulated_steps);
+            (then_block, then_shape, else_block, else_shape)
+        } else {
+            let (then_block, then_shape) = self.check_yield_block(
+                intent,
+                output_shape,
+                then_source,
+                env,
+                state,
+                annotation_shape,
+            )?;
+            let then_steps = state.accumulated_steps;
+            state.accumulated_steps = baseline_steps;
+            let branch_expectation = if annotation_shape.is_some() {
+                annotation_shape
+            } else if contains_contextual_bare_integer(&else_source.value) {
+                Some(&then_shape)
+            } else {
+                None
+            };
+            let (else_block, else_shape) = self.check_yield_block(
+                intent,
+                output_shape,
+                else_source,
+                env,
+                state,
+                branch_expectation,
+            )?;
+            state.accumulated_steps = then_steps.max(state.accumulated_steps);
+            (then_block, then_shape, else_block, else_shape)
+        };
+        Some((then_block, then_shape, else_block, else_shape))
+    }
+
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn check_yield_blocks_with_shared_expected(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        then_source: &YieldBlock,
+        else_source: &YieldBlock,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &mut BodyState,
+        baseline_steps: u64,
+        expected: &TypeShape,
+    ) -> Option<(CoreBlock, TypeShape, CoreBlock, TypeShape)> {
+        let (then_block, then_shape) = self.check_yield_block(
+            intent,
+            output_shape,
+            then_source,
+            env,
+            state,
+            Some(expected),
+        )?;
+        let then_steps = state.accumulated_steps;
+        state.accumulated_steps = baseline_steps;
+        let (else_block, else_shape) = self.check_yield_block(
+            intent,
+            output_shape,
+            else_source,
+            env,
+            state,
+            Some(expected),
+        )?;
+        state.accumulated_steps = then_steps.max(state.accumulated_steps);
+        Some((then_block, then_shape, else_block, else_shape))
     }
 
     fn join_branch_shapes(
@@ -2381,6 +2453,167 @@ impl<'a> TypeChecker<'a> {
             );
         }
         shape
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn infer_joint_yield_shape(
+        &self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        then_block: &YieldBlock,
+        else_block: &YieldBlock,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &BodyState,
+    ) -> Option<TypeShape> {
+        let then_env = self.infer_yield_block_env(intent, output_shape, then_block, env, state)?;
+        let else_env = self.infer_yield_block_env(intent, output_shape, else_block, env, state)?;
+        self.infer_joint_expr_shape(&then_block.value, &then_env, &else_block.value, &else_env)
+    }
+
+    fn infer_yield_block_env(
+        &self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        block: &YieldBlock,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        state: &BodyState,
+    ) -> Option<BTreeMap<String, (LocalRef, TypeShape)>> {
+        let mut checker = self.clone();
+        let error_count = checker.errors.len();
+        let mut nested_env = env.clone();
+        let mut nested_locals = Vec::new();
+        let mut nested_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            step_factor: state.step_factor,
+            accumulated_steps: state.accumulated_steps,
+            ..BodyState::default()
+        };
+        for stmt in &block.stmts {
+            if matches!(stmt, Stmt::Return { .. }) {
+                return None;
+            }
+            checker.check_body_stmt(
+                intent,
+                output_shape,
+                stmt,
+                &mut nested_env,
+                &mut nested_locals,
+                &mut nested_state,
+            );
+        }
+        (checker.errors.len() == error_count).then_some(nested_env)
+    }
+
+    fn infer_joint_expr_shape(
+        &self,
+        then_expr: &Expr,
+        then_env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        else_expr: &Expr,
+        else_env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<TypeShape> {
+        if is_bare_integer_literal(then_expr) {
+            return self.infer_expr_shape(else_expr, else_env);
+        }
+        if is_bare_integer_literal(else_expr) {
+            return self.infer_expr_shape(then_expr, then_env);
+        }
+        if let (
+            Expr::Record {
+                entries: then_entries,
+                ..
+            },
+            Expr::Record {
+                entries: else_entries,
+                ..
+            },
+        ) = (then_expr, else_expr)
+        {
+            let then_entries = record_entries_by_name(then_entries)?;
+            let else_entries = record_entries_by_name(else_entries)?;
+            if then_entries.len() != else_entries.len() {
+                return None;
+            }
+            let mut fields = BTreeMap::new();
+            for (name, then_entry) in then_entries {
+                let else_entry = else_entries.get(name)?;
+                let shape = self
+                    .infer_joint_record_field_shape(then_entry, then_env, else_entry, else_env)?;
+                fields.insert(name.to_owned(), shape);
+            }
+            return Some(TypeShape {
+                coord: "anonymous.record".to_owned(),
+                kind: TypeKind::Record(fields),
+            });
+        }
+        if contains_contextual_bare_integer(then_expr)
+            && !contains_contextual_bare_integer(else_expr)
+        {
+            return self.infer_expr_shape(else_expr, else_env);
+        }
+        if contains_contextual_bare_integer(else_expr)
+            && !contains_contextual_bare_integer(then_expr)
+        {
+            return self.infer_expr_shape(then_expr, then_env);
+        }
+        let then_shape = self.infer_expr_shape(then_expr, then_env)?;
+        let else_shape = self.infer_expr_shape(else_expr, else_env)?;
+        compatible_shape(&then_shape, &else_shape)
+    }
+
+    fn infer_joint_record_field_shape(
+        &self,
+        then_entry: &RecordEntry,
+        then_env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        else_entry: &RecordEntry,
+        else_env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<TypeShape> {
+        match (then_entry, else_entry) {
+            (
+                RecordEntry::Field {
+                    value: then_value, ..
+                },
+                RecordEntry::Field {
+                    value: else_value, ..
+                },
+            ) => self.infer_joint_expr_shape(then_value, then_env, else_value, else_env),
+            (RecordEntry::Shorthand { name, .. }, RecordEntry::Field { value, .. }) => {
+                let known = &then_env.get(name)?.1;
+                if contains_contextual_bare_integer(value) {
+                    Some(known.clone())
+                } else {
+                    compatible_shape(known, &self.infer_expr_shape(value, else_env)?)
+                }
+            }
+            (RecordEntry::Field { value, .. }, RecordEntry::Shorthand { name, .. }) => {
+                let known = &else_env.get(name)?.1;
+                if contains_contextual_bare_integer(value) {
+                    Some(known.clone())
+                } else {
+                    compatible_shape(&self.infer_expr_shape(value, then_env)?, known)
+                }
+            }
+            (
+                RecordEntry::Shorthand {
+                    name: then_name, ..
+                },
+                RecordEntry::Shorthand {
+                    name: else_name, ..
+                },
+            ) => compatible_shape(&then_env.get(then_name)?.1, &else_env.get(else_name)?.1),
+            (RecordEntry::Spread(_), _) | (_, RecordEntry::Spread(_)) => None,
+        }
+    }
+
+    fn infer_expr_shape(
+        &self,
+        expr: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<TypeShape> {
+        let mut checker = self.clone();
+        checker
+            .check_expr_with_expected(expr, env, None)
+            .map(|value| value.ty)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -3592,6 +3825,30 @@ fn contains_contextual_bare_integer(expr: &Expr) -> bool {
         | Expr::IfYield { .. }
         | Expr::VariantLit { .. }
         | Expr::Match { .. } => false,
+    }
+}
+
+fn record_entries_by_name(entries: &[RecordEntry]) -> Option<BTreeMap<&str, &RecordEntry>> {
+    let mut named = BTreeMap::new();
+    for entry in entries {
+        let name = match entry {
+            RecordEntry::Field { name, .. } | RecordEntry::Shorthand { name, .. } => name.as_str(),
+            RecordEntry::Spread(_) => return None,
+        };
+        if named.insert(name, entry).is_some() {
+            return None;
+        }
+    }
+    Some(named)
+}
+
+fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
+    if compatible(left, right) {
+        Some(left.clone())
+    } else if compatible(right, left) {
+        Some(right.clone())
+    } else {
+        None
     }
 }
 

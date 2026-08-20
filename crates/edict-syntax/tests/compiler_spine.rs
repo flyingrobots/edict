@@ -1867,6 +1867,39 @@ fn branch_yield_record_bare_integer_inherits_field_width_from_either_branch() {
 }
 
 #[test]
+fn branch_yield_complementary_record_integers_join_structurally() {
+    let source = "package a.b@1;\n\
+        type Input = { a: U64, b: U64, };\n\
+        type Output = { a: U64, b: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let selected = if true { let then_b = input.b; yield { a: 0, b: then_b }; } else { let else_a = input.a; yield { a: else_a, b: 0 }; };\n\
+          return selected;\n\
+        }";
+    let mirrored = source
+        .replace(
+            "let then_b = input.b; yield { a: 0, b: then_b };",
+            "let then_b = input.a; yield { a: then_b, b: 0 };",
+        )
+        .replace(
+            "let else_a = input.a; yield { a: else_a, b: 0 };",
+            "let else_a = input.b; yield { a: 0, b: else_a };",
+        );
+    assert_ne!(
+        mirrored, source,
+        "mirrored complementary records change source"
+    );
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("complementary record source parses");
+        compile_to_core(&module, &pure_context())
+            .expect("complementary record fields jointly determine integer widths");
+    }
+}
+
+#[test]
 fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
     let source = "package a.b@1;\n\
         use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
