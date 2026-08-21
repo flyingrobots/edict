@@ -30,6 +30,8 @@ Status: current contract for Edict issue #195.
 The injected rollback case in LAUTH-TP-005 publishes `a/b/generated` through
 the document-root boundary, proving nested-parent creation and byte-for-byte
 restoration under the same retained publication authority.
+The check-only no-mutation regression snapshots both regular files and relative
+directories, so creation of empty coordination state cannot pass invisibly.
 
 ## Oracles
 

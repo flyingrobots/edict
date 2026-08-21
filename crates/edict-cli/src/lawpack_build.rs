@@ -1933,7 +1933,7 @@ mod tests {
         validate_generated_artifact_size, LawpackBuildFailure, LawpackDependencyBundle,
         LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
@@ -2445,12 +2445,18 @@ mod tests {
                 "write expected file",
             );
         }
-        let before = test_ok(read_output_tree(&root), "snapshot before check");
+        let before = (
+            test_ok(read_output_tree(&root), "snapshot files before check"),
+            directory_set(&root),
+        );
 
         test_ok(check_output(&output, &expected), "exact output passes");
 
         assert_eq!(
-            test_ok(read_output_tree(&root), "snapshot after check"),
+            (
+                test_ok(read_output_tree(&root), "snapshot files after check"),
+                directory_set(&root),
+            ),
             before
         );
         assert!(!output_lock_path(&output).exists());
@@ -3043,6 +3049,25 @@ mod tests {
             .iter()
             .map(|(path, bytes)| (PathBuf::from(path), bytes.to_vec()))
             .collect()
+    }
+
+    fn directory_set(root: &std::path::Path) -> BTreeSet<PathBuf> {
+        let mut directories = BTreeSet::new();
+        let mut pending = vec![root.to_path_buf()];
+        while let Some(directory) = pending.pop() {
+            for entry in test_ok(fs::read_dir(&directory), "read snapshot directory") {
+                let entry = test_ok(entry, "read snapshot entry");
+                let file_type = test_ok(entry.file_type(), "read snapshot entry type");
+                if file_type.is_dir() {
+                    let path = entry.path();
+                    let relative =
+                        test_ok(path.strip_prefix(root), "relativize snapshot directory");
+                    directories.insert(relative.to_path_buf());
+                    pending.push(path);
+                }
+            }
+        }
+        directories
     }
 
     fn valid_index() -> &'static [u8] {
