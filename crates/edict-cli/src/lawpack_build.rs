@@ -7,7 +7,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt as _};
+use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, OpenOptions as CapOpenOptions};
 use edict_syntax::{
@@ -715,6 +715,13 @@ fn validate_check_output_parent_chain(
 }
 
 fn open_check_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
+    open_check_root_with_hook(root, || {})
+}
+
+fn open_check_root_with_hook(
+    root: &Path,
+    after_inspection: impl FnOnce(),
+) -> Result<Dir, LawpackBuildFailure> {
     let metadata = fs::symlink_metadata(root).map_err(|error| {
         let kind = if error.kind() == ErrorKind::NotFound {
             "LawpackOutputDrift"
@@ -738,7 +745,28 @@ fn open_check_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
             ),
         ));
     }
-    Dir::open_ambient_dir(root, ambient_authority()).map_err(|error| {
+    after_inspection();
+    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
+        return Dir::open_ambient_dir(root, ambient_authority()).map_err(|error| {
+            failure(
+                "LawpackOutputOwnershipFailed",
+                format!(
+                    "failed to pin output ancestor `{}`: {error}",
+                    root.display()
+                ),
+            )
+        });
+    };
+    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "failed to pin parent of output ancestor `{}`: {error}",
+                root.display()
+            ),
+        )
+    })?;
+    parent_dir.open_dir_nofollow(name).map_err(|error| {
         failure(
             "LawpackOutputOwnershipFailed",
             format!(
@@ -815,7 +843,7 @@ fn open_check_output_parent_in_root(
                 ),
             ));
         }
-        current = current.open_dir(name).map_err(|error| {
+        current = current.open_dir_nofollow(name).map_err(|error| {
             failure(
                 "LawpackOutputOwnershipFailed",
                 format!(
@@ -2079,13 +2107,14 @@ mod tests {
     use super::{
         acquire_output_ancestor_locks, build_lawpack, check_output,
         check_output_in_root_with_hooks, check_output_with_hook, decode_lawpack_document,
-        encode_output_index, load_dependencies, load_dependencies_with_hook, output_lock_path,
-        publish_output, publish_output_with_capture_hook, publish_output_with_hook,
-        publish_output_with_hooks, publish_output_with_hooks_in_authority,
-        publish_output_with_hooks_in_root, read_output_tree, resolve_output_directory,
-        validate_check_output_parent_chain, validate_generated_artifact_size,
-        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        encode_output_index, load_dependencies, load_dependencies_with_hook,
+        open_check_root_with_hook, output_lock_path, publish_output,
+        publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
+        publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
+        read_output_tree, resolve_output_directory, validate_check_output_parent_chain,
+        validate_generated_artifact_size, validate_owned_output_dir_with_hook, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -2884,6 +2913,29 @@ mod tests {
         );
         assert!(!output_lock_path(&output).exists());
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_root_substituted_with_a_symlink_after_inspection_rejects() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("check-root-inspection-race");
+        let root = container.join("root");
+        let displaced_root = container.join("displaced-root");
+        let outside = temp_tree("check-root-inspection-race-outside");
+        test_ok(fs::create_dir(&root), "create admitted root");
+
+        let result = open_check_root_with_hook(&root, || {
+            test_ok(fs::rename(&root, &displaced_root), "displace admitted root");
+            test_ok(symlink(&outside, &root), "substitute root symlink");
+        });
+
+        test_ok(fs::remove_file(&root), "remove substituted root symlink");
+        test_ok(fs::rename(&displaced_root, &root), "restore admitted root");
+        assert!(result.is_err(), "post-inspection root symlink must reject");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
     }
 
     #[cfg(unix)]
