@@ -62,9 +62,11 @@ namespaces, duplicates, ancestor collisions, filesystem NUL, nonportable names,
 trailing-dot aliases, overlong paths, and case aliases before output inspection,
 coordination, or dependency I/O. Raw output-directory paths use one portable
 `/`-separated grammar, reserve internal names case-insensitively, and leave room
-for every derived lock filename. Dependency paths are canonicalized before
-overlap checks, so a symlink cannot route an input back under the replaceable
-output tree. A check-only build does not repair the owned artifact tree and
+for every derived lock filename. Every dependency path component must be real;
+Edict opens each one without following symbolic links and retains the accepted
+file identity through overlap checks and bounded reading. A symlink therefore
+cannot route an input back under the replaceable output tree. A check-only build
+does not repair the owned artifact tree and
 reports `LawpackOutputDrift` unless the complete existing tree is
 byte-identical. It creates no directories or lock files and rechecks the
 ownership basis after traversal:
