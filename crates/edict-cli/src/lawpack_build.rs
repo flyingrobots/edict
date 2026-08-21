@@ -1477,6 +1477,7 @@ fn publish_output_with_hooks_in_root(
         files,
         before_capture,
         before_activation,
+        || Ok(()),
         remove_backup,
     )
 }
@@ -1491,6 +1492,7 @@ fn publish_output_with_hooks_in_authority(
     files: &BTreeMap<PathBuf, Vec<u8>>,
     before_capture: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
+    after_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     remove_backup: impl FnOnce(Dir) -> std::io::Result<()>,
 ) -> Result<(), LawpackBuildFailure> {
     let parent_dir = &authority.output_parent;
@@ -1619,6 +1621,19 @@ fn publish_output_with_hooks_in_authority(
             )
         }));
     }
+    if let Err(error) = after_activation() {
+        drop(captured);
+        let rollback = restore_after_substituted_activation_in(
+            parent_dir,
+            output_name,
+            &transaction,
+            &backup,
+            output,
+            existed,
+        );
+        drop(Dir::remove_open_dir_all(transaction_dir));
+        return Err(rollback.err().unwrap_or(error));
+    }
     let activated = open_check_output_dir(parent_dir, output_name, output);
     let activation_matches = activated
         .as_ref()
@@ -1671,6 +1686,9 @@ fn restore_after_substituted_activation_in(
                 output.display()
             ),
         ));
+    }
+    if !entry_exists(parent, output_name)? {
+        return restore_output_directory_in(parent, output_name, backup, output, existed);
     }
     parent
         .rename(output_name, parent, transaction)
@@ -2246,6 +2264,7 @@ mod tests {
                 &expected,
                 || Ok(()),
                 || Ok(()),
+                || Ok(()),
                 cap_std::fs::Dir::remove_open_dir_all,
             ),
             "publish through admitted root identity",
@@ -2631,6 +2650,55 @@ mod tests {
             ),
             b"keep"
         );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn vanished_activation_restores_the_captured_output() {
+        let root = temp_tree("vanished-activation");
+        let output = root.join("generated");
+        let displaced_activation = root.join("displaced-activation");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        let authority = test_ok(
+            acquire_output_ancestor_locks(&root, &output),
+            "acquire publication authority",
+        );
+
+        let error = test_err(
+            publish_output_with_hooks_in_authority(
+                &authority,
+                &output,
+                &replacement,
+                || Ok(()),
+                || Ok(()),
+                || {
+                    fs::rename(&output, &displaced_activation).map_err(|error| {
+                        super::failure(
+                            "InjectedFailure",
+                            format!("failed to displace activated output: {error}"),
+                        )
+                    })
+                },
+                cap_std::fs::Dir::remove_open_dir_all,
+            ),
+            "vanished activation rejects",
+        );
+
+        assert_eq!(error.kind, "LawpackOutputWriteFailed");
+        assert_eq!(
+            test_ok(read_output_tree(&output), "read restored output"),
+            original
+        );
+        assert!(!displaced_activation.exists());
+        drop(authority);
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
