@@ -570,6 +570,22 @@ fn artifact_paths_reject_file_ancestors_and_the_ownership_index_namespace() {
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidOutputPath
     );
+
+    for output in [
+        "resources/Config.cbor",
+        "resources/bad:name.cbor",
+        "con.cbor",
+    ] {
+        let mut nonportable = full_definition();
+        nonportable.local_resources[0].output = output.to_owned();
+        let failures = author_lawpack(&nonportable, &[])
+            .expect_err("nonportable filesystem path rejects during authoring");
+        assert_eq!(
+            failures[0].kind,
+            LawpackAuthoringFailureKind::InvalidOutputPath,
+            "{output}"
+        );
+    }
 }
 
 #[test]

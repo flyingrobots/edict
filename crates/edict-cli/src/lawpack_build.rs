@@ -22,7 +22,7 @@ const OUTPUT_INDEX_FILE: &str = "edict.lawpack-output.json";
 const MAX_LAWPACK_DOCUMENT_BYTES: u64 = 1024 * 1024;
 const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_DEPENDENCY_BUNDLES: usize = 192;
-const PUBLICATION_COORDINATION_LOCK: &str = "edict-lawpack-publication.lock";
+const PUBLICATION_COORDINATION_LOCK: &str = ".edict-lawpack-publication.lock";
 
 #[derive(Debug)]
 pub(crate) struct LawpackBuildFailure {
@@ -197,7 +197,7 @@ pub(crate) fn build_lawpack(
     let document = decode_lawpack_document(&document_bytes)?;
     validate_document(&document)?;
     preflight_lawpack_authoring_paths(&document.lawpack).map_err(first_authoring_failure)?;
-    let _publication_coordination = acquire_publication_coordination_lock()?;
+    let _publication_coordination = acquire_publication_coordination_lock(root)?;
 
     let output = resolve_output_directory(root, &document.output_directory)?;
     let dependencies = load_dependencies(root, &document.dependency_bundles, &output)?;
@@ -917,33 +917,43 @@ fn acquire_output_lock(output: &Path) -> Result<File, LawpackBuildFailure> {
     Ok(lock)
 }
 
-fn acquire_publication_coordination_lock() -> Result<File, LawpackBuildFailure> {
-    let lock_path = std::env::temp_dir().join(PUBLICATION_COORDINATION_LOCK);
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(&lock_path)
-        .map_err(|error| {
+fn acquire_publication_coordination_lock(root: &Path) -> Result<File, LawpackBuildFailure> {
+    let mut ancestors = root.ancestors().collect::<Vec<_>>();
+    ancestors.reverse();
+    let mut failures = Vec::new();
+    for directory in ancestors {
+        let lock_path = directory.join(PUBLICATION_COORDINATION_LOCK);
+        let lock = match OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+        {
+            Ok(lock) => lock,
+            Err(error) => {
+                failures.push(format!("{}: {error}", lock_path.display()));
+                continue;
+            }
+        };
+        lock.lock().map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
                 format!(
-                    "failed to open lawpack publication coordination lock `{}`: {error}",
+                    "failed to acquire lawpack publication coordination lock `{}`: {error}",
                     lock_path.display()
                 ),
             )
         })?;
-    lock.lock().map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to acquire lawpack publication coordination lock `{}`: {error}",
-                lock_path.display()
-            ),
-        )
-    })?;
-    Ok(lock)
+        return Ok(lock);
+    }
+    Err(failure(
+        "LawpackOutputWriteFailed",
+        format!(
+            "no writable physical ancestor can host lawpack publication coordination: {}",
+            failures.join("; ")
+        ),
+    ))
 }
 
 fn expected_output_owner(
@@ -1356,9 +1366,12 @@ mod tests {
     }
 
     #[test]
-    fn common_coordination_lock_serializes_cross_root_publication() {
+    fn physical_ancestor_coordination_serializes_cross_root_publication() {
+        let root = temp_tree("cross-root-coordination");
+        let nested_root = root.join("parent/child");
+        test_ok(fs::create_dir_all(&nested_root), "create nested root");
         let first = test_ok(
-            acquire_publication_coordination_lock(),
+            acquire_publication_coordination_lock(&root),
             "acquire first coordination lock",
         );
         let (started_tx, started_rx) = mpsc::channel();
@@ -1366,7 +1379,7 @@ mod tests {
         let contender = std::thread::spawn(move || {
             test_ok(started_tx.send(()), "announce coordination attempt");
             let guard = test_ok(
-                acquire_publication_coordination_lock(),
+                acquire_publication_coordination_lock(&nested_root),
                 "acquire second coordination lock",
             );
             test_ok(acquired_tx.send(()), "announce coordination acquisition");
@@ -1384,6 +1397,7 @@ mod tests {
             "second publication acquires after release",
         );
         test_ok(contender.join(), "join coordination contender");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
     #[test]
@@ -1572,10 +1586,10 @@ mod tests {
     }
 
     #[test]
-    fn build_rejects_nul_path_before_missing_dependency_io() {
+    fn build_preflights_nul_and_collisions_before_missing_dependency_io() {
         let root = temp_tree("nul-before-dependency");
         let document_path = root.join("edict.lawpack.json");
-        let document = br#"{
+        let document = r#"{
           "schema":"edict.lawpack-build/v1",
           "outputDirectory":"generated",
           "lawpack":{
@@ -1594,7 +1608,10 @@ mod tests {
           },
           "dependencyBundles":[{"manifest":"missing-manifest.cbor","exports":"missing-exports.cbor"}]
         }"#;
-        test_ok(fs::write(&document_path, document), "write build document");
+        test_ok(
+            fs::write(&document_path, document.as_bytes()),
+            "write build document",
+        );
 
         assert_eq!(
             test_err(
@@ -1603,6 +1620,21 @@ mod tests {
             )
             .kind,
             "LawpackAuthoringInvalidOutputPath"
+        );
+        assert!(!root.join("generated").exists());
+
+        let collision = document.replace("bad\\u0000.cbor", "manifest.cbor");
+        test_ok(
+            fs::write(&document_path, collision.as_bytes()),
+            "write colliding build document",
+        );
+        assert_eq!(
+            test_err(
+                build_lawpack(&document_path, false),
+                "fixed artifact collision rejects before missing dependency I/O",
+            )
+            .kind,
+            "LawpackAuthoringDuplicateIdentity"
         );
         assert!(!root.join("generated").exists());
         test_ok(fs::remove_dir_all(root), "remove test tree");

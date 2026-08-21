@@ -53,10 +53,13 @@ ownership index, and it refuses to place one owned output inside another owned
 lawpack tree. Proper ancestor output locks are acquired top-down, ownership is
 rechecked under those locks, and the locks remain held through check or
 publication so parent and nested builds cannot race over the same tree.
-One blocking common publication coordinator extends that exclusion across
-different build-document roots, deliberately serializing lawpack write and
-check operations. Artifact paths containing filesystem NUL bytes reject before
-output inspection, coordination, or dependency I/O.
+One blocking coordinator at the highest writable physical ancestor, selected
+independently of process temporary-directory settings, extends that exclusion
+across different build-document roots and deliberately serializes lawpack write
+and check operations. Pure preflight derives fixed artifacts and sidecars and
+rejects reserved namespaces, duplicates, ancestor collisions, filesystem NUL,
+nonportable names, and case aliases before output inspection, coordination, or
+dependency I/O.
 Dependency paths are canonicalized before overlap checks, so a
 symlink cannot route an input back under the replaceable output tree. A check-only build
 does not repair the owned artifact tree and reports `LawpackOutputDrift` unless

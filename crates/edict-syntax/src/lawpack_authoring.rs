@@ -748,12 +748,76 @@ pub fn author_lawpack(
 pub fn preflight_lawpack_authoring_paths(
     definition: &LawpackAuthoringDefinition,
 ) -> Result<(), Vec<LawpackAuthoringFailure>> {
+    let mut artifacts = Vec::new();
+    push_preflight_artifact_pair(
+        &mut artifacts,
+        "manifest.cbor",
+        LawpackArtifactKind::Manifest,
+        0,
+    )?;
+    push_preflight_artifact_pair(
+        &mut artifacts,
+        "exports.cbor",
+        LawpackArtifactKind::Exports,
+        1,
+    )?;
     for (index, resource) in definition.local_resources.iter().enumerate() {
-        validate_output_path(&resource.output, &format!("localResources.{index}"))?;
+        push_preflight_artifact_pair(
+            &mut artifacts,
+            &resource.output,
+            LawpackArtifactKind::LocalResource,
+            index + 2,
+        )?;
     }
     for (index, adapter) in definition.target_adapters.iter().enumerate() {
-        validate_output_path(&adapter.output, &format!("targetAdapters.{index}"))?;
+        push_preflight_artifact_pair(
+            &mut artifacts,
+            &adapter.output,
+            LawpackArtifactKind::Adapter,
+            definition.local_resources.len() + index + 2,
+        )?;
     }
+    validate_artifact_paths(&artifacts)
+}
+
+fn push_preflight_artifact_pair(
+    artifacts: &mut Vec<LawpackAuthoredArtifact>,
+    output: &str,
+    kind: LawpackArtifactKind,
+    index: usize,
+) -> Result<(), Vec<LawpackAuthoringFailure>> {
+    validate_output_path(output, &format!("artifactPaths.{index}"))?;
+    let sidecar = digest_sidecar_path(output)?;
+    let coordinate = format!("preflight.artifact.{index}");
+    artifacts.push(LawpackAuthoredArtifact {
+        kind,
+        path: output.to_owned(),
+        coordinate: coordinate.clone(),
+        bytes: Vec::new(),
+        digest: String::new(),
+    });
+    artifacts.push(LawpackAuthoredArtifact {
+        kind: match kind {
+            LawpackArtifactKind::Manifest => LawpackArtifactKind::ManifestDigest,
+            LawpackArtifactKind::Exports => LawpackArtifactKind::ExportsDigest,
+            LawpackArtifactKind::Adapter => LawpackArtifactKind::AdapterDigest,
+            LawpackArtifactKind::LocalResource => LawpackArtifactKind::LocalResourceDigest,
+            LawpackArtifactKind::ManifestDigest
+            | LawpackArtifactKind::ExportsDigest
+            | LawpackArtifactKind::AdapterDigest
+            | LawpackArtifactKind::LocalResourceDigest => {
+                return Err(one(failure(
+                    LawpackAuthoringFailureKind::InvalidDefinition,
+                    output,
+                    "a canonical artifact kind with one digest sidecar",
+                )));
+            }
+        },
+        path: sidecar,
+        coordinate,
+        bytes: Vec::new(),
+        digest: String::new(),
+    });
     Ok(())
 }
 
@@ -1752,14 +1816,36 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
             .extension()
             .and_then(|extension| extension.to_str())
             != Some("cbor")
+        || !output_path.components().all(|component| match component {
+            Component::Normal(component) => portable_output_component(component.to_str()),
+            _ => false,
+        })
     {
         return Err(one(failure(
             LawpackAuthoringFailureKind::InvalidOutputPath,
             path,
-            "a non-empty relative UTF-8 `.cbor` path without parent traversal",
+            "a lowercase portable relative UTF-8 `.cbor` path without parent traversal or reserved filesystem names",
         )));
     }
     Ok(())
+}
+
+fn portable_output_component(component: Option<&str>) -> bool {
+    let Some(component) = component else {
+        return false;
+    };
+    if component.is_empty()
+        || !component.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
+        })
+    {
+        return false;
+    }
+    let stem = component.split('.').next().unwrap_or_default();
+    !matches!(stem, "con" | "prn" | "aux" | "nul")
+        && !(stem.len() == 4
+            && (stem.starts_with("com") || stem.starts_with("lpt"))
+            && matches!(stem.as_bytes()[3], b'1'..=b'9'))
 }
 
 fn validate_artifact_paths(
