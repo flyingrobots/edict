@@ -27,6 +27,10 @@ Status: current contract for Edict issue #195.
 | LAUTH-TP-007 | implemented | Publication confinement | LAUTH-REQ-006 | A parent path replaced after revalidation cannot redirect staging, activation, rollback, or cleanup outside the opened publication directory; replacing the admitted document-root pathname with another real directory cannot separate ancestor locks from the publication authority. | post_revalidation_parent_swap_cannot_escape_root, publication_keeps_the_locked_root_identity_after_real_directory_substitution | crates/edict-cli/src/lawpack_build.rs | The regressions retain external or substituted victim trees byte for byte and publish only through the capability identity whose ancestor locks were acquired. |
 | LAUTH-TP-008 | implemented | Output-directory portability | LAUTH-REQ-006 | Raw output-directory paths reject separator aliases, reserved-name case aliases, platform-reserved components, and any component whose derived lock exceeds the portable limit. | output_directory_rejects_internal_publication_namespaces, output_directory_bounds_derived_lock_names, output_directory_rejects_nonportable_raw_paths | crates/edict-cli/src/lawpack_build.rs | The boundary accepts 229 bytes and rejects 230 before filesystem access. |
 
+The injected rollback case in LAUTH-TP-005 publishes `a/b/generated` through
+the document-root boundary, proving nested-parent creation and byte-for-byte
+restoration under the same retained publication authority.
+
 ## Oracles
 
 - Canonical bytes are decoded by `decode_lawpack_bundle` and `decode_lawpack_adapter`; a second authoring run must match them byte for byte.

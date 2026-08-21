@@ -1927,10 +1927,10 @@ mod tests {
         decode_lawpack_document, encode_output_index, load_dependencies,
         load_dependencies_with_hook, output_lock_path, publish_output,
         publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
-        publish_output_with_hooks_in_authority, read_output_tree, resolve_output_directory,
-        validate_check_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
-        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
-        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
+        read_output_tree, resolve_output_directory, validate_check_output_parent_chain,
+        validate_generated_artifact_size, LawpackBuildFailure, LawpackDependencyBundle,
+        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::BTreeMap;
     use std::fs;
@@ -2244,29 +2244,50 @@ mod tests {
     #[test]
     fn injected_pre_activation_failure_restores_the_previous_tree() {
         let root = temp_tree("rollback");
-        let output = root.join("generated");
+        let output = root.join("a/b/generated");
         let original = files(&[
             ("edict.lawpack-output.json", valid_index()),
             ("old", b"old"),
         ]);
-        test_ok(publish_output(&output, &original), "publish original");
+        test_ok(
+            publish_output_with_hooks_in_root(
+                &root,
+                &output,
+                &original,
+                || Ok(()),
+                || Ok(()),
+                cap_std::fs::Dir::remove_open_dir_all,
+            ),
+            "publish original nested output",
+        );
+        assert!(root.join("a/b").is_dir());
         let replacement = files(&[
             ("edict.lawpack-output.json", valid_index()),
             ("new", b"new"),
         ]);
 
-        let result = publish_output_with_hook(&output, &replacement, || {
-            Err(LawpackBuildFailure {
-                kind: "InjectedFailure",
-                message: "injected before activation".to_owned(),
-            })
-        });
+        let result = publish_output_with_hooks_in_root(
+            &root,
+            &output,
+            &replacement,
+            || Ok(()),
+            || {
+                Err(LawpackBuildFailure {
+                    kind: "InjectedFailure",
+                    message: "injected before activation".to_owned(),
+                })
+            },
+            cap_std::fs::Dir::remove_open_dir_all,
+        );
 
         assert_eq!(
             test_err(result, "injection rejects").kind,
             "InjectedFailure"
         );
-        assert_eq!(test_ok(read_output_tree(&output), "read output"), original);
+        assert_eq!(
+            test_ok(read_output_tree(&output), "read restored nested output"),
+            original
+        );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
