@@ -24,6 +24,7 @@ use crate::lawpack_adapter::{decode_lawpack_adapter, LawpackAdapterFailure};
 pub const LAWPACK_AUTHORING_API_VERSION: &str = "edict.lawpack-authoring/v1";
 
 const LAWPACK_OUTPUT_INDEX_PATH: &str = "edict.lawpack-output.json";
+const EXPORT_VALUE_CANONICAL_ENCLOSING_DEPTH: usize = 3;
 
 /// Stable lawpack-authoring failure categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1085,7 +1086,7 @@ fn exports_value(
                 ("type", text(&export.ty)),
                 (
                     "value",
-                    canonical_json_value(
+                    canonical_export_json_value(
                         &export.value,
                         &format!("exports.constants.{index}.value"),
                     )?,
@@ -1187,7 +1188,7 @@ fn pure_function_value(
             fields.push(("source", text("edict")));
             fields.push((
                 "body",
-                canonical_json_value(body, &format!("exports.pureFunctions.{index}.body"))?,
+                canonical_export_json_value(body, &format!("exports.pureFunctions.{index}.body"))?,
             ));
         }
         LawpackAuthoringPureFunction::Component { implementation, .. } => {
@@ -1502,7 +1503,31 @@ fn canonical_json_value(
     value: &Value,
     path: &str,
 ) -> Result<CanonicalValue, Vec<LawpackAuthoringFailure>> {
-    canonical_json_value_at_depth(value, path, MAX_CANONICAL_NESTING_DEPTH)
+    canonical_json_value_with_enclosing_depth(value, path, 0)
+}
+
+fn canonical_export_json_value(
+    value: &Value,
+    path: &str,
+) -> Result<CanonicalValue, Vec<LawpackAuthoringFailure>> {
+    canonical_json_value_with_enclosing_depth(value, path, EXPORT_VALUE_CANONICAL_ENCLOSING_DEPTH)
+}
+
+fn canonical_json_value_with_enclosing_depth(
+    value: &Value,
+    path: &str,
+    enclosing_depth: usize,
+) -> Result<CanonicalValue, Vec<LawpackAuthoringFailure>> {
+    let remaining_depth = MAX_CANONICAL_NESTING_DEPTH
+        .checked_sub(enclosing_depth)
+        .ok_or_else(|| {
+            one(failure(
+                LawpackAuthoringFailureKind::InvalidCanonicalValue,
+                path,
+                "canonical JSON nesting within the enclosing artifact depth limit",
+            ))
+        })?;
+    canonical_json_value_at_depth(value, path, remaining_depth)
 }
 
 fn canonical_json_value_at_depth(
@@ -1721,7 +1746,7 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
 fn validate_artifact_paths(
     artifacts: &[LawpackAuthoredArtifact],
 ) -> Result<(), Vec<LawpackAuthoringFailure>> {
-    let mut paths = Vec::with_capacity(artifacts.len());
+    let mut paths = BTreeSet::new();
     let mut coordinates = BTreeSet::new();
     for artifact in artifacts {
         let artifact_path = Path::new(&artifact.path);
@@ -1732,7 +1757,13 @@ fn validate_artifact_paths(
                 "a path outside the generated ownership-index namespace",
             )));
         }
-        paths.push(artifact.path.as_str());
+        if !paths.insert(artifact_path) {
+            return Err(one(failure(
+                LawpackAuthoringFailureKind::DuplicateIdentity,
+                &artifact.path,
+                "one emitted artifact per relative path",
+            )));
+        }
         if matches!(
             artifact.kind,
             LawpackArtifactKind::Manifest
@@ -1748,16 +1779,20 @@ fn validate_artifact_paths(
             )));
         }
     }
-    paths.sort_unstable();
-    for pair in paths.windows(2) {
-        let previous = Path::new(pair[0]);
-        let next = Path::new(pair[1]);
-        if previous == next || next.starts_with(previous) {
-            return Err(one(failure(
-                LawpackAuthoringFailureKind::DuplicateIdentity,
-                pair[1],
-                "emitted artifact paths without duplicate or file/descendant collisions",
-            )));
+    for path in &paths {
+        let mut ancestor = path.parent();
+        while let Some(parent) = ancestor {
+            if parent.as_os_str().is_empty() {
+                break;
+            }
+            if paths.contains(parent) {
+                return Err(one(failure(
+                    LawpackAuthoringFailureKind::DuplicateIdentity,
+                    path.to_string_lossy(),
+                    "emitted artifact paths without file/descendant collisions",
+                )));
+            }
+            ancestor = parent.parent();
         }
     }
     Ok(())

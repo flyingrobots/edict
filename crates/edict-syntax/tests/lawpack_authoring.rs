@@ -1,9 +1,10 @@
 use edict_syntax::{
     author_lawpack, decode_lawpack_adapter, decode_lawpack_bundle, CanonicalValue,
     LawpackArtifactKind, LawpackAuthoringApertureRequirement, LawpackAuthoringDefinition,
-    LawpackAuthoringDependency, LawpackAuthoringFailureKind, LawpackAuthoringPureFunction,
-    LawpackAuthoringVerifier, LawpackEffectKind, LawpackExecutionClass,
-    LawpackPureFunctionImplementation, LawpackVerifier,
+    LawpackAuthoringDependency, LawpackAuthoringFailureCause, LawpackAuthoringFailureKind,
+    LawpackAuthoringPureFunction, LawpackAuthoringVerifier, LawpackEffectKind,
+    LawpackExecutionClass, LawpackPureFunctionImplementation, LawpackValidationFailureKind,
+    LawpackVerifier, MAX_CANONICAL_NESTING_DEPTH,
 };
 
 const PIN_RULESET: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -55,6 +56,14 @@ fn minimal_definition() -> LawpackAuthoringDefinition {
         "localResources": []
     }))
     .expect("minimal typed authoring definition")
+}
+
+fn nested_arrays(container_count: usize) -> serde_json::Value {
+    let mut value = serde_json::json!(0);
+    for _ in 0..container_count {
+        value = serde_json::json!([value]);
+    }
+    value
 }
 
 #[allow(
@@ -437,16 +446,19 @@ fn malformed_inputs_fail_with_stable_categories() {
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidLawpack
     );
-    assert!(failures[0].cause.is_some(), "decoder cause remains typed");
+    let Some(LawpackAuthoringFailureCause::Lawpack(cause)) = &failures[0].cause else {
+        panic!("malformed pure body retains its typed lawpack cause");
+    };
+    assert_eq!(
+        cause.kind,
+        LawpackValidationFailureKind::InvalidPureFunctionBody
+    );
 }
 
 #[test]
 fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
     let mut definition = full_definition();
-    let mut at_limit = serde_json::json!(0);
-    for _ in 0..128 {
-        at_limit = serde_json::json!([at_limit]);
-    }
+    let at_limit = nested_arrays(MAX_CANONICAL_NESTING_DEPTH);
     definition.local_resources[0].value = at_limit.clone();
     author_lawpack(&definition, &[]).expect("terminal scalar at canonical depth limit succeeds");
 
@@ -461,7 +473,47 @@ fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
 }
 
 #[test]
-fn large_unique_artifact_path_set_authors_without_pairwise_validation() {
+fn export_values_account_for_their_enclosing_canonical_containers() {
+    const EXPORT_ENCLOSING_CONTAINERS: usize = 3;
+    let at_limit = nested_arrays(MAX_CANONICAL_NESTING_DEPTH - EXPORT_ENCLOSING_CONTAINERS);
+    let over_limit = serde_json::json!([at_limit.clone()]);
+
+    let mut constant = full_definition();
+    constant.exports.constants[0].value = at_limit.clone();
+    author_lawpack(&constant, &[]).expect("constant at complete artifact depth limit succeeds");
+    constant.exports.constants[0].value = over_limit.clone();
+    let failures = author_lawpack(&constant, &[]).expect_err("over-deep constant rejects early");
+    assert_eq!(failures.len(), 1);
+    assert_eq!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::InvalidCanonicalValue
+    );
+
+    let edict_helper = |body| {
+        serde_json::from_value::<LawpackAuthoringPureFunction>(serde_json::json!({
+            "source": "edict",
+            "coordinate": "example.cell@1.depthHelper",
+            "typeParameters": [],
+            "parameterTypes": [],
+            "returnType": "U64",
+            "costTemplate": "example.cell@1.smallBudget",
+            "determinismClass": "total",
+            "body": body
+        }))
+        .expect("typed Edict helper")
+    };
+    let mut pure = full_definition();
+    pure.exports.pure_functions = vec![edict_helper(over_limit)];
+    let failures = author_lawpack(&pure, &[]).expect_err("over-deep pure body rejects early");
+    assert_eq!(failures.len(), 1);
+    assert_eq!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::InvalidCanonicalValue
+    );
+}
+
+#[test]
+fn large_unique_artifact_path_set_authors_successfully() {
     let mut definition = full_definition();
     for index in 0..1_000 {
         definition.local_resources.push(
@@ -482,8 +534,17 @@ fn large_unique_artifact_path_set_authors_without_pairwise_validation() {
 #[test]
 fn artifact_paths_reject_file_ancestors_and_the_ownership_index_namespace() {
     let mut prefix_collision = full_definition();
-    prefix_collision.local_resources[0].output = "resources/parent.cbor".to_owned();
-    prefix_collision.local_resources[1].output = "resources/parent.cbor/child.cbor".to_owned();
+    prefix_collision.local_resources[0].output = "r/x.cbor".to_owned();
+    prefix_collision.local_resources[1].output = "r/x.cbor-1.cbor".to_owned();
+    prefix_collision.local_resources.push(
+        serde_json::from_value(serde_json::json!({
+            "name": "descendant",
+            "coordinate": "example.cell.descendant/v1",
+            "output": "r/x.cbor/y.cbor",
+            "value": 3
+        }))
+        .expect("typed descendant resource"),
+    );
     let failures = author_lawpack(&prefix_collision, &[])
         .expect_err("an emitted file cannot be another artifact's ancestor");
     assert_eq!(
@@ -504,15 +565,23 @@ fn artifact_paths_reject_file_ancestors_and_the_ownership_index_namespace() {
 
 #[test]
 fn tagged_authoring_variants_reject_unknown_fields() {
-    assert!(
-        serde_json::from_value::<LawpackAuthoringVerifier>(serde_json::json!({
-            "class": "declarative",
-            "ruleset": {"id": "example.rules/v1", "digest": PIN_RULESET},
-            "rulesett": {"id": "ignored/v1", "digest": PIN_RULESET}
-        }))
-        .is_err()
-    );
-    assert!(serde_json::from_value::<LawpackAuthoringPureFunction>(serde_json::json!({
+    let mut verifier = serde_json::json!({
+        "class": "declarative",
+        "ruleset": {"id": "example.rules/v1", "digest": PIN_RULESET},
+        "rulesett": {"id": "ignored/v1", "digest": PIN_RULESET}
+    });
+    let verifier_error = serde_json::from_value::<LawpackAuthoringVerifier>(verifier.clone())
+        .expect_err("unknown verifier field rejects");
+    assert!(verifier_error.is_data());
+    verifier
+        .as_object_mut()
+        .expect("verifier object")
+        .remove("rulesett")
+        .expect("unknown verifier field");
+    serde_json::from_value::<LawpackAuthoringVerifier>(verifier)
+        .expect("removing only the unknown verifier field restores validity");
+
+    let mut pure = serde_json::json!({
         "source": "edict",
         "coordinate": "example.text@1.helper",
         "typeParameters": [],
@@ -522,16 +591,33 @@ fn tagged_authoring_variants_reject_unknown_fields() {
         "determinismClass": "total",
         "body": {"node": "core-fn-body", "statements": [], "result": {"node": "literal", "value": 1}},
         "boddy": {}
-    }))
-    .is_err());
-    assert!(
-        serde_json::from_value::<LawpackAuthoringApertureRequirement>(serde_json::json!({
-            "kind": "footprintCeiling",
-            "reference": "example.text@1.oneRange",
-            "referense": "ignored"
-        }))
-        .is_err()
-    );
+    });
+    let pure_error = serde_json::from_value::<LawpackAuthoringPureFunction>(pure.clone())
+        .expect_err("unknown pure-function field rejects");
+    assert!(pure_error.is_data());
+    pure.as_object_mut()
+        .expect("pure-function object")
+        .remove("boddy")
+        .expect("unknown pure-function field");
+    serde_json::from_value::<LawpackAuthoringPureFunction>(pure)
+        .expect("removing only the unknown pure-function field restores validity");
+
+    let mut aperture = serde_json::json!({
+        "kind": "footprintCeiling",
+        "reference": "example.text@1.oneRange",
+        "referense": "ignored"
+    });
+    let aperture_error =
+        serde_json::from_value::<LawpackAuthoringApertureRequirement>(aperture.clone())
+            .expect_err("unknown aperture field rejects");
+    assert!(aperture_error.is_data());
+    aperture
+        .as_object_mut()
+        .expect("aperture object")
+        .remove("referense")
+        .expect("unknown aperture field");
+    serde_json::from_value::<LawpackAuthoringApertureRequirement>(aperture)
+        .expect("removing only the unknown aperture field restores validity");
 }
 
 #[test]
@@ -614,7 +700,7 @@ fn exact_dependency_closure_is_required_and_corroborated() {
         version: "1".to_owned(),
         digest: middle.manifest_digest_review_string(),
     }];
-    author_lawpack(&transitive_root, &[middle.clone(), leaf])
+    author_lawpack(&transitive_root, &[middle.clone(), leaf.clone()])
         .expect("complete depth-two closure succeeds");
 
     let mut unrelated_definition = minimal_definition();
@@ -624,14 +710,21 @@ fn exact_dependency_closure_is_required_and_corroborated() {
     let unrelated = decode_authored(
         &author_lawpack(&unrelated_definition, &[]).expect("author unrelated bundle"),
     );
+    let disconnected = author_lawpack(&transitive_root, &[middle.clone(), leaf, unrelated.clone()])
+        .expect_err("depth-two closure rejects an unreachable supplied bundle");
+    assert_eq!(disconnected.len(), 1);
+    assert_eq!(
+        disconnected[0].kind,
+        LawpackAuthoringFailureKind::InvalidDependencyClosure
+    );
+
     let failures = author_lawpack(&transitive_root, &[middle, unrelated])
         .expect_err("unreachable bundle cannot offset a missing transitive dependency");
     assert_eq!(failures.len(), 1);
-    assert!(matches!(
+    assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidDependencyClosure
-            | LawpackAuthoringFailureKind::MissingDependency
-    ));
+    );
 }
 
 #[allow(

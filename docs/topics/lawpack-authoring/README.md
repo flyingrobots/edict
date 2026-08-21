@@ -119,7 +119,9 @@ the value to canonical CBOR and derives its coordinate-framed identity. JSON
 objects of the exact form `{"$edictBytes":"00ff"}` represent canonical byte
 strings; floating-point JSON numbers are rejected. Canonical JSON permits at
 most 128 containing arrays or objects around a terminal value; another
-container is rejected before recursive conversion.
+container is rejected before recursive conversion. Constant values and Edict
+pure-function bodies reserve three of those levels for the exports map, member
+array, and member map that enclose them in the canonical artifact.
 
 Every `dependencies` edge names an id, version, and exact manifest digest. The
 matching canonical manifest and exports paths appear in `dependencyBundles`.
@@ -140,9 +142,10 @@ index is refused rather than deleted. Output paths and input dependency paths
 must be confined relative paths, and dependency inputs must remain outside the
 owned output tree. Existing symlink traversal is rejected. Authored files may
 not collide by using another file as a parent, and the ownership-index path is
-reserved for Edict. Edict orders emitted paths and checks adjacent entries, so
-duplicate and file/descendant collisions remain fail-closed without pairwise
-growth as application-owned resource sets expand.
+reserved for Edict. Edict indexes every emitted file path and checks each
+proper ancestor against that set, so duplicate and file/descendant collisions
+remain fail-closed without pairwise growth as application-owned resource sets
+expand.
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
