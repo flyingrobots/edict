@@ -752,7 +752,8 @@ pub fn author_lawpack(
     Ok(LawpackAuthoredArtifactSet { artifacts })
 }
 
-/// Validate application-authored artifact paths without dependency or filesystem I/O.
+/// Validate derivable application-authored artifact paths and coordinates without
+/// dependency or filesystem I/O.
 ///
 /// # Errors
 ///
@@ -765,12 +766,14 @@ pub fn preflight_lawpack_authoring_paths(
         &mut artifacts,
         "manifest.cbor",
         LawpackArtifactKind::Manifest,
+        LAWPACK_API_VERSION,
         0,
     )?;
     push_preflight_artifact_pair(
         &mut artifacts,
         "exports.cbor",
         LawpackArtifactKind::Exports,
+        &definition.exports_coordinate,
         1,
     )?;
     for (index, resource) in definition.local_resources.iter().enumerate() {
@@ -778,6 +781,7 @@ pub fn preflight_lawpack_authoring_paths(
             &mut artifacts,
             &resource.output,
             LawpackArtifactKind::LocalResource,
+            &resource.coordinate,
             index + 2,
         )?;
     }
@@ -786,6 +790,7 @@ pub fn preflight_lawpack_authoring_paths(
             &mut artifacts,
             &adapter.output,
             LawpackArtifactKind::Adapter,
+            &adapter.coordinate,
             definition.local_resources.len() + index + 2,
         )?;
     }
@@ -796,15 +801,15 @@ fn push_preflight_artifact_pair(
     artifacts: &mut Vec<LawpackAuthoredArtifact>,
     output: &str,
     kind: LawpackArtifactKind,
+    coordinate: &str,
     index: usize,
 ) -> Result<(), Vec<LawpackAuthoringFailure>> {
     validate_output_path(output, &format!("artifactPaths.{index}"))?;
     let sidecar = digest_sidecar_path(output)?;
-    let coordinate = format!("preflight.artifact.{index}");
     artifacts.push(LawpackAuthoredArtifact {
         kind,
         path: output.to_owned(),
-        coordinate: coordinate.clone(),
+        coordinate: coordinate.to_owned(),
         bytes: Vec::new(),
         digest: String::new(),
     });
@@ -826,7 +831,7 @@ fn push_preflight_artifact_pair(
             }
         },
         path: sidecar,
-        coordinate,
+        coordinate: coordinate.to_owned(),
         bytes: Vec::new(),
         digest: String::new(),
     });

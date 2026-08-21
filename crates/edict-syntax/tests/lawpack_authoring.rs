@@ -427,6 +427,13 @@ fn malformed_inputs_fail_with_stable_categories() {
     let mut duplicate_coordinate = full_definition();
     duplicate_coordinate.local_resources[0].coordinate =
         duplicate_coordinate.exports_coordinate.clone();
+    let failures = preflight_lawpack_authoring_paths(&duplicate_coordinate)
+        .expect_err("preflight duplicate coordinate rejects");
+    assert_eq!(failures.len(), 1);
+    assert_eq!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::DuplicateIdentity
+    );
     let failures =
         author_lawpack(&duplicate_coordinate, &[]).expect_err("duplicate coordinate rejects");
     assert_eq!(failures.len(), 1);

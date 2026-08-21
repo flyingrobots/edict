@@ -3268,6 +3268,23 @@ mod tests {
             "LawpackAuthoringDuplicateIdentity"
         );
         assert!(!root.join("generated").exists());
+
+        let coordinate_collision = document
+            .replace("example.config/v1", "example.nul.exports/v1")
+            .replace("bad\\u0000.cbor", "config.cbor");
+        test_ok(
+            fs::write(&document_path, coordinate_collision.as_bytes()),
+            "write coordinate-colliding build document",
+        );
+        assert_eq!(
+            test_err(
+                build_lawpack(&document_path, false),
+                "coordinate collision rejects before missing dependency I/O",
+            )
+            .kind,
+            "LawpackAuthoringDuplicateIdentity"
+        );
+        assert!(!root.join("generated").exists());
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
