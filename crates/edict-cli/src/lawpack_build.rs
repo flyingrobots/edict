@@ -1204,6 +1204,15 @@ fn validate_output_tree(
     output_dir: Dir,
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
+    validate_output_tree_with_hook(output, output_dir, expected, |_| {})
+}
+
+fn validate_output_tree_with_hook(
+    output: &Path,
+    output_dir: Dir,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+    mut after_inspection: impl FnMut(&Path),
+) -> Result<(), LawpackBuildFailure> {
     let mut permitted_directories = BTreeSet::new();
     for path in expected.keys() {
         let mut parent = path.parent();
@@ -1243,23 +1252,28 @@ fn validate_output_tree(
                     format!("failed to inspect `{}`: {error}", entry_path.display()),
                 )
             })?;
+            after_inspection(&relative);
             if file_type.is_dir() {
                 if !permitted_directories.contains(&relative) {
                     return Err(unexpected_output_path(output, &relative));
                 }
-                let child = entry.open_dir().map_err(|error| {
-                    failure(
-                        "LawpackOutputDrift",
-                        format!("failed to pin `{}`: {error}", entry_path.display()),
-                    )
-                })?;
+                let child = directory
+                    .open_dir_nofollow(entry.file_name())
+                    .map_err(|error| {
+                        failure(
+                            "LawpackOutputDrift",
+                            format!("failed to pin `{}`: {error}", entry_path.display()),
+                        )
+                    })?;
                 pending.push((child, relative));
             } else if file_type.is_file() {
                 let Some(expected_bytes) = expected.get(&relative) else {
                     return Err(unexpected_output_path(output, &relative));
                 };
-                let file = entry
-                    .open()
+                let mut options = CapOpenOptions::new();
+                options.read(true).follow(FollowSymlinks::No);
+                let file = directory
+                    .open_with(entry.file_name(), &options)
                     .map(cap_std::fs::File::into_std)
                     .map_err(|error| {
                         failure(
@@ -2264,8 +2278,9 @@ mod tests {
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
         read_output_tree, resolve_check_output_directory, resolve_output_directory,
         validate_check_output_parent_chain, validate_generated_artifact_size,
-        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        validate_output_tree_with_hook, validate_owned_output_dir_with_hook, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3304,6 +3319,99 @@ mod tests {
 
         assert_eq!(error.kind, "LawpackOutputDrift");
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_only_traversal_refuses_a_file_link_substituted_after_inspection() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("check-traversal-file-link");
+        let output = root.join("generated");
+        let displaced = root.join("displaced-one");
+        let expected = files(&[("one", b"same"), ("target", b"same")]);
+        test_ok(fs::create_dir(&output), "create output");
+        for (relative, bytes) in &expected {
+            test_ok(
+                fs::write(output.join(relative), bytes),
+                "write expected file",
+            );
+        }
+        let output_dir = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&output, cap_std::ambient_authority()),
+            "open output",
+        );
+
+        let failure_kind =
+            validate_output_tree_with_hook(&output, output_dir, &expected, |relative| {
+                if relative == PathBuf::from("one") {
+                    test_ok(fs::rename(output.join("one"), &displaced), "displace file");
+                    test_ok(symlink("target", output.join("one")), "install file link");
+                }
+            })
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(fs::remove_file(output.join("one")), "remove file link");
+        test_ok(fs::rename(&displaced, output.join("one")), "restore file");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputDrift"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_only_traversal_refuses_a_directory_link_substituted_after_inspection() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("check-traversal-directory-link");
+        let output = root.join("generated");
+        let displaced = root.join("displaced-nested");
+        let expected = files(&[("nested/value", b"same"), ("target/value", b"same")]);
+        test_ok(
+            fs::create_dir_all(output.join("nested")),
+            "create nested output",
+        );
+        test_ok(
+            fs::create_dir(output.join("target")),
+            "create target output",
+        );
+        for (relative, bytes) in &expected {
+            test_ok(
+                fs::write(output.join(relative), bytes),
+                "write expected file",
+            );
+        }
+        let output_dir = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&output, cap_std::ambient_authority()),
+            "open output",
+        );
+
+        let failure_kind =
+            validate_output_tree_with_hook(&output, output_dir, &expected, |relative| {
+                if relative == PathBuf::from("nested") {
+                    test_ok(
+                        fs::rename(output.join("nested"), &displaced),
+                        "displace directory",
+                    );
+                    test_ok(
+                        symlink("target", output.join("nested")),
+                        "install directory link",
+                    );
+                }
+            })
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(
+            fs::remove_file(output.join("nested")),
+            "remove directory link",
+        );
+        test_ok(
+            fs::rename(&displaced, output.join("nested")),
+            "restore directory",
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputDrift"));
     }
 
     #[cfg(unix)]

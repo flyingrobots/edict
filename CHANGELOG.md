@@ -90,6 +90,8 @@ versions still track specification maturity rather than a released product.
   Check-only pins the requested output without following a symbolic link that
   replaces it after file-type inspection, and output-resolution inspection
   failures remain read-only ownership failures rather than write failures.
+  Exact-tree traversal opens every inspected file and child directory relative
+  to its retained parent without following a substituted symbolic link.
   Lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom. Emitted artifact-path collision checks use an ordering-independent
