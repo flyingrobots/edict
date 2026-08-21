@@ -51,6 +51,12 @@ struct OpenedDependencyInput {
     display: PathBuf,
 }
 
+#[derive(Clone, Copy)]
+enum OutputLockMode {
+    SharedIntent,
+    ExclusiveOutput,
+}
+
 #[cfg(test)]
 impl PublicationAuthority {
     fn len(&self) -> usize {
@@ -774,7 +780,12 @@ fn acquire_output_ancestor_locks(
             ));
         };
         display.push(name);
-        locks.push(acquire_output_intent_lock_in(&directory, name, &display)?);
+        locks.push(acquire_output_lock_in(
+            &directory,
+            name,
+            &display,
+            OutputLockMode::SharedIntent,
+        )?);
         match directory.create_dir(name) {
             Ok(()) => {}
             Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
@@ -1419,7 +1430,12 @@ fn publish_output_with_hooks_in_authority(
         )
     })?;
     let expected_owner = expected_output_owner(files)?;
-    let _lock = acquire_output_lock_in(parent_dir, output_name, output)?;
+    let _lock = acquire_output_lock_in(
+        parent_dir,
+        output_name,
+        output,
+        OutputLockMode::ExclusiveOutput,
+    )?;
 
     let transaction = unique_sibling_in(parent_dir, output, "transaction")?;
     parent_dir.create_dir(&transaction).map_err(|error| {
@@ -1530,10 +1546,15 @@ fn acquire_output_lock_in(
     parent: &Dir,
     output_name: &std::ffi::OsStr,
     output: &Path,
+    mode: OutputLockMode,
 ) -> Result<File, LawpackBuildFailure> {
     let lock_name = output_lock_name(output_name);
     let mut options = CapOpenOptions::new();
     options.create(true).read(true).write(true);
+    let open_subject = match mode {
+        OutputLockMode::SharedIntent => "output-intent lock",
+        OutputLockMode::ExclusiveOutput => "output lock",
+    };
     let lock = parent
         .open_with(&lock_name, &options)
         .map(cap_std::fs::File::into_std)
@@ -1541,52 +1562,31 @@ fn acquire_output_lock_in(
             failure(
                 "LawpackOutputWriteFailed",
                 format!(
-                    "failed to open output lock for `{}`: {error}",
+                    "failed to open {open_subject} for `{}`: {error}",
                     output.display()
                 ),
             )
         })?;
-    lock.try_lock().map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "another lawpack build owns output `{}`: {error}",
-                output.display()
-            ),
-        )
-    })?;
-    Ok(lock)
-}
-
-fn acquire_output_intent_lock_in(
-    parent: &Dir,
-    output_name: &std::ffi::OsStr,
-    output: &Path,
-) -> Result<File, LawpackBuildFailure> {
-    let lock_name = output_lock_name(output_name);
-    let mut options = CapOpenOptions::new();
-    options.create(true).read(true).write(true);
-    let lock = parent
-        .open_with(&lock_name, &options)
-        .map(cap_std::fs::File::into_std)
-        .map_err(|error| {
+    match mode {
+        OutputLockMode::SharedIntent => lock.try_lock_shared().map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
                 format!(
-                    "failed to open output-intent lock for `{}`: {error}",
+                    "an overlapping lawpack build owns output ancestor `{}`: {error}",
                     output.display()
                 ),
             )
-        })?;
-    lock.try_lock_shared().map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "an overlapping lawpack build owns output ancestor `{}`: {error}",
-                output.display()
-            ),
-        )
-    })?;
+        })?,
+        OutputLockMode::ExclusiveOutput => lock.try_lock().map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "another lawpack build owns output `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?,
+    }
     Ok(lock)
 }
 
