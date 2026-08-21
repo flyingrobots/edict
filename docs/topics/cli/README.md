@@ -61,8 +61,9 @@ publish overlapping trees from different document roots. Pure preflight derives
 fixed artifacts and sidecars and
 rejects reserved namespaces, duplicates, ancestor collisions, filesystem NUL,
 nonportable names, trailing-dot aliases, overlong paths, and case aliases before
-output inspection, coordination, or
-dependency I/O.
+output inspection, coordination, or dependency I/O. Raw output-directory paths
+use one portable `/`-separated grammar, reserve internal names
+case-insensitively, and leave room for every derived lock filename.
 Dependency paths are canonicalized before overlap checks, so a
 symlink cannot route an input back under the replaceable output tree. A check-only build
 does not repair the owned artifact tree and reports `LawpackOutputDrift` unless

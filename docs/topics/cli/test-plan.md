@@ -115,6 +115,8 @@ Out of scope:
 
 | CLI-TP-035 | implemented | Lawpack publication confinement | CLI-REQ-017 | Publication remains rooted in the opened output parent when an uncooperative actor replaces its ambient path after revalidation. | post_revalidation_parent_swap_cannot_escape_root | crates/edict-cli/src/lawpack_build.rs | The regression proves rollback cannot delete or replace an external victim tree. |
 
+| CLI-TP-036 | implemented | Lawpack output paths | CLI-REQ-017 | Raw output-directory paths have one host-independent grammar and every accepted component leaves room for its derived lock name. | output_directory_rejects_internal_publication_namespaces, output_directory_bounds_derived_lock_names, output_directory_rejects_nonportable_raw_paths | crates/edict-cli/src/lawpack_build.rs | Case-folded internal aliases and exact 229/230-byte lock-name boundaries are covered. |
+
 ## Determinism Obligations
 
 - Directory and glob expansion must be sorted before checking files.

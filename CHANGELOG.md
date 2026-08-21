@@ -56,7 +56,9 @@ versions still track specification maturity rather than a released product.
   activation while capability-directory handles anchor every later mutation,
   fixed-length clock-independent transaction names keep every
   accepted output component publishable, internal publication names are
-  reserved from output directories, so only overlapping output footprints conflict,
+  reserved case-insensitively from output directories, raw output-directory
+  components leave room for derived locks and reject platform aliases, so only
+  overlapping output footprints conflict,
   lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom, emitted artifact-path collision checks use an ordering-independent

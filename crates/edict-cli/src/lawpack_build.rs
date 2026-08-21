@@ -26,6 +26,8 @@ const OUTPUT_LOCK_SUFFIX: &str = ".edict-lawpack-build.lock";
 const MAX_LAWPACK_DOCUMENT_BYTES: u64 = 1024 * 1024;
 const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_DEPENDENCY_BUNDLES: usize = 192;
+const MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES: usize = 229;
+const MAX_OUTPUT_DIRECTORY_PATH_BYTES: usize = 1022;
 static PUBLICATION_NAME_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
@@ -38,7 +40,7 @@ pub(crate) struct LawpackBuildFailure {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct LawpackBuildDocument {
     schema: String,
-    output_directory: PathBuf,
+    output_directory: String,
     lawpack: LawpackAuthoringDefinition,
     #[serde(default)]
     dependency_bundles: Vec<LawpackDependencyBundle>,
@@ -488,8 +490,9 @@ fn resolve_existing_input(
     Ok(resolved)
 }
 
-fn resolve_output_directory(root: &Path, relative: &Path) -> Result<PathBuf, LawpackBuildFailure> {
+fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, LawpackBuildFailure> {
     validate_output_directory_path(relative)?;
+    let relative = Path::new(relative);
     let mut current = root.to_path_buf();
     for component in relative.components() {
         let Component::Normal(component) = component else {
@@ -777,24 +780,54 @@ fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFa
     Ok(())
 }
 
-fn validate_output_directory_path(path: &Path) -> Result<(), LawpackBuildFailure> {
-    validate_relative_path(path, "outputDirectory")?;
-    let aliases_internal_name = path.components().any(|component| {
-        let Component::Normal(component) = component else {
-            return false;
-        };
-        component.to_str().is_none_or(|component| {
-            component.starts_with(INTERNAL_PUBLICATION_PREFIX)
-                || (component.starts_with('.') && component.ends_with(OUTPUT_LOCK_SUFFIX))
-        })
-    });
-    if aliases_internal_name {
+fn validate_output_directory_path(path: &str) -> Result<(), LawpackBuildFailure> {
+    let raw_components = path.split('/').collect::<Vec<_>>();
+    let raw_grammar_is_portable = !path.is_empty()
+        && path.len() <= MAX_OUTPUT_DIRECTORY_PATH_BYTES
+        && !path.as_bytes().contains(&b'\\')
+        && raw_components.iter().all(|component| {
+            !component.is_empty()
+                && component.len() <= MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES
+                && !matches!(*component, "." | "..")
+                && !component.ends_with('.')
+                && component
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+                && !is_windows_reserved_output_component(component)
+        });
+    if !raw_grammar_is_portable {
+        return Err(failure(
+            "InvalidLawpackConfig",
+            "outputDirectory must use bounded portable non-empty `/`-separated components"
+                .to_owned(),
+        ));
+    }
+    validate_relative_path(Path::new(path), "outputDirectory")?;
+    if raw_components.iter().any(|component| {
+        let folded = component.to_ascii_lowercase();
+        folded.starts_with(INTERNAL_PUBLICATION_PREFIX)
+            || (folded.starts_with('.') && folded.ends_with(OUTPUT_LOCK_SUFFIX))
+    }) {
         return Err(failure(
             "InvalidLawpackConfig",
             "outputDirectory must not use Edict's reserved publication namespace".to_owned(),
         ));
     }
     Ok(())
+}
+
+fn is_windows_reserved_output_component(component: &str) -> bool {
+    let stem = component
+        .split_once('.')
+        .map_or(component, |(stem, _)| stem)
+        .to_ascii_lowercase();
+    matches!(stem.as_str(), "con" | "prn" | "aux" | "nul" | "clock$")
+        || stem
+            .strip_prefix("com")
+            .or_else(|| stem.strip_prefix("lpt"))
+            .is_some_and(|suffix| {
+                matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+            })
 }
 
 fn check_output(
@@ -1691,10 +1724,11 @@ mod tests {
         publish_output_with_hook, publish_output_with_hooks, read_output_tree,
         resolve_output_directory, revalidate_output_parent_chain, validate_generated_artifact_size,
         LawpackBuildFailure, LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::BTreeMap;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::mpsc;
 
@@ -1712,7 +1746,7 @@ mod tests {
         let nested = owner.join("child");
 
         let failure = test_err(
-            resolve_output_directory(&root, Path::new("generated/child")),
+            resolve_output_directory(&root, "generated/child"),
             "nested owner rejects",
         );
         assert_eq!(failure.kind, "LawpackOutputOwnershipFailed");
@@ -1726,12 +1760,53 @@ mod tests {
         let root = temp_tree("reserved-output-name");
         for relative in [
             ".foo.edict-lawpack-build.lock",
+            ".foo.EDICT-LAWPACK-BUILD.LOCK",
             ".edict-lawpack-transaction-00000001-0000000000000000-00",
+            ".EDICT-LAWPACK-TRANSACTION-00000001-0000000000000000-00",
             ".edict-lawpack-previous-00000001-0000000000000000-00",
         ] {
             let failure = test_err(
-                resolve_output_directory(&root, Path::new(relative)),
+                resolve_output_directory(&root, relative),
                 "internal publication path rejects as an output",
+            );
+            assert_eq!(failure.kind, "InvalidLawpackConfig", "{relative}");
+        }
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn output_directory_bounds_derived_lock_names() {
+        let root = temp_tree("bounded-output-name");
+        let exact = "x".repeat(229);
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, &exact),
+                "exact lock-name boundary succeeds",
+            ),
+            root.join(&exact)
+        );
+        let overlong = "x".repeat(230);
+        let failure = test_err(
+            resolve_output_directory(&root, &overlong),
+            "overlong derived lock name rejects",
+        );
+        assert_eq!(failure.kind, "InvalidLawpackConfig");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn output_directory_rejects_nonportable_raw_paths() {
+        let root = temp_tree("portable-output-path");
+        for relative in [
+            "generated\\child",
+            "generated//child",
+            "generated/./child",
+            "con/output",
+            "generated/bad:name",
+        ] {
+            let failure = test_err(
+                resolve_output_directory(&root, relative),
+                "nonportable output path rejects",
             );
             assert_eq!(failure.kind, "InvalidLawpackConfig", "{relative}");
         }
@@ -1745,7 +1820,7 @@ mod tests {
         let nested = owner.join("child");
         assert_eq!(
             test_ok(
-                resolve_output_directory(&root, Path::new("generated/child")),
+                resolve_output_directory(&root, "generated/child"),
                 "resolve nested output",
             ),
             nested
@@ -1827,7 +1902,7 @@ mod tests {
     #[test]
     fn publication_bounds_internal_names_for_long_output_components() {
         let root = temp_tree("long-output-component");
-        let output = root.join("x".repeat(202));
+        let output = root.join("x".repeat(MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES));
         let expected = files(&[("edict.lawpack-output.json", valid_index())]);
 
         test_ok(
@@ -1919,7 +1994,7 @@ mod tests {
         test_ok(fs::create_dir(&parent), "create original parent");
         assert_eq!(
             test_ok(
-                resolve_output_directory(&root, Path::new("parent/generated")),
+                resolve_output_directory(&root, "parent/generated"),
                 "resolve output before swap",
             ),
             output
