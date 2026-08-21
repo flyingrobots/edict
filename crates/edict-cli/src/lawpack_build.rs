@@ -506,6 +506,7 @@ fn check_output(
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
     let expected_owner = expected_output_owner(expected)?;
+    validate_check_output_parent(output)?;
     let _lock = acquire_output_lock(output)?;
     validate_owned_output(output, false, &expected_owner)?;
     let mut permitted_directories = BTreeSet::new();
@@ -590,6 +591,43 @@ fn check_output(
                 output.display()
             ),
         ));
+    }
+    Ok(())
+}
+
+fn validate_check_output_parent(output: &Path) -> Result<(), LawpackBuildFailure> {
+    let parent = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputDrift",
+            "lawpack output has no parent directory".to_owned(),
+        )
+    })?;
+    match fs::symlink_metadata(parent) {
+        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
+        Ok(_) => {
+            return Err(failure(
+                "LawpackOutputOwnershipFailed",
+                format!(
+                    "output parent `{}` must be a real directory",
+                    parent.display()
+                ),
+            ));
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(failure(
+                "LawpackOutputDrift",
+                format!("lawpack output `{}` does not exist", output.display()),
+            ));
+        }
+        Err(error) => {
+            return Err(failure(
+                "LawpackOutputOwnershipFailed",
+                format!(
+                    "failed to inspect output parent `{}`: {error}",
+                    parent.display()
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -1188,6 +1226,20 @@ mod tests {
             test_err(check_output(&output, &expected), "drift rejects").kind,
             "LawpackOutputDrift"
         );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn check_only_reports_missing_nested_output_as_drift_without_creating_parent() {
+        let root = temp_tree("check-missing-parent");
+        let output = root.join("missing-parent/generated");
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+
+        assert_eq!(
+            test_err(check_output(&output, &expected), "missing output drifts").kind,
+            "LawpackOutputDrift"
+        );
+        assert!(!root.join("missing-parent").exists());
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 

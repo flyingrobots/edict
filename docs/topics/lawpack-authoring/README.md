@@ -117,7 +117,9 @@ A local resource places reviewable JSON in the authoring document:
 Other declarations refer to it as `{"local":"target-config"}`. Edict converts
 the value to canonical CBOR and derives its coordinate-framed identity. JSON
 objects of the exact form `{"$edictBytes":"00ff"}` represent canonical byte
-strings; floating-point JSON numbers are rejected.
+strings; floating-point JSON numbers are rejected. Canonical JSON permits at
+most 128 containing arrays or objects around a terminal value; another
+container is rejected before recursive conversion.
 
 Every `dependencies` edge names an id, version, and exact manifest digest. The
 matching canonical manifest and exports paths appear in `dependencyBundles`.
@@ -138,7 +140,9 @@ index is refused rather than deleted. Output paths and input dependency paths
 must be confined relative paths, and dependency inputs must remain outside the
 owned output tree. Existing symlink traversal is rejected. Authored files may
 not collide by using another file as a parent, and the ownership-index path is
-reserved for Edict.
+reserved for Edict. Edict orders emitted paths and checks adjacent entries, so
+duplicate and file/descendant collisions remain fail-closed without pairwise
+growth as application-owned resource sets expand.
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
@@ -151,7 +155,9 @@ bounded to 192 bundles. Raw authoring JSON rejects duplicate object keys before
 typed deserialization, so no hash-significant value can silently replace an
 earlier review value. Check-only traversal accepts only directories needed by
 expected artifacts and rejects an unexpected file before reading its contents,
-so drift cannot force accumulation of an arbitrary output tree in memory.
+so drift cannot force accumulation of an arbitrary output tree in memory. A
+missing nested output parent is reported as `LawpackOutputDrift` without
+creating that parent or the sibling publication lock.
 
 A persistent hidden lock file is kept beside the output directory so concurrent
 processes cannot acquire locks on different inodes while the directory itself

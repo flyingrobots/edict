@@ -43,7 +43,10 @@ versions still track specification maturity rather than a released product.
   build. Tagged inputs and output paths fail closed, dependency inputs cannot
   resolve under the replaced tree, duplicate JSON keys reject before typed
   authoring, ownership indexes must be real files, every generated artifact and
-  drift read stays bounded, and activation is the publication commit point;
+  drift read stays bounded, check-only classifies a missing nested output as
+  drift without creating its parent, canonical JSON accepts a scalar at the
+  exact 128-container boundary, emitted artifact-path collision checks scale
+  by ordered neighbors, and activation is the publication commit point;
   provider invocation and runtime execution remain outside authoring.
 - Added the generator-owned `workspace.patch.applyValidated@1` request closure.
   Exact compiler-owned Core and Target IR bind the canonical patch-input schema,

@@ -1510,13 +1510,6 @@ fn canonical_json_value_at_depth(
     path: &str,
     remaining_depth: usize,
 ) -> Result<CanonicalValue, Vec<LawpackAuthoringFailure>> {
-    if remaining_depth == 0 {
-        return Err(one(failure(
-            LawpackAuthoringFailureKind::InvalidCanonicalValue,
-            path,
-            "canonical JSON nesting within the authoring depth limit",
-        )));
-    }
     match value {
         Value::Null => Ok(CanonicalValue::Null),
         Value::Bool(value) => Ok(CanonicalValue::Bool(*value)),
@@ -1534,18 +1527,17 @@ fn canonical_json_value_at_depth(
             }
         }
         Value::String(value) => Ok(text(value)),
-        Value::Array(values) => values
-            .iter()
-            .enumerate()
-            .map(|(index, value)| {
-                canonical_json_value_at_depth(
-                    value,
-                    &format!("{path}.{index}"),
-                    remaining_depth - 1,
-                )
-            })
-            .collect::<Result<Vec<_>, Vec<LawpackAuthoringFailure>>>()
-            .map(CanonicalValue::Array),
+        Value::Array(values) => {
+            let next_depth = descend_canonical_json(path, remaining_depth)?;
+            values
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    canonical_json_value_at_depth(value, &format!("{path}.{index}"), next_depth)
+                })
+                .collect::<Result<Vec<_>, Vec<LawpackAuthoringFailure>>>()
+                .map(CanonicalValue::Array)
+        }
         Value::Object(values) if values.len() == 1 && values.contains_key("$edictBytes") => {
             let encoded = values
                 .get("$edictBytes")
@@ -1559,21 +1551,33 @@ fn canonical_json_value_at_depth(
                 })?;
             parse_hex_bytes(encoded, path).map(CanonicalValue::Bytes)
         }
-        Value::Object(values) => values
-            .iter()
-            .map(|(key, value)| {
-                Ok((
-                    text(key),
-                    canonical_json_value_at_depth(
-                        value,
-                        &format!("{path}.{key}"),
-                        remaining_depth - 1,
-                    )?,
-                ))
-            })
-            .collect::<Result<Vec<_>, Vec<LawpackAuthoringFailure>>>()
-            .map(CanonicalValue::Map),
+        Value::Object(values) => {
+            let next_depth = descend_canonical_json(path, remaining_depth)?;
+            values
+                .iter()
+                .map(|(key, value)| {
+                    Ok((
+                        text(key),
+                        canonical_json_value_at_depth(value, &format!("{path}.{key}"), next_depth)?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, Vec<LawpackAuthoringFailure>>>()
+                .map(CanonicalValue::Map)
+        }
     }
+}
+
+fn descend_canonical_json(
+    path: &str,
+    remaining_depth: usize,
+) -> Result<usize, Vec<LawpackAuthoringFailure>> {
+    remaining_depth.checked_sub(1).ok_or_else(|| {
+        one(failure(
+            LawpackAuthoringFailureKind::InvalidCanonicalValue,
+            path,
+            "canonical JSON nesting within the authoring depth limit",
+        ))
+    })
 }
 
 fn parse_digest(digest: &str, path: &str) -> Result<[u8; 32], Vec<LawpackAuthoringFailure>> {
@@ -1717,7 +1721,7 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
 fn validate_artifact_paths(
     artifacts: &[LawpackAuthoredArtifact],
 ) -> Result<(), Vec<LawpackAuthoringFailure>> {
-    let mut paths = BTreeSet::new();
+    let mut paths = Vec::with_capacity(artifacts.len());
     let mut coordinates = BTreeSet::new();
     for artifact in artifacts {
         let artifact_path = Path::new(&artifact.path);
@@ -1728,23 +1732,7 @@ fn validate_artifact_paths(
                 "a path outside the generated ownership-index namespace",
             )));
         }
-        if paths.iter().any(|existing| {
-            artifact_path.starts_with(Path::new(existing))
-                || Path::new(existing).starts_with(artifact_path)
-        }) {
-            return Err(one(failure(
-                LawpackAuthoringFailureKind::DuplicateIdentity,
-                &artifact.path,
-                "emitted artifact paths without file/descendant collisions",
-            )));
-        }
-        if !paths.insert(artifact.path.as_str()) {
-            return Err(one(failure(
-                LawpackAuthoringFailureKind::DuplicateIdentity,
-                &artifact.path,
-                "one emitted artifact per relative path",
-            )));
-        }
+        paths.push(artifact.path.as_str());
         if matches!(
             artifact.kind,
             LawpackArtifactKind::Manifest
@@ -1757,6 +1745,18 @@ fn validate_artifact_paths(
                 LawpackAuthoringFailureKind::DuplicateIdentity,
                 &artifact.coordinate,
                 "one canonical artifact per resource coordinate",
+            )));
+        }
+    }
+    paths.sort_unstable();
+    for pair in paths.windows(2) {
+        let previous = Path::new(pair[0]);
+        let next = Path::new(pair[1]);
+        if previous == next || next.starts_with(previous) {
+            return Err(one(failure(
+                LawpackAuthoringFailureKind::DuplicateIdentity,
+                pair[1],
+                "emitted artifact paths without duplicate or file/descendant collisions",
             )));
         }
     }

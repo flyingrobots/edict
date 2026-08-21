@@ -443,11 +443,14 @@ fn malformed_inputs_fail_with_stable_categories() {
 #[test]
 fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
     let mut definition = full_definition();
-    let mut nested = serde_json::json!(0);
-    for _ in 0..129 {
-        nested = serde_json::json!({"next": nested});
+    let mut at_limit = serde_json::json!(0);
+    for _ in 0..128 {
+        at_limit = serde_json::json!([at_limit]);
     }
-    definition.local_resources[0].value = nested;
+    definition.local_resources[0].value = at_limit.clone();
+    author_lawpack(&definition, &[]).expect("terminal scalar at canonical depth limit succeeds");
+
+    definition.local_resources[0].value = serde_json::json!([at_limit]);
 
     let failures = author_lawpack(&definition, &[]).expect_err("deep value rejects");
     assert_eq!(failures.len(), 1);
@@ -455,6 +458,25 @@ fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidCanonicalValue
     );
+}
+
+#[test]
+fn large_unique_artifact_path_set_authors_without_pairwise_validation() {
+    let mut definition = full_definition();
+    for index in 0..1_000 {
+        definition.local_resources.push(
+            serde_json::from_value(serde_json::json!({
+                "name": format!("extra-{index:04}"),
+                "coordinate": format!("example.cell.extra-{index:04}/v1"),
+                "output": format!("resources/extra-{index:04}.cbor"),
+                "value": index
+            }))
+            .expect("typed extra local resource"),
+        );
+    }
+
+    let authored = author_lawpack(&definition, &[]).expect("large unique path set authors");
+    assert_eq!(authored.artifacts().len(), 2_010);
 }
 
 #[test]
