@@ -24,19 +24,69 @@ argument is rejected with an `InvalidArguments` diagnostic and exit `2`.
 The implemented operations are `build`, `check`, and `project`.
 
 A `build` request contains one settings record and no compiler-input records.
-Its `application` field points to an `edict.application/v1` JSON manifest. The
-manifest names one exact Edict source, its complete lawpack closure, the
-selected target profile and provider package, and the output directory. Both
-application routes accept exactly one source and a non-empty ordered lawpack
-closure whose first entry is the root. They validate the complete supplied
-dependency graph, reject any supplied lawpack unreachable from that root,
-compile and lower the source through the root lawpack's declarative target
-adapter, and resolve the selected target profile only from its checked
-provider-package manifest.
+It selects exactly one document: `application` points to an
+`edict.application/v1` manifest, while `lawpack` points to an
+`edict.lawpack-build/v1` authoring document. `checkOnly` is accepted only with
+`lawpack`, and either selected document path must be non-empty.
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","application":"edict.application.json"}
 ```
+
+### Lawpack Builds
+
+A lawpack build accepts application-owned typed declarations, constructs the
+canonical manifest, exports, adapters, local resources, and lowercase digest
+sidecars, and sends the exact bytes through the existing public lawpack,
+adapter, and complete dependency-graph validators before publication:
+
+```json
+{"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json"}
+```
+
+All paths inside the lawpack build document are resolved relative to that
+document and confined beneath its directory. The output directory is an
+Edict-owned generated tree identified by `edict.lawpack-output.json`. A write
+build replaces that complete tree transactionally and therefore removes stale
+owned artifacts. It refuses a non-empty unowned directory or a symlinked
+ownership index, and it refuses to place one owned output inside another owned
+lawpack tree. Write builds acquire shared intent locks for proper ancestors and
+an exclusive lock for the output itself, so disjoint sibling outputs remain
+parallel while parent/child or identical output footprints conflict. After
+coordination, Edict pins the publication root and output parent as capability
+directories; staging, activation, rollback, and cleanup cannot follow a later
+ambient-path replacement. The document directory is the publication namespace;
+callers must not concurrently publish overlapping trees from different document
+roots. Pure preflight derives fixed artifacts and sidecars and rejects reserved
+namespaces, duplicates, ancestor collisions, filesystem NUL, nonportable names,
+trailing-dot aliases, overlong paths, and case aliases before output inspection,
+coordination, or dependency I/O. Raw output-directory paths use one portable
+`/`-separated grammar, reserve internal names case-insensitively, and leave room
+for every derived lock filename. Dependency paths are canonicalized before
+overlap checks, so a symlink cannot route an input back under the replaceable
+output tree. A check-only build does not repair the owned artifact tree and
+reports `LawpackOutputDrift` unless the complete existing tree is
+byte-identical. It creates no directories or lock files and rechecks the
+ownership basis after traversal:
+
+```json
+{"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json","checkOnly":true}
+```
+
+The authoring format, local-versus-external resource identity, publication
+policy, and artifact ownership model are documented in the
+[lawpack-authoring guide](../lawpack-authoring/README.md).
+
+### Application Builds
+
+An application manifest names one exact Edict source, its complete lawpack
+closure, the selected target profile and provider package, and the output
+directory. Both application routes accept exactly one source and a non-empty
+ordered lawpack closure whose first entry is the root. They validate the
+complete supplied dependency graph, reject any supplied lawpack unreachable
+from that root, compile and lower the source through the root lawpack's
+declarative target adapter, and resolve the selected target profile only from
+its checked provider-package manifest.
 
 The application path is resolved from the process working directory. Every
 path inside the manifest is resolved from the manifest's parent directory and
@@ -184,7 +234,7 @@ CLI-REQ-011]
 
 Successful `check` results are emitted to stdout. A successful `build` emits
 only its terminal status record to stdout after the accepted artifacts have
-been written. `check` compiler diagnostics, build failures, CLI input errors,
+been written or checked. `check` compiler diagnostics, build failures, CLI input errors,
 and failure status records are emitted to stderr. `project` projection records,
 including compiler diagnostics and lowering failures, are emitted to stdout
 when the request itself is valid. Both streams use one JSON object per line
@@ -219,9 +269,11 @@ the checked-in schemas as the accepted wire shape.
 
 ## Exit Codes
 
-- `0`: request completed successfully. For `build`, the accepted provider
-  artifacts were written. For `project`, this can include compiler diagnostics
-  or Target IR lowering failures emitted as projection records.
+- `0`: request completed successfully. Application `build` wrote accepted
+  provider artifacts; lawpack write mode published its complete owned tree;
+  lawpack `checkOnly` verified exact existing bytes without repairing them. For
+  `project`, this can include compiler diagnostics or Target IR lowering
+  failures emitted as projection records.
 - `1`: compiler or validation diagnostics were produced for at least one
   source input in the `check` operation.
 - `2`: CLI input or usage was invalid before compiler validation could run.
@@ -239,7 +291,7 @@ expansion paths, including optional root-confinement rejection. [CLI-REQ-008]
 
 The following are not implemented by this first CLI slice:
 
-- general-purpose bundle assembly;
+- general-purpose contract-bundle assembly;
 - runtime admission and execution workflows;
 - human-pretty output mode;
 - Echo execution;

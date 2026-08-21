@@ -78,6 +78,7 @@ pub mod core_ir;
 pub mod highlight;
 pub mod lawpack;
 pub mod lawpack_adapter;
+pub mod lawpack_authoring;
 pub mod lowerability;
 pub mod parser;
 pub mod provider;
@@ -153,6 +154,21 @@ pub use lawpack_adapter::{
     decode_lawpack_adapter, prepare_lawpack_compilation, LawpackAdapterEffect,
     LawpackAdapterFailure, LawpackAdapterFailureKind, LawpackAdapterOperationProfile,
     PreparedLawpackCompilation, ValidatedLawpackAdapter, LAWPACK_ADAPTER_API_VERSION,
+};
+pub use lawpack_authoring::{
+    author_lawpack, preflight_lawpack_authoring_paths, LawpackArtifactKind,
+    LawpackAuthoredArtifact, LawpackAuthoredArtifactSet, LawpackAuthoringAdapter,
+    LawpackAuthoringAdapterBudget, LawpackAuthoringAdapterEffect,
+    LawpackAuthoringAdapterOperationProfile, LawpackAuthoringApertureRequirement,
+    LawpackAuthoringAuthorityClass, LawpackAuthoringConstant, LawpackAuthoringDefinition,
+    LawpackAuthoringDependency, LawpackAuthoringDeterminismClass, LawpackAuthoringEffect,
+    LawpackAuthoringEffectFailure, LawpackAuthoringEffectKind, LawpackAuthoringExecutableComponent,
+    LawpackAuthoringExecutionClass, LawpackAuthoringExports, LawpackAuthoringFailure,
+    LawpackAuthoringFailureCause, LawpackAuthoringFailureKind, LawpackAuthoringLocalReference,
+    LawpackAuthoringLocalResource, LawpackAuthoringObstruction, LawpackAuthoringOperationProfile,
+    LawpackAuthoringOpticTemplate, LawpackAuthoringPinnedResource, LawpackAuthoringPureFunction,
+    LawpackAuthoringResourceRef, LawpackAuthoringType, LawpackAuthoringVerifier,
+    LAWPACK_AUTHORING_API_VERSION, MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH,
 };
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,

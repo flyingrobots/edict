@@ -16,6 +16,8 @@ name = "edict"
 path = "src/main.rs"
 
 [dependencies]
+cap-fs-ext = "4.0.3"
+cap-std = "4.0.3"
 edict-provider-host-wasmtime = { path = "../edict-provider-host-wasmtime" }
 edict-provider-schema = { path = "../edict-provider-schema" }
 edict-syntax = { path = "../edict-syntax" }

@@ -185,6 +185,33 @@ fn build_rejects_unused_directory_extension_settings() {
 }
 
 #[test]
+fn build_rejects_an_empty_lawpack_path_as_invalid_settings() {
+    let output = run_edict(&jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "compilerSettings",
+        "operation": "build",
+        "lawpack": "",
+    })]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("empty lawpack path emits a diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("InvalidSettings")
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
 fn build_rejects_explicit_default_values_for_forbidden_settings() {
     let root = temp_tree("build-explicit-defaults");
     let application = root.join("missing-edict-application.json");
@@ -193,6 +220,7 @@ fn build_rejects_explicit_default_values_for_forbidden_settings() {
         ("emit", json!([])),
         ("followSymlinks", json!(false)),
         ("directoryExtensions", json!([".edict"])),
+        ("checkOnly", json!(false)),
     ] {
         let mut settings = json!({
             "schema": "edict.compiler.settings/v1",
@@ -224,6 +252,126 @@ fn build_rejects_explicit_default_values_for_forbidden_settings() {
     }
 
     fs::remove_dir_all(root).expect("remove explicit defaults test tree");
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one external-consumer witness traces write, check, drift, and repair"
+)]
+#[test]
+fn lawpack_build_writes_checks_repairs_and_is_cwd_independent() {
+    let root = temp_tree("lawpack-external-consumer");
+    let caller_one = temp_tree("lawpack-caller-one");
+    let caller_two = temp_tree("lawpack-caller-two");
+    let document_path = root.join("edict.lawpack.json");
+    let document = json!({
+        "schema": "edict.lawpack-build/v1",
+        "outputDirectory": "vendor/example-text",
+        "lawpack": {
+            "schema": "edict.lawpack-authoring/v1",
+            "id": "example.text",
+            "version": "1",
+            "acceptedCoreAbi": ["edict.core/v1"],
+            "dependencies": [],
+            "exportsCoordinate": "example.text.exports/v1",
+            "exports": {
+                "types": [{
+                    "coordinate": "example.text@1.Key",
+                    "definition": "String<max=64>"
+                }],
+                "constants": [],
+                "pureFunctions": [],
+                "effects": [],
+                "obstructions": [],
+                "operationProfiles": {}
+            },
+            "targetAdapters": [],
+            "verifier": {
+                "class": "declarative",
+                "ruleset": {
+                    "id": "example.text.verifier/v1",
+                    "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                }
+            },
+            "compatibility": {
+                "id": "example.text.compatibility/v1",
+                "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+            },
+            "conformanceFixtureCorpus": {
+                "id": "example.text.fixtures/v1",
+                "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+            },
+            "localResources": []
+        },
+        "dependencyBundles": []
+    });
+    fs::write(
+        &document_path,
+        serde_json::to_vec_pretty(&document).expect("encode lawpack build document"),
+    )
+    .expect("write lawpack build document");
+
+    let write_request = jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "compilerSettings",
+        "operation": "build",
+        "lawpack": document_path,
+    })]);
+    let first = run_edict_in_dir(&write_request, &caller_one);
+    assert_eq!(first.status.code(), Some(0));
+    assert!(first.stderr.is_empty());
+    let output = root.join("vendor/example-text");
+    let manifest = fs::read(output.join("manifest.cbor")).expect("read first manifest");
+    let exports = fs::read(output.join("exports.cbor")).expect("read first exports");
+
+    let check_request = jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "compilerSettings",
+        "operation": "build",
+        "lawpack": document_path,
+        "checkOnly": true,
+    })]);
+    let check = run_edict_in_dir(&check_request, &caller_two);
+    assert_eq!(check.status.code(), Some(0));
+    assert!(check.stderr.is_empty());
+    assert_eq!(
+        fs::read(output.join("manifest.cbor")).expect("manifest"),
+        manifest
+    );
+    assert_eq!(
+        fs::read(output.join("exports.cbor")).expect("exports"),
+        exports
+    );
+
+    fs::write(output.join("exports.cbor"), b"drift").expect("inject output drift");
+    let drift = run_edict_in_dir(&check_request, &caller_one);
+    assert_eq!(drift.status.code(), Some(2));
+    let diagnostics = assert_jsonl_stream(&drift.stderr, "stderr");
+    assert_eq!(
+        diagnostics[0].get("kind").and_then(Value::as_str),
+        Some("LawpackOutputDrift")
+    );
+    assert_eq!(
+        fs::read(output.join("exports.cbor")).expect("drift remains"),
+        b"drift"
+    );
+
+    fs::write(output.join("stale.txt"), b"stale").expect("add stale owned output");
+    let repaired = run_edict_in_dir(&write_request, &caller_two);
+    assert_eq!(repaired.status.code(), Some(0));
+    assert_eq!(
+        fs::read(output.join("manifest.cbor")).expect("manifest"),
+        manifest
+    );
+    assert_eq!(
+        fs::read(output.join("exports.cbor")).expect("exports"),
+        exports
+    );
+    assert!(!output.join("stale.txt").exists());
+
+    fs::remove_dir_all(root).expect("remove external consumer tree");
+    fs::remove_dir_all(caller_one).expect("remove first caller tree");
+    fs::remove_dir_all(caller_two).expect("remove second caller tree");
 }
 
 #[test]
@@ -1200,16 +1348,31 @@ fn run_edict(input: &str) -> Output {
     run_edict_with_env(input, &[])
 }
 
+fn run_edict_in_dir(input: &str, directory: &std::path::Path) -> Output {
+    run_edict_configured(input, &[], Some(directory))
+}
+
 fn run_edict_with_env(input: &str, env: &[(&str, &str)]) -> Output {
+    run_edict_configured(input, env, None)
+}
+
+fn run_edict_configured(
+    input: &str,
+    env: &[(&str, &str)],
+    directory: Option<&std::path::Path>,
+) -> Output {
     let bin = env!("CARGO_BIN_EXE_edict");
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    command
         .env_remove(edict_cli::MAX_STDIN_BYTES_ENV)
         .envs(env.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn edict binary");
+        .stderr(Stdio::piped());
+    if let Some(directory) = directory {
+        command.current_dir(directory);
+    }
+    let mut child = command.spawn().expect("spawn edict binary");
     child
         .stdin
         .as_mut()

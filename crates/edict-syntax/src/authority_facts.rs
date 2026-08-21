@@ -542,7 +542,7 @@ fn canonical_digest_value(
         )]);
     }
     let mut bytes = Vec::with_capacity(32);
-    for chunk in hex.as_bytes().chunks_exact(2) {
+    for chunk in hex.as_bytes().as_chunks::<2>().0 {
         let Some(high) = hex_nibble(chunk[0]) else {
             return Err(vec![failure(
                 AuthorityFactsLoadFailureKind::NonDigestLockedSource,

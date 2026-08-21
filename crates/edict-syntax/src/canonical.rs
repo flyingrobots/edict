@@ -901,7 +901,7 @@ fn digest_value(digest: &str) -> Result<CanonicalValue, CanonicalError> {
         ));
     }
     let mut bytes = Vec::with_capacity(32);
-    for chunk in hex.as_bytes().chunks_exact(2) {
+    for chunk in hex.as_bytes().as_chunks::<2>().0 {
         let hi = hex_value(chunk[0])?;
         let lo = hex_value(chunk[1])?;
         bytes.push((hi << 4) | lo);

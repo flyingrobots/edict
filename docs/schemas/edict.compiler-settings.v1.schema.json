@@ -21,6 +21,16 @@
       "minLength": 1,
       "description": "Path to an edict.application/v1 manifest for the build operation."
     },
+    "lawpack": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path to an edict.lawpack-build/v1 document for the build operation."
+    },
+    "checkOnly": {
+      "type": "boolean",
+      "default": false,
+      "description": "Validate lawpack outputs without writing; valid only with lawpack."
+    },
     "emit": {
       "type": "array",
       "minItems": 1,
@@ -183,7 +193,9 @@
           "emit": false,
           "compilerContext": false,
           "target": false,
-          "application": false
+          "application": false,
+          "lawpack": false,
+          "checkOnly": false
         }
       }
     },
@@ -198,7 +210,9 @@
         "required": ["emit"],
         "properties": {
           "type": { "const": "compilerSettings" },
-          "application": false
+          "application": false,
+          "lawpack": false,
+          "checkOnly": false
         }
       }
     },
@@ -210,7 +224,10 @@
         }
       },
       "then": {
-        "required": ["application"],
+        "oneOf": [
+          { "required": ["application"] },
+          { "required": ["lawpack"] }
+        ],
         "properties": {
           "type": { "const": "compilerSettings" },
           "emit": false,
@@ -219,7 +236,11 @@
           "inputRoot": false,
           "followSymlinks": false,
           "directoryExtensions": false
-        }
+        },
+        "allOf": [{
+          "if": { "required": ["checkOnly"] },
+          "then": { "required": ["lawpack"] }
+        }]
       }
     }
   ]
