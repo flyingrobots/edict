@@ -268,8 +268,7 @@ pub(crate) fn build_lawpack(
     }
 
     if check_only {
-        validate_check_output_parent_chain(root, &output)?;
-        check_output(&output, &files)
+        check_output_in_root(root, &output, &files)
     } else {
         publish_output_in_root(root, &output, &files)
     }
@@ -703,10 +702,55 @@ fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), Lawpac
     Ok(())
 }
 
+#[cfg(test)]
 fn validate_check_output_parent_chain(
     root: &Path,
     output: &Path,
 ) -> Result<(), LawpackBuildFailure> {
+    let root_dir = open_check_root(root)?;
+    open_check_output_parent_in_root(&root_dir, root, output).map(drop)
+}
+
+fn open_check_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
+    let metadata = fs::symlink_metadata(root).map_err(|error| {
+        let kind = if error.kind() == ErrorKind::NotFound {
+            "LawpackOutputDrift"
+        } else {
+            "LawpackOutputOwnershipFailed"
+        };
+        failure(
+            kind,
+            format!(
+                "failed to inspect output ancestor `{}`: {error}",
+                root.display()
+            ),
+        )
+    })?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "output ancestor `{}` must remain a real directory",
+                root.display()
+            ),
+        ));
+    }
+    Dir::open_ambient_dir(root, ambient_authority()).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "failed to pin output ancestor `{}`: {error}",
+                root.display()
+            ),
+        )
+    })
+}
+
+fn open_check_output_parent_in_root(
+    root_dir: &Dir,
+    root: &Path,
+    output: &Path,
+) -> Result<Dir, LawpackBuildFailure> {
     let parent = output.parent().ok_or_else(|| {
         failure(
             "LawpackOutputDrift",
@@ -723,26 +767,29 @@ fn validate_check_output_parent_chain(
             ),
         )
     })?;
-    let mut current = root.to_path_buf();
-    for component in std::iter::once(None).chain(relative.components().map(Some)) {
-        match component {
-            None => {}
-            Some(Component::Normal(name)) => current.push(name),
-            Some(_) => {
-                return Err(failure(
-                    "LawpackPathOutsideRoot",
-                    "output parent must contain only normal relative components".to_owned(),
-                ));
-            }
-        }
-        let metadata = match fs::symlink_metadata(&current) {
+    let mut current_path = root.to_path_buf();
+    let mut current = root_dir.try_clone().map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!("failed to retain output root `{}`: {error}", root.display()),
+        )
+    })?;
+    for component in relative.components() {
+        let Component::Normal(name) = component else {
+            return Err(failure(
+                "LawpackPathOutsideRoot",
+                "output parent must contain only normal relative components".to_owned(),
+            ));
+        };
+        current_path.push(name);
+        let metadata = match current.symlink_metadata(name) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 return Err(failure(
                     "LawpackOutputDrift",
                     format!(
                         "lawpack output ancestor `{}` does not exist",
-                        current.display()
+                        current_path.display()
                     ),
                 ));
             }
@@ -751,7 +798,7 @@ fn validate_check_output_parent_chain(
                     "LawpackOutputOwnershipFailed",
                     format!(
                         "failed to inspect output ancestor `{}`: {error}",
-                        current.display()
+                        current_path.display()
                     ),
                 ));
             }
@@ -761,12 +808,21 @@ fn validate_check_output_parent_chain(
                 "LawpackOutputOwnershipFailed",
                 format!(
                     "output ancestor `{}` must remain a real directory",
-                    current.display()
+                    current_path.display()
                 ),
             ));
         }
+        current = current.open_dir(name).map_err(|error| {
+            failure(
+                "LawpackOutputOwnershipFailed",
+                format!(
+                    "failed to pin output ancestor `{}`: {error}",
+                    current_path.display()
+                ),
+            )
+        })?;
     }
-    Ok(())
+    Ok(current)
 }
 
 fn acquire_output_ancestor_locks(
@@ -963,39 +1019,59 @@ fn is_windows_reserved_output_component(component: &str) -> bool {
             })
 }
 
+fn check_output_in_root(
+    root: &Path,
+    output: &Path,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<(), LawpackBuildFailure> {
+    check_output_in_root_with_hooks(root, output, expected, || {}, || {})
+}
+
+#[cfg(test)]
 fn check_output(
     output: &Path,
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
-    check_output_with_hook(output, expected, || {})
-}
-
-fn check_output_with_hook(
-    output: &Path,
-    expected: &BTreeMap<PathBuf, Vec<u8>>,
-    after_traversal: impl FnOnce(),
-) -> Result<(), LawpackBuildFailure> {
-    let expected_owner = expected_output_owner(expected)?;
-    validate_check_output_parent(output)?;
-    let parent_path = output.parent().ok_or_else(|| {
+    let root = output.parent().ok_or_else(|| {
         failure(
             "LawpackOutputDrift",
             "lawpack output has no parent directory".to_owned(),
         )
     })?;
+    check_output_in_root(root, output, expected)
+}
+
+#[cfg(test)]
+fn check_output_with_hook(
+    output: &Path,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+    after_traversal: impl FnOnce(),
+) -> Result<(), LawpackBuildFailure> {
+    let root = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputDrift",
+            "lawpack output has no parent directory".to_owned(),
+        )
+    })?;
+    check_output_in_root_with_hooks(root, output, expected, || {}, after_traversal)
+}
+
+fn check_output_in_root_with_hooks(
+    root: &Path,
+    output: &Path,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+    after_parent_pin: impl FnOnce(),
+    after_traversal: impl FnOnce(),
+) -> Result<(), LawpackBuildFailure> {
+    let expected_owner = expected_output_owner(expected)?;
+    let root_dir = open_check_root(root)?;
+    let parent_dir = open_check_output_parent_in_root(&root_dir, root, output)?;
+    let parent_identity = directory_identity(&parent_dir, output)?;
+    after_parent_pin();
     let output_name = output.file_name().ok_or_else(|| {
         failure(
             "LawpackOutputDrift",
             "lawpack output has no final path component".to_owned(),
-        )
-    })?;
-    let parent_dir = Dir::open_ambient_dir(parent_path, ambient_authority()).map_err(|error| {
-        failure(
-            "LawpackOutputDrift",
-            format!(
-                "failed to pin output parent `{}`: {error}",
-                parent_path.display()
-            ),
         )
     })?;
     let output_dir = open_check_output_dir(&parent_dir, output_name, output)?;
@@ -1003,7 +1079,17 @@ fn check_output_with_hook(
     let basis = validate_owned_output_dir(&output_dir, output, &expected_owner)?;
     validate_output_tree(output, output_dir, expected)?;
     after_traversal();
-    let current_output = open_check_output_dir(&parent_dir, output_name, output)?;
+    let current_parent = open_check_output_parent_in_root(&root_dir, root, output)?;
+    if directory_identity(&current_parent, output)? != parent_identity {
+        return Err(failure(
+            "LawpackOutputDrift",
+            format!(
+                "lawpack output parent for `{}` changed while it was being checked",
+                output.display()
+            ),
+        ));
+    }
+    let current_output = open_check_output_dir(&current_parent, output_name, output)?;
     if directory_identity(&current_output, output)? != observed_identity
         || validate_owned_output_dir(&current_output, output, &expected_owner)? != basis
     {
@@ -1201,43 +1287,6 @@ fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), Lawp
         )
     })?;
     Ok((u64::from(volume), index))
-}
-
-fn validate_check_output_parent(output: &Path) -> Result<(), LawpackBuildFailure> {
-    let parent = output.parent().ok_or_else(|| {
-        failure(
-            "LawpackOutputDrift",
-            "lawpack output has no parent directory".to_owned(),
-        )
-    })?;
-    match fs::symlink_metadata(parent) {
-        Ok(metadata) if metadata.is_dir() && !metadata.file_type().is_symlink() => {}
-        Ok(_) => {
-            return Err(failure(
-                "LawpackOutputOwnershipFailed",
-                format!(
-                    "output parent `{}` must be a real directory",
-                    parent.display()
-                ),
-            ));
-        }
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            return Err(failure(
-                "LawpackOutputDrift",
-                format!("lawpack output `{}` does not exist", output.display()),
-            ));
-        }
-        Err(error) => {
-            return Err(failure(
-                "LawpackOutputOwnershipFailed",
-                format!(
-                    "failed to inspect output parent `{}`: {error}",
-                    parent.display()
-                ),
-            ));
-        }
-    }
-    Ok(())
 }
 
 fn unexpected_output_path(output: &Path, relative: &Path) -> LawpackBuildFailure {
@@ -1993,14 +2042,15 @@ fn first_authoring_failure(failures: Vec<LawpackAuthoringFailure>) -> LawpackBui
 #[cfg(test)]
 mod tests {
     use super::{
-        acquire_output_ancestor_locks, build_lawpack, check_output, check_output_with_hook,
-        decode_lawpack_document, encode_output_index, load_dependencies,
-        load_dependencies_with_hook, output_lock_path, publish_output,
-        publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
-        publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
-        read_output_tree, resolve_output_directory, validate_check_output_parent_chain,
-        validate_generated_artifact_size, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        acquire_output_ancestor_locks, build_lawpack, check_output,
+        check_output_in_root_with_hooks, check_output_with_hook, decode_lawpack_document,
+        encode_output_index, load_dependencies, load_dependencies_with_hook, output_lock_path,
+        publish_output, publish_output_with_capture_hook, publish_output_with_hook,
+        publish_output_with_hooks, publish_output_with_hooks_in_authority,
+        publish_output_with_hooks_in_root, read_output_tree, resolve_output_directory,
+        validate_check_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -2580,6 +2630,66 @@ mod tests {
 
         assert_eq!(error.kind, "LawpackOutputDrift");
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_only_rejects_a_post_validation_ancestor_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("check-parent-identity-container");
+        let root = container.join("root");
+        let nested = root.join("nested");
+        let displaced_nested = root.join("nested-displaced");
+        let output = nested.join("generated");
+        let outside = temp_tree("check-parent-identity-outside");
+        let outside_output = outside.join("generated");
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        test_ok(fs::create_dir_all(&output), "create admitted output");
+        test_ok(
+            fs::create_dir_all(&outside_output),
+            "create external substitute output",
+        );
+        for (relative, bytes) in &expected {
+            test_ok(
+                fs::write(output.join(relative), bytes),
+                "write admitted output",
+            );
+            test_ok(
+                fs::write(outside_output.join(relative), bytes),
+                "write external substitute output",
+            );
+        }
+
+        test_ok(
+            validate_check_output_parent_chain(&root, &output),
+            "validate admitted parent chain",
+        );
+        let result = check_output_in_root_with_hooks(
+            &root,
+            &output,
+            &expected,
+            || {
+                test_ok(
+                    fs::rename(&nested, &displaced_nested),
+                    "displace admitted parent",
+                );
+                test_ok(
+                    symlink(&outside, &nested),
+                    "install external parent symlink",
+                );
+            },
+            || {},
+        );
+
+        test_ok(fs::remove_file(&nested), "remove external parent symlink");
+        test_ok(
+            fs::rename(&displaced_nested, &nested),
+            "restore admitted parent",
+        );
+        assert!(result.is_err(), "post-validation ancestor swap must reject");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove external tree");
     }
 
     #[test]

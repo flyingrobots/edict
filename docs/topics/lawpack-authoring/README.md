@@ -91,9 +91,11 @@ Use `checkOnly` in CI or before committing vendored output:
 
 Check-only mode performs the same bounded reads, construction, decoding, and
 closure validation, then compares the complete output tree byte for byte through
-one pinned directory handle. Before returning success it verifies that the
-requested output name still denotes that same filesystem identity and ownership
-basis, then validates the exact tree a second time through the reopened handle.
+one pinned directory handle reached by traversing real parent directories from
+a retained root capability. Before returning success it retraverses that parent
+chain from the retained root, verifies that both the parent and requested output
+name still denote the pinned filesystem identities and ownership basis, then
+validates the exact tree a second time through the reopened handle.
 It never repairs or changes the owned artifact tree and creates no parent
 directories or lock files. This is optimistic two-pass validation, not an atomic
 filesystem snapshot; an uncooperative process can still mutate after the final
@@ -207,8 +209,9 @@ expected artifacts and rejects an unexpected file before reading its contents,
 so drift cannot force accumulation of an arbitrary output tree in memory. A
 missing nested output parent is reported as `LawpackOutputDrift` without
 creating that parent or a sibling publication lock. A successful check reopens
-the output after traversal, reports drift if either its directory identity or
-ownership basis changed, and requires a second exact-tree pass.
+the parent chain and output after traversal, reports drift if their directory
+identities or the output ownership basis changed, and requires a second
+exact-tree pass.
 
 A persistent hidden lock file is kept beside each write output and its proper
 ancestors. These files are footprint-coordination state, not canonical lawpack
