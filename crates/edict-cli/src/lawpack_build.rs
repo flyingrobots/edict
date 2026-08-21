@@ -725,8 +725,15 @@ fn validate_check_output_parent_chain(
     })?;
     let mut current = root.to_path_buf();
     for component in std::iter::once(None).chain(relative.components().map(Some)) {
-        if let Some(Component::Normal(component)) = component {
-            current.push(component);
+        match component {
+            None => {}
+            Some(Component::Normal(name)) => current.push(name),
+            Some(_) => {
+                return Err(failure(
+                    "LawpackPathOutsideRoot",
+                    "output parent must contain only normal relative components".to_owned(),
+                ));
+            }
         }
         let metadata = match fs::symlink_metadata(&current) {
             Ok(metadata) => metadata,
@@ -2466,6 +2473,26 @@ mod tests {
             )
             .kind,
             "LawpackOutputOwnershipFailed"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn check_only_parent_chain_rejects_non_normal_components() {
+        let root = temp_tree("check-parent-components");
+        test_ok(
+            fs::create_dir(root.join("nested")),
+            "create nested ancestor",
+        );
+        let output = root.join("nested/../generated");
+
+        assert_eq!(
+            test_err(
+                validate_check_output_parent_chain(&root, &output),
+                "non-normal parent component rejects",
+            )
+            .kind,
+            "LawpackPathOutsideRoot"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }

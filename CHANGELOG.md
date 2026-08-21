@@ -51,8 +51,9 @@ versions still track specification maturity rather than a released product.
   ownership indexes must be real files, and every generated artifact and drift
   read stays bounded. Check-only classifies missing ancestors as drift and
   non-directory or symlinked ancestors as ownership failures, never as write
-  failures. A missing nested output is reported without creating its parent,
-  while empty lawpack document paths reject as
+  failures, and its parent-chain gate rejects every non-normal path component.
+  A missing nested output is reported without creating its parent, while empty
+  lawpack document paths reject as
   invalid settings. Artifact paths containing filesystem NUL bytes reject
   before output or dependency I/O. Pure preflight covers fixed artifacts,
   sidecars, reserved namespaces, duplicates, and ancestor collisions. Primary
