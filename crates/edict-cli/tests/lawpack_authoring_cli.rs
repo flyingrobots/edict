@@ -287,6 +287,7 @@ fn resource_json(coordinate: &str, digest: char) -> Value {
 fn run_edict(directory: &Path, input: &str) -> Output {
     let mut child = Command::new(env!("CARGO_BIN_EXE_edict"))
         .current_dir(directory)
+        .env_remove(edict_cli::MAX_STDIN_BYTES_ENV)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

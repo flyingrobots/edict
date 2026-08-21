@@ -36,8 +36,9 @@ versions still track specification maturity rather than a released product.
   manifests, exports, adapters, local resources, and digest sidecars through
   the existing public decoders and complete dependency-graph validator.
   JSONL `build` requests support transactional owned-directory replacement and
-  no-write `checkOnly` drift detection. A standalone external witness authors
-  the workspace-snapshot closure without `xtask`, reproduces its reviewed
+  non-repairing `checkOnly` drift detection under the publication lock. A
+  standalone external witness authors the workspace-snapshot closure without
+  `xtask`, reproduces its reviewed
   bytes, and feeds those exact generated artifacts into the public application
   build. Tagged inputs and output paths fail closed, dependency inputs cannot
   live under the replaced tree, generated-index and drift reads stay bounded,

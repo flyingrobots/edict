@@ -1,10 +1,30 @@
 use edict_syntax::{
-    author_lawpack, decode_lawpack_adapter, decode_lawpack_bundle, LawpackArtifactKind,
-    LawpackAuthoringApertureRequirement, LawpackAuthoringDefinition, LawpackAuthoringDependency,
-    LawpackAuthoringFailureKind, LawpackAuthoringPureFunction, LawpackAuthoringVerifier,
+    author_lawpack, decode_lawpack_adapter, decode_lawpack_bundle, CanonicalValue,
+    LawpackArtifactKind, LawpackAuthoringApertureRequirement, LawpackAuthoringDefinition,
+    LawpackAuthoringDependency, LawpackAuthoringFailureKind, LawpackAuthoringPureFunction,
+    LawpackAuthoringVerifier, LawpackEffectKind, LawpackExecutionClass,
+    LawpackPureFunctionImplementation, LawpackVerifier,
 };
 
-const PIN: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+const PIN_RULESET: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+const PIN_COMPATIBILITY: &str =
+    "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+const PIN_FIXTURES: &str =
+    "sha256:3333333333333333333333333333333333333333333333333333333333333333";
+const PIN_COMPONENT: &str =
+    "sha256:4444444444444444444444444444444444444444444444444444444444444444";
+const PIN_SANDBOX: &str = "sha256:5555555555555555555555555555555555555555555555555555555555555555";
+const PIN_FUEL: &str = "sha256:6666666666666666666666666666666666666666666666666666666666666666";
+const PIN_TARGET_PROFILE: &str =
+    "sha256:7777777777777777777777777777777777777777777777777777777777777777";
+const PIN_TARGET_IR: &str =
+    "sha256:8888888888888888888888888888888888888888888888888888888888888888";
+const PIN_HELPER_COMPONENT: &str =
+    "sha256:9999999999999999999999999999999999999999999999999999999999999999";
+const MINIMAL_MANIFEST_DIGEST: &str =
+    "sha256:e72b2ec555f3da82e2379a87f5ee9de4bef79c6452391079befb6f927eed4c19";
+const MINIMAL_EXPORTS_DIGEST: &str =
+    "sha256:4b21d047723d605dda46a9f08c528248b19facc91be87b68de43d7a63aadec9b";
 
 fn minimal_definition() -> LawpackAuthoringDefinition {
     serde_json::from_value(serde_json::json!({
@@ -28,10 +48,10 @@ fn minimal_definition() -> LawpackAuthoringDefinition {
         "targetAdapters": [],
         "verifier": {
             "class": "declarative",
-            "ruleset": {"id": "example.text.verifier/v1", "digest": PIN}
+            "ruleset": {"id": "example.text.verifier/v1", "digest": PIN_RULESET}
         },
-        "compatibility": {"id": "example.text.compatibility/v1", "digest": PIN},
-        "conformanceFixtureCorpus": {"id": "example.text.fixtures/v1", "digest": PIN},
+        "compatibility": {"id": "example.text.compatibility/v1", "digest": PIN_COMPATIBILITY},
+        "conformanceFixtureCorpus": {"id": "example.text.fixtures/v1", "digest": PIN_FIXTURES},
         "localResources": []
     }))
     .expect("minimal typed authoring definition")
@@ -68,9 +88,9 @@ fn full_definition() -> LawpackAuthoringDefinition {
                 "costTemplate": "example.cell@1.smallBudget",
                 "determinismClass": "total",
                 "implementation": {
-                    "component": {"id": "example.cell.key-digest.wasm/v1", "digest": PIN},
-                    "sandbox": {"id": "edict.component-sandbox/v1", "digest": PIN},
-                    "fuelModel": {"id": "edict.component-fuel/v1", "digest": PIN}
+                    "component": {"id": "example.cell.key-digest.wasm/v1", "digest": PIN_COMPONENT},
+                    "sandbox": {"id": "edict.component-sandbox/v1", "digest": PIN_SANDBOX},
+                    "fuelModel": {"id": "edict.component-fuel/v1", "digest": PIN_FUEL}
                 }
             }],
             "effects": [{
@@ -115,8 +135,8 @@ fn full_definition() -> LawpackAuthoringDefinition {
         "targetAdapters": [{
             "coordinate": "example.cell.adapter.echo/v1",
             "output": "adapters/echo.cbor",
-            "acceptedTargetProfile": {"id": "echo.dpo@1", "digest": PIN},
-            "acceptedTargetIr": {"id": "echo.span-ir/v1", "digest": PIN},
+            "acceptedTargetProfile": {"id": "echo.dpo@1", "digest": PIN_TARGET_PROFILE},
+            "acceptedTargetIr": {"id": "echo.span-ir/v1", "digest": PIN_TARGET_IR},
             "operationProfiles": {
                 "example.cell@1.create": {
                     "core": "continuum.profile.create/v1",
@@ -146,13 +166,13 @@ fn full_definition() -> LawpackAuthoringDefinition {
             }
         }],
         "helperComponent": {
-            "component": {"id": "example.cell.helper.wasm/v1", "digest": PIN},
-            "sandbox": {"id": "edict.component-sandbox/v1", "digest": PIN},
-            "fuelModel": {"id": "edict.component-fuel/v1", "digest": PIN}
+            "component": {"id": "example.cell.helper.wasm/v1", "digest": PIN_HELPER_COMPONENT},
+            "sandbox": {"id": "edict.component-sandbox/v1", "digest": PIN_SANDBOX},
+            "fuelModel": {"id": "edict.component-fuel/v1", "digest": PIN_FUEL}
         },
         "verifier": {"class": "declarative", "ruleset": {"local": "rules"}},
-        "compatibility": {"id": "example.cell.compatibility/v1", "digest": PIN},
-        "conformanceFixtureCorpus": {"id": "example.cell.fixtures/v1", "digest": PIN},
+        "compatibility": {"id": "example.cell.compatibility/v1", "digest": PIN_COMPATIBILITY},
+        "conformanceFixtureCorpus": {"id": "example.cell.fixtures/v1", "digest": PIN_FIXTURES},
         "localResources": [{
             "name": "echo-config",
             "coordinate": "example.cell.echo-config/v1",
@@ -189,6 +209,9 @@ fn minimal_authoring_emits_a_deterministic_valid_bundle() {
         .expect("exports artifact");
     let bundle = decode_lawpack_bundle(manifest.bytes(), exports.bytes())
         .expect("authored bytes pass the public lawpack decoder");
+
+    assert_eq!(manifest.digest(), MINIMAL_MANIFEST_DIGEST);
+    assert_eq!(exports.digest(), MINIMAL_EXPORTS_DIGEST);
 
     assert_eq!(bundle.manifest().id, "example.text");
     assert_eq!(bundle.manifest().version, "1");
@@ -257,6 +280,32 @@ fn full_surface_round_trips_through_existing_decoders() {
     assert_eq!(adapter.operation_profiles().len(), 1);
     assert_eq!(adapter.effects().len(), 1);
     assert_eq!(adapter.budgets().len(), 1);
+    let constant = &bundle.exports().constants[0];
+    assert_eq!(constant.coordinate, "example.cell@1.maxValueBytes");
+    assert_eq!(constant.ty, "U64");
+    assert_eq!(constant.value, CanonicalValue::Integer(256));
+    let effect = &bundle.exports().effects[0];
+    assert_eq!(effect.coordinate, "example.cell@1.create");
+    assert_eq!(effect.input_type, "example.cell@1.CellInput");
+    assert_eq!(effect.output_type, "example.cell@1.CellInput");
+    assert_eq!(effect.execution_class, LawpackExecutionClass::Runtime);
+    assert_eq!(effect.effect_kind_hint, LawpackEffectKind::Create);
+    assert_eq!(
+        adapter.target_profile().digest_review_string(),
+        PIN_TARGET_PROFILE
+    );
+    assert_eq!(adapter.target_ir().digest_review_string(), PIN_TARGET_IR);
+    let LawpackPureFunctionImplementation::Component { implementation } =
+        &bundle.exports().pure_functions[0].implementation
+    else {
+        panic!("component-backed helper");
+    };
+    assert_eq!(
+        implementation.component.digest_review_string(),
+        PIN_COMPONENT
+    );
+    assert_eq!(implementation.sandbox.digest_review_string(), PIN_SANDBOX);
+    assert_eq!(implementation.fuel_model.digest_review_string(), PIN_FUEL);
     assert_eq!(
         authored
             .artifacts()
@@ -269,12 +318,20 @@ fn full_surface_round_trips_through_existing_decoders() {
     let mut executable_verifier = full_definition();
     executable_verifier.verifier = serde_json::from_value(serde_json::json!({
         "class": "executable",
-        "component": {"id": "example.cell.verifier.wasm/v1", "digest": PIN},
-        "sandbox": {"id": "edict.component-sandbox/v1", "digest": PIN},
-        "fuelModel": {"id": "edict.component-fuel/v1", "digest": PIN}
+        "component": {"id": "example.cell.verifier.wasm/v1", "digest": PIN_COMPONENT},
+        "sandbox": {"id": "edict.component-sandbox/v1", "digest": PIN_SANDBOX},
+        "fuelModel": {"id": "edict.component-fuel/v1", "digest": PIN_FUEL}
     }))
     .expect("typed executable verifier");
-    author_lawpack(&executable_verifier, &[]).expect("executable verifier round trips");
+    let executable =
+        author_lawpack(&executable_verifier, &[]).expect("executable verifier round trips");
+    let executable_bundle = decode_authored(&executable);
+    let LawpackVerifier::Executable { executable } = &executable_bundle.manifest().verifier else {
+        panic!("executable verifier class");
+    };
+    assert_eq!(executable.component.digest_review_string(), PIN_COMPONENT);
+    assert_eq!(executable.sandbox.digest_review_string(), PIN_SANDBOX);
+    assert_eq!(executable.fuel_model.digest_review_string(), PIN_FUEL);
 }
 
 #[test]
@@ -284,6 +341,7 @@ fn malformed_inputs_fail_with_stable_categories() {
         .accepted_target_profile
         .digest = "sha256:ABC".to_owned();
     let failures = author_lawpack(&invalid_digest, &[]).expect_err("invalid digest rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(failures[0].kind, LawpackAuthoringFailureKind::InvalidDigest);
 
     let mut missing_resource = full_definition();
@@ -294,6 +352,7 @@ fn malformed_inputs_fail_with_stable_categories() {
         .target_configuration =
         serde_json::from_value(serde_json::json!({"local": "missing"})).expect("local reference");
     let failures = author_lawpack(&missing_resource, &[]).expect_err("missing resource rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::MissingLocalResource
@@ -302,6 +361,7 @@ fn malformed_inputs_fail_with_stable_categories() {
     let mut escaping_path = full_definition();
     escaping_path.local_resources[0].output = "../escape.cbor".to_owned();
     let failures = author_lawpack(&escaping_path, &[]).expect_err("path escape rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidOutputPath
@@ -310,6 +370,7 @@ fn malformed_inputs_fail_with_stable_categories() {
     let mut invalid_number = full_definition();
     invalid_number.exports.constants[0].value = serde_json::json!(1.5);
     let failures = author_lawpack(&invalid_number, &[]).expect_err("float rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidCanonicalValue
@@ -318,6 +379,7 @@ fn malformed_inputs_fail_with_stable_categories() {
     let mut invalid_bytes = full_definition();
     invalid_bytes.local_resources[1].value = serde_json::json!({"$edictBytes": "GG"});
     let failures = author_lawpack(&invalid_bytes, &[]).expect_err("invalid bytes reject");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidCanonicalValue
@@ -326,6 +388,7 @@ fn malformed_inputs_fail_with_stable_categories() {
     let mut duplicate_path = full_definition();
     duplicate_path.local_resources[1].output = duplicate_path.local_resources[0].output.clone();
     let failures = author_lawpack(&duplicate_path, &[]).expect_err("duplicate path rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::DuplicateIdentity
@@ -336,6 +399,7 @@ fn malformed_inputs_fail_with_stable_categories() {
         duplicate_coordinate.exports_coordinate.clone();
     let failures =
         author_lawpack(&duplicate_coordinate, &[]).expect_err("duplicate coordinate rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::DuplicateIdentity
@@ -347,6 +411,7 @@ fn malformed_inputs_fail_with_stable_categories() {
         .clear();
     let failures =
         author_lawpack(&incomplete_adapter, &[]).expect_err("incomplete adapter rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidAdapter
@@ -367,9 +432,28 @@ fn malformed_inputs_fail_with_stable_categories() {
     }))
     .expect("typed malformed pure definition")];
     let failures = author_lawpack(&malformed_pure, &[]).expect_err("malformed pure rejects");
+    assert_eq!(failures.len(), 1);
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidLawpack
+    );
+    assert!(failures[0].cause.is_some(), "decoder cause remains typed");
+}
+
+#[test]
+fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
+    let mut definition = full_definition();
+    let mut nested = serde_json::json!(0);
+    for _ in 0..129 {
+        nested = serde_json::json!({"next": nested});
+    }
+    definition.local_resources[0].value = nested;
+
+    let failures = author_lawpack(&definition, &[]).expect_err("deep value rejects");
+    assert_eq!(failures.len(), 1);
+    assert_eq!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::InvalidCanonicalValue
     );
 }
 
@@ -401,8 +485,8 @@ fn tagged_authoring_variants_reject_unknown_fields() {
     assert!(
         serde_json::from_value::<LawpackAuthoringVerifier>(serde_json::json!({
             "class": "declarative",
-            "ruleset": {"id": "example.rules/v1", "digest": PIN},
-            "rulesett": {"id": "ignored/v1", "digest": PIN}
+            "ruleset": {"id": "example.rules/v1", "digest": PIN_RULESET},
+            "rulesett": {"id": "ignored/v1", "digest": PIN_RULESET}
         }))
         .is_err()
     );
@@ -466,7 +550,7 @@ fn exact_dependency_closure_is_required_and_corroborated() {
         LawpackAuthoringFailureKind::MissingDependency
     );
 
-    root.dependencies[0].digest = PIN.to_owned();
+    root.dependencies[0].digest = PIN_RULESET.to_owned();
     let substituted = author_lawpack(&root, std::slice::from_ref(&dependency))
         .expect_err("substituted dependency rejects");
     assert_eq!(
@@ -480,6 +564,52 @@ fn exact_dependency_closure_is_required_and_corroborated() {
         disconnected[0].kind,
         LawpackAuthoringFailureKind::InvalidDependencyClosure
     );
+
+    let mut leaf_definition = minimal_definition();
+    leaf_definition.id = "example.leaf".to_owned();
+    leaf_definition.exports_coordinate = "example.leaf.exports/v1".to_owned();
+    leaf_definition.exports.types[0].coordinate = "example.leaf@1.Key".to_owned();
+    let leaf =
+        decode_authored(&author_lawpack(&leaf_definition, &[]).expect("author transitive leaf"));
+
+    let mut middle_definition = minimal_definition();
+    middle_definition.id = "example.middle".to_owned();
+    middle_definition.exports_coordinate = "example.middle.exports/v1".to_owned();
+    middle_definition.exports.types[0].coordinate = "example.middle@1.Key".to_owned();
+    middle_definition.dependencies = vec![LawpackAuthoringDependency {
+        id: "example.leaf".to_owned(),
+        version: "1".to_owned(),
+        digest: leaf.manifest_digest_review_string(),
+    }];
+    let middle = decode_authored(
+        &author_lawpack(&middle_definition, std::slice::from_ref(&leaf))
+            .expect("author transitive middle"),
+    );
+
+    let mut transitive_root = minimal_definition();
+    transitive_root.dependencies = vec![LawpackAuthoringDependency {
+        id: "example.middle".to_owned(),
+        version: "1".to_owned(),
+        digest: middle.manifest_digest_review_string(),
+    }];
+    author_lawpack(&transitive_root, &[middle.clone(), leaf])
+        .expect("complete depth-two closure succeeds");
+
+    let mut unrelated_definition = minimal_definition();
+    unrelated_definition.id = "example.unrelated".to_owned();
+    unrelated_definition.exports_coordinate = "example.unrelated.exports/v1".to_owned();
+    unrelated_definition.exports.types[0].coordinate = "example.unrelated@1.Key".to_owned();
+    let unrelated = decode_authored(
+        &author_lawpack(&unrelated_definition, &[]).expect("author unrelated bundle"),
+    );
+    let failures = author_lawpack(&transitive_root, &[middle, unrelated])
+        .expect_err("unreachable bundle cannot offset a missing transitive dependency");
+    assert_eq!(failures.len(), 1);
+    assert!(matches!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::InvalidDependencyClosure
+            | LawpackAuthoringFailureKind::MissingDependency
+    ));
 }
 
 #[allow(
@@ -492,7 +622,16 @@ fn semantic_surface_mutations_move_their_owning_identities() {
     let original_manifest = digest(&original, LawpackArtifactKind::Manifest);
     let original_exports = digest(&original, LawpackArtifactKind::Exports);
     let original_adapter = digest(&original, LawpackArtifactKind::Adapter);
-    let original_resource = digest(&original, LawpackArtifactKind::LocalResource);
+    let original_resource = digest_at(
+        &original,
+        LawpackArtifactKind::LocalResource,
+        "example.cell.echo-config/v1",
+    );
+    let original_rules = digest_at(
+        &original,
+        LawpackArtifactKind::LocalResource,
+        "example.cell.verifier-rules/v1",
+    );
 
     let mut helper = full_definition();
     let LawpackAuthoringPureFunction::Component { implementation, .. } =
@@ -516,6 +655,10 @@ fn semantic_surface_mutations_move_their_owning_identities() {
         digest(&helper, LawpackArtifactKind::Manifest),
         original_manifest
     );
+    assert_eq!(
+        digest(&helper, LawpackArtifactKind::Adapter),
+        original_adapter
+    );
 
     let mut constant = full_definition();
     constant.exports.constants[0].value = serde_json::json!(255);
@@ -527,6 +670,14 @@ fn semantic_surface_mutations_move_their_owning_identities() {
     assert_ne!(
         digest(&constant, LawpackArtifactKind::Manifest),
         original_manifest
+    );
+    assert_eq!(
+        digest_at(
+            &constant,
+            LawpackArtifactKind::LocalResource,
+            "example.cell.echo-config/v1"
+        ),
+        original_resource
     );
 
     let mut effect = full_definition();
@@ -549,6 +700,14 @@ fn semantic_surface_mutations_move_their_owning_identities() {
         digest(&effect, LawpackArtifactKind::Manifest),
         original_manifest
     );
+    assert_eq!(
+        digest_at(
+            &effect,
+            LawpackArtifactKind::LocalResource,
+            "example.cell.verifier-rules/v1"
+        ),
+        original_rules
+    );
 
     let mut profile = full_definition();
     profile
@@ -567,6 +726,10 @@ fn semantic_surface_mutations_move_their_owning_identities() {
         digest(&profile, LawpackArtifactKind::Manifest),
         original_manifest
     );
+    assert_eq!(
+        digest(&profile, LawpackArtifactKind::Adapter),
+        original_adapter
+    );
 
     let mut adapter = full_definition();
     adapter.target_adapters[0]
@@ -583,12 +746,20 @@ fn semantic_surface_mutations_move_their_owning_identities() {
         digest(&adapter, LawpackArtifactKind::Manifest),
         original_manifest
     );
+    assert_eq!(
+        digest(&adapter, LawpackArtifactKind::Exports),
+        original_exports
+    );
 
     let mut resource = full_definition();
     resource.local_resources[0].value["limit"] = serde_json::json!(257);
     let resource = author_lawpack(&resource, &[]).expect("resource mutation");
     assert_ne!(
-        digest(&resource, LawpackArtifactKind::LocalResource),
+        digest_at(
+            &resource,
+            LawpackArtifactKind::LocalResource,
+            "example.cell.echo-config/v1"
+        ),
         original_resource
     );
     assert_ne!(
@@ -598,6 +769,18 @@ fn semantic_surface_mutations_move_their_owning_identities() {
     assert_ne!(
         digest(&resource, LawpackArtifactKind::Manifest),
         original_manifest
+    );
+    assert_eq!(
+        digest(&resource, LawpackArtifactKind::Exports),
+        original_exports
+    );
+    assert_eq!(
+        digest_at(
+            &resource,
+            LawpackArtifactKind::LocalResource,
+            "example.cell.verifier-rules/v1"
+        ),
+        original_rules
     );
 }
 
@@ -610,4 +793,34 @@ fn digest(
         .expect("artifact by kind")
         .digest()
         .to_owned()
+}
+
+fn digest_at(
+    artifacts: &edict_syntax::LawpackAuthoredArtifactSet,
+    kind: LawpackArtifactKind,
+    coordinate: &str,
+) -> String {
+    artifacts
+        .artifacts()
+        .iter()
+        .find(|artifact| artifact.kind() == kind && artifact.coordinate() == coordinate)
+        .expect("artifact by kind and coordinate")
+        .digest()
+        .to_owned()
+}
+
+fn decode_authored(
+    artifacts: &edict_syntax::LawpackAuthoredArtifactSet,
+) -> edict_syntax::ValidatedLawpackBundle {
+    decode_lawpack_bundle(
+        artifacts
+            .artifact(LawpackArtifactKind::Manifest)
+            .expect("authored manifest")
+            .bytes(),
+        artifacts
+            .artifact(LawpackArtifactKind::Exports)
+            .expect("authored exports")
+            .bytes(),
+    )
+    .expect("decode authored bundle")
 }

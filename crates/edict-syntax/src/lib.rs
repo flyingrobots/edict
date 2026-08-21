@@ -163,10 +163,11 @@ pub use lawpack_authoring::{
     LawpackAuthoringDependency, LawpackAuthoringDeterminismClass, LawpackAuthoringEffect,
     LawpackAuthoringEffectFailure, LawpackAuthoringEffectKind, LawpackAuthoringExecutableComponent,
     LawpackAuthoringExecutionClass, LawpackAuthoringExports, LawpackAuthoringFailure,
-    LawpackAuthoringFailureKind, LawpackAuthoringLocalReference, LawpackAuthoringLocalResource,
-    LawpackAuthoringObstruction, LawpackAuthoringOperationProfile, LawpackAuthoringOpticTemplate,
-    LawpackAuthoringPinnedResource, LawpackAuthoringPureFunction, LawpackAuthoringResourceRef,
-    LawpackAuthoringType, LawpackAuthoringVerifier, LAWPACK_AUTHORING_API_VERSION,
+    LawpackAuthoringFailureCause, LawpackAuthoringFailureKind, LawpackAuthoringLocalReference,
+    LawpackAuthoringLocalResource, LawpackAuthoringObstruction, LawpackAuthoringOperationProfile,
+    LawpackAuthoringOpticTemplate, LawpackAuthoringPinnedResource, LawpackAuthoringPureFunction,
+    LawpackAuthoringResourceRef, LawpackAuthoringType, LawpackAuthoringVerifier,
+    LAWPACK_AUTHORING_API_VERSION,
 };
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,

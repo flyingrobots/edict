@@ -1322,34 +1322,30 @@ fn run_edict(input: &str) -> Output {
 }
 
 fn run_edict_in_dir(input: &str, directory: &std::path::Path) -> Output {
-    let bin = env!("CARGO_BIN_EXE_edict");
-    let mut child = Command::new(bin)
-        .current_dir(directory)
-        .env_remove(edict_cli::MAX_STDIN_BYTES_ENV)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn edict binary in caller directory");
-    child
-        .stdin
-        .as_mut()
-        .expect("stdin pipe")
-        .write_all(input.as_bytes())
-        .expect("write jsonl stdin");
-    child.wait_with_output().expect("collect output")
+    run_edict_configured(input, &[], Some(directory))
 }
 
 fn run_edict_with_env(input: &str, env: &[(&str, &str)]) -> Output {
+    run_edict_configured(input, env, None)
+}
+
+fn run_edict_configured(
+    input: &str,
+    env: &[(&str, &str)],
+    directory: Option<&std::path::Path>,
+) -> Output {
     let bin = env!("CARGO_BIN_EXE_edict");
-    let mut child = Command::new(bin)
+    let mut command = Command::new(bin);
+    command
         .env_remove(edict_cli::MAX_STDIN_BYTES_ENV)
         .envs(env.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("spawn edict binary");
+        .stderr(Stdio::piped());
+    if let Some(directory) = directory {
+        command.current_dir(directory);
+    }
+    let mut child = command.spawn().expect("spawn edict binary");
     child
         .stdin
         .as_mut()

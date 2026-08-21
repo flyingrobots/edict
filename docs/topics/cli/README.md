@@ -49,8 +49,9 @@ document and confined beneath its directory. The output directory is an
 Edict-owned generated tree identified by `edict.lawpack-output.json`. A write
 build replaces that complete tree transactionally and therefore removes stale
 owned artifacts. It refuses a non-empty unowned directory. A check-only build
-performs no writes and reports `LawpackOutputDrift` unless the complete existing
-tree is byte-identical:
+does not repair the owned artifact tree and reports `LawpackOutputDrift` unless
+the complete existing tree is byte-identical; it may create the persistent
+sibling lock file used as coordination state:
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json","checkOnly":true}
@@ -252,9 +253,11 @@ the checked-in schemas as the accepted wire shape.
 
 ## Exit Codes
 
-- `0`: request completed successfully. For `build`, the accepted provider
-  artifacts were written. For `project`, this can include compiler diagnostics
-  or Target IR lowering failures emitted as projection records.
+- `0`: request completed successfully. Application `build` wrote accepted
+  provider artifacts; lawpack write mode published its complete owned tree;
+  lawpack `checkOnly` verified exact existing bytes without repairing them. For
+  `project`, this can include compiler diagnostics or Target IR lowering
+  failures emitted as projection records.
 - `1`: compiler or validation diagnostics were produced for at least one
   source input in the `check` operation.
 - `2`: CLI input or usage was invalid before compiler validation could run.

@@ -6,7 +6,9 @@ build`. The application owns the vocabulary and declarations. Edict owns schema
 checking, canonical CBOR, digest framing, closure validation, and publication.
 No provider component or runtime participates in authoring.
 
-## Build a Lawpack
+## Authoring Workflow
+
+### 1. Create the Review Document
 
 Create an `edict.lawpack-build/v1` document in the application repository. Its
 paths are relative to the document, not the process working directory:
@@ -55,11 +57,15 @@ paths are relative to the document, not the process working directory:
 }
 ```
 
-Submit it through the normal JSONL CLI:
+### 2. Submit the Build Request
+
+Submit the document through the normal JSONL CLI:
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json"}
 ```
+
+### 3. Inspect the Authored Artifacts
 
 On success, `generated/example-text/` contains:
 
@@ -75,7 +81,7 @@ The `.sha256` files are lowercase review strings ending in one newline. The
 canonical artifacts carry typed digest bytes internally; review strings are not
 their wire representation.
 
-## Check Generated Output
+### 4. Check Generated Output
 
 Use `checkOnly` in CI or before committing vendored output:
 
@@ -84,16 +90,17 @@ Use `checkOnly` in CI or before committing vendored output:
 ```
 
 Check-only mode performs the same bounded reads, construction, decoding, and
-closure validation, then compares the complete output tree byte for byte. It
-does not write. Missing, changed, or extra output is
-`LawpackOutputDrift`.
+closure validation, then compares the complete output tree byte for byte under
+the publication lock. It never repairs or changes the owned artifact tree; it
+may create the persistent sibling lock file used only for coordination.
+Missing, changed, or extra output is `LawpackOutputDrift`.
 
 ## Resource And Dependency Identity
 
 An external resource uses an application-supplied exact identity:
 
 ```json
-{"id":"echo.dpo@1","digest":"sha256:<64 lowercase hex>"}
+{"id":"echo.dpo@1","digest":"sha256:7777777777777777777777777777777777777777777777777777777777777777"}
 ```
 
 A local resource places reviewable JSON in the authoring document:
@@ -118,7 +125,7 @@ The caller must supply the complete transitive closure and nothing disconnected
 from the authored root. Edict decodes each dependency, corroborates every pin,
 and runs the same complete-graph validator used by application builds.
 
-## Publication Policy
+### 5. Apply Publication Policy
 
 `outputDirectory` is exclusively owned by this build after its output index is
 present. A write build stages a complete sibling directory, preserves the old
@@ -132,6 +139,10 @@ must be confined relative paths, and dependency inputs must remain outside the
 owned output tree. Existing symlink traversal is rejected. Authored files may
 not collide by using another file as a parent, and the ownership-index path is
 reserved for Edict.
+
+The index identity must match the lawpack being authored. Edict refuses to
+replace or check a tree owned by a different lawpack id or version even when
+that tree otherwise carries a structurally valid ownership index.
 
 Definition, dependency, generated-index, and published-artifact reads are
 bounded to 1 MiB per file, and the supplied dependency closure is bounded to

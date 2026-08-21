@@ -11,12 +11,14 @@ use std::path::{Component, Path};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::canonical::{digest_canonical_artifact, encode_canonical_cbor, CanonicalValue};
-use crate::lawpack::{
-    decode_lawpack_bundle, validate_lawpack_dependency_graph, ValidatedLawpackBundle,
-    LAWPACK_API_VERSION,
+use crate::canonical::{
+    digest_canonical_artifact, encode_canonical_cbor, CanonicalValue, MAX_CANONICAL_NESTING_DEPTH,
 };
-use crate::lawpack_adapter::decode_lawpack_adapter;
+use crate::lawpack::{
+    decode_lawpack_bundle, validate_lawpack_dependency_graph, LawpackValidationFailure,
+    ValidatedLawpackBundle, LAWPACK_API_VERSION,
+};
+use crate::lawpack_adapter::{decode_lawpack_adapter, LawpackAdapterFailure};
 
 /// Versioned review schema accepted by the public authoring boundary.
 pub const LAWPACK_AUTHORING_API_VERSION: &str = "edict.lawpack-authoring/v1";
@@ -61,6 +63,17 @@ pub struct LawpackAuthoringFailure {
     pub path: String,
     /// Obligation that was not met.
     pub obligation: String,
+    /// Exact lower-level validator failure, when authored bytes were rejected.
+    pub cause: Option<LawpackAuthoringFailureCause>,
+}
+
+/// Typed lower-level cause retained across the authoring boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LawpackAuthoringFailureCause {
+    /// Failure returned by the canonical lawpack or dependency validator.
+    Lawpack(LawpackValidationFailure),
+    /// Failure returned by the canonical target-adapter validator.
+    Adapter(LawpackAdapterFailure),
 }
 
 /// Exact external resource identity supplied by the application.
@@ -678,22 +691,11 @@ pub fn author_lawpack(
     )?;
 
     let bundle = decode_lawpack_bundle(&manifest.bytes, &exports.bytes).map_err(|failures| {
-        vec![failure(
-            LawpackAuthoringFailureKind::InvalidLawpack,
-            "lawpack",
-            format!("emitted manifest/exports rejected: {failures:?}"),
-        )]
+        wrap_lawpack_failures(LawpackAuthoringFailureKind::InvalidLawpack, failures)
     })?;
     for adapter in &adapters {
-        decode_lawpack_adapter(&bundle, &adapter.target_profile, &adapter.bytes).map_err(
-            |failures| {
-                vec![failure(
-                    LawpackAuthoringFailureKind::InvalidAdapter,
-                    format!("targetAdapters.{}", adapter.coordinate),
-                    format!("emitted adapter rejected: {failures:?}"),
-                )]
-            },
-        )?;
+        decode_lawpack_adapter(&bundle, &adapter.target_profile, &adapter.bytes)
+            .map_err(|failures| wrap_adapter_failures(&adapter.coordinate, failures))?;
     }
     validate_complete_closure(&bundle, dependencies)?;
 
@@ -811,22 +813,25 @@ fn validate_complete_closure(
     closure.push(root.clone());
     closure.extend_from_slice(supplied);
     validate_lawpack_dependency_graph(&closure).map_err(|failures| {
-        one(failure(
+        wrap_lawpack_failures(
             LawpackAuthoringFailureKind::InvalidDependencyClosure,
-            "dependencies",
-            format!("complete exact dependency graph: {failures:?}"),
-        ))
+            failures,
+        )
     })?;
 
     let mut by_identity = BTreeMap::new();
     for bundle in &closure {
-        by_identity.insert(
-            (
-                bundle.manifest().id.as_str(),
-                bundle.manifest().version.as_str(),
-            ),
-            bundle,
+        let identity = (
+            bundle.manifest().id.as_str(),
+            bundle.manifest().version.as_str(),
         );
+        if by_identity.insert(identity, bundle).is_some() {
+            return Err(one(failure(
+                LawpackAuthoringFailureKind::InvalidDependencyClosure,
+                "dependencies",
+                "each supplied dependency identity exactly once",
+            )));
+        }
     }
     let mut reachable = BTreeSet::new();
     let mut pending = vec![(
@@ -837,13 +842,21 @@ fn validate_complete_closure(
         if !reachable.insert(identity) {
             continue;
         }
-        if let Some(bundle) = by_identity.get(&identity) {
-            for dependency in &bundle.manifest().dependencies {
-                pending.push((dependency.id.as_str(), dependency.version.as_str()));
-            }
+        let Some(bundle) = by_identity.get(&identity) else {
+            return Err(one(failure(
+                LawpackAuthoringFailureKind::MissingDependency,
+                format!("dependencies.{}@{}", identity.0, identity.1),
+                "every transitively reachable dependency in the supplied closure",
+            )));
+        };
+        for dependency in &bundle.manifest().dependencies {
+            pending.push((dependency.id.as_str(), dependency.version.as_str()));
         }
     }
-    if reachable.len() != closure.len() {
+    if by_identity
+        .keys()
+        .any(|identity| !reachable.contains(identity))
+    {
         return Err(one(failure(
             LawpackAuthoringFailureKind::InvalidDependencyClosure,
             "dependencies",
@@ -1392,9 +1405,14 @@ fn verifier_value(
             ),
         ])),
         LawpackAuthoringVerifier::Executable { executable } => {
-            let mut fields = match executable_component_value(executable, resources, "verifier")? {
-                CanonicalValue::Map(fields) => fields,
-                _ => Vec::new(),
+            let CanonicalValue::Map(mut fields) =
+                executable_component_value(executable, resources, "verifier")?
+            else {
+                return Err(one(failure(
+                    LawpackAuthoringFailureKind::EncodingFailed,
+                    "verifier",
+                    "an executable verifier encoded as a canonical map",
+                )));
             };
             fields.push((text("class"), text("executable")));
             Ok(CanonicalValue::Map(fields))
@@ -1484,6 +1502,21 @@ fn canonical_json_value(
     value: &Value,
     path: &str,
 ) -> Result<CanonicalValue, Vec<LawpackAuthoringFailure>> {
+    canonical_json_value_at_depth(value, path, MAX_CANONICAL_NESTING_DEPTH)
+}
+
+fn canonical_json_value_at_depth(
+    value: &Value,
+    path: &str,
+    remaining_depth: usize,
+) -> Result<CanonicalValue, Vec<LawpackAuthoringFailure>> {
+    if remaining_depth == 0 {
+        return Err(one(failure(
+            LawpackAuthoringFailureKind::InvalidCanonicalValue,
+            path,
+            "canonical JSON nesting within the authoring depth limit",
+        )));
+    }
     match value {
         Value::Null => Ok(CanonicalValue::Null),
         Value::Bool(value) => Ok(CanonicalValue::Bool(*value)),
@@ -1504,7 +1537,13 @@ fn canonical_json_value(
         Value::Array(values) => values
             .iter()
             .enumerate()
-            .map(|(index, value)| canonical_json_value(value, &format!("{path}.{index}")))
+            .map(|(index, value)| {
+                canonical_json_value_at_depth(
+                    value,
+                    &format!("{path}.{index}"),
+                    remaining_depth - 1,
+                )
+            })
             .collect::<Result<Vec<_>, Vec<LawpackAuthoringFailure>>>()
             .map(CanonicalValue::Array),
         Value::Object(values) if values.len() == 1 && values.contains_key("$edictBytes") => {
@@ -1525,7 +1564,11 @@ fn canonical_json_value(
             .map(|(key, value)| {
                 Ok((
                     text(key),
-                    canonical_json_value(value, &format!("{path}.{key}"))?,
+                    canonical_json_value_at_depth(
+                        value,
+                        &format!("{path}.{key}"),
+                        remaining_depth - 1,
+                    )?,
                 ))
             })
             .collect::<Result<Vec<_>, Vec<LawpackAuthoringFailure>>>()
@@ -1777,5 +1820,36 @@ fn failure(
         kind,
         path: path.into(),
         obligation: obligation.into(),
+        cause: None,
     }
+}
+
+fn wrap_lawpack_failures(
+    kind: LawpackAuthoringFailureKind,
+    failures: Vec<LawpackValidationFailure>,
+) -> Vec<LawpackAuthoringFailure> {
+    failures
+        .into_iter()
+        .map(|cause| LawpackAuthoringFailure {
+            kind,
+            path: cause.path.clone(),
+            obligation: cause.obligation.clone(),
+            cause: Some(LawpackAuthoringFailureCause::Lawpack(cause)),
+        })
+        .collect()
+}
+
+fn wrap_adapter_failures(
+    coordinate: &str,
+    failures: Vec<LawpackAdapterFailure>,
+) -> Vec<LawpackAuthoringFailure> {
+    failures
+        .into_iter()
+        .map(|cause| LawpackAuthoringFailure {
+            kind: LawpackAuthoringFailureKind::InvalidAdapter,
+            path: format!("targetAdapters.{coordinate}.{}", cause.path),
+            obligation: cause.obligation.clone(),
+            cause: Some(LawpackAuthoringFailureCause::Adapter(cause)),
+        })
+        .collect()
 }

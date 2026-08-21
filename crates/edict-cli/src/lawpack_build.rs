@@ -150,7 +150,15 @@ pub(crate) fn build_lawpack(
             .collect(),
     };
     let index_bytes = encode_output_index(&index)?;
-    files.insert(PathBuf::from(OUTPUT_INDEX_FILE), index_bytes);
+    if files
+        .insert(PathBuf::from(OUTPUT_INDEX_FILE), index_bytes)
+        .is_some()
+    {
+        return Err(failure(
+            "LawpackAuthoringFailed",
+            format!("authored artifact path `{OUTPUT_INDEX_FILE}` is reserved for ownership"),
+        ));
+    }
 
     if check_only {
         check_output(&output, &files)
@@ -392,7 +400,9 @@ fn check_output(
     output: &Path,
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
-    validate_owned_output(output, false)?;
+    let expected_owner = expected_output_owner(expected)?;
+    let _lock = acquire_output_lock(output)?;
+    validate_owned_output(output, false, &expected_owner)?;
     let mut permitted_directories = BTreeSet::new();
     for path in expected.keys() {
         let mut parent = path.parent();
@@ -590,32 +600,9 @@ fn publish_output_with_hooks(
             ),
         )
     })?;
-    let lock_path = output_lock_path(output);
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(&lock_path)
-        .map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "failed to open output lock `{}`: {error}",
-                    lock_path.display()
-                ),
-            )
-        })?;
-    lock.try_lock().map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "another lawpack build owns output `{}`: {error}",
-                output.display()
-            ),
-        )
-    })?;
-    validate_owned_output(output, true)?;
+    let expected_owner = expected_output_owner(files)?;
+    let _lock = acquire_output_lock(output)?;
+    validate_owned_output(output, true, &expected_owner)?;
 
     let transaction = unique_sibling(output, "transaction")?;
     fs::create_dir(&transaction).map_err(|error| {
@@ -676,7 +663,59 @@ fn publish_output_with_hooks(
     Ok(())
 }
 
-fn validate_owned_output(output: &Path, allow_missing: bool) -> Result<(), LawpackBuildFailure> {
+fn acquire_output_lock(output: &Path) -> Result<File, LawpackBuildFailure> {
+    let lock_path = output_lock_path(output);
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to open output lock `{}`: {error}",
+                    lock_path.display()
+                ),
+            )
+        })?;
+    lock.try_lock().map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "another lawpack build owns output `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    Ok(lock)
+}
+
+fn expected_output_owner(
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<(String, String), LawpackBuildFailure> {
+    let bytes = expected.get(Path::new(OUTPUT_INDEX_FILE)).ok_or_else(|| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            "authored output is missing its ownership index".to_owned(),
+        )
+    })?;
+    let index = serde_json::from_slice::<ExistingOutputIndex>(bytes).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!("invalid authored output ownership index: {error}"),
+        )
+    })?;
+    validate_existing_index(&index)?;
+    Ok((index.lawpack_id, index.lawpack_version))
+}
+
+fn validate_owned_output(
+    output: &Path,
+    allow_missing: bool,
+    expected_owner: &(String, String),
+) -> Result<(), LawpackBuildFailure> {
     let metadata = match fs::symlink_metadata(output) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == ErrorKind::NotFound && allow_missing => return Ok(()),
@@ -724,7 +763,17 @@ fn validate_owned_output(output: &Path, allow_missing: bool) -> Result<(), Lawpa
             format!("invalid output ownership index: {error}"),
         )
     })?;
-    validate_existing_index(&index)
+    validate_existing_index(&index)?;
+    if (&index.lawpack_id, &index.lawpack_version) != (&expected_owner.0, &expected_owner.1) {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "output is owned by {}@{}, not {}@{}",
+                index.lawpack_id, index.lawpack_version, expected_owner.0, expected_owner.1
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_existing_index(index: &ExistingOutputIndex) -> Result<(), LawpackBuildFailure> {
@@ -948,6 +997,7 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::mpsc;
 
     use super::{
         check_output, encode_output_index, load_dependencies, publish_output,
@@ -1024,6 +1074,40 @@ mod tests {
     }
 
     #[test]
+    fn check_only_observes_under_the_publication_lock() {
+        let root = temp_tree("check-lock");
+        let output = root.join("generated");
+        let original = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[("edict.lawpack-output.json", valid_index()), ("two", b"2")]);
+        let publisher_output = output.clone();
+        let publisher_files = replacement.clone();
+        let (locked_tx, locked_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let publisher = std::thread::spawn(move || {
+            publish_output_with_hook(&publisher_output, &publisher_files, || {
+                test_ok(locked_tx.send(()), "announce held publication lock");
+                test_ok(release_rx.recv(), "wait for check attempt");
+                Ok(())
+            })
+        });
+        test_ok(locked_rx.recv(), "wait for held publication lock");
+
+        let error = test_err(
+            check_output(&output, &replacement),
+            "check cannot race an active publication",
+        );
+        assert_eq!(error.kind, "LawpackOutputWriteFailed");
+        test_ok(release_tx.send(()), "release publisher");
+        test_ok(
+            test_ok(publisher.join(), "join publisher"),
+            "finish publication",
+        );
+        test_ok(check_output(&output, &replacement), "new tree checks");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
     fn generated_ownership_index_rejects_its_own_read_limit() {
         let index = LawpackOutputIndex {
             schema: "edict.lawpack-output/v1",
@@ -1094,6 +1178,36 @@ mod tests {
     }
 
     #[test]
+    fn publication_rejects_an_output_owned_by_another_lawpack() {
+        let root = temp_tree("foreign-owner");
+        let output = root.join("generated");
+        let foreign_index = valid_index_for("other", "9");
+        let foreign = files(&[
+            ("edict.lawpack-output.json", foreign_index.as_slice()),
+            ("manifest.cbor", b"foreign"),
+        ]);
+        test_ok(fs::create_dir_all(&output), "create foreign output");
+        for (path, bytes) in &foreign {
+            test_ok(fs::write(output.join(path), bytes), "write foreign output");
+        }
+        let expected = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("manifest.cbor", b"expected"),
+        ]);
+
+        let error = test_err(
+            publish_output(&output, &expected),
+            "foreign-owned output rejects",
+        );
+        assert_eq!(error.kind, "LawpackOutputOwnershipFailed");
+        assert_eq!(
+            test_ok(read_output_tree(&output), "read foreign tree"),
+            foreign
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
     fn dependency_inputs_inside_the_owned_output_tree_reject_before_reading() {
         let root = temp_tree("dependency-output");
         let output = root.join("generated");
@@ -1131,6 +1245,13 @@ mod tests {
 
     fn valid_index() -> &'static [u8] {
         br#"{"schema":"edict.lawpack-output/v1","lawpackId":"test","lawpackVersion":"1","artifacts":[{"path":"manifest.cbor","kind":"manifest","coordinate":"edict.lawpack/v1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}]}"#
+    }
+
+    fn valid_index_for(id: &str, version: &str) -> Vec<u8> {
+        format!(
+            r#"{{"schema":"edict.lawpack-output/v1","lawpackId":"{id}","lawpackVersion":"{version}","artifacts":[{{"path":"manifest.cbor","kind":"manifest","coordinate":"edict.lawpack/v1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}}]}}"#
+        )
+        .into_bytes()
     }
 
     fn temp_tree(name: &str) -> PathBuf {
