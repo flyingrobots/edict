@@ -350,7 +350,11 @@ fn load_dependencies_with_hook(
     output: &Path,
     after_resolve: impl FnOnce(),
 ) -> Result<Vec<ValidatedLawpackBundle>, LawpackBuildFailure> {
-    let root_dir = open_publication_root(root)?;
+    if definitions.is_empty() {
+        after_resolve();
+        return Ok(Vec::new());
+    }
+    let root_dir = open_dependency_root(root)?;
     let relative_output = output.strip_prefix(root).map_err(|error| {
         failure(
             "LawpackPathOutsideRoot",
@@ -409,6 +413,23 @@ fn load_dependencies_with_hook(
             })
         })
         .collect()
+}
+
+fn open_dependency_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
+    let open_failure = |error| {
+        failure(
+            "LawpackArtifactReadFailed",
+            format!(
+                "failed to open lawpack dependency root `{}`: {error}",
+                root.display()
+            ),
+        )
+    };
+    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
+        return Dir::open_ambient_dir(root, ambient_authority()).map_err(open_failure);
+    };
+    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(open_failure)?;
+    parent_dir.open_dir_nofollow(name).map_err(open_failure)
 }
 
 fn open_dependency_input(
@@ -3394,6 +3415,32 @@ mod tests {
             "InvalidLawpackConfig"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn dependency_root_is_opened_only_for_reads_and_uses_read_failure_kinds() {
+        let missing_root = temp_tree("missing-dependency-root");
+        test_ok(fs::remove_dir_all(&missing_root), "remove dependency root");
+        let output = missing_root.join("generated");
+
+        assert!(test_ok(
+            load_dependencies(&missing_root, &[], &output),
+            "empty dependency set skips root access",
+        )
+        .is_empty());
+
+        let definitions = [LawpackDependencyBundle {
+            manifest: PathBuf::from("manifest.cbor"),
+            exports: PathBuf::from("exports.cbor"),
+        }];
+        assert_eq!(
+            test_err(
+                load_dependencies(&missing_root, &definitions, &output),
+                "dependency root open failure is read-only",
+            )
+            .kind,
+            "LawpackArtifactReadFailed"
+        );
     }
 
     #[test]
