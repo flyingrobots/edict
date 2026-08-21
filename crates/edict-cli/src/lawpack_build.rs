@@ -1015,6 +1015,7 @@ fn check_output_with_hook(
             ),
         ));
     }
+    validate_output_tree(output, current_output, expected)?;
     Ok(())
 }
 
@@ -2408,6 +2409,27 @@ mod tests {
             test_ok(read_output_tree(&observed), "read observed output"),
             expected
         );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn check_only_rejects_in_place_tree_mutation_after_traversal() {
+        let root = temp_tree("check-in-place-mutation");
+        let output = root.join("generated");
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        test_ok(publish_output(&output, &expected), "publish expected set");
+
+        let error = test_err(
+            check_output_with_hook(&output, &expected, || {
+                test_ok(
+                    fs::create_dir(output.join("unexpected")),
+                    "create in-place unexpected directory",
+                );
+            }),
+            "in-place post-traversal mutation rejects",
+        );
+
+        assert_eq!(error.kind, "LawpackOutputDrift");
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 

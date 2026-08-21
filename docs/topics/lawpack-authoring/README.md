@@ -93,8 +93,11 @@ Check-only mode performs the same bounded reads, construction, decoding, and
 closure validation, then compares the complete output tree byte for byte through
 one pinned directory handle. Before returning success it verifies that the
 requested output name still denotes that same filesystem identity and ownership
-basis. It never repairs or changes the owned artifact tree and creates no parent
-directories or lock files.
+basis, then validates the exact tree a second time through the reopened handle.
+It never repairs or changes the owned artifact tree and creates no parent
+directories or lock files. This is optimistic two-pass validation, not an atomic
+filesystem snapshot; an uncooperative process can still mutate after the final
+observation.
 Missing, changed, or extra output is `LawpackOutputDrift`.
 Missing output ancestors also report `LawpackOutputDrift`; non-directory or
 symlinked ancestors report `LawpackOutputOwnershipFailed`. Check-only never
@@ -204,8 +207,8 @@ expected artifacts and rejects an unexpected file before reading its contents,
 so drift cannot force accumulation of an arbitrary output tree in memory. A
 missing nested output parent is reported as `LawpackOutputDrift` without
 creating that parent or a sibling publication lock. A successful check reopens
-the output after traversal and reports drift if either its directory identity or
-ownership basis changed.
+the output after traversal, reports drift if either its directory identity or
+ownership basis changed, and requires a second exact-tree pass.
 
 A persistent hidden lock file is kept beside each write output and its proper
 ancestors. These files are footprint-coordination state, not canonical lawpack

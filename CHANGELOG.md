@@ -39,8 +39,9 @@ versions still track specification maturity rather than a released product.
   captures and authorizes the exact directory being replaced, retains that
   directory through commit, and never deletes a concurrently installed output
   during rollback. Non-repairing, filesystem-read-only `checkOnly` drift
-  detection traverses one pinned directory and verifies that the requested
-  output still names that same filesystem identity and ownership basis. A
+  detection traverses one pinned directory, verifies that the requested output
+  still names that same filesystem identity and ownership basis, and validates
+  the exact tree a second time before success. A
   standalone external witness authors the workspace-snapshot closure without
   `xtask`, reproduces its reviewed bytes, and feeds those exact generated
   artifacts into the public application build.
