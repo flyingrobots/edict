@@ -84,7 +84,9 @@ versions still track specification maturity rather than a released product.
   pinned without following a substituted symbolic link before staging begins.
   Captured backup names receive the same no-follow treatment; if a name is
   reused before pinning, publication refuses to move or delete the substitute
-  during rollback. The activated transaction is validated against the complete
+  during rollback. Every later rollback reopens that name without following
+  links and requires the retained captured directory identity before restoration.
+  The activated transaction is validated against the complete
   authored byte map before backup cleanup makes the replacement final. If an
   activation vanishes, rollback restores the captured output before considering
   reuse of the now-free transaction name.

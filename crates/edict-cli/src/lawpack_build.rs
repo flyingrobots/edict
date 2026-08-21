@@ -52,6 +52,8 @@ struct OpenedDependencyInput {
     display: PathBuf,
 }
 
+type DirectoryIdentity = (u64, u64);
+
 #[derive(Clone, Copy)]
 enum OutputLockMode {
     SharedIntent,
@@ -1363,7 +1365,10 @@ fn open_check_output_dir_with_hook(
 }
 
 #[cfg(any(unix, target_os = "wasi", target_os = "vxworks"))]
-fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), LawpackBuildFailure> {
+fn directory_identity(
+    directory: &Dir,
+    output: &Path,
+) -> Result<DirectoryIdentity, LawpackBuildFailure> {
     use cap_std::fs::MetadataExt as _;
 
     let metadata = directory.dir_metadata().map_err(|error| {
@@ -1379,7 +1384,10 @@ fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), Lawp
 }
 
 #[cfg(windows)]
-fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), LawpackBuildFailure> {
+fn directory_identity(
+    directory: &Dir,
+    output: &Path,
+) -> Result<DirectoryIdentity, LawpackBuildFailure> {
     use std::os::windows::fs::MetadataExt as _;
 
     let metadata = directory
@@ -1697,29 +1705,64 @@ fn publish_output_with_hooks_in_authority(
                 ));
             }
         };
+        let captured_identity = match directory_identity(&captured, output) {
+            Ok(identity) => identity,
+            Err(error) => {
+                drop(captured);
+                drop(Dir::remove_open_dir_all(transaction_dir));
+                return Err(failure(
+                    "LawpackOutputRollbackFailed",
+                    format!(
+                        "failed to retain captured output identity for `{}`; the backup remains recoverable: {}",
+                        output.display(),
+                        error.message
+                    ),
+                ));
+            }
+        };
         if let Err(error) = validate_owned_output_dir(&captured, output, &expected_owner) {
             drop(captured);
-            let rollback =
-                restore_output_directory_in(parent_dir, output_name, &backup, output, true);
+            let rollback = restore_output_directory_in(
+                parent_dir,
+                output_name,
+                &backup,
+                output,
+                true,
+                Some(captured_identity),
+            );
             drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(rollback.err().unwrap_or(error));
         }
-        Some(captured)
+        Some((captured, captured_identity))
     } else {
         None
     };
 
     if let Err(error) = before_activation() {
+        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
         drop(captured);
-        let rollback =
-            restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
+        let rollback = restore_output_directory_in(
+            parent_dir,
+            output_name,
+            &backup,
+            output,
+            existed,
+            captured_identity,
+        );
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or(error));
     }
     if let Err(error) = parent_dir.rename(&transaction, parent_dir, output_name) {
+        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
         drop(captured);
-        let rollback =
-            restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
+        let rollback = restore_output_directory_in(
+            parent_dir,
+            output_name,
+            &backup,
+            output,
+            existed,
+            captured_identity,
+        );
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or_else(|| {
             failure(
@@ -1729,6 +1772,7 @@ fn publish_output_with_hooks_in_authority(
         }));
     }
     if let Err(error) = after_activation() {
+        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
         drop(captured);
         let rollback = restore_after_substituted_activation_in(
             parent_dir,
@@ -1737,6 +1781,7 @@ fn publish_output_with_hooks_in_authority(
             &backup,
             output,
             existed,
+            captured_identity,
         );
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or(error));
@@ -1762,6 +1807,7 @@ fn publish_output_with_hooks_in_authority(
                     error.message
                 ),
             );
+            let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
             drop(captured);
             let rollback = restore_after_substituted_activation_in(
                 parent_dir,
@@ -1770,12 +1816,14 @@ fn publish_output_with_hooks_in_authority(
                 &backup,
                 output,
                 existed,
+                captured_identity,
             );
             drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(rollback.err().unwrap_or(error));
         }
     };
     if let Err(error) = validate_output_tree(output, activated, files) {
+        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
         drop(captured);
         let rollback = restore_after_substituted_activation_in(
             parent_dir,
@@ -1784,6 +1832,7 @@ fn publish_output_with_hooks_in_authority(
             &backup,
             output,
             existed,
+            captured_identity,
         );
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or_else(|| {
@@ -1797,7 +1846,7 @@ fn publish_output_with_hooks_in_authority(
             )
         }));
     }
-    if let Some(captured) = captured {
+    if let Some((captured, _)) = captured {
         // Activation is the commit point. Backup cleanup is best effort so a
         // committed replacement is never reported as an unchanged failure.
         drop(remove_backup(captured));
@@ -1873,9 +1922,17 @@ fn restore_after_substituted_activation_in(
     backup: &Path,
     output: &Path,
     existed: bool,
+    captured_identity: Option<DirectoryIdentity>,
 ) -> Result<(), LawpackBuildFailure> {
     if !entry_exists(parent, output_name)? {
-        return restore_output_directory_in(parent, output_name, backup, output, existed);
+        return restore_output_directory_in(
+            parent,
+            output_name,
+            backup,
+            output,
+            existed,
+            captured_identity,
+        );
     }
     if entry_exists(parent, transaction.as_os_str())? {
         return Err(failure(
@@ -1897,7 +1954,14 @@ fn restore_after_substituted_activation_in(
                 ),
             )
         })?;
-    restore_output_directory_in(parent, output_name, backup, output, existed)
+    restore_output_directory_in(
+        parent,
+        output_name,
+        backup,
+        output,
+        existed,
+        captured_identity,
+    )
 }
 
 fn acquire_output_lock_in(
@@ -2109,8 +2173,46 @@ fn restore_output_directory_in(
     backup: &Path,
     output: &Path,
     existed: bool,
+    captured_identity: Option<DirectoryIdentity>,
 ) -> Result<(), LawpackBuildFailure> {
     if existed {
+        let expected_identity = captured_identity.ok_or_else(|| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "refused to restore `{}` without the captured output identity",
+                    output.display()
+                ),
+            )
+        })?;
+        let named_backup = parent.open_dir_nofollow(backup).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to re-pin the captured output while restoring `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+        let named_identity = directory_identity(&named_backup, output).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to re-identify the captured output while restoring `{}`: {}",
+                    output.display(),
+                    error.message
+                ),
+            )
+        })?;
+        if named_identity != expected_identity {
+            return Err(failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "refused to restore `{}` through a reused backup name",
+                    output.display()
+                ),
+            ));
+        }
         if entry_exists(parent, output_name)? {
             return Err(failure(
                 "LawpackOutputRollbackFailed",
@@ -2807,6 +2909,80 @@ mod tests {
         assert_eq!(
             test_ok(read_output_tree(&output), "read restored nested output"),
             original
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn rollback_refuses_a_reused_captured_backup_name() {
+        let root = temp_tree("rollback-reused-backup");
+        let output = root.join("generated");
+        let displaced_backup = root.join("displaced-backup");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        let backup_name = RefCell::new(None::<PathBuf>);
+
+        let result = publish_output_with_hook(&output, &replacement, || {
+            let backup = test_ok(fs::read_dir(&root), "read publication root")
+                .map(|entry| test_ok(entry, "read publication entry"))
+                .find(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".edict-lawpack-previous-")
+                })
+                .map_or_else(
+                    || panic!("captured backup must exist before activation"),
+                    |entry| entry.path(),
+                );
+            test_ok(
+                fs::rename(&backup, &displaced_backup),
+                "displace captured backup",
+            );
+            test_ok(fs::create_dir(&backup), "install backup substitute");
+            test_ok(
+                fs::write(backup.join("substitute"), b"unadmitted"),
+                "write backup substitute",
+            );
+            *backup_name.borrow_mut() = backup.file_name().map(PathBuf::from);
+            Err(super::failure(
+                "InjectedFailure",
+                "stop before activation".to_owned(),
+            ))
+        });
+
+        let backup_name = backup_name
+            .into_inner()
+            .unwrap_or_else(|| panic!("backup name must be recorded"));
+        let substitute = root.join(backup_name);
+        assert_eq!(
+            test_err(result, "reused backup name blocks rollback").kind,
+            "LawpackOutputRollbackFailed"
+        );
+        assert!(
+            !output.exists(),
+            "untrusted substitute must not be restored"
+        );
+        assert_eq!(
+            test_ok(
+                read_output_tree(&displaced_backup),
+                "read displaced original output",
+            ),
+            original
+        );
+        assert_eq!(
+            test_ok(
+                fs::read(substitute.join("substitute")),
+                "read backup substitute",
+            ),
+            b"unadmitted"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
