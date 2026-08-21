@@ -145,10 +145,13 @@ replace or check a tree owned by a different lawpack id or version even when
 that tree otherwise carries a structurally valid ownership index.
 
 Definition, dependency, generated-index, and published-artifact reads are
-bounded to 1 MiB per file, and the supplied dependency closure is bounded to
-192 bundles. Check-only traversal accepts only directories needed by expected
-artifacts and rejects an unexpected file before reading its contents, so drift
-cannot force accumulation of an arbitrary output tree in memory.
+bounded to 1 MiB per file, generated artifacts are refused before publication
+if they exceed that same read boundary, and the supplied dependency closure is
+bounded to 192 bundles. Raw authoring JSON rejects duplicate object keys before
+typed deserialization, so no hash-significant value can silently replace an
+earlier review value. Check-only traversal accepts only directories needed by
+expected artifacts and rejects an unexpected file before reading its contents,
+so drift cannot force accumulation of an arbitrary output tree in memory.
 
 A persistent hidden lock file is kept beside the output directory so concurrent
 processes cannot acquire locks on different inodes while the directory itself

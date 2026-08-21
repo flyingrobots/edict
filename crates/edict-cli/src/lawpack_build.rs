@@ -11,7 +11,9 @@ use edict_syntax::{
     author_lawpack, decode_lawpack_bundle, LawpackArtifactKind, LawpackAuthoringDefinition,
     LawpackAuthoringFailureKind, ValidatedLawpackBundle,
 };
-use serde::{Deserialize, Serialize};
+use serde::de::{self, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::Value;
 
 const LAWPACK_BUILD_SCHEMA: &str = "edict.lawpack-build/v1";
 const LAWPACK_OUTPUT_SCHEMA: &str = "edict.lawpack-output/v1";
@@ -79,6 +81,91 @@ struct ExistingOutputIndexEntry {
     digest: String,
 }
 
+struct UniqueJsonValue(Value);
+
+impl<'de> Deserialize<'de> for UniqueJsonValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(UniqueJsonVisitor)
+    }
+}
+
+struct UniqueJsonVisitor;
+
+impl<'de> Visitor<'de> for UniqueJsonVisitor {
+    type Value = UniqueJsonValue;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("JSON without duplicate object keys")
+    }
+
+    fn visit_unit<E>(self) -> Result<Self::Value, E> {
+        Ok(UniqueJsonValue(Value::Null))
+    }
+
+    fn visit_none<E>(self) -> Result<Self::Value, E> {
+        Ok(UniqueJsonValue(Value::Null))
+    }
+
+    fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+        Ok(UniqueJsonValue(Value::Bool(value)))
+    }
+
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E> {
+        Ok(UniqueJsonValue(Value::Number(value.into())))
+    }
+
+    fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E> {
+        Ok(UniqueJsonValue(Value::Number(value.into())))
+    }
+
+    fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        serde_json::Number::from_f64(value)
+            .map(Value::Number)
+            .map(UniqueJsonValue)
+            .ok_or_else(|| E::custom("non-finite JSON number"))
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E> {
+        Ok(UniqueJsonValue(Value::String(value.to_owned())))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E> {
+        Ok(UniqueJsonValue(Value::String(value)))
+    }
+
+    fn visit_seq<A>(self, mut sequence: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut values = Vec::new();
+        while let Some(UniqueJsonValue(value)) = sequence.next_element()? {
+            values.push(value);
+        }
+        Ok(UniqueJsonValue(Value::Array(values)))
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut values = serde_json::Map::new();
+        while let Some(key) = map.next_key::<String>()? {
+            if values.contains_key(&key) {
+                return Err(de::Error::custom(format!("duplicate JSON key `{key}`")));
+            }
+            let UniqueJsonValue(value) = map.next_value()?;
+            values.insert(key, value);
+        }
+        Ok(UniqueJsonValue(Value::Object(values)))
+    }
+}
+
 /// Author and either publish or check one application-owned lawpack.
 pub(crate) fn build_lawpack(
     document_path: &Path,
@@ -105,13 +192,7 @@ pub(crate) fn build_lawpack(
         "lawpack build document",
         "LawpackConfigReadFailed",
     )?;
-    let document =
-        serde_json::from_slice::<LawpackBuildDocument>(&document_bytes).map_err(|error| {
-            failure(
-                "InvalidLawpackConfig",
-                format!("invalid lawpack build document: {error}"),
-            )
-        })?;
+    let document = decode_lawpack_document(&document_bytes)?;
     validate_document(&document)?;
 
     let output = resolve_output_directory(root, &document.output_directory)?;
@@ -129,11 +210,11 @@ pub(crate) fn build_lawpack(
         )
     })?;
 
-    let mut files = authored
-        .artifacts()
-        .iter()
-        .map(|artifact| (PathBuf::from(artifact.path()), artifact.bytes().to_vec()))
-        .collect::<BTreeMap<_, _>>();
+    let mut files = BTreeMap::new();
+    for artifact in authored.artifacts() {
+        validate_generated_artifact_size(artifact.path(), artifact.bytes())?;
+        files.insert(PathBuf::from(artifact.path()), artifact.bytes().to_vec());
+    }
     let index = LawpackOutputIndex {
         schema: LAWPACK_OUTPUT_SCHEMA,
         lawpack_id: &document.lawpack.id,
@@ -167,6 +248,22 @@ pub(crate) fn build_lawpack(
     }
 }
 
+fn decode_lawpack_document(bytes: &[u8]) -> Result<LawpackBuildDocument, LawpackBuildFailure> {
+    let UniqueJsonValue(document_value) = serde_json::from_slice::<UniqueJsonValue>(bytes)
+        .map_err(|error| {
+            failure(
+                "InvalidLawpackConfig",
+                format!("invalid lawpack build document: {error}"),
+            )
+        })?;
+    serde_json::from_value::<LawpackBuildDocument>(document_value).map_err(|error| {
+        failure(
+            "InvalidLawpackConfig",
+            format!("invalid lawpack build document: {error}"),
+        )
+    })
+}
+
 fn encode_output_index(index: &LawpackOutputIndex<'_>) -> Result<Vec<u8>, LawpackBuildFailure> {
     let mut bytes = serde_json::to_vec_pretty(index).map_err(|error| {
         failure(
@@ -182,6 +279,18 @@ fn encode_output_index(index: &LawpackOutputIndex<'_>) -> Result<Vec<u8>, Lawpac
         ));
     }
     Ok(bytes)
+}
+
+fn validate_generated_artifact_size(path: &str, bytes: &[u8]) -> Result<(), LawpackBuildFailure> {
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_LAWPACK_ARTIFACT_BYTES {
+        return Err(failure(
+            "LawpackOutputTooLarge",
+            format!(
+                "generated lawpack artifact `{path}` exceeds {MAX_LAWPACK_ARTIFACT_BYTES} bytes"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn validate_document(document: &LawpackBuildDocument) -> Result<(), LawpackBuildFailure> {
@@ -209,18 +318,6 @@ fn load_dependencies(
         .iter()
         .enumerate()
         .map(|(index, definition)| {
-            reject_input_inside_output(
-                root,
-                &definition.manifest,
-                output,
-                &format!("dependencyBundles.{index}.manifest"),
-            )?;
-            reject_input_inside_output(
-                root,
-                &definition.exports,
-                output,
-                &format!("dependencyBundles.{index}.exports"),
-            )?;
             let manifest = resolve_existing_input(
                 root,
                 &definition.manifest,
@@ -229,6 +326,16 @@ fn load_dependencies(
             let exports = resolve_existing_input(
                 root,
                 &definition.exports,
+                &format!("dependencyBundles.{index}.exports"),
+            )?;
+            reject_resolved_input_inside_output(
+                &manifest,
+                output,
+                &format!("dependencyBundles.{index}.manifest"),
+            )?;
+            reject_resolved_input_inside_output(
+                &exports,
+                output,
                 &format!("dependencyBundles.{index}.exports"),
             )?;
             let manifest = read_bounded(
@@ -253,14 +360,12 @@ fn load_dependencies(
         .collect()
 }
 
-fn reject_input_inside_output(
-    root: &Path,
-    relative: &Path,
+fn reject_resolved_input_inside_output(
+    resolved: &Path,
     output: &Path,
     field: &str,
 ) -> Result<(), LawpackBuildFailure> {
-    validate_relative_path(relative, field)?;
-    if root.join(relative).starts_with(output) {
+    if resolved.starts_with(output) {
         return Err(failure(
             "InvalidLawpackConfig",
             format!("{field} must be outside outputDirectory"),
@@ -751,6 +856,18 @@ fn validate_owned_output(
         return Ok(());
     }
     let index_path = output.join(OUTPUT_INDEX_FILE);
+    let index_metadata = fs::symlink_metadata(&index_path).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!("failed to inspect output ownership index: {error}"),
+        )
+    })?;
+    if !index_metadata.is_file() || index_metadata.file_type().is_symlink() {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
+            "output ownership index must be a real regular file".to_owned(),
+        ));
+    }
     let index_bytes = read_bounded(
         &index_path,
         MAX_LAWPACK_ARTIFACT_BYTES,
@@ -1000,9 +1117,10 @@ mod tests {
     use std::sync::mpsc;
 
     use super::{
-        check_output, encode_output_index, load_dependencies, publish_output,
-        publish_output_with_hook, publish_output_with_hooks, read_output_tree, LawpackBuildFailure,
-        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        check_output, decode_lawpack_document, encode_output_index, load_dependencies,
+        publish_output, publish_output_with_hook, publish_output_with_hooks, read_output_tree,
+        validate_generated_artifact_size, LawpackBuildFailure, LawpackDependencyBundle,
+        LawpackOutputIndex, LawpackOutputIndexEntry,
     };
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1131,6 +1249,54 @@ mod tests {
     }
 
     #[test]
+    fn generated_artifacts_reject_their_own_read_limit() {
+        test_ok(
+            validate_generated_artifact_size("boundary.cbor", &vec![0; 1024 * 1024]),
+            "artifact at read boundary passes",
+        );
+        assert_eq!(
+            test_err(
+                validate_generated_artifact_size("oversized.cbor", &vec![0; 1024 * 1024 + 1]),
+                "oversized generated artifact rejects",
+            )
+            .kind,
+            "LawpackOutputTooLarge"
+        );
+    }
+
+    #[test]
+    fn raw_authoring_json_rejects_duplicate_hash_significant_keys() {
+        let document = br#"{
+          "schema":"edict.lawpack-build/v1",
+          "outputDirectory":"generated",
+          "lawpack":{
+            "schema":"edict.lawpack-authoring/v1",
+            "id":"example.duplicate",
+            "version":"1",
+            "acceptedCoreAbi":["edict.core/v1"],
+            "dependencies":[],
+            "exportsCoordinate":"example.duplicate.exports/v1",
+            "exports":{"types":[],"constants":[],"pureFunctions":[],"effects":[],"obstructions":[],"operationProfiles":{}},
+            "targetAdapters":[],
+            "verifier":{"class":"declarative","ruleset":{"id":"example.rules/v1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}},
+            "compatibility":{"id":"example.compat/v1","digest":"sha256:2222222222222222222222222222222222222222222222222222222222222222"},
+            "conformanceFixtureCorpus":{"id":"example.fixtures/v1","digest":"sha256:3333333333333333333333333333333333333333333333333333333333333333"},
+            "localResources":[{"name":"config","coordinate":"example.config/v1","output":"config.cbor","value":{"limit":1,"limit":2}}]
+          },
+          "dependencyBundles":[]
+        }"#;
+
+        assert_eq!(
+            test_err(
+                decode_lawpack_document(document),
+                "duplicate review key rejects",
+            )
+            .kind,
+            "InvalidLawpackConfig"
+        );
+    }
+
+    #[test]
     fn check_only_rejects_an_unexpected_file_before_reading_it() {
         let root = temp_tree("unexpected");
         let output = root.join("generated");
@@ -1224,14 +1390,101 @@ mod tests {
             manifest: PathBuf::from("generated/manifest.cbor"),
             exports: PathBuf::from("generated/exports.cbor"),
         }];
+        let canonical_root = test_ok(fs::canonicalize(&root), "canonicalize root");
+        let canonical_output = test_ok(fs::canonicalize(&output), "canonicalize output");
 
         assert_eq!(
             test_err(
-                load_dependencies(&root, &definitions, &output),
+                load_dependencies(&canonical_root, &definitions, &canonical_output),
                 "dependency inside output rejects",
             )
             .kind,
             "InvalidLawpackConfig"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_dependency_inputs_resolving_inside_output_reject() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("dependency-symlink-output");
+        let output = root.join("generated");
+        let links = root.join("dependencies");
+        test_ok(fs::create_dir_all(&output), "create output");
+        test_ok(fs::create_dir_all(&links), "create dependency links");
+        test_ok(
+            fs::write(output.join("manifest.cbor"), b"not cbor"),
+            "write manifest",
+        );
+        test_ok(
+            fs::write(output.join("exports.cbor"), b"not cbor"),
+            "write exports",
+        );
+        test_ok(
+            symlink(output.join("manifest.cbor"), links.join("manifest.cbor")),
+            "link manifest into output",
+        );
+        test_ok(
+            symlink(output.join("exports.cbor"), links.join("exports.cbor")),
+            "link exports into output",
+        );
+        let definitions = [LawpackDependencyBundle {
+            manifest: PathBuf::from("dependencies/manifest.cbor"),
+            exports: PathBuf::from("dependencies/exports.cbor"),
+        }];
+        let canonical_root = test_ok(fs::canonicalize(&root), "canonicalize root");
+        let canonical_output = test_ok(fs::canonicalize(&output), "canonicalize output");
+
+        assert_eq!(
+            test_err(
+                load_dependencies(&canonical_root, &definitions, &canonical_output),
+                "resolved dependency inside output rejects",
+            )
+            .kind,
+            "InvalidLawpackConfig"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_ownership_index_cannot_authorize_replacement() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("symlink-index");
+        let output = root.join("generated");
+        let external_index = root.join("external-index.json");
+        test_ok(fs::create_dir_all(&output), "create output");
+        test_ok(
+            fs::write(&external_index, valid_index()),
+            "write external index",
+        );
+        test_ok(
+            symlink(&external_index, output.join("edict.lawpack-output.json")),
+            "link ownership index",
+        );
+        test_ok(
+            fs::write(output.join("unrelated"), b"keep"),
+            "write unrelated file",
+        );
+        let expected = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("manifest.cbor", b"expected"),
+        ]);
+
+        assert_eq!(
+            test_err(
+                publish_output(&output, &expected),
+                "symlinked ownership index rejects",
+            )
+            .kind,
+            "LawpackOutputOwnershipFailed"
+        );
+        assert_eq!(
+            test_ok(fs::read(output.join("unrelated")), "read unrelated file"),
+            b"keep"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }

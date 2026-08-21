@@ -48,7 +48,10 @@ All paths inside the lawpack build document are resolved relative to that
 document and confined beneath its directory. The output directory is an
 Edict-owned generated tree identified by `edict.lawpack-output.json`. A write
 build replaces that complete tree transactionally and therefore removes stale
-owned artifacts. It refuses a non-empty unowned directory. A check-only build
+owned artifacts. It refuses a non-empty unowned directory or a symlinked
+ownership index. Dependency paths are canonicalized before overlap checks, so
+a symlink cannot route an input back under the replaceable output tree. A
+check-only build
 does not repair the owned artifact tree and reports `LawpackOutputDrift` unless
 the complete existing tree is byte-identical; it may create the persistent
 sibling lock file used as coordination state:
