@@ -427,11 +427,11 @@ fn exact_dependency_closure_is_required_and_corroborated() {
     );
 }
 
-#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one mutation matrix keeps all identity-bearing v1 surfaces comparable"
 )]
+#[test]
 fn semantic_surface_mutations_move_their_owning_identities() {
     let original = author_lawpack(&full_definition(), &[]).expect("original full authoring");
     let original_manifest = digest(&original, LawpackArtifactKind::Manifest);

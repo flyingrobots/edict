@@ -227,11 +227,11 @@ fn build_rejects_explicit_default_values_for_forbidden_settings() {
     fs::remove_dir_all(root).expect("remove explicit defaults test tree");
 }
 
-#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one external-consumer witness traces write, check, drift, and repair"
 )]
+#[test]
 fn lawpack_build_writes_checks_repairs_and_is_cwd_independent() {
     let root = temp_tree("lawpack-external-consumer");
     let caller_one = temp_tree("lawpack-caller-one");
