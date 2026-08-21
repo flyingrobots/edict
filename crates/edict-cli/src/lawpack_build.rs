@@ -268,8 +268,7 @@ pub(crate) fn build_lawpack(
     }
 
     if check_only {
-        validate_check_output_parent(&output)?;
-        revalidate_output_parent_chain(root, &output)?;
+        validate_check_output_parent_chain(root, &output)?;
         check_output(&output, &files)
     } else {
         publish_output_in_root(root, &output, &files)
@@ -704,10 +703,13 @@ fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), Lawpac
     Ok(())
 }
 
-fn revalidate_output_parent_chain(root: &Path, output: &Path) -> Result<(), LawpackBuildFailure> {
+fn validate_check_output_parent_chain(
+    root: &Path,
+    output: &Path,
+) -> Result<(), LawpackBuildFailure> {
     let parent = output.parent().ok_or_else(|| {
         failure(
-            "LawpackOutputWriteFailed",
+            "LawpackOutputDrift",
             "lawpack output must have a parent directory".to_owned(),
         )
     })?;
@@ -726,18 +728,30 @@ fn revalidate_output_parent_chain(root: &Path, output: &Path) -> Result<(), Lawp
         if let Some(Component::Normal(component)) = component {
             current.push(component);
         }
-        let metadata = fs::symlink_metadata(&current).map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "failed to revalidate output ancestor `{}`: {error}",
-                    current.display()
-                ),
-            )
-        })?;
+        let metadata = match fs::symlink_metadata(&current) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                return Err(failure(
+                    "LawpackOutputDrift",
+                    format!(
+                        "lawpack output ancestor `{}` does not exist",
+                        current.display()
+                    ),
+                ));
+            }
+            Err(error) => {
+                return Err(failure(
+                    "LawpackOutputOwnershipFailed",
+                    format!(
+                        "failed to inspect output ancestor `{}`: {error}",
+                        current.display()
+                    ),
+                ));
+            }
+        };
         if !metadata.is_dir() || metadata.file_type().is_symlink() {
             return Err(failure(
-                "LawpackPathOutsideRoot",
+                "LawpackOutputOwnershipFailed",
                 format!(
                     "output ancestor `{}` must remain a real directory",
                     current.display()
@@ -1907,7 +1921,7 @@ mod tests {
         load_dependencies_with_hook, output_lock_path, publish_output,
         publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, read_output_tree, resolve_output_directory,
-        revalidate_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
+        validate_check_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
         LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
         MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
@@ -2395,7 +2409,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn post_intent_revalidation_rejects_an_ancestor_swapped_for_a_symlink() {
+    fn check_only_parent_chain_rejects_a_symlink_substitution() {
         use std::os::unix::fs::symlink;
 
         let root = temp_tree("publish-symlink-swap");
@@ -2414,10 +2428,10 @@ mod tests {
         test_ok(symlink(&outside, &parent), "replace parent with symlink");
 
         let failure = test_err(
-            revalidate_output_parent_chain(&root, &output),
-            "symlink swap rejects after intent acquisition",
+            validate_check_output_parent_chain(&root, &output),
+            "symlink swap rejects during check-only validation",
         );
-        assert_eq!(failure.kind, "LawpackPathOutsideRoot");
+        assert_eq!(failure.kind, "LawpackOutputOwnershipFailed");
         assert!(test_ok(fs::read_dir(&outside), "read outside tree")
             .next()
             .is_none());
@@ -2425,6 +2439,35 @@ mod tests {
         test_ok(fs::remove_file(parent), "remove parent symlink");
         test_ok(fs::remove_dir_all(root), "remove test tree");
         test_ok(fs::remove_dir_all(outside), "remove outside tree");
+    }
+
+    #[test]
+    fn check_only_parent_chain_uses_read_only_failure_kinds() {
+        let root = temp_tree("check-parent-kinds");
+        let missing_output = root.join("missing/generated");
+        assert_eq!(
+            test_err(
+                validate_check_output_parent_chain(&root, &missing_output),
+                "missing check-only ancestor drifts",
+            )
+            .kind,
+            "LawpackOutputDrift"
+        );
+
+        let file_parent = root.join("file-parent");
+        test_ok(
+            fs::write(&file_parent, b"not a directory"),
+            "write file parent",
+        );
+        assert_eq!(
+            test_err(
+                validate_check_output_parent_chain(&root, &file_parent.join("generated")),
+                "non-directory check-only ancestor rejects ownership",
+            )
+            .kind,
+            "LawpackOutputOwnershipFailed"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
     #[cfg(unix)]

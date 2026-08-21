@@ -49,8 +49,10 @@ versions still track specification maturity rather than a released product.
   through bounded reading, so later path substitution cannot redirect them
   under the replaced tree. Duplicate JSON keys reject before typed authoring,
   ownership indexes must be real files, and every generated artifact and drift
-  read stays bounded. Check-only classifies a missing nested output as drift
-  without creating its parent, while empty lawpack document paths reject as
+  read stays bounded. Check-only classifies missing ancestors as drift and
+  non-directory or symlinked ancestors as ownership failures, never as write
+  failures. A missing nested output is reported without creating its parent,
+  while empty lawpack document paths reject as
   invalid settings. Artifact paths containing filesystem NUL bytes reject
   before output or dependency I/O. Pure preflight covers fixed artifacts,
   sidecars, reserved namespaces, duplicates, and ancestor collisions. Primary

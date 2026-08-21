@@ -96,6 +96,9 @@ requested output name still denotes that same filesystem identity and ownership
 basis. It never repairs or changes the owned artifact tree and creates no parent
 directories or lock files.
 Missing, changed, or extra output is `LawpackOutputDrift`.
+Missing output ancestors also report `LawpackOutputDrift`; non-directory or
+symlinked ancestors report `LawpackOutputOwnershipFailed`. Check-only never
+reports `LawpackOutputWriteFailed` because it performs no publication.
 
 ## Resource And Dependency Identity
 
