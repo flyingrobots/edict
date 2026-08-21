@@ -37,33 +37,31 @@ versions still track specification maturity rather than a released product.
   the existing public decoders and complete dependency-graph validator.
   JSONL `build` requests support transactional owned-directory replacement and
   non-repairing, filesystem-read-only `checkOnly` drift detection with a
-  before/after ownership-basis check. A
-  standalone external witness authors the workspace-snapshot closure without
-  `xtask`, reproduces its reviewed
-  bytes, and feeds those exact generated artifacts into the public application
-  build. Tagged inputs and output paths fail closed, dependency inputs cannot
-  resolve under the replaced tree, duplicate JSON keys reject before typed
-  authoring, ownership indexes must be real files, every generated artifact and
-  drift read stays bounded, check-only classifies a missing nested output as
-  drift without creating its parent, empty lawpack document paths reject as
-  invalid settings, artifact paths containing filesystem NUL bytes reject
-  before output or dependency I/O, the pure preflight includes fixed artifacts,
-  sidecars, reserved namespaces, duplicates, and ancestor collisions, artifact
+  before/after ownership-basis check. A standalone external witness authors the
+  workspace-snapshot closure without `xtask`, reproduces its reviewed bytes,
+  and feeds those exact generated artifacts into the public application build.
+  Tagged inputs and output paths fail closed. Dependency inputs cannot resolve
+  under the replaced tree, duplicate JSON keys reject before typed authoring,
+  ownership indexes must be real files, and every generated artifact and drift
+  read stays bounded. Check-only classifies a missing nested output as drift
+  without creating its parent, while empty lawpack document paths reject as
+  invalid settings. Artifact paths containing filesystem NUL bytes reject
+  before output or dependency I/O. Pure preflight covers fixed artifacts,
+  sidecars, reserved namespaces, duplicates, and ancestor collisions. Artifact
   paths follow a raw `/`-separated, alias-free, length-bounded lowercase
-  portable filename policy, proper
-  ancestor intent locks are acquired top-down and shared by disjoint sibling
-  outputs, and ownership and real-directory confinement are rechecked before
-  activation while capability-directory handles anchor every later mutation,
-  fixed-length clock-independent transaction names keep every
-  accepted output component publishable, internal publication names are
-  reserved case-insensitively from output directories, raw output-directory
-  components leave room for derived locks and reject platform aliases, so only
-  overlapping output footprints conflict,
-  lawpack-authored JSON accepts a scalar at a 48-container boundary while
+  portable filename policy. Proper ancestor intent locks are acquired top-down
+  and shared by disjoint sibling outputs. Ownership and real-directory
+  confinement are rechecked before activation, while capability-directory
+  handles anchor every later mutation. Fixed-length clock-independent
+  transaction names keep every accepted output component publishable. Internal
+  publication names are reserved case-insensitively from output directories,
+  and raw output-directory components leave room for derived locks and reject
+  platform aliases, so only overlapping output footprints conflict.
+  Lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
-  headroom, emitted artifact-path collision checks use an ordering-independent
-  ancestor set, and activation is the publication commit point;
-  provider invocation and runtime execution remain outside authoring.
+  headroom. Emitted artifact-path collision checks use an ordering-independent
+  ancestor set, and activation is the publication commit point. Provider
+  invocation and runtime execution remain outside authoring.
 - Added the generator-owned `workspace.patch.applyValidated@1` request closure.
   Exact compiler-owned Core and Target IR bind the canonical patch-input schema,
   workspace-root basis, writable-path-policy authority, CI-workflow exclusion,
