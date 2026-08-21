@@ -175,7 +175,9 @@ reused before it can be pinned, publication reports rollback failure and leaves
 the substitute untouched rather than trusting that name for restoration.
 After activation, the retained transaction identity and its complete artifact
 tree must still match the staged authoring result before backup cleanup commits
-the replacement. Staging, activation,
+the replacement. If the activated name vanishes, the captured output is
+restored directly before any reused transaction name is considered; that
+concurrent entry is left untouched. Staging, activation,
 rollback, and cleanup cannot be redirected by a later ambient-path replacement,
 and rollback refuses to delete an output that appeared concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping

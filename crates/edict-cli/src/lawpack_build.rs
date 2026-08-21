@@ -1821,6 +1821,9 @@ fn restore_after_substituted_activation_in(
     output: &Path,
     existed: bool,
 ) -> Result<(), LawpackBuildFailure> {
+    if !entry_exists(parent, output_name)? {
+        return restore_output_directory_in(parent, output_name, backup, output, existed);
+    }
     if entry_exists(parent, transaction.as_os_str())? {
         return Err(failure(
             "LawpackOutputRollbackFailed",
@@ -1829,9 +1832,6 @@ fn restore_after_substituted_activation_in(
                 output.display()
             ),
         ));
-    }
-    if !entry_exists(parent, output_name)? {
-        return restore_output_directory_in(parent, output_name, backup, output, existed);
     }
     parent
         .rename(output_name, parent, transaction)
@@ -2233,6 +2233,7 @@ mod tests {
         LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
         MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
+    use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::PathBuf;
@@ -3071,6 +3072,82 @@ mod tests {
         assert!(!displaced_activation.exists());
         drop(authority);
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn vanished_activation_restores_before_reused_transaction_check() {
+        let root = temp_tree("vanished-activation-reused-transaction");
+        let output = root.join("generated");
+        let displaced_activation = root.join("displaced-activation");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        let authority = test_ok(
+            acquire_output_ancestor_locks(&root, &output),
+            "acquire publication authority",
+        );
+        let transaction_name = RefCell::new(None::<PathBuf>);
+
+        let failure_kind = publish_output_with_hooks_in_authority(
+            &authority,
+            &output,
+            &replacement,
+            || Ok(()),
+            || {
+                let name = test_ok(fs::read_dir(&root), "read publication root")
+                    .map(|entry| test_ok(entry, "read publication entry"))
+                    .find(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(".edict-lawpack-transaction-")
+                    })
+                    .map_or_else(
+                        || panic!("staged transaction must exist before activation"),
+                        |entry| entry.file_name(),
+                    );
+                transaction_name.replace(Some(PathBuf::from(name)));
+                Ok(())
+            },
+            || {
+                fs::rename(&output, &displaced_activation).map_err(|error| {
+                    super::failure(
+                        "InjectedFailure",
+                        format!("failed to displace activated output: {error}"),
+                    )
+                })?;
+                let name = transaction_name
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| panic!("transaction name must be recorded"));
+                fs::create_dir(root.join(name)).map_err(|error| {
+                    super::failure(
+                        "InjectedFailure",
+                        format!("failed to reuse transaction name: {error}"),
+                    )
+                })
+            },
+            cap_std::fs::Dir::remove_open_dir_all,
+        )
+        .err()
+        .map(|error| error.kind);
+
+        let restored = read_output_tree(&output).ok();
+        let reused_name = transaction_name
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| panic!("transaction name must be retained"));
+        assert!(root.join(reused_name).is_dir());
+        drop(authority);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(restored, Some(original));
     }
 
     #[test]

@@ -84,7 +84,9 @@ versions still track specification maturity rather than a released product.
   Captured backup names receive the same no-follow treatment; if a name is
   reused before pinning, publication refuses to move or delete the substitute
   during rollback. The activated transaction is validated against the complete
-  authored byte map before backup cleanup makes the replacement final.
+  authored byte map before backup cleanup makes the replacement final. If an
+  activation vanishes, rollback restores the captured output before considering
+  reuse of the now-free transaction name.
   Lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom. Emitted artifact-path collision checks use an ordering-independent
