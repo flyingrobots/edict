@@ -242,6 +242,10 @@ pub(crate) fn build_lawpack(
     }
 
     if check_only {
+        validate_check_output_parent(&output)?;
+    }
+    let _ancestor_locks = acquire_output_ancestor_locks(root, &output)?;
+    if check_only {
         check_output(&output, &files)
     } else {
         publish_output(&output, &files)
@@ -518,6 +522,48 @@ fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), Lawpac
     Ok(())
 }
 
+fn acquire_output_ancestor_locks(
+    root: &Path,
+    output: &Path,
+) -> Result<Vec<File>, LawpackBuildFailure> {
+    let mut ancestors = Vec::new();
+    let mut ancestor = output.parent();
+    while let Some(directory) = ancestor {
+        if directory == root {
+            break;
+        }
+        if !directory.starts_with(root) {
+            return Err(failure(
+                "LawpackPathOutsideRoot",
+                format!(
+                    "output `{}` resolves outside `{}`",
+                    output.display(),
+                    root.display()
+                ),
+            ));
+        }
+        ancestors.push(directory.to_path_buf());
+        ancestor = directory.parent();
+    }
+    ancestors.reverse();
+
+    let mut locks = Vec::with_capacity(ancestors.len());
+    for directory in ancestors {
+        locks.push(acquire_output_lock(&directory)?);
+        fs::create_dir_all(&directory).map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to prepare output ancestor `{}`: {error}",
+                    directory.display()
+                ),
+            )
+        })?;
+    }
+    reject_owned_output_ancestor(root, output)?;
+    Ok(locks)
+}
+
 fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFailure> {
     if path.as_os_str().is_empty()
         || path.is_absolute()
@@ -670,6 +716,24 @@ fn validate_check_output_parent(output: &Path) -> Result<(), LawpackBuildFailure
     Ok(())
 }
 
+fn prepare_publish_output_parent(output: &Path) -> Result<(), LawpackBuildFailure> {
+    let parent = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a parent directory".to_owned(),
+        )
+    })?;
+    fs::create_dir_all(parent).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to create output parent `{}`: {error}",
+                parent.display()
+            ),
+        )
+    })
+}
+
 fn unexpected_output_path(output: &Path, relative: &Path) -> LawpackBuildFailure {
     failure(
         "LawpackOutputDrift",
@@ -766,21 +830,7 @@ fn publish_output_with_hooks(
     before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     remove_backup: impl FnOnce(&Path) -> std::io::Result<()>,
 ) -> Result<(), LawpackBuildFailure> {
-    let parent = output.parent().ok_or_else(|| {
-        failure(
-            "LawpackOutputWriteFailed",
-            "lawpack output must have a parent directory".to_owned(),
-        )
-    })?;
-    fs::create_dir_all(parent).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to create output parent `{}`: {error}",
-                parent.display()
-            ),
-        )
-    })?;
+    prepare_publish_output_parent(output)?;
     let expected_owner = expected_output_owner(files)?;
     let _lock = acquire_output_lock(output)?;
     validate_owned_output(output, true, &expected_owner)?;
@@ -1193,10 +1243,11 @@ mod tests {
     use std::sync::mpsc;
 
     use super::{
-        check_output, decode_lawpack_document, encode_output_index, load_dependencies,
-        output_lock_path, publish_output, publish_output_with_hook, publish_output_with_hooks,
-        read_output_tree, resolve_output_directory, validate_generated_artifact_size,
-        LawpackBuildFailure, LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        acquire_output_ancestor_locks, check_output, decode_lawpack_document, encode_output_index,
+        load_dependencies, output_lock_path, publish_output, publish_output_with_hook,
+        publish_output_with_hooks, read_output_tree, resolve_output_directory,
+        validate_generated_artifact_size, LawpackBuildFailure, LawpackDependencyBundle,
+        LawpackOutputIndex, LawpackOutputIndexEntry,
     };
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1217,6 +1268,51 @@ mod tests {
             "nested owner rejects",
         );
         assert_eq!(failure.kind, "LawpackOutputOwnershipFailed");
+        assert!(!nested.exists());
+        assert!(!output_lock_path(&nested).exists());
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn nested_output_holds_ancestor_lock_through_publication_window() {
+        let root = temp_tree("nested-race");
+        let owner = root.join("generated");
+        let nested = owner.join("child");
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, Path::new("generated/child")),
+                "resolve nested output",
+            ),
+            nested
+        );
+
+        let guards = test_ok(
+            acquire_output_ancestor_locks(&root, &nested),
+            "lock nested ancestors",
+        );
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        assert_eq!(
+            test_err(
+                publish_output(&owner, &expected),
+                "ancestor publication while nested build is active",
+            )
+            .kind,
+            "LawpackOutputWriteFailed"
+        );
+
+        drop(guards);
+        test_ok(
+            publish_output(&owner, &expected),
+            "publish ancestor after nested build window",
+        );
+        assert_eq!(
+            test_err(
+                acquire_output_ancestor_locks(&root, &nested),
+                "nested output rechecks ancestor ownership",
+            )
+            .kind,
+            "LawpackOutputOwnershipFailed"
+        );
         assert!(!nested.exists());
         assert!(!output_lock_path(&nested).exists());
         test_ok(fs::remove_dir_all(root), "remove test tree");

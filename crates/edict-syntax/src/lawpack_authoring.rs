@@ -1719,6 +1719,7 @@ fn digest_sidecar_path(output: &str) -> Result<String, Vec<LawpackAuthoringFailu
 fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAuthoringFailure>> {
     let output_path = Path::new(output);
     if output.is_empty()
+        || output.as_bytes().contains(&0)
         || output_path.is_absolute()
         || output_path.components().any(|component| {
             matches!(

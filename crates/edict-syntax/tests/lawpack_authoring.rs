@@ -561,6 +561,15 @@ fn artifact_paths_reject_file_ancestors_and_the_ownership_index_namespace() {
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidOutputPath
     );
+
+    let mut nul_path = full_definition();
+    nul_path.local_resources[0].output = "resources/bad\0.cbor".to_owned();
+    let failures =
+        author_lawpack(&nul_path, &[]).expect_err("filesystem NUL path rejects during authoring");
+    assert_eq!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::InvalidOutputPath
+    );
 }
 
 #[test]

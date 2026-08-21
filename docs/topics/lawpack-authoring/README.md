@@ -137,8 +137,10 @@ directory, activates the replacement, and restores the old directory if
 activation fails. A later successful build replaces the whole owned directory,
 so artifacts removed from the definition cannot survive as stale output. An
 output cannot be nested beneath an ancestor containing another lawpack output
-index; otherwise the two owners would use different locks over overlapping
-replacement trees.
+index. Edict acquires every proper ancestor output lock in top-down order,
+rechecks ancestor ownership while holding those locks, and retains them through
+check or publication. Parent and child builds therefore cannot use different
+locks to race across overlapping replacement trees.
 
 An existing non-empty directory without a valid `edict.lawpack-output/v1`
 index is refused rather than deleted. Output paths and input dependency paths
@@ -148,7 +150,8 @@ not collide by using another file as a parent, and the ownership-index path is
 reserved for Edict. Edict indexes every emitted file path and checks each
 proper ancestor against that set, so duplicate and file/descendant collisions
 remain fail-closed without pairwise growth as application-owned resource sets
-expand.
+expand. Artifact paths containing a filesystem NUL byte reject during
+authoring, before any filesystem operation.
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
