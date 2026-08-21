@@ -170,7 +170,10 @@ links at the root or any descendant. Write mode stages the complete
 replacement, captures the currently named output, and authorizes that exact
 captured directory through a retained capability handle. A newly created
 transaction is pinned without following symbolic links before any artifact is
-staged. Staging, activation,
+staged. Captured backup names are pinned the same way. If a backup name is
+reused before it can be pinned, publication reports rollback failure and leaves
+the substitute untouched rather than trusting that name for restoration.
+Staging, activation,
 rollback, and cleanup cannot be redirected by a later ambient-path replacement,
 and rollback refuses to delete an output that appeared concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping

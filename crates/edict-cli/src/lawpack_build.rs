@@ -1627,21 +1627,18 @@ fn publish_output_with_hooks_in_authority(
         }
     }
     let captured = if existed {
-        let captured = match parent_dir.open_dir(&backup) {
+        let captured = match open_captured_output_in(parent_dir, &backup, output) {
             Ok(captured) => captured,
             Err(error) => {
-                let rollback =
-                    restore_output_directory_in(parent_dir, output_name, &backup, output, true);
                 drop(Dir::remove_open_dir_all(transaction_dir));
-                return Err(rollback.err().unwrap_or_else(|| {
-                    failure(
-                        "LawpackOutputOwnershipFailed",
-                        format!(
-                            "failed to pin captured output `{}`: {error}",
-                            output.display()
-                        ),
-                    )
-                }));
+                return Err(failure(
+                    "LawpackOutputRollbackFailed",
+                    format!(
+                        "captured output `{}` changed before it could be pinned; refused to restore through the reused backup name: {}",
+                        output.display(),
+                        error.message
+                    ),
+                ));
             }
         };
         if let Err(error) = validate_owned_output_dir(&captured, output, &expected_owner) {
@@ -1753,6 +1750,32 @@ fn create_transaction_dir_with_hook(
             "LawpackOutputWriteFailed",
             format!(
                 "failed to pin output transaction beside `{}`: {error}",
+                output.display()
+            ),
+        )
+    })
+}
+
+fn open_captured_output_in(
+    parent: &Dir,
+    backup: &Path,
+    output: &Path,
+) -> Result<Dir, LawpackBuildFailure> {
+    open_captured_output_with_hook(parent, backup, output, || {})
+}
+
+fn open_captured_output_with_hook(
+    parent: &Dir,
+    backup: &Path,
+    output: &Path,
+    after_capture: impl FnOnce(),
+) -> Result<Dir, LawpackBuildFailure> {
+    after_capture();
+    parent.open_dir_nofollow(backup).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "failed to pin captured output `{}`: {error}",
                 output.display()
             ),
         )
@@ -2170,9 +2193,9 @@ mod tests {
         acquire_output_ancestor_locks, build_lawpack, check_output,
         check_output_in_root_with_hooks, check_output_with_hook, create_transaction_dir_with_hook,
         decode_lawpack_document, encode_output_index, load_dependencies,
-        load_dependencies_with_hook, open_check_root_with_hook, open_dependency_input_with_hook,
-        output_lock_path, publish_output, publish_output_with_capture_hook,
-        publish_output_with_hook, publish_output_with_hooks,
+        load_dependencies_with_hook, open_captured_output_with_hook, open_check_root_with_hook,
+        open_dependency_input_with_hook, output_lock_path, publish_output,
+        publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
         read_output_tree, resolve_output_directory, validate_check_output_parent_chain,
         validate_generated_artifact_size, validate_owned_output_dir_with_hook, LawpackBuildFailure,
@@ -2787,6 +2810,65 @@ mod tests {
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
         assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_refuses_a_captured_backup_symlink_before_pinning() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("captured-backup-pin-symlink");
+        let output = root.join("generated");
+        let backup = PathBuf::from("backup");
+        let displaced = root.join("displaced-backup");
+        let victim = root.join("victim");
+        test_ok(fs::create_dir(&output), "create original output");
+        test_ok(
+            fs::write(output.join("old"), b"old"),
+            "write original output",
+        );
+        test_ok(fs::create_dir(&victim), "create backup victim");
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+        test_ok(
+            parent.rename("generated", &parent, &backup),
+            "capture original output",
+        );
+
+        let failure_kind = open_captured_output_with_hook(&parent, &backup, &output, || {
+            test_ok(
+                fs::rename(root.join(&backup), &displaced),
+                "displace captured backup",
+            );
+            test_ok(
+                symlink("victim", root.join(&backup)),
+                "install captured backup symlink",
+            );
+        })
+        .err()
+        .map(|error| error.kind);
+        drop(parent);
+
+        assert_eq!(
+            test_ok(fs::read(displaced.join("old")), "read original"),
+            b"old"
+        );
+        assert!(
+            test_ok(fs::read_dir(&victim), "read victim")
+                .next()
+                .is_none(),
+            "backup victim must remain untouched",
+        );
+        assert!(test_ok(
+            fs::symlink_metadata(root.join(&backup)),
+            "inspect backup substitute"
+        )
+        .file_type()
+        .is_symlink(),);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputOwnershipFailed"));
     }
 
     #[test]
