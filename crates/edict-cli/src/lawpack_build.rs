@@ -420,20 +420,68 @@ fn load_dependencies_with_hook(
 }
 
 fn open_dependency_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
-    let open_failure = |error| {
-        failure(
-            "LawpackArtifactReadFailed",
+    open_absolute_dir_nofollow(root, "LawpackArtifactReadFailed", "lawpack dependency root")
+}
+
+fn open_absolute_dir_nofollow(
+    path: &Path,
+    kind: &'static str,
+    subject: &str,
+) -> Result<Dir, LawpackBuildFailure> {
+    let mut anchor = PathBuf::new();
+    let mut names = Vec::new();
+    let mut rooted = false;
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => anchor.push(prefix.as_os_str()),
+            Component::RootDir => {
+                anchor.push(Path::new(std::path::MAIN_SEPARATOR_STR));
+                rooted = true;
+            }
+            Component::Normal(name) => names.push(name),
+            Component::CurDir | Component::ParentDir => {
+                return Err(failure(
+                    kind,
+                    format!(
+                        "{subject} `{}` must be an absolute normalized path",
+                        path.display()
+                    ),
+                ));
+            }
+        }
+    }
+    if !rooted {
+        return Err(failure(
+            kind,
             format!(
-                "failed to open lawpack dependency root `{}`: {error}",
-                root.display()
+                "{subject} `{}` must be an absolute normalized path",
+                path.display()
+            ),
+        ));
+    }
+    let mut directory = Dir::open_ambient_dir(&anchor, ambient_authority()).map_err(|error| {
+        failure(
+            kind,
+            format!(
+                "failed to open filesystem anchor for {subject} `{}`: {error}",
+                path.display()
             ),
         )
-    };
-    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
-        return Dir::open_ambient_dir(root, ambient_authority()).map_err(open_failure);
-    };
-    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(open_failure)?;
-    parent_dir.open_dir_nofollow(name).map_err(open_failure)
+    })?;
+    let mut display = anchor;
+    for name in names {
+        display.push(name);
+        directory = directory.open_dir_nofollow(name).map_err(|error| {
+            failure(
+                kind,
+                format!(
+                    "failed to pin {subject} component `{}`: {error}",
+                    display.display()
+                ),
+            )
+        })?;
+    }
+    Ok(directory)
 }
 
 fn open_dependency_input(
@@ -804,35 +852,7 @@ fn open_check_root_with_hook(
         ));
     }
     after_inspection();
-    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
-        return Dir::open_ambient_dir(root, ambient_authority()).map_err(|error| {
-            failure(
-                "LawpackOutputOwnershipFailed",
-                format!(
-                    "failed to pin output ancestor `{}`: {error}",
-                    root.display()
-                ),
-            )
-        });
-    };
-    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(|error| {
-        failure(
-            "LawpackOutputOwnershipFailed",
-            format!(
-                "failed to pin parent of output ancestor `{}`: {error}",
-                root.display()
-            ),
-        )
-    })?;
-    parent_dir.open_dir_nofollow(name).map_err(|error| {
-        failure(
-            "LawpackOutputOwnershipFailed",
-            format!(
-                "failed to pin output ancestor `{}`: {error}",
-                root.display()
-            ),
-        )
-    })
+    open_absolute_dir_nofollow(root, "LawpackOutputOwnershipFailed", "output root")
 }
 
 fn open_check_output_parent_in_root(
@@ -1028,20 +1048,7 @@ fn reject_owned_output_ancestor_directory(
 }
 
 fn open_publication_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
-    let open_failure = |error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to open lawpack publication root `{}`: {error}",
-                root.display()
-            ),
-        )
-    };
-    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
-        return Dir::open_ambient_dir(root, ambient_authority()).map_err(open_failure);
-    };
-    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(open_failure)?;
-    parent_dir.open_dir_nofollow(name).map_err(open_failure)
+    open_absolute_dir_nofollow(root, "LawpackOutputWriteFailed", "lawpack publication root")
 }
 
 fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFailure> {
@@ -2272,7 +2279,7 @@ mod tests {
         decode_lawpack_document, encode_output_index, load_dependencies,
         load_dependencies_with_hook, open_captured_output_with_hook,
         open_check_output_dir_with_hook, open_check_root_with_hook,
-        open_dependency_input_with_hook, output_lock_path, publish_output,
+        open_dependency_input_with_hook, open_dependency_root, output_lock_path, publish_output,
         publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
         read_output_tree, resolve_check_output_directory, resolve_output_directory,
@@ -2498,6 +2505,102 @@ mod tests {
         test_ok(fs::remove_dir_all(container), "remove admitted tree");
         test_ok(fs::remove_dir_all(outside), "remove outside tree");
         assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_authority_rejects_ancestor_symlink_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("publication-ancestor-symlink-container");
+        let parent = container.join("parent");
+        let displaced_parent = container.join("displaced-parent");
+        let root = parent.join("root");
+        let outside = temp_tree("publication-ancestor-symlink-outside");
+        let outside_root = outside.join("root");
+        let output = root.join("generated");
+        test_ok(
+            fs::create_dir_all(&root),
+            "create admitted publication root",
+        );
+        test_ok(fs::create_dir(&outside_root), "create outside root");
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, "generated"),
+                "resolve admitted output",
+            ),
+            output
+        );
+        test_ok(fs::rename(&parent, &displaced_parent), "displace ancestor");
+        test_ok(symlink(&outside, &parent), "install ancestor symlink");
+
+        let failure_kind = acquire_output_ancestor_locks(&root, &output)
+            .err()
+            .map(|error| error.kind);
+        let outside_entries = test_ok(fs::read_dir(&outside_root), "read outside root").count();
+
+        test_ok(fs::remove_file(&parent), "remove ancestor symlink");
+        test_ok(fs::rename(&displaced_parent, &parent), "restore ancestor");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(outside_entries, 0, "outside root must remain untouched");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_root_rejects_ancestor_symlink_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("check-ancestor-symlink-container");
+        let parent = container.join("parent");
+        let displaced_parent = container.join("displaced-parent");
+        let root = parent.join("root");
+        let outside = temp_tree("check-ancestor-symlink-outside");
+        let outside_root = outside.join("root");
+        test_ok(fs::create_dir_all(&root), "create admitted check root");
+        test_ok(fs::create_dir(&outside_root), "create outside check root");
+
+        let failure_kind = open_check_root_with_hook(&root, || {
+            test_ok(fs::rename(&parent, &displaced_parent), "displace ancestor");
+            test_ok(symlink(&outside, &parent), "install ancestor symlink");
+        })
+        .err()
+        .map(|error| error.kind);
+
+        test_ok(fs::remove_file(&parent), "remove ancestor symlink");
+        test_ok(fs::rename(&displaced_parent, &parent), "restore ancestor");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackOutputOwnershipFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dependency_root_rejects_an_ancestor_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("dependency-ancestor-symlink-container");
+        let parent = container.join("parent");
+        let displaced_parent = container.join("displaced-parent");
+        let root = parent.join("root");
+        let outside = temp_tree("dependency-ancestor-symlink-outside");
+        let outside_root = outside.join("root");
+        test_ok(fs::create_dir_all(&root), "create admitted dependency root");
+        test_ok(
+            fs::create_dir(&outside_root),
+            "create outside dependency root",
+        );
+        test_ok(fs::rename(&parent, &displaced_parent), "displace ancestor");
+        test_ok(symlink(&outside, &parent), "install ancestor symlink");
+
+        let failure_kind = open_dependency_root(&root).err().map(|error| error.kind);
+
+        test_ok(fs::remove_file(&parent), "remove ancestor symlink");
+        test_ok(fs::rename(&displaced_parent, &parent), "restore ancestor");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackArtifactReadFailed"));
     }
 
     #[test]

@@ -67,12 +67,13 @@ versions still track specification maturity rather than a released product.
   follow a raw `/`-separated, alias-free, length-bounded lowercase portable
   filename policy. Proper ancestor intent locks are acquired top-down
   and shared by disjoint sibling outputs. Ownership and real-directory
-  confinement are rechecked before activation. Publication opens the admitted
-  document root relative to its parent and every descendant without following
-  symbolic links, while capability-directory
-  handles and their ancestor-intent locks remain one retained authority through
-  every later mutation, even if the ambient document-root path is replaced by a
-  different real directory. Fixed-length clock-independent transaction names
+  confinement are rechecked before activation. Publication opens the filesystem
+  root once and traverses every component of the admitted document root and
+  every descendant without following symbolic links. Check-only observation and
+  dependency loading use the same full-chain root traversal, while capability
+  directory handles and their ancestor-intent locks remain one retained authority
+  through every later mutation, even if the ambient document-root path is replaced
+  by a different real directory. Fixed-length clock-independent transaction names
   keep every accepted output component publishable. Internal
   publication names are reserved case-insensitively from output directories,
   and raw output-directory components leave room for derived locks and reject

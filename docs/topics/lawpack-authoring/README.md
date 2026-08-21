@@ -91,8 +91,10 @@ Use `checkOnly` in CI or before committing vendored output:
 
 Check-only mode performs the same bounded reads, construction, decoding, and
 closure validation, then compares the complete output tree byte for byte through
-one pinned directory handle reached by traversing real parent directories from
-a retained root capability. The final output-directory open does not follow a
+one pinned directory handle reached by traversing every document-root component
+from the filesystem root without following symbolic links, then traversing real
+output-parent directories from that retained root capability. The final
+output-directory open does not follow a
 symbolic link installed after inspection. Before returning success it
 retraverses that parent chain from the retained root, verifies that both the
 parent and requested output name still denote the pinned filesystem identities
@@ -170,9 +172,9 @@ identical and parent/child footprints conflict. Lock-file opens do not follow
 symbolic links, so another entry cannot redirect a footprint claim to a
 different file identity. The real-directory ancestor
 chain is rechecked after intent acquisition. The publication root and output
-parent are then pinned as capability directories without following symbolic
-links at the root or any descendant. Write mode stages the complete
-replacement, captures the currently named output, and authorizes that exact
+parent are then pinned as capability directories by traversing every component
+from the filesystem root without following symbolic links. Write mode stages the
+complete replacement, captures the currently named output, and authorizes that exact
 captured directory through a retained capability handle. A newly created
 transaction is pinned without following symbolic links before any artifact is
 staged. Captured backup names are pinned the same way. If a backup name is
