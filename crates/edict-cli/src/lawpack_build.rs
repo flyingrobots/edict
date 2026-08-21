@@ -1740,10 +1740,7 @@ fn publish_output_with_hooks_in_authority(
         } else {
             Err(failure(
                 "LawpackOutputWriteFailed",
-                format!(
-                    "activated output `{}` did not match the retained staged transaction identity",
-                    output.display()
-                ),
+                "the activated directory identity differs from the staged transaction".to_owned(),
             ))
         }
     });
