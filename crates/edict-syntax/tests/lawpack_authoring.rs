@@ -4,7 +4,7 @@ use edict_syntax::{
     LawpackAuthoringDependency, LawpackAuthoringFailureCause, LawpackAuthoringFailureKind,
     LawpackAuthoringPureFunction, LawpackAuthoringVerifier, LawpackEffectKind,
     LawpackExecutionClass, LawpackPureFunctionImplementation, LawpackValidationFailureKind,
-    LawpackVerifier, MAX_CANONICAL_NESTING_DEPTH,
+    LawpackVerifier, MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH,
 };
 
 const PIN_RULESET: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -478,7 +478,7 @@ fn malformed_inputs_fail_with_stable_categories() {
 #[test]
 fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
     let mut definition = full_definition();
-    let at_limit = nested_arrays(MAX_CANONICAL_NESTING_DEPTH);
+    let at_limit = nested_arrays(MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH);
     definition.local_resources[0].value = at_limit.clone();
     author_lawpack(&definition, &[]).expect("terminal scalar at canonical depth limit succeeds");
 
@@ -496,7 +496,8 @@ fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
 fn export_values_account_for_their_enclosing_canonical_containers() {
     const EXPORT_ENCLOSING_CONTAINERS: usize = 3;
     const PURE_BODY_BASE_CONTAINERS: usize = 4;
-    let at_limit = nested_arrays(MAX_CANONICAL_NESTING_DEPTH - EXPORT_ENCLOSING_CONTAINERS);
+    let at_limit =
+        nested_arrays(MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH - EXPORT_ENCLOSING_CONTAINERS);
     let over_limit = serde_json::json!([at_limit.clone()]);
 
     let mut constant = full_definition();
@@ -524,14 +525,16 @@ fn export_values_account_for_their_enclosing_canonical_containers() {
         .expect("typed Edict helper")
     };
     let pure_at_limit = pure_body_with_nested_conditionals(
-        MAX_CANONICAL_NESTING_DEPTH - EXPORT_ENCLOSING_CONTAINERS - PURE_BODY_BASE_CONTAINERS,
+        MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH
+            - EXPORT_ENCLOSING_CONTAINERS
+            - PURE_BODY_BASE_CONTAINERS,
     );
     let pure_over_limit = serde_json::json!([pure_at_limit.clone()]);
     let mut pure = full_definition();
     pure.exports.pure_functions = vec![edict_helper(pure_at_limit)];
     std::thread::Builder::new()
         .name("pure-body-depth-limit".to_owned())
-        .stack_size(8 * 1024 * 1024)
+        .stack_size(2 * 1024 * 1024)
         .spawn(move || author_lawpack(&pure, &[]))
         .expect("spawn bounded-depth validation")
         .join()

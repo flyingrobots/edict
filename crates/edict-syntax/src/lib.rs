@@ -168,7 +168,7 @@ pub use lawpack_authoring::{
     LawpackAuthoringLocalResource, LawpackAuthoringObstruction, LawpackAuthoringOperationProfile,
     LawpackAuthoringOpticTemplate, LawpackAuthoringPinnedResource, LawpackAuthoringPureFunction,
     LawpackAuthoringResourceRef, LawpackAuthoringType, LawpackAuthoringVerifier,
-    LAWPACK_AUTHORING_API_VERSION,
+    LAWPACK_AUTHORING_API_VERSION, MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH,
 };
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,

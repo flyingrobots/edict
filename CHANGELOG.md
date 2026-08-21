@@ -53,9 +53,9 @@ versions still track specification maturity rather than a released product.
   ancestor intent locks are acquired top-down and shared by disjoint sibling
   outputs, and ownership and real-directory confinement are rechecked before
   activation, so only overlapping output footprints conflict,
-  canonical JSON accepts a scalar at the
-  exact 128-container boundary while accounting for enclosing export
-  structures, emitted artifact-path collision checks use an ordering-independent
+  lawpack-authored JSON accepts a scalar at a 48-container boundary while
+  accounting for enclosing export structures and retaining normal-thread stack
+  headroom, emitted artifact-path collision checks use an ordering-independent
   ancestor set, and activation is the publication commit point;
   provider invocation and runtime execution remain outside authoring.
 - Added the generator-owned `workspace.patch.applyValidated@1` request closure.

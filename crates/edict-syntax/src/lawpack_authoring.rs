@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::canonical::{
-    digest_canonical_artifact, encode_canonical_cbor, CanonicalValue, MAX_CANONICAL_NESTING_DEPTH,
+    digest_canonical_artifact, encode_canonical_cbor, CanonicalValue,
 };
 use crate::lawpack::{
     decode_lawpack_bundle, validate_lawpack_dependency_graph, LawpackValidationFailure,
@@ -22,6 +22,13 @@ use crate::lawpack_adapter::{decode_lawpack_adapter, LawpackAdapterFailure};
 
 /// Versioned review schema accepted by the public authoring boundary.
 pub const LAWPACK_AUTHORING_API_VERSION: &str = "edict.lawpack-authoring/v1";
+
+/// Maximum JSON container depth accepted by lawpack authoring.
+///
+/// The lower authoring-specific boundary leaves stack headroom for the typed
+/// lawpack validators that consume the resulting canonical value. The general
+/// canonical-CBOR encoder and decoder retain their independent 128-level limit.
+pub const MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH: usize = 48;
 
 const LAWPACK_OUTPUT_INDEX_PATH: &str = "edict.lawpack-output.json";
 const EXPORT_VALUE_CANONICAL_ENCLOSING_DEPTH: usize = 3;
@@ -1602,7 +1609,7 @@ fn canonical_json_value_with_enclosing_depth(
     path: &str,
     enclosing_depth: usize,
 ) -> Result<CanonicalValue, Vec<LawpackAuthoringFailure>> {
-    let remaining_depth = MAX_CANONICAL_NESTING_DEPTH
+    let remaining_depth = MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH
         .checked_sub(enclosing_depth)
         .ok_or_else(|| {
             one(failure(

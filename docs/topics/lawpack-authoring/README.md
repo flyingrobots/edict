@@ -117,11 +117,13 @@ A local resource places reviewable JSON in the authoring document:
 Other declarations refer to it as `{"local":"target-config"}`. Edict converts
 the value to canonical CBOR and derives its coordinate-framed identity. JSON
 objects of the exact form `{"$edictBytes":"00ff"}` represent canonical byte
-strings; floating-point JSON numbers are rejected. Canonical JSON permits at
-most 128 containing arrays or objects around a terminal value; another
+strings; floating-point JSON numbers are rejected. Lawpack authoring permits at
+most 48 containing arrays or objects around a terminal value; another
 container is rejected before recursive conversion. Constant values and Edict
 pure-function bodies reserve three of those levels for the exports map, member
-array, and member map that enclose them in the canonical artifact.
+array, and member map that enclose them in the canonical artifact. This
+authoring-specific limit leaves normal-thread stack headroom while the general
+canonical-CBOR profile retains its independent 128-container limit.
 
 Every `dependencies` edge names an id, version, and exact manifest digest. The
 matching canonical manifest and exports paths appear in `dependencyBundles`.
