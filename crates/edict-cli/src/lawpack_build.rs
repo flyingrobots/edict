@@ -960,7 +960,7 @@ fn acquire_output_ancestor_locks(
                 ),
             ));
         }
-        directory = directory.open_dir(name).map_err(|error| {
+        directory = directory.open_dir_nofollow(name).map_err(|error| {
             failure(
                 "LawpackPathOutsideRoot",
                 format!(
@@ -1003,7 +1003,7 @@ fn reject_owned_output_ancestor_directory(
 }
 
 fn open_publication_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
-    Dir::open_ambient_dir(root, ambient_authority()).map_err(|error| {
+    let open_failure = |error| {
         failure(
             "LawpackOutputWriteFailed",
             format!(
@@ -1011,7 +1011,12 @@ fn open_publication_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
                 root.display()
             ),
         )
-    })
+    };
+    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
+        return Dir::open_ambient_dir(root, ambient_authority()).map_err(open_failure);
+    };
+    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(open_failure)?;
+    parent_dir.open_dir_nofollow(name).map_err(open_failure)
 }
 
 fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFailure> {
@@ -2301,6 +2306,38 @@ mod tests {
         drop(second_guards);
         drop(first_guards);
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_authority_rejects_root_symlink_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("publication-root-symlink-container");
+        let root = container.join("root");
+        let displaced_root = container.join("displaced-root");
+        let outside = temp_tree("publication-root-symlink-outside");
+        let output = root.join("generated");
+        test_ok(fs::create_dir(&root), "create admitted publication root");
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, "generated"),
+                "resolve admitted output",
+            ),
+            output
+        );
+        test_ok(fs::rename(&root, &displaced_root), "displace admitted root");
+        test_ok(symlink(&outside, &root), "install substituted root symlink");
+
+        let failure_kind = acquire_output_ancestor_locks(&root, &output)
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(fs::remove_file(&root), "remove substituted root symlink");
+        test_ok(fs::rename(&displaced_root, &root), "restore admitted root");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
     }
 
     #[test]
