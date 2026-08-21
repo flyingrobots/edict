@@ -79,7 +79,8 @@ versions still track specification maturity rather than a released product.
   platform aliases, so only overlapping output footprints conflict.
   Footprint lock files are opened without following symbolic links, preventing
   a substituted sibling name from redirecting overlapping publications onto
-  different lock identities.
+  different lock identities. Newly created transaction directories are also
+  pinned without following a substituted symbolic link before staging begins.
   Lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom. Emitted artifact-path collision checks use an ordering-independent

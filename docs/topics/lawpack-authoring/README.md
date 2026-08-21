@@ -168,7 +168,9 @@ chain is rechecked after intent acquisition. The publication root and output
 parent are then pinned as capability directories without following symbolic
 links at the root or any descendant. Write mode stages the complete
 replacement, captures the currently named output, and authorizes that exact
-captured directory through a retained capability handle. Staging, activation,
+captured directory through a retained capability handle. A newly created
+transaction is pinned without following symbolic links before any artifact is
+staged. Staging, activation,
 rollback, and cleanup cannot be redirected by a later ambient-path replacement,
 and rollback refuses to delete an output that appeared concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping

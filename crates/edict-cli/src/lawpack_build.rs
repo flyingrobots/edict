@@ -1582,24 +1582,7 @@ fn publish_output_with_hooks_in_authority(
     )?;
 
     let transaction = unique_sibling_in(parent_dir, output, "transaction")?;
-    parent_dir.create_dir(&transaction).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to create output transaction `{}`: {error}",
-                transaction.display()
-            ),
-        )
-    })?;
-    let transaction_dir = parent_dir.open_dir(&transaction).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to pin output transaction beside `{}`: {error}",
-                output.display()
-            ),
-        )
-    })?;
+    let transaction_dir = create_transaction_dir_in(parent_dir, &transaction, output)?;
     if let Err(error) = stage_files_in(&transaction_dir, files) {
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(error);
@@ -1739,6 +1722,41 @@ fn publish_output_with_hooks_in_authority(
         drop(remove_backup(captured));
     }
     Ok(())
+}
+
+fn create_transaction_dir_in(
+    parent: &Dir,
+    transaction: &Path,
+    output: &Path,
+) -> Result<Dir, LawpackBuildFailure> {
+    create_transaction_dir_with_hook(parent, transaction, output, || {})
+}
+
+fn create_transaction_dir_with_hook(
+    parent: &Dir,
+    transaction: &Path,
+    output: &Path,
+    after_create: impl FnOnce(),
+) -> Result<Dir, LawpackBuildFailure> {
+    parent.create_dir(transaction).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to create output transaction `{}`: {error}",
+                transaction.display()
+            ),
+        )
+    })?;
+    after_create();
+    parent.open_dir_nofollow(transaction).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to pin output transaction beside `{}`: {error}",
+                output.display()
+            ),
+        )
+    })
 }
 
 fn restore_after_substituted_activation_in(
@@ -2150,15 +2168,16 @@ fn first_authoring_failure(failures: Vec<LawpackAuthoringFailure>) -> LawpackBui
 mod tests {
     use super::{
         acquire_output_ancestor_locks, build_lawpack, check_output,
-        check_output_in_root_with_hooks, check_output_with_hook, decode_lawpack_document,
-        encode_output_index, load_dependencies, load_dependencies_with_hook,
-        open_check_root_with_hook, open_dependency_input_with_hook, output_lock_path,
-        publish_output, publish_output_with_capture_hook, publish_output_with_hook,
-        publish_output_with_hooks, publish_output_with_hooks_in_authority,
-        publish_output_with_hooks_in_root, read_output_tree, resolve_output_directory,
-        validate_check_output_parent_chain, validate_generated_artifact_size,
-        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        check_output_in_root_with_hooks, check_output_with_hook, create_transaction_dir_with_hook,
+        decode_lawpack_document, encode_output_index, load_dependencies,
+        load_dependencies_with_hook, open_check_root_with_hook, open_dependency_input_with_hook,
+        output_lock_path, publish_output, publish_output_with_capture_hook,
+        publish_output_with_hook, publish_output_with_hooks,
+        publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
+        read_output_tree, resolve_output_directory, validate_check_output_parent_chain,
+        validate_generated_artifact_size, validate_owned_output_dir_with_hook, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -2724,6 +2743,50 @@ mod tests {
             b"unadmitted"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_refuses_a_transaction_symlink_before_pinning() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("transaction-pin-symlink");
+        let output = root.join("generated");
+        let transaction = PathBuf::from("transaction");
+        let displaced = root.join("displaced-transaction");
+        let victim = root.join("victim");
+        test_ok(fs::create_dir(&victim), "create transaction victim");
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+
+        let failure_kind = create_transaction_dir_with_hook(&parent, &transaction, &output, || {
+            test_ok(
+                fs::rename(root.join(&transaction), &displaced),
+                "displace created transaction",
+            );
+            test_ok(
+                symlink("victim", root.join(&transaction)),
+                "install transaction symlink",
+            );
+        })
+        .err()
+        .map(|error| error.kind);
+        drop(parent);
+
+        test_ok(
+            fs::remove_file(root.join(&transaction)),
+            "remove transaction symlink",
+        );
+        assert!(
+            test_ok(fs::read_dir(&victim), "read victim")
+                .next()
+                .is_none(),
+            "transaction victim must remain untouched",
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
     }
 
     #[test]
