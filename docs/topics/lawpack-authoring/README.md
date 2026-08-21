@@ -138,6 +138,9 @@ present. A write build stages a complete sibling directory, preserves the old
 directory, activates the replacement, and restores the old directory if
 activation fails. A later successful build replaces the whole owned directory,
 so artifacts removed from the definition cannot survive as stale output. An
+internal transaction or backup name is fixed-length and independent of the
+user-selected output component, so every accepted output name remains
+publishable within portable component limits. An
 output cannot be nested beneath an ancestor containing another lawpack output
 index. Within one document-root publication namespace, Edict acquires shared
 intent locks for proper output ancestors in top-down order and an exclusive lock

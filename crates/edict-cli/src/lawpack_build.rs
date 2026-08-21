@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Component, Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use edict_syntax::{
     author_lawpack, decode_lawpack_bundle, preflight_lawpack_authoring_paths, LawpackArtifactKind,
@@ -22,6 +22,7 @@ const OUTPUT_INDEX_FILE: &str = "edict.lawpack-output.json";
 const MAX_LAWPACK_DOCUMENT_BYTES: u64 = 1024 * 1024;
 const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_DEPENDENCY_BUNDLES: usize = 192;
+static PUBLICATION_NAME_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
 pub(crate) struct LawpackBuildFailure {
@@ -1269,26 +1270,17 @@ fn unique_sibling(output: &Path, role: &str) -> Result<PathBuf, LawpackBuildFail
             "lawpack output must have a parent directory".to_owned(),
         )
     })?;
-    let name = output.file_name().ok_or_else(|| {
+    output.file_name().ok_or_else(|| {
         failure(
             "LawpackOutputWriteFailed",
             "lawpack output must have a final path component".to_owned(),
         )
     })?;
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!("system clock cannot name output transaction: {error}"),
-            )
-        })?
-        .as_nanos();
+    let sequence = PUBLICATION_NAME_COUNTER.fetch_add(1, Ordering::Relaxed);
     for attempt in 0..16 {
         let candidate = parent.join(format!(
-            ".{}-edict-lawpack-{role}-{}-{timestamp}-{attempt}",
-            name.to_string_lossy(),
-            std::process::id()
+            ".edict-lawpack-{role}-{:08x}-{sequence:016x}-{attempt:02x}",
+            std::process::id(),
         ));
         if !candidate.exists() {
             return Ok(candidate);
@@ -1512,6 +1504,20 @@ mod tests {
 
         assert_eq!(test_ok(read_output_tree(&output), "read output"), second);
         assert!(!output.join("old").exists());
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn publication_bounds_internal_names_for_long_output_components() {
+        let root = temp_tree("long-output-component");
+        let output = root.join("x".repeat(202));
+        let expected = files(&[("edict.lawpack-output.json", valid_index())]);
+
+        test_ok(
+            publish_output(&output, &expected),
+            "publish beside a long portable output component",
+        );
+        assert_eq!(test_ok(read_output_tree(&output), "read output"), expected);
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
