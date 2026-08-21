@@ -177,7 +177,9 @@ from the filesystem root without following symbolic links. Write mode stages the
 complete replacement, captures the currently named output, and authorizes that exact
 captured directory through a retained capability handle. A newly created
 transaction is pinned without following symbolic links before any artifact is
-staged. Captured backup names are pinned the same way. If a backup name is
+staged. Every staged artifact parent is then created and reopened component by
+component through retained no-follow directory handles before the final file is
+created. Captured backup names are pinned the same way. If a backup name is
 reused before it can be pinned, publication reports rollback failure and leaves
 the substitute untouched rather than trusting that name for restoration. Every
 later rollback reopens the backup without following links and requires it to

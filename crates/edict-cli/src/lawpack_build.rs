@@ -2129,6 +2129,14 @@ fn stage_files_in(
     transaction: &Dir,
     files: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
+    stage_files_in_with_hook(transaction, files, |_| {})
+}
+
+fn stage_files_in_with_hook(
+    transaction: &Dir,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    mut after_parent_creation: impl FnMut(&Path),
+) -> Result<(), LawpackBuildFailure> {
     for (relative, bytes) in files {
         validate_relative_path(relative, "authored artifact path")?;
         let parent = relative.parent().ok_or_else(|| {
@@ -2137,15 +2145,63 @@ fn stage_files_in(
                 format!("authored artifact `{}` has no parent", relative.display()),
             )
         })?;
-        transaction.create_dir_all(parent).map_err(|error| {
+        let mut parent_dir = transaction.try_clone().map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
-                format!("failed to stage `{}`: {error}", relative.display()),
+                format!("failed to retain staging root: {error}"),
+            )
+        })?;
+        let mut parent_display = PathBuf::new();
+        for component in parent.components() {
+            let Component::Normal(name) = component else {
+                return Err(failure(
+                    "LawpackOutputWriteFailed",
+                    format!(
+                        "authored artifact parent `{}` must contain only normal components",
+                        parent.display()
+                    ),
+                ));
+            };
+            parent_display.push(name);
+            match parent_dir.create_dir(name) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(failure(
+                        "LawpackOutputWriteFailed",
+                        format!(
+                            "failed to create staged directory `{}`: {error}",
+                            parent_display.display()
+                        ),
+                    ));
+                }
+            }
+            after_parent_creation(&parent_display);
+            parent_dir = parent_dir.open_dir_nofollow(name).map_err(|error| {
+                failure(
+                    "LawpackOutputWriteFailed",
+                    format!(
+                        "failed to pin staged directory `{}`: {error}",
+                        parent_display.display()
+                    ),
+                )
+            })?;
+        }
+        let file_name = relative.file_name().ok_or_else(|| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "authored artifact `{}` has no file name",
+                    relative.display()
+                ),
             )
         })?;
         let mut options = CapOpenOptions::new();
-        options.create_new(true).write(true);
-        let mut file = transaction.open_with(relative, &options).map_err(|error| {
+        options
+            .create_new(true)
+            .write(true)
+            .follow(FollowSymlinks::No);
+        let mut file = parent_dir.open_with(file_name, &options).map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
                 format!("failed to stage `{}`: {error}", relative.display()),
@@ -2385,10 +2441,10 @@ mod tests {
         publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
         read_output_tree, resolve_check_output_directory, resolve_output_directory,
-        validate_check_output_parent_chain, validate_generated_artifact_size,
-        validate_output_tree_with_hook, validate_owned_output_dir_with_hook, LawpackBuildFailure,
-        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
-        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        stage_files_in_with_hook, validate_check_output_parent_chain,
+        validate_generated_artifact_size, validate_output_tree_with_hook,
+        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
+        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3212,6 +3268,52 @@ mod tests {
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
         assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_refuses_an_intermediate_directory_link_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("staging-intermediate-link");
+        let transaction_path = root.join("transaction");
+        let displaced = root.join("displaced-nested");
+        let victim = transaction_path.join("victim");
+        test_ok(fs::create_dir(&transaction_path), "create transaction");
+        test_ok(fs::create_dir(&victim), "create staged-link victim");
+        let transaction = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&transaction_path, cap_std::ambient_authority()),
+            "open transaction",
+        );
+        let expected = files(&[("nested/value", b"staged")]);
+
+        let failure_kind = stage_files_in_with_hook(&transaction, &expected, |parent| {
+            if parent == "nested" {
+                test_ok(
+                    fs::rename(transaction_path.join(parent), &displaced),
+                    "displace staged parent",
+                );
+                test_ok(
+                    symlink("victim", transaction_path.join(parent)),
+                    "install staged parent link",
+                );
+            }
+        })
+        .err()
+        .map(|error| error.kind);
+        drop(transaction);
+
+        let victim_value = victim.join("value");
+        let victim_was_written = victim_value.exists();
+        if victim_was_written {
+            test_ok(fs::remove_file(&victim_value), "remove redirected artifact");
+        }
+        test_ok(fs::remove_dir_all(root), "remove transaction tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert!(
+            !victim_was_written,
+            "staging must not follow the substitute"
+        );
     }
 
     #[cfg(unix)]

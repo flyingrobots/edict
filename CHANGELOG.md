@@ -82,6 +82,9 @@ versions still track specification maturity rather than a released product.
   a substituted sibling name from redirecting overlapping publications onto
   different lock identities. Newly created transaction directories are also
   pinned without following a substituted symbolic link before staging begins.
+  Staging creates and reopens every artifact-parent component through retained
+  no-follow directory handles, so an intermediate substitution cannot redirect
+  an authored file write.
   Captured backup names receive the same no-follow treatment; if a name is
   reused before pinning, publication refuses to move or delete the substitute
   during rollback. Every later rollback reopens that name without following
