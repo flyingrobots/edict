@@ -1783,7 +1783,11 @@ fn acquire_output_lock_in(
 ) -> Result<File, LawpackBuildFailure> {
     let lock_name = output_lock_name(output_name);
     let mut options = CapOpenOptions::new();
-    options.create(true).read(true).write(true);
+    options
+        .create(true)
+        .read(true)
+        .write(true)
+        .follow(FollowSymlinks::No);
     let open_subject = match mode {
         OutputLockMode::SharedIntent => "output-intent lock",
         OutputLockMode::ExclusiveOutput => "output lock",
@@ -2306,6 +2310,40 @@ mod tests {
         drop(second_guards);
         drop(first_guards);
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_rejects_a_symlinked_output_lock() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("symlinked-output-lock");
+        let output = root.join("generated");
+        let victim = root.join("victim");
+        test_ok(fs::write(&victim, b"untouched"), "write lock target");
+        test_ok(
+            symlink("victim", output_lock_path(&output)),
+            "install substituted output lock",
+        );
+        let expected = files(&[("edict.lawpack-output.json", valid_index())]);
+
+        let failure_kind = publish_output(&output, &expected)
+            .err()
+            .map(|error| error.kind);
+        let output_was_published = output.exists();
+        let victim_bytes = test_ok(fs::read(&victim), "read lock target");
+
+        if output_was_published {
+            test_ok(fs::remove_dir_all(&output), "remove unexpected output");
+        }
+        test_ok(
+            fs::remove_file(output_lock_path(&output)),
+            "remove substituted output lock",
+        );
+        test_ok(fs::remove_dir_all(root), "remove publication tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert!(!output_was_published);
+        assert_eq!(victim_bytes, b"untouched");
     }
 
     #[cfg(unix)]

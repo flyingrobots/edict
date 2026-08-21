@@ -161,7 +161,9 @@ cannot be nested beneath an ancestor containing another lawpack output index.
 Within one document-root publication namespace, Edict acquires shared
 intent locks for proper output ancestors in top-down order and an exclusive lock
 for the output itself. Sibling output footprints can publish concurrently;
-identical and parent/child footprints conflict. The real-directory ancestor
+identical and parent/child footprints conflict. Lock-file opens do not follow
+symbolic links, so another entry cannot redirect a footprint claim to a
+different file identity. The real-directory ancestor
 chain is rechecked after intent acquisition. The publication root and output
 parent are then pinned as capability directories without following symbolic
 links at the root or any descendant. Write mode stages the complete
