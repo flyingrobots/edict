@@ -1283,6 +1283,15 @@ fn open_check_output_dir(
     output_name: &std::ffi::OsStr,
     output: &Path,
 ) -> Result<Dir, LawpackBuildFailure> {
+    open_check_output_dir_with_hook(parent, output_name, output, || {})
+}
+
+fn open_check_output_dir_with_hook(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    output: &Path,
+    after_inspection: impl FnOnce(),
+) -> Result<Dir, LawpackBuildFailure> {
     let metadata = parent.symlink_metadata(output_name).map_err(|error| {
         failure(
             "LawpackOutputDrift",
@@ -1298,7 +1307,8 @@ fn open_check_output_dir(
             ),
         ));
     }
-    parent.open_dir(output_name).map_err(|error| {
+    after_inspection();
+    parent.open_dir_nofollow(output_name).map_err(|error| {
         failure(
             "LawpackOutputDrift",
             format!("failed to pin output `{}`: {error}", output.display()),
@@ -2224,7 +2234,8 @@ mod tests {
         acquire_output_ancestor_locks, build_lawpack, check_output,
         check_output_in_root_with_hooks, check_output_with_hook, create_transaction_dir_with_hook,
         decode_lawpack_document, encode_output_index, load_dependencies,
-        load_dependencies_with_hook, open_captured_output_with_hook, open_check_root_with_hook,
+        load_dependencies_with_hook, open_captured_output_with_hook,
+        open_check_output_dir_with_hook, open_check_root_with_hook,
         open_dependency_input_with_hook, output_lock_path, publish_output,
         publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
@@ -3208,6 +3219,47 @@ mod tests {
             expected
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_only_rejects_output_symlinked_after_inspection() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("check-output-open-race");
+        let output = root.join("generated");
+        let observed = root.join("observed");
+        let substitute = root.join("substitute");
+        test_ok(fs::create_dir(&output), "create admitted output");
+        test_ok(fs::create_dir(&substitute), "create substitute output");
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open output parent",
+        );
+
+        let failure_kind = open_check_output_dir_with_hook(
+            &parent,
+            std::ffi::OsStr::new("generated"),
+            &output,
+            || {
+                test_ok(fs::rename(&output, &observed), "displace admitted output");
+                test_ok(
+                    symlink("substitute", &output),
+                    "install substituted output symlink",
+                );
+            },
+        )
+        .err()
+        .map(|error| error.kind);
+        drop(parent);
+
+        test_ok(
+            fs::remove_file(&output),
+            "remove substituted output symlink",
+        );
+        test_ok(fs::rename(&observed, &output), "restore admitted output");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputDrift"));
     }
 
     #[test]

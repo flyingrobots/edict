@@ -92,10 +92,12 @@ Use `checkOnly` in CI or before committing vendored output:
 Check-only mode performs the same bounded reads, construction, decoding, and
 closure validation, then compares the complete output tree byte for byte through
 one pinned directory handle reached by traversing real parent directories from
-a retained root capability. Before returning success it retraverses that parent
-chain from the retained root, verifies that both the parent and requested output
-name still denote the pinned filesystem identities and ownership basis, then
-validates the exact tree a second time through the reopened handle.
+a retained root capability. The final output-directory open does not follow a
+symbolic link installed after inspection. Before returning success it
+retraverses that parent chain from the retained root, verifies that both the
+parent and requested output name still denote the pinned filesystem identities
+and ownership basis, then validates the exact tree a second time through the
+reopened handle.
 It never repairs or changes the owned artifact tree and creates no parent
 directories or lock files. This is optimistic two-pass validation, not an atomic
 filesystem snapshot; an uncooperative process can still mutate after the final
