@@ -54,7 +54,8 @@ versions still track specification maturity rather than a released product.
   ancestor intent locks are acquired top-down and shared by disjoint sibling
   outputs, and ownership and real-directory confinement are rechecked before
   activation, fixed-length clock-independent transaction names keep every
-  accepted output component publishable, so only overlapping output footprints conflict,
+  accepted output component publishable, internal publication names are
+  reserved from output directories, so only overlapping output footprints conflict,
   lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom, emitted artifact-path collision checks use an ordering-independent

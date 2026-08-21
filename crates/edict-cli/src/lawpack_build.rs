@@ -19,6 +19,8 @@ use serde_json::Value;
 const LAWPACK_BUILD_SCHEMA: &str = "edict.lawpack-build/v1";
 const LAWPACK_OUTPUT_SCHEMA: &str = "edict.lawpack-output/v1";
 const OUTPUT_INDEX_FILE: &str = "edict.lawpack-output.json";
+const INTERNAL_PUBLICATION_PREFIX: &str = ".edict-lawpack-";
+const OUTPUT_LOCK_SUFFIX: &str = ".edict-lawpack-build.lock";
 const MAX_LAWPACK_DOCUMENT_BYTES: u64 = 1024 * 1024;
 const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_DEPENDENCY_BUNDLES: usize = 192;
@@ -301,7 +303,7 @@ fn validate_document(document: &LawpackBuildDocument) -> Result<(), LawpackBuild
             format!("dependencyBundles exceeds the maximum of {MAX_DEPENDENCY_BUNDLES}"),
         ));
     }
-    validate_relative_path(&document.output_directory, "outputDirectory")
+    validate_output_directory_path(&document.output_directory)
 }
 
 fn load_dependencies(
@@ -439,7 +441,7 @@ fn resolve_existing_input(
 }
 
 fn resolve_output_directory(root: &Path, relative: &Path) -> Result<PathBuf, LawpackBuildFailure> {
-    validate_relative_path(relative, "outputDirectory")?;
+    validate_output_directory_path(relative)?;
     let mut current = root.to_path_buf();
     for component in relative.components() {
         let Component::Normal(component) = component else {
@@ -637,6 +639,26 @@ fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFa
         return Err(failure(
             "InvalidLawpackConfig",
             format!("{field} must be a non-empty confined relative path"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_output_directory_path(path: &Path) -> Result<(), LawpackBuildFailure> {
+    validate_relative_path(path, "outputDirectory")?;
+    let aliases_internal_name = path.components().any(|component| {
+        let Component::Normal(component) = component else {
+            return false;
+        };
+        component.to_str().is_none_or(|component| {
+            component.starts_with(INTERNAL_PUBLICATION_PREFIX)
+                || (component.starts_with('.') && component.ends_with(OUTPUT_LOCK_SUFFIX))
+        })
+    });
+    if aliases_internal_name {
+        return Err(failure(
+            "InvalidLawpackConfig",
+            "outputDirectory must not use Edict's reserved publication namespace".to_owned(),
         ));
     }
     Ok(())
@@ -1418,6 +1440,23 @@ mod tests {
         assert_eq!(failure.kind, "LawpackOutputOwnershipFailed");
         assert!(!nested.exists());
         assert!(!output_lock_path(&nested).exists());
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn output_directory_rejects_internal_publication_namespaces() {
+        let root = temp_tree("reserved-output-name");
+        for relative in [
+            ".foo.edict-lawpack-build.lock",
+            ".edict-lawpack-transaction-00000001-0000000000000000-00",
+            ".edict-lawpack-previous-00000001-0000000000000000-00",
+        ] {
+            let failure = test_err(
+                resolve_output_directory(&root, Path::new(relative)),
+                "internal publication path rejects as an output",
+            );
+            assert_eq!(failure.kind, "InvalidLawpackConfig", "{relative}");
+        }
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
