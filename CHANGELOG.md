@@ -40,8 +40,10 @@ versions still track specification maturity rather than a released product.
   before/after ownership-basis check. A standalone external witness authors the
   workspace-snapshot closure without `xtask`, reproduces its reviewed bytes,
   and feeds those exact generated artifacts into the public application build.
-  Tagged inputs and output paths fail closed. Dependency inputs cannot resolve
-  under the replaced tree, duplicate JSON keys reject before typed authoring,
+  Tagged inputs and output paths fail closed. Dependency inputs use confined,
+  no-symlink file handles that remain pinned from output-overlap validation
+  through bounded reading, so later path substitution cannot redirect them
+  under the replaced tree. Duplicate JSON keys reject before typed authoring,
   ownership indexes must be real files, and every generated artifact and drift
   read stays bounded. Check-only classifies a missing nested output as drift
   without creating its parent, while empty lawpack document paths reject as

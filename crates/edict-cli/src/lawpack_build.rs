@@ -46,6 +46,11 @@ struct PublicationAuthority {
     ancestor_locks: Vec<File>,
 }
 
+struct OpenedDependencyInput {
+    file: File,
+    display: PathBuf,
+}
+
 #[cfg(test)]
 impl PublicationAuthority {
     fn len(&self) -> usize {
@@ -331,38 +336,62 @@ fn load_dependencies(
     definitions: &[LawpackDependencyBundle],
     output: &Path,
 ) -> Result<Vec<ValidatedLawpackBundle>, LawpackBuildFailure> {
-    definitions
+    load_dependencies_with_hook(root, definitions, output, || {})
+}
+
+fn load_dependencies_with_hook(
+    root: &Path,
+    definitions: &[LawpackDependencyBundle],
+    output: &Path,
+    after_resolve: impl FnOnce(),
+) -> Result<Vec<ValidatedLawpackBundle>, LawpackBuildFailure> {
+    let root_dir = open_publication_root(root)?;
+    let relative_output = output.strip_prefix(root).map_err(|error| {
+        failure(
+            "LawpackPathOutsideRoot",
+            format!(
+                "output `{}` resolves outside `{}`: {error}",
+                output.display(),
+                root.display()
+            ),
+        )
+    })?;
+    let resolved = definitions
         .iter()
         .enumerate()
         .map(|(index, definition)| {
-            let manifest = resolve_existing_input(
+            let manifest = open_dependency_input(
+                &root_dir,
                 root,
                 &definition.manifest,
+                relative_output,
                 &format!("dependencyBundles.{index}.manifest"),
             )?;
-            let exports = resolve_existing_input(
+            let exports = open_dependency_input(
+                &root_dir,
                 root,
                 &definition.exports,
+                relative_output,
                 &format!("dependencyBundles.{index}.exports"),
             )?;
-            reject_resolved_input_inside_output(
-                &manifest,
-                output,
-                &format!("dependencyBundles.{index}.manifest"),
-            )?;
-            reject_resolved_input_inside_output(
-                &exports,
-                output,
-                &format!("dependencyBundles.{index}.exports"),
-            )?;
-            let manifest = read_bounded(
-                &manifest,
+            Ok((manifest, exports))
+        })
+        .collect::<Result<Vec<_>, LawpackBuildFailure>>()?;
+    after_resolve();
+    resolved
+        .into_iter()
+        .enumerate()
+        .map(|(index, (manifest, exports))| {
+            let manifest = read_bounded_file(
+                manifest.file,
+                &manifest.display,
                 MAX_LAWPACK_ARTIFACT_BYTES,
                 "dependency manifest",
                 "LawpackArtifactReadFailed",
             )?;
-            let exports = read_bounded(
-                &exports,
+            let exports = read_bounded_file(
+                exports.file,
+                &exports.display,
                 MAX_LAWPACK_ARTIFACT_BYTES,
                 "dependency exports",
                 "LawpackArtifactReadFailed",
@@ -377,18 +406,124 @@ fn load_dependencies(
         .collect()
 }
 
-fn reject_resolved_input_inside_output(
-    resolved: &Path,
-    output: &Path,
+fn open_dependency_input(
+    root_dir: &Dir,
+    root: &Path,
+    relative: &Path,
+    relative_output: &Path,
     field: &str,
-) -> Result<(), LawpackBuildFailure> {
-    if resolved.starts_with(output) {
+) -> Result<OpenedDependencyInput, LawpackBuildFailure> {
+    validate_relative_path(relative, field)?;
+    if relative.starts_with(relative_output) {
         return Err(failure(
             "InvalidLawpackConfig",
             format!("{field} must be outside outputDirectory"),
         ));
     }
-    Ok(())
+    let parent = relative.parent().unwrap_or_else(|| Path::new(""));
+    let (directory, mut display) = open_dependency_parent(root_dir, root, parent, field)?;
+    let name = relative.file_name().ok_or_else(|| {
+        failure(
+            "InvalidLawpackConfig",
+            format!("{field} must have a final path component"),
+        )
+    })?;
+    display.push(name);
+    let metadata = directory.symlink_metadata(name).map_err(|error| {
+        failure(
+            "LawpackArtifactReadFailed",
+            format!("failed to inspect {field} `{}`: {error}", display.display()),
+        )
+    })?;
+    if metadata.is_symlink() {
+        return Err(failure(
+            "InvalidLawpackConfig",
+            format!(
+                "{field} `{}` must not be a symbolic link",
+                display.display()
+            ),
+        ));
+    }
+    if !metadata.is_file() {
+        return Err(failure(
+            "LawpackPathOutsideRoot",
+            format!(
+                "{field} `{}` must be a real regular file",
+                display.display()
+            ),
+        ));
+    }
+    let file = directory
+        .open(name)
+        .map(cap_std::fs::File::into_std)
+        .map_err(|error| {
+            failure(
+                "LawpackArtifactReadFailed",
+                format!("failed to pin {field} `{}`: {error}", display.display()),
+            )
+        })?;
+    Ok(OpenedDependencyInput { file, display })
+}
+
+fn open_dependency_parent(
+    root_dir: &Dir,
+    root: &Path,
+    parent: &Path,
+    field: &str,
+) -> Result<(Dir, PathBuf), LawpackBuildFailure> {
+    let mut directory = root_dir.try_clone().map_err(|error| {
+        failure(
+            "LawpackArtifactReadFailed",
+            format!("failed to pin lawpack root for {field}: {error}"),
+        )
+    })?;
+    let mut display = root.to_path_buf();
+    for component in parent.components() {
+        let Component::Normal(name) = component else {
+            return Err(failure(
+                "LawpackPathOutsideRoot",
+                format!("{field} must contain only normal relative components"),
+            ));
+        };
+        display.push(name);
+        let metadata = directory.symlink_metadata(name).map_err(|error| {
+            failure(
+                "LawpackArtifactReadFailed",
+                format!(
+                    "failed to inspect {field} ancestor `{}`: {error}",
+                    display.display()
+                ),
+            )
+        })?;
+        if metadata.is_symlink() {
+            return Err(failure(
+                "InvalidLawpackConfig",
+                format!(
+                    "{field} ancestor `{}` must not be a symbolic link",
+                    display.display()
+                ),
+            ));
+        }
+        if !metadata.is_dir() {
+            return Err(failure(
+                "LawpackPathOutsideRoot",
+                format!(
+                    "{field} ancestor `{}` must be a real directory",
+                    display.display()
+                ),
+            ));
+        }
+        directory = directory.open_dir(name).map_err(|error| {
+            failure(
+                "LawpackArtifactReadFailed",
+                format!(
+                    "failed to pin {field} ancestor `{}`: {error}",
+                    display.display()
+                ),
+            )
+        })?;
+    }
+    Ok((directory, display))
 }
 
 fn read_bounded(
@@ -403,10 +538,23 @@ fn read_bounded(
             format!("failed to open {subject} `{}`: {error}", path.display()),
         )
     })?;
+    read_bounded_file(file, path, limit, subject, kind)
+}
+
+fn read_bounded_file(
+    file: File,
+    display: &Path,
+    limit: u64,
+    subject: &str,
+    kind: &'static str,
+) -> Result<Vec<u8>, LawpackBuildFailure> {
     let metadata = file.metadata().map_err(|error| {
         failure(
             kind,
-            format!("failed to inspect {subject} `{}`: {error}", path.display()),
+            format!(
+                "failed to inspect {subject} `{}`: {error}",
+                display.display()
+            ),
         )
     })?;
     if !metadata.is_file() || metadata.len() > limit {
@@ -414,7 +562,7 @@ fn read_bounded(
             kind,
             format!(
                 "{subject} `{}` must be a regular file no larger than {limit} bytes",
-                path.display()
+                display.display()
             ),
         ));
     }
@@ -424,13 +572,13 @@ fn read_bounded(
         .map_err(|error| {
             failure(
                 kind,
-                format!("failed to read {subject} `{}`: {error}", path.display()),
+                format!("failed to read {subject} `{}`: {error}", display.display()),
             )
         })?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit {
         return Err(failure(
             kind,
-            format!("{subject} `{}` exceeds {limit} bytes", path.display()),
+            format!("{subject} `{}` exceeds {limit} bytes", display.display()),
         ));
     }
     Ok(bytes)
@@ -449,61 +597,7 @@ fn read_bounded_in(
             format!("failed to open {subject} `{}`: {error}", path.display()),
         )
     })?;
-    let metadata = file.metadata().map_err(|error| {
-        failure(
-            kind,
-            format!("failed to inspect {subject} `{}`: {error}", path.display()),
-        )
-    })?;
-    if !metadata.is_file() || metadata.len() > limit {
-        return Err(failure(
-            kind,
-            format!(
-                "{subject} `{}` must be a regular file no larger than {limit} bytes",
-                path.display()
-            ),
-        ));
-    }
-    let mut bytes = Vec::new();
-    file.take(limit + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|error| {
-            failure(
-                kind,
-                format!("failed to read {subject} `{}`: {error}", path.display()),
-            )
-        })?;
-    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit {
-        return Err(failure(
-            kind,
-            format!("{subject} `{}` exceeds {limit} bytes", path.display()),
-        ));
-    }
-    Ok(bytes)
-}
-
-fn resolve_existing_input(
-    root: &Path,
-    relative: &Path,
-    field: &str,
-) -> Result<PathBuf, LawpackBuildFailure> {
-    validate_relative_path(relative, field)?;
-    let resolved = fs::canonicalize(root.join(relative)).map_err(|error| {
-        failure(
-            "LawpackArtifactReadFailed",
-            format!(
-                "failed to resolve {field} `{}`: {error}",
-                relative.display()
-            ),
-        )
-    })?;
-    if !resolved.starts_with(root) {
-        return Err(failure(
-            "LawpackPathOutsideRoot",
-            format!("{field} resolves outside `{}`", root.display()),
-        ));
-    }
-    Ok(resolved)
+    read_bounded_file(file.into_std(), path, limit, subject, kind)
 }
 
 fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, LawpackBuildFailure> {
@@ -1712,8 +1806,8 @@ fn first_authoring_failure(failures: Vec<LawpackAuthoringFailure>) -> LawpackBui
 mod tests {
     use super::{
         acquire_output_ancestor_locks, build_lawpack, check_output, decode_lawpack_document,
-        encode_output_index, load_dependencies, output_lock_path, publish_output,
-        publish_output_with_hook, publish_output_with_hooks,
+        encode_output_index, load_dependencies, load_dependencies_with_hook, output_lock_path,
+        publish_output, publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, read_output_tree, resolve_output_directory,
         revalidate_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
         LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
@@ -2411,6 +2505,75 @@ mod tests {
             .kind,
             "InvalidLawpackConfig"
         );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn dependency_reads_keep_the_identity_that_passed_output_confinement() {
+        let root = temp_tree("dependency-identity");
+        let dependencies = root.join("dependencies");
+        let admitted_dependencies = root.join("admitted-dependencies");
+        let output = root.join("generated");
+        let substituted_dependencies = output.join("substituted-dependencies");
+        test_ok(
+            fs::create_dir(&dependencies),
+            "create admitted dependencies",
+        );
+        test_ok(
+            fs::create_dir_all(&substituted_dependencies),
+            "create substituted dependencies",
+        );
+        test_ok(
+            fs::write(
+                dependencies.join("manifest.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/manifest.cbor"),
+            ),
+            "write admitted manifest",
+        );
+        test_ok(
+            fs::write(
+                dependencies.join("exports.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/exports.cbor"),
+            ),
+            "write admitted exports",
+        );
+        test_ok(
+            fs::write(
+                substituted_dependencies.join("manifest.cbor"),
+                include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor"),
+            ),
+            "write substituted manifest",
+        );
+        test_ok(
+            fs::write(
+                substituted_dependencies.join("exports.cbor"),
+                include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor"),
+            ),
+            "write substituted exports",
+        );
+        let definitions = [LawpackDependencyBundle {
+            manifest: PathBuf::from("dependencies/manifest.cbor"),
+            exports: PathBuf::from("dependencies/exports.cbor"),
+        }];
+        let canonical_root = test_ok(fs::canonicalize(&root), "canonicalize root");
+        let canonical_output = test_ok(fs::canonicalize(&output), "canonicalize output");
+
+        let loaded = test_ok(
+            load_dependencies_with_hook(&canonical_root, &definitions, &canonical_output, || {
+                test_ok(
+                    fs::rename(&dependencies, &admitted_dependencies),
+                    "move admitted dependencies",
+                );
+                test_ok(
+                    fs::rename(&substituted_dependencies, &dependencies),
+                    "substitute dependencies from output",
+                );
+            }),
+            "load admitted dependency identity",
+        );
+
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].manifest().id, "workspace.snapshot");
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
