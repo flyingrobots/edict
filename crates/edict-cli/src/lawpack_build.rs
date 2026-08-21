@@ -3346,7 +3346,7 @@ mod tests {
 
         let failure_kind =
             validate_output_tree_with_hook(&output, output_dir, &expected, |relative| {
-                if relative == PathBuf::from("one") {
+                if relative == "one" {
                     test_ok(fs::rename(output.join("one"), &displaced), "displace file");
                     test_ok(symlink("target", output.join("one")), "install file link");
                 }
@@ -3390,7 +3390,7 @@ mod tests {
 
         let failure_kind =
             validate_output_tree_with_hook(&output, output_dir, &expected, |relative| {
-                if relative == PathBuf::from("nested") {
+                if relative == "nested" {
                     test_ok(
                         fs::rename(output.join("nested"), &displaced),
                         "displace directory",
