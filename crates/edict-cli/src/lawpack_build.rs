@@ -36,6 +36,23 @@ pub(crate) struct LawpackBuildFailure {
     pub(crate) message: String,
 }
 
+#[derive(Debug)]
+struct PublicationAuthority {
+    output_parent: Dir,
+    #[allow(
+        dead_code,
+        reason = "lock handles keep ancestor intents held for the authority lifetime"
+    )]
+    ancestor_locks: Vec<File>,
+}
+
+#[cfg(test)]
+impl PublicationAuthority {
+    fn len(&self) -> usize {
+        self.ancestor_locks.len()
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct LawpackBuildDocument {
@@ -244,7 +261,6 @@ pub(crate) fn build_lawpack(
         revalidate_output_parent_chain(root, &output)?;
         check_output(&output, &files)
     } else {
-        let _ancestor_locks = acquire_output_ancestor_locks(root, &output)?;
         publish_output_in_root(root, &output, &files)
     }
 }
@@ -635,7 +651,7 @@ fn revalidate_output_parent_chain(root: &Path, output: &Path) -> Result<(), Lawp
 fn acquire_output_ancestor_locks(
     root: &Path,
     output: &Path,
-) -> Result<Vec<File>, LawpackBuildFailure> {
+) -> Result<PublicationAuthority, LawpackBuildFailure> {
     let parent = output.parent().ok_or_else(|| {
         failure(
             "LawpackOutputWriteFailed",
@@ -655,6 +671,7 @@ fn acquire_output_ancestor_locks(
     let mut directory = open_publication_root(root)?;
     let mut display = root.to_path_buf();
     let mut locks = Vec::new();
+    reject_owned_output_ancestor_directory(&directory, &display, output)?;
     for component in relative.components() {
         let Component::Normal(name) = component else {
             return Err(failure(
@@ -704,9 +721,37 @@ fn acquire_output_ancestor_locks(
                 ),
             )
         })?;
+        reject_owned_output_ancestor_directory(&directory, &display, output)?;
     }
-    reject_owned_output_ancestor(root, output)?;
-    Ok(locks)
+    Ok(PublicationAuthority {
+        output_parent: directory,
+        ancestor_locks: locks,
+    })
+}
+
+fn reject_owned_output_ancestor_directory(
+    directory: &Dir,
+    display: &Path,
+    output: &Path,
+) -> Result<(), LawpackBuildFailure> {
+    match directory.symlink_metadata(OUTPUT_INDEX_FILE) {
+        Ok(_) => Err(failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "output `{}` is nested inside owned lawpack tree `{}`",
+                output.display(),
+                display.display()
+            ),
+        )),
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "failed to inspect ancestor ownership index `{}`: {error}",
+                display.join(OUTPUT_INDEX_FILE).display()
+            ),
+        )),
+    }
 }
 
 fn open_publication_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
@@ -715,44 +760,6 @@ fn open_publication_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
             "LawpackOutputWriteFailed",
             format!(
                 "failed to open lawpack publication root `{}`: {error}",
-                root.display()
-            ),
-        )
-    })
-}
-
-fn open_output_parent(
-    root_dir: &Dir,
-    root: &Path,
-    output: &Path,
-) -> Result<Dir, LawpackBuildFailure> {
-    let parent = output.parent().ok_or_else(|| {
-        failure(
-            "LawpackOutputWriteFailed",
-            "lawpack output must have a parent directory".to_owned(),
-        )
-    })?;
-    let relative = parent.strip_prefix(root).map_err(|error| {
-        failure(
-            "LawpackPathOutsideRoot",
-            format!(
-                "output parent `{}` resolves outside `{}`: {error}",
-                parent.display(),
-                root.display()
-            ),
-        )
-    })?;
-    let opened = if relative.as_os_str().is_empty() {
-        root_dir.try_clone()
-    } else {
-        root_dir.open_dir(relative)
-    };
-    opened.map_err(|error| {
-        failure(
-            "LawpackPathOutsideRoot",
-            format!(
-                "failed to pin output parent `{}` beneath `{}`: {error}",
-                parent.display(),
                 root.display()
             ),
         )
@@ -969,38 +976,6 @@ fn validate_check_output_parent(output: &Path) -> Result<(), LawpackBuildFailure
     Ok(())
 }
 
-fn prepare_publish_output_parent(
-    root_dir: &Dir,
-    root: &Path,
-    output: &Path,
-) -> Result<(), LawpackBuildFailure> {
-    let parent = output.parent().ok_or_else(|| {
-        failure(
-            "LawpackOutputWriteFailed",
-            "lawpack output must have a parent directory".to_owned(),
-        )
-    })?;
-    let relative = parent.strip_prefix(root).map_err(|error| {
-        failure(
-            "LawpackPathOutsideRoot",
-            format!(
-                "output parent `{}` resolves outside `{}`: {error}",
-                parent.display(),
-                root.display()
-            ),
-        )
-    })?;
-    root_dir.create_dir_all(relative).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to create output parent `{}`: {error}",
-                parent.display()
-            ),
-        )
-    })
-}
-
 fn unexpected_output_path(output: &Path, relative: &Path) -> LawpackBuildFailure {
     failure(
         "LawpackOutputDrift",
@@ -1146,9 +1121,28 @@ fn publish_output_with_hooks_in_root(
     before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     remove_backup: impl FnOnce(&Dir, &Path) -> std::io::Result<()>,
 ) -> Result<(), LawpackBuildFailure> {
-    let root_dir = open_publication_root(root)?;
-    prepare_publish_output_parent(&root_dir, root, output)?;
-    let parent_dir = open_output_parent(&root_dir, root, output)?;
+    let authority = acquire_output_ancestor_locks(root, output)?;
+    publish_output_with_hooks_in_authority(
+        &authority,
+        output,
+        files,
+        before_activation,
+        remove_backup,
+    )
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "directory publication keeps staging and every rollback path explicit"
+)]
+fn publish_output_with_hooks_in_authority(
+    authority: &PublicationAuthority,
+    output: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
+    remove_backup: impl FnOnce(&Dir, &Path) -> std::io::Result<()>,
+) -> Result<(), LawpackBuildFailure> {
+    let parent_dir = &authority.output_parent;
     let output_name = output.file_name().ok_or_else(|| {
         failure(
             "LawpackOutputWriteFailed",
@@ -1156,12 +1150,10 @@ fn publish_output_with_hooks_in_root(
         )
     })?;
     let expected_owner = expected_output_owner(files)?;
-    let _lock = acquire_output_lock_in(&parent_dir, output_name, output)?;
-    revalidate_output_parent_chain(root, output)?;
-    reject_owned_output_ancestor(root, output)?;
-    let _basis = validate_owned_output_in(&parent_dir, output_name, output, true, &expected_owner)?;
+    let _lock = acquire_output_lock_in(parent_dir, output_name, output)?;
+    let _basis = validate_owned_output_in(parent_dir, output_name, output, true, &expected_owner)?;
 
-    let transaction = unique_sibling_in(&parent_dir, output, "transaction")?;
+    let transaction = unique_sibling_in(parent_dir, output, "transaction")?;
     parent_dir.create_dir(&transaction).map_err(|error| {
         failure(
             "LawpackOutputWriteFailed",
@@ -1185,8 +1177,8 @@ fn publish_output_with_hooks_in_root(
         return Err(error);
     }
 
-    let existed = entry_exists(&parent_dir, output_name)?;
-    let backup = match unique_sibling_in(&parent_dir, output, "previous") {
+    let existed = entry_exists(parent_dir, output_name)?;
+    let backup = match unique_sibling_in(parent_dir, output, "previous") {
         Ok(backup) => backup,
         Err(error) => {
             let _ = parent_dir.remove_dir_all(&transaction);
@@ -1194,7 +1186,7 @@ fn publish_output_with_hooks_in_root(
         }
     };
     if existed {
-        if let Err(error) = parent_dir.rename(output_name, &parent_dir, &backup) {
+        if let Err(error) = parent_dir.rename(output_name, parent_dir, &backup) {
             let _ = parent_dir.remove_dir_all(&transaction);
             return Err(failure(
                 "LawpackOutputWriteFailed",
@@ -1208,13 +1200,13 @@ fn publish_output_with_hooks_in_root(
 
     if let Err(error) = before_activation() {
         let rollback =
-            restore_output_directory_in(&parent_dir, output_name, &backup, output, existed);
+            restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
         let _ = parent_dir.remove_dir_all(&transaction);
         return Err(rollback.err().unwrap_or(error));
     }
-    if let Err(error) = parent_dir.rename(&transaction, &parent_dir, output_name) {
+    if let Err(error) = parent_dir.rename(&transaction, parent_dir, output_name) {
         let rollback =
-            restore_output_directory_in(&parent_dir, output_name, &backup, output, existed);
+            restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
         let _ = parent_dir.remove_dir_all(&transaction);
         return Err(rollback.err().unwrap_or_else(|| {
             failure(
@@ -1226,7 +1218,7 @@ fn publish_output_with_hooks_in_root(
     if existed {
         // Activation is the commit point. Backup cleanup is best effort so a
         // committed replacement is never reported as an unchanged failure.
-        drop(remove_backup(&parent_dir, &backup));
+        drop(remove_backup(parent_dir, &backup));
     }
     Ok(())
 }
@@ -1721,9 +1713,10 @@ mod tests {
     use super::{
         acquire_output_ancestor_locks, build_lawpack, check_output, decode_lawpack_document,
         encode_output_index, load_dependencies, output_lock_path, publish_output,
-        publish_output_with_hook, publish_output_with_hooks, read_output_tree,
-        resolve_output_directory, revalidate_output_parent_chain, validate_generated_artifact_size,
-        LawpackBuildFailure, LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        publish_output_with_hook, publish_output_with_hooks,
+        publish_output_with_hooks_in_authority, read_output_tree, resolve_output_directory,
+        revalidate_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
         MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::BTreeMap;
@@ -1876,6 +1869,67 @@ mod tests {
         drop(second_guards);
         drop(first_guards);
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn publication_keeps_the_locked_root_identity_after_real_directory_substitution() {
+        let root = temp_tree("root-identity");
+        let admitted_root = root.with_extension("admitted");
+        let output = root.join("parent/generated");
+        let authority = test_ok(
+            acquire_output_ancestor_locks(&root, &output),
+            "lock admitted output ancestors",
+        );
+        test_ok(fs::rename(&root, &admitted_root), "move admitted root");
+
+        let substituted_output = root.join("parent/generated");
+        test_ok(
+            fs::create_dir_all(&substituted_output),
+            "create substituted output",
+        );
+        let substituted = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("victim", b"substituted"),
+        ]);
+        for (relative, bytes) in &substituted {
+            test_ok(
+                fs::write(substituted_output.join(relative), bytes),
+                "write substituted output",
+            );
+        }
+        let expected = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"admitted"),
+        ]);
+
+        test_ok(
+            publish_output_with_hooks_in_authority(
+                &authority,
+                &output,
+                &expected,
+                || Ok(()),
+                |parent, path| parent.remove_dir_all(path),
+            ),
+            "publish through admitted root identity",
+        );
+
+        assert_eq!(
+            test_ok(
+                read_output_tree(&substituted_output),
+                "read substituted output",
+            ),
+            substituted
+        );
+        assert_eq!(
+            test_ok(
+                read_output_tree(&admitted_root.join("parent/generated")),
+                "read admitted output",
+            ),
+            expected
+        );
+        drop(authority);
+        test_ok(fs::remove_dir_all(root), "remove substituted root");
+        test_ok(fs::remove_dir_all(admitted_root), "remove admitted root");
     }
 
     #[test]
