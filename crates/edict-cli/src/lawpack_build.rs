@@ -7,6 +7,7 @@ use std::io::{ErrorKind, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use cap_fs_ext::{FollowSymlinks, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
 use cap_std::fs::{Dir, OpenOptions as CapOpenOptions};
 use edict_syntax::{
@@ -595,7 +596,9 @@ fn read_bounded_in(
     subject: &str,
     kind: &'static str,
 ) -> Result<Vec<u8>, LawpackBuildFailure> {
-    let file = directory.open(path).map_err(|error| {
+    let mut options = CapOpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
+    let file = directory.open_with(path, &options).map_err(|error| {
         failure(
             kind,
             format!("failed to open {subject} `{}`: {error}", path.display()),
@@ -1776,6 +1779,15 @@ fn validate_owned_output_dir(
     output: &Path,
     expected_owner: &(String, String),
 ) -> Result<Option<Vec<u8>>, LawpackBuildFailure> {
+    validate_owned_output_dir_with_hook(output_dir, output, expected_owner, || {})
+}
+
+fn validate_owned_output_dir_with_hook(
+    output_dir: &Dir,
+    output: &Path,
+    expected_owner: &(String, String),
+    after_index_inspection: impl FnOnce(),
+) -> Result<Option<Vec<u8>>, LawpackBuildFailure> {
     let mut entries = output_dir.entries().map_err(|error| {
         failure(
             "LawpackOutputOwnershipFailed",
@@ -1798,6 +1810,7 @@ fn validate_owned_output_dir(
             "output ownership index must be a real regular file".to_owned(),
         ));
     }
+    after_index_inspection();
     let index_bytes = read_bounded_in(
         output_dir,
         index_path,
@@ -2070,9 +2083,9 @@ mod tests {
         publish_output, publish_output_with_capture_hook, publish_output_with_hook,
         publish_output_with_hooks, publish_output_with_hooks_in_authority,
         publish_output_with_hooks_in_root, read_output_tree, resolve_output_directory,
-        validate_check_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
-        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
-        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        validate_check_output_parent_chain, validate_generated_artifact_size,
+        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
+        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -3450,6 +3463,51 @@ mod tests {
         assert_eq!(
             test_ok(fs::read(output.join("unrelated")), "read unrelated file"),
             b"keep"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ownership_index_substituted_with_a_symlink_after_inspection_rejects() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("ownership-index-inspection-race");
+        let output = root.join("generated");
+        let index = output.join("edict.lawpack-output.json");
+        let displaced_index = root.join("displaced-index.json");
+        let external_index = output.join("alternate-index.json");
+        test_ok(fs::create_dir(&output), "create output");
+        test_ok(fs::write(&index, valid_index()), "write admitted index");
+        test_ok(
+            fs::write(&external_index, valid_index()),
+            "write external index",
+        );
+        let output_dir = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&output, cap_std::ambient_authority()),
+            "open output directory",
+        );
+        let expected_owner = ("test".to_owned(), "1".to_owned());
+
+        let failure = test_err(
+            validate_owned_output_dir_with_hook(&output_dir, &output, &expected_owner, || {
+                test_ok(fs::rename(&index, &displaced_index), "displace index");
+                test_ok(
+                    symlink("alternate-index.json", &index),
+                    "substitute index symlink",
+                );
+                assert_eq!(
+                    test_ok(fs::read(&index), "read substituted index by pathname"),
+                    valid_index()
+                );
+            }),
+            "post-inspection ownership symlink rejects",
+        );
+
+        assert_eq!(failure.kind, "LawpackOutputOwnershipFailed");
+        assert_eq!(
+            test_ok(fs::read(&displaced_index), "read displaced index"),
+            valid_index()
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
