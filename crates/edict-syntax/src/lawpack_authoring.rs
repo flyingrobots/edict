@@ -11,9 +11,7 @@ use std::path::{Component, Path};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::canonical::{
-    digest_canonical_artifact, encode_canonical_cbor, CanonicalValue,
-};
+use crate::canonical::{digest_canonical_artifact, encode_canonical_cbor, CanonicalValue};
 use crate::lawpack::{
     decode_lawpack_bundle, validate_lawpack_dependency_graph, LawpackValidationFailure,
     ValidatedLawpackBundle, LAWPACK_API_VERSION,
@@ -1842,8 +1840,7 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
 }
 
 fn portable_output_path_grammar(output: &str) -> bool {
-    !output.as_bytes().contains(&b'\\')
-        && output.split('/').all(|component| !component.is_empty())
+    !output.as_bytes().contains(&b'\\') && output.split('/').all(|component| !component.is_empty())
 }
 
 fn portable_output_component(component: Option<&str>) -> bool {
