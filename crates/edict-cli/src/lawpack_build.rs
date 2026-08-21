@@ -935,9 +935,62 @@ fn check_output(
     output: &Path,
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
+    check_output_with_hook(output, expected, || {})
+}
+
+fn check_output_with_hook(
+    output: &Path,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+    after_traversal: impl FnOnce(),
+) -> Result<(), LawpackBuildFailure> {
     let expected_owner = expected_output_owner(expected)?;
     validate_check_output_parent(output)?;
-    let basis = validate_owned_output(output, false, &expected_owner)?;
+    let parent_path = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputDrift",
+            "lawpack output has no parent directory".to_owned(),
+        )
+    })?;
+    let output_name = output.file_name().ok_or_else(|| {
+        failure(
+            "LawpackOutputDrift",
+            "lawpack output has no final path component".to_owned(),
+        )
+    })?;
+    let parent_dir = Dir::open_ambient_dir(parent_path, ambient_authority()).map_err(|error| {
+        failure(
+            "LawpackOutputDrift",
+            format!(
+                "failed to pin output parent `{}`: {error}",
+                parent_path.display()
+            ),
+        )
+    })?;
+    let output_dir = open_check_output_dir(&parent_dir, output_name, output)?;
+    let observed_identity = directory_identity(&output_dir, output)?;
+    let basis = validate_owned_output_dir(&output_dir, output, &expected_owner)?;
+    validate_output_tree(output, output_dir, expected)?;
+    after_traversal();
+    let current_output = open_check_output_dir(&parent_dir, output_name, output)?;
+    if directory_identity(&current_output, output)? != observed_identity
+        || validate_owned_output_dir(&current_output, output, &expected_owner)? != basis
+    {
+        return Err(failure(
+            "LawpackOutputDrift",
+            format!(
+                "lawpack output `{}` changed while it was being checked",
+                output.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_output_tree(
+    output: &Path,
+    output_dir: Dir,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<(), LawpackBuildFailure> {
     let mut permitted_directories = BTreeSet::new();
     for path in expected.keys() {
         let mut parent = path.parent();
@@ -951,14 +1004,14 @@ fn check_output(
     }
 
     let mut seen = BTreeSet::new();
-    let mut pending = vec![output.to_path_buf()];
-    while let Some(directory) = pending.pop() {
-        let entries = fs::read_dir(&directory).map_err(|error| {
+    let mut pending = vec![(output_dir, PathBuf::new())];
+    while let Some((directory, relative_directory)) = pending.pop() {
+        let entries = directory.entries().map_err(|error| {
             failure(
                 "LawpackOutputDrift",
                 format!(
                     "failed to inspect output `{}`: {error}",
-                    directory.display()
+                    output.join(&relative_directory).display()
                 ),
             )
         })?;
@@ -969,13 +1022,8 @@ fn check_output(
                     format!("failed to inspect output entry: {error}"),
                 )
             })?;
-            let entry_path = entry.path();
-            let relative = entry_path.strip_prefix(output).map_err(|error| {
-                failure(
-                    "LawpackOutputDrift",
-                    format!("failed to relativize output entry: {error}"),
-                )
-            })?;
+            let relative = relative_directory.join(entry.file_name());
+            let entry_path = output.join(&relative);
             let file_type = entry.file_type().map_err(|error| {
                 failure(
                     "LawpackOutputDrift",
@@ -983,15 +1031,31 @@ fn check_output(
                 )
             })?;
             if file_type.is_dir() {
-                if !permitted_directories.contains(relative) {
-                    return Err(unexpected_output_path(output, relative));
+                if !permitted_directories.contains(&relative) {
+                    return Err(unexpected_output_path(output, &relative));
                 }
-                pending.push(entry_path);
+                let child = entry.open_dir().map_err(|error| {
+                    failure(
+                        "LawpackOutputDrift",
+                        format!("failed to pin `{}`: {error}", entry_path.display()),
+                    )
+                })?;
+                pending.push((child, relative));
             } else if file_type.is_file() {
-                let Some(expected_bytes) = expected.get(relative) else {
-                    return Err(unexpected_output_path(output, relative));
+                let Some(expected_bytes) = expected.get(&relative) else {
+                    return Err(unexpected_output_path(output, &relative));
                 };
-                let bytes = read_bounded(
+                let file = entry
+                    .open()
+                    .map(cap_std::fs::File::into_std)
+                    .map_err(|error| {
+                        failure(
+                            "LawpackOutputDrift",
+                            format!("failed to pin `{}`: {error}", entry_path.display()),
+                        )
+                    })?;
+                let bytes = read_bounded_file(
+                    file,
                     &entry_path,
                     MAX_LAWPACK_ARTIFACT_BYTES,
                     "published lawpack artifact",
@@ -1006,9 +1070,9 @@ fn check_output(
                         ),
                     ));
                 }
-                seen.insert(relative.to_path_buf());
+                seen.insert(relative);
             } else {
-                return Err(unexpected_output_path(output, relative));
+                return Err(unexpected_output_path(output, &relative));
             }
         }
     }
@@ -1021,16 +1085,89 @@ fn check_output(
             ),
         ));
     }
-    if validate_owned_output(output, false, &expected_owner)? != basis {
-        return Err(failure(
+    Ok(())
+}
+
+fn open_check_output_dir(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    output: &Path,
+) -> Result<Dir, LawpackBuildFailure> {
+    let metadata = parent.symlink_metadata(output_name).map_err(|error| {
+        failure(
             "LawpackOutputDrift",
+            format!("failed to inspect output `{}`: {error}", output.display()),
+        )
+    })?;
+    if !metadata.is_dir() || metadata.is_symlink() {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
             format!(
-                "lawpack output `{}` changed while it was being checked",
+                "lawpack output `{}` must be a real directory",
                 output.display()
             ),
         ));
     }
-    Ok(())
+    parent.open_dir(output_name).map_err(|error| {
+        failure(
+            "LawpackOutputDrift",
+            format!("failed to pin output `{}`: {error}", output.display()),
+        )
+    })
+}
+
+#[cfg(any(unix, target_os = "wasi", target_os = "vxworks"))]
+fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), LawpackBuildFailure> {
+    use cap_std::fs::MetadataExt as _;
+
+    let metadata = directory.dir_metadata().map_err(|error| {
+        failure(
+            "LawpackOutputDrift",
+            format!(
+                "failed to identify output directory `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), LawpackBuildFailure> {
+    use std::os::windows::fs::MetadataExt as _;
+
+    let metadata = directory
+        .try_clone()
+        .map(Dir::into_std_file)
+        .and_then(|file| file.metadata())
+        .map_err(|error| {
+            failure(
+                "LawpackOutputDrift",
+                format!(
+                    "failed to identify output directory `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+    let volume = metadata.volume_serial_number().ok_or_else(|| {
+        failure(
+            "LawpackOutputDrift",
+            format!(
+                "output directory `{}` has no stable volume identity",
+                output.display()
+            ),
+        )
+    })?;
+    let index = metadata.file_index().ok_or_else(|| {
+        failure(
+            "LawpackOutputDrift",
+            format!(
+                "output directory `{}` has no stable file identity",
+                output.display()
+            ),
+        )
+    })?;
+    Ok((u64::from(volume), index))
 }
 
 fn validate_check_output_parent(output: &Path) -> Result<(), LawpackBuildFailure> {
@@ -1472,83 +1609,6 @@ fn expected_output_owner(
     Ok((index.lawpack_id, index.lawpack_version))
 }
 
-fn validate_owned_output(
-    output: &Path,
-    allow_missing: bool,
-    expected_owner: &(String, String),
-) -> Result<Option<Vec<u8>>, LawpackBuildFailure> {
-    let metadata = match fs::symlink_metadata(output) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == ErrorKind::NotFound && allow_missing => return Ok(None),
-        Err(error) if error.kind() == ErrorKind::NotFound => {
-            return Err(failure(
-                "LawpackOutputDrift",
-                format!("lawpack output `{}` does not exist", output.display()),
-            ));
-        }
-        Err(error) => {
-            return Err(failure(
-                "LawpackOutputOwnershipFailed",
-                format!("failed to inspect output `{}`: {error}", output.display()),
-            ));
-        }
-    };
-    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-        return Err(failure(
-            "LawpackOutputOwnershipFailed",
-            format!(
-                "lawpack output `{}` must be a real directory",
-                output.display()
-            ),
-        ));
-    }
-    let mut entries = fs::read_dir(output).map_err(|error| {
-        failure(
-            "LawpackOutputOwnershipFailed",
-            format!("failed to inspect output `{}`: {error}", output.display()),
-        )
-    })?;
-    if entries.next().is_none() {
-        return Ok(None);
-    }
-    let index_path = output.join(OUTPUT_INDEX_FILE);
-    let index_metadata = fs::symlink_metadata(&index_path).map_err(|error| {
-        failure(
-            "LawpackOutputOwnershipFailed",
-            format!("failed to inspect output ownership index: {error}"),
-        )
-    })?;
-    if !index_metadata.is_file() || index_metadata.file_type().is_symlink() {
-        return Err(failure(
-            "LawpackOutputOwnershipFailed",
-            "output ownership index must be a real regular file".to_owned(),
-        ));
-    }
-    let index_bytes = read_bounded(
-        &index_path,
-        MAX_LAWPACK_ARTIFACT_BYTES,
-        "lawpack output ownership index",
-        "LawpackOutputOwnershipFailed",
-    )?;
-    let index = serde_json::from_slice::<ExistingOutputIndex>(&index_bytes).map_err(|error| {
-        failure(
-            "LawpackOutputOwnershipFailed",
-            format!("invalid output ownership index: {error}"),
-        )
-    })?;
-    validate_existing_index(&index)?;
-    if (&index.lawpack_id, &index.lawpack_version) != (&expected_owner.0, &expected_owner.1) {
-        return Err(failure(
-            "LawpackOutputOwnershipFailed",
-            format!(
-                "output is owned by {}@{}, not {}@{}",
-                index.lawpack_id, index.lawpack_version, expected_owner.0, expected_owner.1
-            ),
-        ));
-    }
-    Ok(Some(index_bytes))
-}
-
 fn validate_owned_output_dir(
     output_dir: &Dir,
     output: &Path,
@@ -1842,12 +1902,13 @@ fn first_authoring_failure(failures: Vec<LawpackAuthoringFailure>) -> LawpackBui
 #[cfg(test)]
 mod tests {
     use super::{
-        acquire_output_ancestor_locks, build_lawpack, check_output, decode_lawpack_document,
-        encode_output_index, load_dependencies, load_dependencies_with_hook, output_lock_path,
-        publish_output, publish_output_with_capture_hook, publish_output_with_hook,
-        publish_output_with_hooks, publish_output_with_hooks_in_authority, read_output_tree,
-        resolve_output_directory, revalidate_output_parent_chain, validate_generated_artifact_size,
-        LawpackBuildFailure, LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        acquire_output_ancestor_locks, build_lawpack, check_output, check_output_with_hook,
+        decode_lawpack_document, encode_output_index, load_dependencies,
+        load_dependencies_with_hook, output_lock_path, publish_output,
+        publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
+        publish_output_with_hooks_in_authority, read_output_tree, resolve_output_directory,
+        revalidate_output_parent_chain, validate_generated_artifact_size, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
         MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::BTreeMap;
@@ -2260,6 +2321,50 @@ mod tests {
         assert_eq!(
             test_err(check_output(&output, &expected), "drift rejects").kind,
             "LawpackOutputDrift"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn check_only_rejects_output_directory_identity_substitution() {
+        let root = temp_tree("check-directory-identity");
+        let output = root.join("generated");
+        let observed = root.join("observed");
+        let substitute = root.join("substitute");
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        test_ok(publish_output(&output, &expected), "publish expected set");
+        test_ok(fs::create_dir(&substitute), "create substitute output");
+        for (relative, bytes) in &expected {
+            let bytes = if relative.as_os_str() == "one" {
+                b"drift".as_slice()
+            } else {
+                bytes.as_slice()
+            };
+            test_ok(
+                fs::write(substitute.join(relative), bytes),
+                "write substitute output",
+            );
+        }
+
+        let error = test_err(
+            check_output_with_hook(&output, &expected, || {
+                test_ok(fs::rename(&output, &observed), "move observed output");
+                test_ok(
+                    fs::rename(&substitute, &output),
+                    "install substitute output",
+                );
+            }),
+            "directory substitution rejects",
+        );
+
+        assert_eq!(error.kind, "LawpackOutputDrift");
+        assert_eq!(
+            test_ok(fs::read(output.join("one")), "read substitute artifact"),
+            b"drift"
+        );
+        assert_eq!(
+            test_ok(read_output_tree(&observed), "read observed output"),
+            expected
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
