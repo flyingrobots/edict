@@ -65,9 +65,9 @@ coordination, or dependency I/O. Raw output-directory paths use one portable
 for every derived lock filename. Dependency paths are canonicalized before
 overlap checks, so a symlink cannot route an input back under the replaceable
 output tree. A check-only build does not repair the owned artifact tree and
-reports `LawpackOutputDrift` unless the complete existing tree is byte-identical.
-It creates no directories or lock files and rechecks the ownership basis after
-traversal:
+reports `LawpackOutputDrift` unless the complete existing tree is
+byte-identical. It creates no directories or lock files and rechecks the
+ownership basis after traversal:
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json","checkOnly":true}
