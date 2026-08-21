@@ -149,8 +149,10 @@ index. Within one document-root publication namespace, Edict acquires shared
 intent locks for proper output ancestors in top-down order and an exclusive lock
 for the output itself. Sibling output footprints can publish concurrently;
 identical and parent/child footprints conflict. Ownership and the real-directory
-ancestor chain are rechecked after intent acquisition and before staging or
-activation. Check-only performs no locking or filesystem mutation. Concurrent
+ancestor chain are rechecked after intent acquisition. The publication root and
+output parent are then pinned as capability directories, so staging, activation,
+rollback, and cleanup cannot be redirected by a later ambient-path replacement.
+Check-only performs no locking or filesystem mutation. Concurrent
 overlapping publication from different document roots is outside one namespace
 and must be avoided by the caller.
 

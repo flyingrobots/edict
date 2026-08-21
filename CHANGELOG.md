@@ -53,7 +53,8 @@ versions still track specification maturity rather than a released product.
   portable filename policy, proper
   ancestor intent locks are acquired top-down and shared by disjoint sibling
   outputs, and ownership and real-directory confinement are rechecked before
-  activation, fixed-length clock-independent transaction names keep every
+  activation while capability-directory handles anchor every later mutation,
+  fixed-length clock-independent transaction names keep every
   accepted output component publishable, internal publication names are
   reserved from output directories, so only overlapping output footprints conflict,
   lawpack-authored JSON accepts a scalar at a 48-container boundary while

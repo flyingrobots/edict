@@ -52,8 +52,11 @@ owned artifacts. It refuses a non-empty unowned directory or a symlinked
 ownership index, and it refuses to place one owned output inside another owned
 lawpack tree. Write builds acquire shared intent locks for proper ancestors and
 an exclusive lock for the output itself, so disjoint sibling outputs remain
-parallel while parent/child or identical output footprints conflict. The
-document directory is the publication namespace; callers must not concurrently
+parallel while parent/child or identical output footprints conflict. After
+coordination, Edict pins the publication root and output parent as capability
+directories; staging, activation, rollback, and cleanup cannot follow a later
+ambient-path replacement. The document directory is the publication namespace;
+callers must not concurrently
 publish overlapping trees from different document roots. Pure preflight derives
 fixed artifacts and sidecars and
 rejects reserved namespaces, duplicates, ancestor collisions, filesystem NUL,
