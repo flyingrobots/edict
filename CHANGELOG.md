@@ -36,7 +36,8 @@ versions still track specification maturity rather than a released product.
   manifests, exports, adapters, local resources, and digest sidecars through
   the existing public decoders and complete dependency-graph validator.
   JSONL `build` requests support transactional owned-directory replacement and
-  non-repairing `checkOnly` drift detection under the publication lock. A
+  non-repairing, filesystem-read-only `checkOnly` drift detection with a
+  before/after ownership-basis check. A
   standalone external witness authors the workspace-snapshot closure without
   `xtask`, reproduces its reviewed
   bytes, and feeds those exact generated artifacts into the public application
@@ -48,10 +49,10 @@ versions still track specification maturity rather than a released product.
   invalid settings, artifact paths containing filesystem NUL bytes reject
   before output or dependency I/O, the pure preflight includes fixed artifacts,
   sidecars, reserved namespaces, duplicates, and ancestor collisions, artifact
-  paths follow a lowercase portable filename policy, and one blocking
-  environment-independent physical-ancestor coordinator covers document-root
-  boundaries before proper ancestor output locks are acquired top-down and
-  ownership is rechecked, so outputs cannot race into another owned lawpack tree,
+  paths follow a length-bounded lowercase portable filename policy, proper
+  ancestor intent locks are acquired top-down and shared by disjoint sibling
+  outputs, and ownership and real-directory confinement are rechecked before
+  activation, so only overlapping output footprints conflict,
   canonical JSON accepts a scalar at the
   exact 128-container boundary while accounting for enclosing export
   structures, emitted artifact-path collision checks use an ordering-independent

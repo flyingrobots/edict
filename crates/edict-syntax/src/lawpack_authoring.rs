@@ -25,6 +25,8 @@ pub const LAWPACK_AUTHORING_API_VERSION: &str = "edict.lawpack-authoring/v1";
 
 const LAWPACK_OUTPUT_INDEX_PATH: &str = "edict.lawpack-output.json";
 const EXPORT_VALUE_CANONICAL_ENCLOSING_DEPTH: usize = 3;
+const MAX_PORTABLE_OUTPUT_COMPONENT_BYTES: usize = 253;
+const MAX_PORTABLE_RELATIVE_OUTPUT_BYTES: usize = 1022;
 
 /// Stable lawpack-authoring failure categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1816,6 +1818,7 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
             .extension()
             .and_then(|extension| extension.to_str())
             != Some("cbor")
+        || output.len() > MAX_PORTABLE_RELATIVE_OUTPUT_BYTES
         || !output_path.components().all(|component| match component {
             Component::Normal(component) => portable_output_component(component.to_str()),
             _ => false,
@@ -1824,7 +1827,7 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
         return Err(one(failure(
             LawpackAuthoringFailureKind::InvalidOutputPath,
             path,
-            "a lowercase portable relative UTF-8 `.cbor` path without parent traversal or reserved filesystem names",
+            "a bounded lowercase portable relative UTF-8 `.cbor` path without parent traversal or reserved filesystem names",
         )));
     }
     Ok(())
@@ -1835,6 +1838,8 @@ fn portable_output_component(component: Option<&str>) -> bool {
         return false;
     };
     if component.is_empty()
+        || component.len() > MAX_PORTABLE_OUTPUT_COMPONENT_BYTES
+        || component.ends_with('.')
         || !component.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)
         })

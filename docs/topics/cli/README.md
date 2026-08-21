@@ -50,21 +50,21 @@ Edict-owned generated tree identified by `edict.lawpack-output.json`. A write
 build replaces that complete tree transactionally and therefore removes stale
 owned artifacts. It refuses a non-empty unowned directory or a symlinked
 ownership index, and it refuses to place one owned output inside another owned
-lawpack tree. Proper ancestor output locks are acquired top-down, ownership is
-rechecked under those locks, and the locks remain held through check or
-publication so parent and nested builds cannot race over the same tree.
-One blocking coordinator at the highest writable physical ancestor, selected
-independently of process temporary-directory settings, extends that exclusion
-across different build-document roots and deliberately serializes lawpack write
-and check operations. Pure preflight derives fixed artifacts and sidecars and
+lawpack tree. Write builds acquire shared intent locks for proper ancestors and
+an exclusive lock for the output itself, so disjoint sibling outputs remain
+parallel while parent/child or identical output footprints conflict. The
+document directory is the publication namespace; callers must not concurrently
+publish overlapping trees from different document roots. Pure preflight derives
+fixed artifacts and sidecars and
 rejects reserved namespaces, duplicates, ancestor collisions, filesystem NUL,
-nonportable names, and case aliases before output inspection, coordination, or
+nonportable names, trailing-dot aliases, overlong paths, and case aliases before
+output inspection, coordination, or
 dependency I/O.
 Dependency paths are canonicalized before overlap checks, so a
 symlink cannot route an input back under the replaceable output tree. A check-only build
 does not repair the owned artifact tree and reports `LawpackOutputDrift` unless
-the complete existing tree is byte-identical; it may create the persistent
-sibling lock file used as coordination state:
+the complete existing tree is byte-identical. It creates no directories or
+lock files and rechecks the ownership basis after traversal:
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json","checkOnly":true}

@@ -90,9 +90,9 @@ Use `checkOnly` in CI or before committing vendored output:
 ```
 
 Check-only mode performs the same bounded reads, construction, decoding, and
-closure validation, then compares the complete output tree byte for byte under
-the publication lock. It never repairs or changes the owned artifact tree; it
-may create the persistent sibling lock file used only for coordination.
+closure validation, then compares the complete output tree byte for byte and
+rechecks its ownership basis. It never repairs or changes the owned artifact
+tree and creates no parent directories or lock files.
 Missing, changed, or extra output is `LawpackOutputDrift`.
 
 ## Resource And Dependency Identity
@@ -137,18 +137,18 @@ directory, activates the replacement, and restores the old directory if
 activation fails. A later successful build replaces the whole owned directory,
 so artifacts removed from the definition cannot survive as stale output. An
 output cannot be nested beneath an ancestor containing another lawpack output
-index. Edict acquires every proper ancestor output lock in top-down order,
-rechecks ancestor ownership while holding those locks, and retains them through
-check or publication. Parent and child builds therefore cannot use different
-locks to race across overlapping replacement trees. A blocking common
-publication coordinator is placed at the highest writable physical ancestor,
-independent of `TMPDIR` or other process environment, then acquired before
-output inspection and held through completion. Parent and child builds therefore
-select the same coordinator even when their documents have different roots.
-This deliberately serializes lawpack write and check operations across those roots.
+index. Within one document-root publication namespace, Edict acquires shared
+intent locks for proper output ancestors in top-down order and an exclusive lock
+for the output itself. Sibling output footprints can publish concurrently;
+identical and parent/child footprints conflict. Ownership and the real-directory
+ancestor chain are rechecked after intent acquisition and before staging or
+activation. Check-only performs no locking or filesystem mutation. Concurrent
+overlapping publication from different document roots is outside one namespace
+and must be avoided by the caller.
 
-An existing non-empty directory without a valid `edict.lawpack-output/v1`
-index is refused rather than deleted. Output paths and input dependency paths
+An existing non-empty directory without a valid
+`edict.lawpack-output.json` ownership index (schema
+`edict.lawpack-output/v1`) is refused rather than deleted. Output paths and input dependency paths
 must be confined relative paths, and dependency inputs must remain outside the
 owned output tree. Existing symlink traversal is rejected. Authored files may
 not collide by using another file as a parent, and the ownership-index path is
@@ -159,9 +159,10 @@ expand. Pure preflight derives the fixed manifest and exports, every authored
 artifact, every digest sidecar, and the reserved ownership-index namespace, then
 rejects duplicates and file/descendant collisions immediately after the build
 document is decoded and before output inspection, coordination, or dependency
-filesystem I/O. Output components use lowercase ASCII letters, digits, `.`,
-`_`, and `-`, and reject Windows device names, filesystem NUL, case aliases,
-and platform-specific forbidden punctuation.
+filesystem I/O. Output components use bounded lowercase ASCII letters, digits,
+`.`, `_`, and `-`, and reject Windows device names, filesystem NUL, case
+aliases, trailing-dot aliases, overlong components or relative paths, and
+platform-specific forbidden punctuation.
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
@@ -176,14 +177,13 @@ earlier review value. Check-only traversal accepts only directories needed by
 expected artifacts and rejects an unexpected file before reading its contents,
 so drift cannot force accumulation of an arbitrary output tree in memory. A
 missing nested output parent is reported as `LawpackOutputDrift` without
-creating that parent or the sibling publication lock.
+creating that parent or a sibling publication lock. A successful check rereads
+the ownership index after traversal and reports drift if its basis changed.
 
-A persistent hidden lock file is kept beside the output directory so concurrent
-processes cannot acquire locks on different inodes while the directory itself
-is replaced; it is coordination state, not a canonical lawpack artifact, and
-should remain untracked. A second persistent lock at the highest writable
-physical ancestor is the common cross-root publication coordinator; it is also
-non-canonical coordination state. Activation is the publication commit point. Failure to
+A persistent hidden lock file is kept beside each write output and its proper
+ancestors. These files are footprint-coordination state, not canonical lawpack
+artifacts, and should remain untracked. There is no process-wide, host-wide, or
+filesystem-wide publication coordinator. Activation is the publication commit point. Failure to
 remove the hidden previous-tree backup after activation does not turn a
 committed replacement into a failed command; that backup is best-effort cleanup
 state and may be removed by the operator.

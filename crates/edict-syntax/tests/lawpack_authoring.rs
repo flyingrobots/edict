@@ -66,6 +66,26 @@ fn nested_arrays(container_count: usize) -> serde_json::Value {
     value
 }
 
+fn pure_body_with_nested_conditionals(conditional_count: usize) -> serde_json::Value {
+    let leaf = serde_json::json!({
+        "kind": "const",
+        "value": {"kind": "int", "width": "U64", "value": 1}
+    });
+    let mut result = leaf.clone();
+    for _ in 0..conditional_count {
+        result = serde_json::json!({
+            "kind": "if",
+            "predicate": {"kind": "true"},
+            "then": result,
+            "else": leaf
+        });
+    }
+    serde_json::json!({
+        "params": [],
+        "body": {"locals": [], "bindings": [], "result": result}
+    })
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "one review fixture keeps the complete v1 authoring surface visible"
@@ -475,6 +495,7 @@ fn deeply_nested_canonical_values_reject_before_stack_exhaustion() {
 #[test]
 fn export_values_account_for_their_enclosing_canonical_containers() {
     const EXPORT_ENCLOSING_CONTAINERS: usize = 3;
+    const PURE_BODY_BASE_CONTAINERS: usize = 4;
     let at_limit = nested_arrays(MAX_CANONICAL_NESTING_DEPTH - EXPORT_ENCLOSING_CONTAINERS);
     let over_limit = serde_json::json!([at_limit.clone()]);
 
@@ -502,8 +523,23 @@ fn export_values_account_for_their_enclosing_canonical_containers() {
         }))
         .expect("typed Edict helper")
     };
+    let pure_at_limit = pure_body_with_nested_conditionals(
+        MAX_CANONICAL_NESTING_DEPTH - EXPORT_ENCLOSING_CONTAINERS - PURE_BODY_BASE_CONTAINERS,
+    );
+    let pure_over_limit = serde_json::json!([pure_at_limit.clone()]);
     let mut pure = full_definition();
-    pure.exports.pure_functions = vec![edict_helper(over_limit)];
+    pure.exports.pure_functions = vec![edict_helper(pure_at_limit)];
+    std::thread::Builder::new()
+        .name("pure-body-depth-limit".to_owned())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(move || author_lawpack(&pure, &[]))
+        .expect("spawn bounded-depth validation")
+        .join()
+        .expect("bounded-depth validation does not exhaust its stack")
+        .expect("pure body at complete artifact depth limit succeeds");
+
+    let mut pure = full_definition();
+    pure.exports.pure_functions = vec![edict_helper(pure_over_limit)];
     let failures = author_lawpack(&pure, &[]).expect_err("over-deep pure body rejects early");
     assert_eq!(failures.len(), 1);
     assert_eq!(
@@ -572,12 +608,15 @@ fn artifact_paths_reject_file_ancestors_and_the_ownership_index_namespace() {
     );
 
     for output in [
-        "resources/Config.cbor",
-        "resources/bad:name.cbor",
-        "con.cbor",
+        "resources/Config.cbor".to_owned(),
+        "resources/bad:name.cbor".to_owned(),
+        "resources./bad.cbor".to_owned(),
+        "con.cbor".to_owned(),
+        format!("resources/{}.cbor", "x".repeat(249)),
+        format!("{}/bad.cbor", "nested/".repeat(160)),
     ] {
         let mut nonportable = full_definition();
-        nonportable.local_resources[0].output = output.to_owned();
+        nonportable.local_resources[0].output = output.clone();
         let failures = author_lawpack(&nonportable, &[])
             .expect_err("nonportable filesystem path rejects during authoring");
         assert_eq!(
