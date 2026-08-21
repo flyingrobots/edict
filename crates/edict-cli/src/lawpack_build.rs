@@ -232,7 +232,11 @@ pub(crate) fn build_lawpack(
     let document = decode_lawpack_document(&document_bytes)?;
     validate_document(&document)?;
     preflight_lawpack_authoring_paths(&document.lawpack).map_err(first_authoring_failure)?;
-    let output = resolve_output_directory(root, &document.output_directory)?;
+    let output = if check_only {
+        resolve_check_output_directory(root, &document.output_directory)?
+    } else {
+        resolve_output_directory(root, &document.output_directory)?
+    };
     let dependencies = load_dependencies(root, &document.dependency_bundles, &output)?;
     let authored =
         author_lawpack(&document.lawpack, &dependencies).map_err(first_authoring_failure)?;
@@ -643,6 +647,21 @@ fn read_bounded_in(
 }
 
 fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, LawpackBuildFailure> {
+    resolve_output_directory_with_inspection_kind(root, relative, "LawpackOutputWriteFailed")
+}
+
+fn resolve_check_output_directory(
+    root: &Path,
+    relative: &str,
+) -> Result<PathBuf, LawpackBuildFailure> {
+    resolve_output_directory_with_inspection_kind(root, relative, "LawpackOutputOwnershipFailed")
+}
+
+fn resolve_output_directory_with_inspection_kind(
+    root: &Path,
+    relative: &str,
+    inspection_kind: &'static str,
+) -> Result<PathBuf, LawpackBuildFailure> {
     validate_output_directory_path(relative)?;
     let relative = Path::new(relative);
     let mut current = root.to_path_buf();
@@ -668,7 +687,7 @@ fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, Lawp
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => {
                 return Err(failure(
-                    "LawpackOutputWriteFailed",
+                    inspection_kind,
                     format!(
                         "failed to inspect outputDirectory `{}`: {error}",
                         current.display()
@@ -677,11 +696,15 @@ fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, Lawp
             }
         }
     }
-    reject_owned_output_ancestor(root, &current)?;
+    reject_owned_output_ancestor(root, &current, inspection_kind)?;
     Ok(current)
 }
 
-fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), LawpackBuildFailure> {
+fn reject_owned_output_ancestor(
+    root: &Path,
+    output: &Path,
+    inspection_kind: &'static str,
+) -> Result<(), LawpackBuildFailure> {
     let mut ancestor = output.parent();
     while let Some(directory) = ancestor {
         if !directory.starts_with(root) {
@@ -701,7 +724,7 @@ fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), Lawpac
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => {
                 return Err(failure(
-                    "LawpackOutputWriteFailed",
+                    inspection_kind,
                     format!(
                         "failed to inspect output ancestor `{}`: {error}",
                         directory.display()
@@ -2239,10 +2262,10 @@ mod tests {
         open_dependency_input_with_hook, output_lock_path, publish_output,
         publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
-        read_output_tree, resolve_output_directory, validate_check_output_parent_chain,
-        validate_generated_artifact_size, validate_owned_output_dir_with_hook, LawpackBuildFailure,
-        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
-        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        read_output_tree, resolve_check_output_directory, resolve_output_directory,
+        validate_check_output_parent_chain, validate_generated_artifact_size,
+        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
+        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3452,6 +3475,25 @@ mod tests {
             test_err(
                 validate_check_output_parent_chain(&root, &file_parent.join("generated")),
                 "non-directory check-only ancestor rejects ownership",
+            )
+            .kind,
+            "LawpackOutputOwnershipFailed"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn check_only_output_resolution_uses_read_only_failure_kinds() {
+        let root = temp_tree("check-resolution-kinds");
+        test_ok(
+            fs::write(root.join("file-parent"), b"not a directory"),
+            "write file parent",
+        );
+
+        assert_eq!(
+            test_err(
+                resolve_check_output_directory(&root, "file-parent/generated"),
+                "check-only resolution rejects non-directory ancestor",
             )
             .kind,
             "LawpackOutputOwnershipFailed"

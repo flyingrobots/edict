@@ -105,7 +105,8 @@ observation.
 Missing, changed, or extra output is `LawpackOutputDrift`.
 Missing output ancestors also report `LawpackOutputDrift`; non-directory or
 symlinked ancestors report `LawpackOutputOwnershipFailed`. Check-only never
-reports `LawpackOutputWriteFailed` because it performs no publication. Its
+reports `LawpackOutputWriteFailed` because it performs no publication,
+including during initial output-path resolution. Its
 parent-chain gate rejects every component that is not a normal relative name.
 
 ## Resource And Dependency Identity
