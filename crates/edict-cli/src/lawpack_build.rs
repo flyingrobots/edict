@@ -4444,7 +4444,7 @@ mod tests {
             std::process::id()
         ));
         test_ok(fs::create_dir_all(&path), "create test tree");
-        path
+        test_ok(fs::canonicalize(path), "canonicalize test tree")
     }
 
     fn test_ok<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
