@@ -418,6 +418,17 @@ fn open_dependency_input(
     relative_output: &Path,
     field: &str,
 ) -> Result<OpenedDependencyInput, LawpackBuildFailure> {
+    open_dependency_input_with_hook(root_dir, root, relative, relative_output, field, || {})
+}
+
+fn open_dependency_input_with_hook(
+    root_dir: &Dir,
+    root: &Path,
+    relative: &Path,
+    relative_output: &Path,
+    field: &str,
+    after_inspection: impl FnOnce(),
+) -> Result<OpenedDependencyInput, LawpackBuildFailure> {
     validate_relative_path(relative, field)?;
     if relative.starts_with(relative_output) {
         return Err(failure(
@@ -458,8 +469,11 @@ fn open_dependency_input(
             ),
         ));
     }
+    after_inspection();
+    let mut options = CapOpenOptions::new();
+    options.read(true).follow(FollowSymlinks::No);
     let file = directory
-        .open(name)
+        .open_with(name, &options)
         .map(cap_std::fs::File::into_std)
         .map_err(|error| {
             failure(
@@ -518,7 +532,7 @@ fn open_dependency_parent(
                 ),
             ));
         }
-        directory = directory.open_dir(name).map_err(|error| {
+        directory = directory.open_dir_nofollow(name).map_err(|error| {
             failure(
                 "LawpackArtifactReadFailed",
                 format!(
@@ -2108,13 +2122,13 @@ mod tests {
         acquire_output_ancestor_locks, build_lawpack, check_output,
         check_output_in_root_with_hooks, check_output_with_hook, decode_lawpack_document,
         encode_output_index, load_dependencies, load_dependencies_with_hook,
-        open_check_root_with_hook, output_lock_path, publish_output,
-        publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
-        publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
-        read_output_tree, resolve_output_directory, validate_check_output_parent_chain,
-        validate_generated_artifact_size, validate_owned_output_dir_with_hook, LawpackBuildFailure,
-        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
-        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        open_check_root_with_hook, open_dependency_input_with_hook, output_lock_path,
+        publish_output, publish_output_with_capture_hook, publish_output_with_hook,
+        publish_output_with_hooks, publish_output_with_hooks_in_authority,
+        publish_output_with_hooks_in_root, read_output_tree, resolve_output_directory,
+        validate_check_output_parent_chain, validate_generated_artifact_size,
+        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
+        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
@@ -3431,6 +3445,56 @@ mod tests {
 
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].manifest().id, "workspace.snapshot");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dependency_file_substituted_with_a_symlink_after_inspection_rejects() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("dependency-file-inspection-race");
+        let dependencies = root.join("dependencies");
+        let manifest = dependencies.join("manifest.cbor");
+        let displaced_manifest = dependencies.join("displaced-manifest.cbor");
+        let alternate_manifest = dependencies.join("alternate-manifest.cbor");
+        test_ok(fs::create_dir(&dependencies), "create dependency directory");
+        test_ok(fs::write(&manifest, b"admitted"), "write admitted manifest");
+        test_ok(
+            fs::write(&alternate_manifest, b"substitute"),
+            "write alternate manifest",
+        );
+        let root_dir = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open dependency root",
+        );
+
+        let result = open_dependency_input_with_hook(
+            &root_dir,
+            &root,
+            std::path::Path::new("dependencies/manifest.cbor"),
+            std::path::Path::new("generated"),
+            "dependencyBundles.0.manifest",
+            || {
+                test_ok(
+                    fs::rename(&manifest, &displaced_manifest),
+                    "displace admitted manifest",
+                );
+                test_ok(
+                    symlink("alternate-manifest.cbor", &manifest),
+                    "substitute manifest symlink",
+                );
+            },
+        );
+
+        assert!(
+            result.is_err(),
+            "post-inspection dependency link must reject"
+        );
+        assert_eq!(
+            test_ok(fs::read(&displaced_manifest), "read displaced manifest"),
+            b"admitted"
+        );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
