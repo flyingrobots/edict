@@ -56,19 +56,18 @@ parallel while parent/child or identical output footprints conflict. After
 coordination, Edict pins the publication root and output parent as capability
 directories; staging, activation, rollback, and cleanup cannot follow a later
 ambient-path replacement. The document directory is the publication namespace;
-callers must not concurrently
-publish overlapping trees from different document roots. Pure preflight derives
-fixed artifacts and sidecars and
-rejects reserved namespaces, duplicates, ancestor collisions, filesystem NUL,
-nonportable names, trailing-dot aliases, overlong paths, and case aliases before
-output inspection, coordination, or dependency I/O. Raw output-directory paths
-use one portable `/`-separated grammar, reserve internal names
-case-insensitively, and leave room for every derived lock filename.
-Dependency paths are canonicalized before overlap checks, so a
-symlink cannot route an input back under the replaceable output tree. A check-only build
-does not repair the owned artifact tree and reports `LawpackOutputDrift` unless
-the complete existing tree is byte-identical. It creates no directories or
-lock files and rechecks the ownership basis after traversal:
+callers must not concurrently publish overlapping trees from different document
+roots. Pure preflight derives fixed artifacts and sidecars and rejects reserved
+namespaces, duplicates, ancestor collisions, filesystem NUL, nonportable names,
+trailing-dot aliases, overlong paths, and case aliases before output inspection,
+coordination, or dependency I/O. Raw output-directory paths use one portable
+`/`-separated grammar, reserve internal names case-insensitively, and leave room
+for every derived lock filename. Dependency paths are canonicalized before
+overlap checks, so a symlink cannot route an input back under the replaceable
+output tree. A check-only build does not repair the owned artifact tree and
+reports `LawpackOutputDrift` unless the complete existing tree is byte-identical.
+It creates no directories or lock files and rechecks the ownership basis after
+traversal:
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json","checkOnly":true}

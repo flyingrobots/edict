@@ -145,24 +145,25 @@ could alias Edict's `.edict-lawpack-...` transaction names or hidden
 `.*.edict-lawpack-build.lock` coordination files are reserved case-insensitively
 and reject before filesystem access. Raw output-directory paths use `/` as their
 only separator, reject empty and platform-reserved components, and cap each
-component at 229 bytes so its derived lock name remains portable. An
-output cannot be nested beneath an ancestor containing another lawpack output
-index. Within one document-root publication namespace, Edict acquires shared
+component at 229 bytes so its derived lock name remains portable. An output
+cannot be nested beneath an ancestor containing another lawpack output index.
+Within one document-root publication namespace, Edict acquires shared
 intent locks for proper output ancestors in top-down order and an exclusive lock
 for the output itself. Sibling output footprints can publish concurrently;
 identical and parent/child footprints conflict. Ownership and the real-directory
 ancestor chain are rechecked after intent acquisition. The publication root and
 output parent are then pinned as capability directories, so staging, activation,
 rollback, and cleanup cannot be redirected by a later ambient-path replacement.
-Check-only performs no locking or filesystem mutation. Concurrent
-overlapping publication from different document roots is outside one namespace
-and must be avoided by the caller.
+Check-only performs no locking or filesystem mutation. Concurrent overlapping
+publication from different document roots is outside one namespace and must be
+avoided by the caller.
 
 An existing non-empty directory without a valid
 `edict.lawpack-output.json` ownership index (schema
-`edict.lawpack-output/v1`) is refused rather than deleted. Output paths and input dependency paths
-must be confined relative paths, and dependency inputs must remain outside the
-owned output tree. Existing symlink traversal is rejected. Authored files may
+`edict.lawpack-output/v1`) is refused rather than deleted. Output paths and
+input dependency paths must be confined relative paths, and dependency inputs
+must remain outside the owned output tree. Existing symlink traversal is
+rejected. Authored files may
 not collide by using another file as a parent, and the ownership-index path is
 reserved for Edict. Edict indexes every emitted file path and checks each
 proper ancestor against that set, so duplicate and file/descendant collisions
