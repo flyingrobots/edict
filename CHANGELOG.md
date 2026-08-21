@@ -49,7 +49,8 @@ versions still track specification maturity rather than a released product.
   invalid settings, artifact paths containing filesystem NUL bytes reject
   before output or dependency I/O, the pure preflight includes fixed artifacts,
   sidecars, reserved namespaces, duplicates, and ancestor collisions, artifact
-  paths follow a length-bounded lowercase portable filename policy, proper
+  paths follow a raw `/`-separated, alias-free, length-bounded lowercase
+  portable filename policy, proper
   ancestor intent locks are acquired top-down and shared by disjoint sibling
   outputs, and ownership and real-directory confinement are rechecked before
   activation, so only overlapping output footprints conflict,

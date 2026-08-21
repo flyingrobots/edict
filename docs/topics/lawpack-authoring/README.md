@@ -164,7 +164,8 @@ document is decoded and before output inspection, coordination, or dependency
 filesystem I/O. Output components use bounded lowercase ASCII letters, digits,
 `.`, `_`, and `-`, and reject Windows device names, filesystem NUL, case
 aliases, trailing-dot aliases, overlong components or relative paths, and
-platform-specific forbidden punctuation.
+platform-specific forbidden punctuation. Only `/` separates non-empty raw path
+components; backslashes and repeated separators reject before host path parsing.
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when

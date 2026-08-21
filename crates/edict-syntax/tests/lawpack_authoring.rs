@@ -613,6 +613,8 @@ fn artifact_paths_reject_file_ancestors_and_the_ownership_index_namespace() {
     for output in [
         "resources/Config.cbor".to_owned(),
         "resources/bad:name.cbor".to_owned(),
+        "resources\\item.cbor".to_owned(),
+        "resources//item.cbor".to_owned(),
         "resources./bad.cbor".to_owned(),
         "con.cbor".to_owned(),
         format!("resources/{}.cbor", "x".repeat(249)),

@@ -1811,6 +1811,7 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
     let output_path = Path::new(output);
     if output.is_empty()
         || output.as_bytes().contains(&0)
+        || !portable_output_path_grammar(output)
         || output_path.is_absolute()
         || output_path.components().any(|component| {
             matches!(
@@ -1838,6 +1839,11 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
         )));
     }
     Ok(())
+}
+
+fn portable_output_path_grammar(output: &str) -> bool {
+    !output.as_bytes().contains(&b'\\')
+        && output.split('/').all(|component| !component.is_empty())
 }
 
 fn portable_output_component(component: Option<&str>) -> bool {
@@ -2004,4 +2010,15 @@ fn wrap_adapter_failures(
             cause: Some(LawpackAuthoringFailureCause::Adapter(cause)),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::portable_output_path_grammar;
+
+    #[test]
+    fn portable_output_path_grammar_rejects_windows_separators() {
+        assert!(portable_output_path_grammar("resources/item.cbor"));
+        assert!(!portable_output_path_grammar("resources\\item.cbor"));
+    }
 }
