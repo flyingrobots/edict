@@ -1528,35 +1528,39 @@ fn publish_output_with_hooks_in_authority(
         )
     })?;
     if let Err(error) = stage_files_in(&transaction_dir, files) {
-        let _ = parent_dir.remove_dir_all(&transaction);
+        drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(error);
     }
-    let staged_identity = directory_identity(&transaction_dir, output).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to retain staged output identity for `{}`: {}",
-                output.display(),
-                error.message
-            ),
-        )
-    })?;
+    let staged_identity = match directory_identity(&transaction_dir, output) {
+        Ok(identity) => identity,
+        Err(error) => {
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to retain staged output identity for `{}`: {}",
+                    output.display(),
+                    error.message
+                ),
+            ));
+        }
+    };
 
     if let Err(error) = before_capture() {
-        let _ = parent_dir.remove_dir_all(&transaction);
+        drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(error);
     }
     let existed = entry_exists(parent_dir, output_name)?;
     let backup = match unique_sibling_in(parent_dir, output, "previous") {
         Ok(backup) => backup,
         Err(error) => {
-            let _ = parent_dir.remove_dir_all(&transaction);
+            drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(error);
         }
     };
     if existed {
         if let Err(error) = parent_dir.rename(output_name, parent_dir, &backup) {
-            let _ = parent_dir.remove_dir_all(&transaction);
+            drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(failure(
                 "LawpackOutputWriteFailed",
                 format!(
@@ -1572,7 +1576,7 @@ fn publish_output_with_hooks_in_authority(
             Err(error) => {
                 let rollback =
                     restore_output_directory_in(parent_dir, output_name, &backup, output, true);
-                let _ = parent_dir.remove_dir_all(&transaction);
+                drop(Dir::remove_open_dir_all(transaction_dir));
                 return Err(rollback.err().unwrap_or_else(|| {
                     failure(
                         "LawpackOutputOwnershipFailed",
@@ -1588,7 +1592,7 @@ fn publish_output_with_hooks_in_authority(
             drop(captured);
             let rollback =
                 restore_output_directory_in(parent_dir, output_name, &backup, output, true);
-            let _ = parent_dir.remove_dir_all(&transaction);
+            drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(rollback.err().unwrap_or(error));
         }
         Some(captured)
@@ -1600,14 +1604,14 @@ fn publish_output_with_hooks_in_authority(
         drop(captured);
         let rollback =
             restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
-        let _ = parent_dir.remove_dir_all(&transaction);
+        drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or(error));
     }
     if let Err(error) = parent_dir.rename(&transaction, parent_dir, output_name) {
         drop(captured);
         let rollback =
             restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
-        let _ = parent_dir.remove_dir_all(&transaction);
+        drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or_else(|| {
             failure(
                 "LawpackOutputWriteFailed",
@@ -2547,6 +2551,85 @@ mod tests {
                 "read preserved substitute transaction",
             ),
             b"unadmitted"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn failed_activation_cleans_the_retained_transaction_not_its_reused_name() {
+        let root = temp_tree("failed-activation-transaction-identity");
+        let output = root.join("generated");
+        let displaced_transaction = root.join("displaced-transaction");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let error = test_err(
+            publish_output_with_hook(&output, &replacement, || {
+                let transaction = test_ok(fs::read_dir(&root), "read publication root")
+                    .map(|entry| test_ok(entry, "read publication entry"))
+                    .find(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(".edict-lawpack-transaction-")
+                    })
+                    .map_or_else(
+                        || panic!("staged transaction must exist before activation"),
+                        |entry| entry.path(),
+                    );
+                test_ok(
+                    fs::rename(&transaction, &displaced_transaction),
+                    "displace staged transaction",
+                );
+                test_ok(
+                    fs::create_dir(&transaction),
+                    "install substitute transaction",
+                );
+                test_ok(
+                    fs::write(transaction.join("substitute"), b"unadmitted"),
+                    "write substitute transaction",
+                );
+                test_ok(fs::create_dir(&output), "install concurrent output");
+                test_ok(
+                    fs::write(output.join("concurrent"), b"keep"),
+                    "write concurrent output",
+                );
+                Ok(())
+            }),
+            "failed activation rejects",
+        );
+
+        assert_eq!(error.kind, "LawpackOutputRollbackFailed");
+        assert!(!displaced_transaction.exists());
+        let substitute = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-transaction-")
+            })
+            .map_or_else(
+                || panic!("substituted transaction must remain recoverable"),
+                |entry| entry.path(),
+            );
+        assert_eq!(
+            test_ok(fs::read(substitute.join("substitute")), "read substitute"),
+            b"unadmitted"
+        );
+        assert_eq!(
+            test_ok(
+                fs::read(output.join("concurrent")),
+                "read concurrent output"
+            ),
+            b"keep"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
