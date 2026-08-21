@@ -173,7 +173,9 @@ transaction is pinned without following symbolic links before any artifact is
 staged. Captured backup names are pinned the same way. If a backup name is
 reused before it can be pinned, publication reports rollback failure and leaves
 the substitute untouched rather than trusting that name for restoration.
-Staging, activation,
+After activation, the retained transaction identity and its complete artifact
+tree must still match the staged authoring result before backup cleanup commits
+the replacement. Staging, activation,
 rollback, and cleanup cannot be redirected by a later ambient-path replacement,
 and rollback refuses to delete an output that appeared concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping

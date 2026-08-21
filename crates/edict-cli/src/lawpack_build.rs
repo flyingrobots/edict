@@ -1685,14 +1685,44 @@ fn publish_output_with_hooks_in_authority(
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or(error));
     }
-    let activated = open_check_output_dir(parent_dir, output_name, output);
-    let activation_matches = activated
-        .as_ref()
-        .ok()
-        .and_then(|directory| directory_identity(directory, output).ok())
-        .is_some_and(|identity| identity == staged_identity);
-    if !activation_matches {
-        drop(activated);
+    let activated = open_check_output_dir(parent_dir, output_name, output).and_then(|directory| {
+        if directory_identity(&directory, output)? == staged_identity {
+            Ok(directory)
+        } else {
+            Err(failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "activated output `{}` did not match the retained staged transaction identity",
+                    output.display()
+                ),
+            ))
+        }
+    });
+    let activated = match activated {
+        Ok(activated) => activated,
+        Err(error) => {
+            let error = failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "activated output `{}` did not retain the staged transaction identity: {}",
+                    output.display(),
+                    error.message
+                ),
+            );
+            drop(captured);
+            let rollback = restore_after_substituted_activation_in(
+                parent_dir,
+                output_name,
+                &transaction,
+                &backup,
+                output,
+                existed,
+            );
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(rollback.err().unwrap_or(error));
+        }
+    };
+    if let Err(error) = validate_output_tree(output, activated, files) {
         drop(captured);
         let rollback = restore_after_substituted_activation_in(
             parent_dir,
@@ -1707,8 +1737,9 @@ fn publish_output_with_hooks_in_authority(
             failure(
                 "LawpackOutputWriteFailed",
                 format!(
-                    "activated output `{}` did not match the retained staged transaction identity",
-                    output.display()
+                    "activated output `{}` did not match the authored artifact tree: {}",
+                    output.display(),
+                    error.message
                 ),
             )
         }));
@@ -2766,6 +2797,49 @@ mod tests {
             b"unadmitted"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn publication_rejects_staged_bytes_changed_before_activation() {
+        let root = temp_tree("staged-bytes-changed");
+        let output = root.join("generated");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let failure_kind = publish_output_with_hook(&output, &replacement, || {
+            let transaction = test_ok(fs::read_dir(&root), "read publication root")
+                .map(|entry| test_ok(entry, "read publication entry"))
+                .find(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".edict-lawpack-transaction-")
+                })
+                .map_or_else(
+                    || panic!("staged transaction must exist before activation"),
+                    |entry| entry.path(),
+                );
+            fs::write(transaction.join("new"), b"tampered").map_err(|error| {
+                super::failure(
+                    "InjectedFailure",
+                    format!("failed to tamper with staged artifact: {error}"),
+                )
+            })
+        })
+        .err()
+        .map(|error| error.kind);
+
+        let observed = test_ok(read_output_tree(&output), "read output after attempt");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(observed, original);
     }
 
     #[cfg(unix)]
