@@ -35,10 +35,13 @@ versions still track specification maturity rather than a released product.
   `edict.lawpack-build/v1` review document now emits deterministic canonical
   manifests, exports, adapters, local resources, and digest sidecars through
   the existing public decoders and complete dependency-graph validator.
-  JSONL `build` requests support transactional owned-directory replacement and
-  non-repairing, filesystem-read-only `checkOnly` drift detection with a
-  before/after ownership-basis check. A standalone external witness authors the
-  workspace-snapshot closure without `xtask`, reproduces its reviewed bytes,
+  JSONL `build` requests support transactional owned-directory replacement that
+  captures and authorizes the exact directory being replaced, retains that
+  directory through commit, and never deletes a concurrently installed output
+  during rollback. Non-repairing, filesystem-read-only `checkOnly` drift
+  detection uses a before/after ownership-basis check. A standalone external
+  witness authors the workspace-snapshot closure without `xtask`, reproduces
+  its reviewed bytes,
   and feeds those exact generated artifacts into the public application build.
   Tagged inputs and output paths fail closed. Dependency inputs use confined,
   no-symlink file handles that remain pinned from output-overlap validation

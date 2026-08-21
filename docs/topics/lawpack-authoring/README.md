@@ -150,10 +150,13 @@ cannot be nested beneath an ancestor containing another lawpack output index.
 Within one document-root publication namespace, Edict acquires shared
 intent locks for proper output ancestors in top-down order and an exclusive lock
 for the output itself. Sibling output footprints can publish concurrently;
-identical and parent/child footprints conflict. Ownership and the real-directory
-ancestor chain are rechecked after intent acquisition. The publication root and
-output parent are then pinned as capability directories, so staging, activation,
-rollback, and cleanup cannot be redirected by a later ambient-path replacement.
+identical and parent/child footprints conflict. The real-directory ancestor
+chain is rechecked after intent acquisition. The publication root and output
+parent are then pinned as capability directories. Write mode stages the complete
+replacement, captures the currently named output, and authorizes that exact
+captured directory through a retained capability handle. Staging, activation,
+rollback, and cleanup cannot be redirected by a later ambient-path replacement,
+and rollback refuses to delete an output that appeared concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping
 publication from different document roots is outside one namespace and must be
 avoided by the caller.
