@@ -44,7 +44,9 @@ versions still track specification maturity rather than a released product.
   resolve under the replaced tree, duplicate JSON keys reject before typed
   authoring, ownership indexes must be real files, every generated artifact and
   drift read stays bounded, check-only classifies a missing nested output as
-  drift without creating its parent, canonical JSON accepts a scalar at the
+  drift without creating its parent, empty lawpack document paths reject as
+  invalid settings, outputs cannot nest inside another owned lawpack tree,
+  canonical JSON accepts a scalar at the
   exact 128-container boundary while accounting for enclosing export
   structures, emitted artifact-path collision checks use an ordering-independent
   ancestor set, and activation is the publication commit point;

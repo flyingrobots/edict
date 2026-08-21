@@ -477,7 +477,45 @@ fn resolve_output_directory(root: &Path, relative: &Path) -> Result<PathBuf, Law
             }
         }
     }
+    reject_owned_output_ancestor(root, &current)?;
     Ok(current)
+}
+
+fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), LawpackBuildFailure> {
+    let mut ancestor = output.parent();
+    while let Some(directory) = ancestor {
+        if !directory.starts_with(root) {
+            break;
+        }
+        let ownership_index = directory.join(OUTPUT_INDEX_FILE);
+        match fs::symlink_metadata(&ownership_index) {
+            Ok(_) => {
+                return Err(failure(
+                    "LawpackOutputOwnershipFailed",
+                    format!(
+                        "output `{}` is nested inside owned lawpack tree `{}`",
+                        output.display(),
+                        directory.display()
+                    ),
+                ));
+            }
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(failure(
+                    "LawpackOutputOwnershipFailed",
+                    format!(
+                        "failed to inspect ancestor ownership index `{}`: {error}",
+                        ownership_index.display()
+                    ),
+                ));
+            }
+        }
+        if directory == root {
+            break;
+        }
+        ancestor = directory.parent();
+    }
+    Ok(())
 }
 
 fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFailure> {
@@ -1150,18 +1188,39 @@ fn failure(kind: &'static str, message: String) -> LawpackBuildFailure {
 mod tests {
     use std::collections::BTreeMap;
     use std::fs;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::mpsc;
 
     use super::{
         check_output, decode_lawpack_document, encode_output_index, load_dependencies,
-        publish_output, publish_output_with_hook, publish_output_with_hooks, read_output_tree,
-        validate_generated_artifact_size, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry,
+        output_lock_path, publish_output, publish_output_with_hook, publish_output_with_hooks,
+        read_output_tree, resolve_output_directory, validate_generated_artifact_size,
+        LawpackBuildFailure, LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
     };
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn nested_output_rejects_an_ancestor_owned_lawpack_tree() {
+        let root = temp_tree("nested-owner");
+        let owner = root.join("generated");
+        test_ok(fs::create_dir(&owner), "create owner tree");
+        test_ok(
+            fs::write(owner.join("edict.lawpack-output.json"), valid_index()),
+            "write ancestor ownership index",
+        );
+        let nested = owner.join("child");
+
+        let failure = test_err(
+            resolve_output_directory(&root, Path::new("generated/child")),
+            "nested owner rejects",
+        );
+        assert_eq!(failure.kind, "LawpackOutputOwnershipFailed");
+        assert!(!nested.exists());
+        assert!(!output_lock_path(&nested).exists());
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
 
     #[test]
     fn publication_replaces_the_owned_tree_and_removes_stale_files() {

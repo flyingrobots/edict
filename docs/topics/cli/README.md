@@ -27,7 +27,7 @@ A `build` request contains one settings record and no compiler-input records.
 It selects exactly one document: `application` points to an
 `edict.application/v1` manifest, while `lawpack` points to an
 `edict.lawpack-build/v1` authoring document. `checkOnly` is accepted only with
-`lawpack`.
+`lawpack`, and either selected document path must be non-empty.
 
 ```json
 {"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","application":"edict.application.json"}
@@ -49,9 +49,9 @@ document and confined beneath its directory. The output directory is an
 Edict-owned generated tree identified by `edict.lawpack-output.json`. A write
 build replaces that complete tree transactionally and therefore removes stale
 owned artifacts. It refuses a non-empty unowned directory or a symlinked
-ownership index. Dependency paths are canonicalized before overlap checks, so
-a symlink cannot route an input back under the replaceable output tree. A
-check-only build
+ownership index, and it refuses to place one owned output inside another owned
+lawpack tree. Dependency paths are canonicalized before overlap checks, so a
+symlink cannot route an input back under the replaceable output tree. A check-only build
 does not repair the owned artifact tree and reports `LawpackOutputDrift` unless
 the complete existing tree is byte-identical; it may create the persistent
 sibling lock file used as coordination state:

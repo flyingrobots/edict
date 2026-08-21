@@ -135,7 +135,10 @@ and runs the same complete-graph validator used by application builds.
 present. A write build stages a complete sibling directory, preserves the old
 directory, activates the replacement, and restores the old directory if
 activation fails. A later successful build replaces the whole owned directory,
-so artifacts removed from the definition cannot survive as stale output.
+so artifacts removed from the definition cannot survive as stale output. An
+output cannot be nested beneath an ancestor containing another lawpack output
+index; otherwise the two owners would use different locks over overlapping
+replacement trees.
 
 An existing non-empty directory without a valid `edict.lawpack-output/v1`
 index is refused rather than deleted. Output paths and input dependency paths

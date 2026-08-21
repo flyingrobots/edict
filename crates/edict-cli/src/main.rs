@@ -547,6 +547,18 @@ fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Resu
                     message: "build requires exactly one of `application` or `lawpack`".to_owned(),
                 });
             }
+            if settings
+                .lawpack
+                .as_ref()
+                .is_some_and(|path| path.as_os_str().is_empty())
+            {
+                return Err(CliFailure {
+                    command: COMMAND_BUILD,
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "lawpack build document path must not be empty".to_owned(),
+                });
+            }
             if settings.check_only && settings.lawpack.is_none() {
                 return Err(CliFailure {
                     command: COMMAND_BUILD,

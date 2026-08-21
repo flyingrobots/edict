@@ -185,6 +185,33 @@ fn build_rejects_unused_directory_extension_settings() {
 }
 
 #[test]
+fn build_rejects_an_empty_lawpack_path_as_invalid_settings() {
+    let output = run_edict(&jsonl([json!({
+        "schema": "edict.compiler.settings/v1",
+        "type": "compilerSettings",
+        "operation": "build",
+        "lawpack": "",
+    })]));
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(output.stdout.is_empty());
+    let stderr = assert_jsonl_stream(&output.stderr, "stderr");
+    let diagnostic = stderr
+        .iter()
+        .find(|line| line.get("type").and_then(Value::as_str) == Some("diagnostic"))
+        .expect("empty lawpack path emits a diagnostic");
+    assert_eq!(
+        diagnostic.get("command").and_then(Value::as_str),
+        Some("build")
+    );
+    assert_eq!(
+        diagnostic.get("kind").and_then(Value::as_str),
+        Some("InvalidSettings")
+    );
+    assert_status(&stderr, "error", 2);
+}
+
+#[test]
 fn build_rejects_explicit_default_values_for_forbidden_settings() {
     let root = temp_tree("build-explicit-defaults");
     let application = root.join("missing-edict-application.json");
