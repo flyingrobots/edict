@@ -1628,12 +1628,27 @@ fn validate_artifact_paths(
     artifacts: &[LawpackAuthoredArtifact],
 ) -> Result<(), Vec<LawpackAuthoringFailure>> {
     let mut paths = BTreeSet::new();
+    let mut coordinates = BTreeSet::new();
     for artifact in artifacts {
         if !paths.insert(artifact.path.as_str()) {
             return Err(one(failure(
                 LawpackAuthoringFailureKind::DuplicateIdentity,
                 &artifact.path,
                 "one emitted artifact per relative path",
+            )));
+        }
+        if matches!(
+            artifact.kind,
+            LawpackArtifactKind::Manifest
+                | LawpackArtifactKind::Exports
+                | LawpackArtifactKind::Adapter
+                | LawpackArtifactKind::LocalResource
+        ) && !coordinates.insert(artifact.coordinate.as_str())
+        {
+            return Err(one(failure(
+                LawpackAuthoringFailureKind::DuplicateIdentity,
+                &artifact.coordinate,
+                "one canonical artifact per resource coordinate",
             )));
         }
     }

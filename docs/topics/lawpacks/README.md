@@ -38,6 +38,9 @@ dependency set independent of input order. [LAWPACKS-REQ-005]
 The current executable Rust surfaces touching lawpacks are:
 
 - parser support for `ImportKind::Lawpack`;
+- typed application-owned authoring through `author_lawpack` and the public
+  JSONL `build` route, documented by the
+  [lawpack-authoring guide](../lawpack-authoring/README.md);
 - canonical manifest/export loading through `ValidatedLawpackBundle`;
 - complete dependency-set validation with exact manifest-digest edges;
 - canonical direct-adapter loading with exact target selection, adapter digest

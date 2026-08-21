@@ -1,0 +1,929 @@
+//! Public filesystem boundary for deterministic lawpack authoring.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
+use std::fs::{self, File, OpenOptions};
+use std::io::{ErrorKind, Read, Write};
+use std::path::{Component, Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use edict_syntax::{
+    author_lawpack, decode_lawpack_bundle, LawpackArtifactKind, LawpackAuthoringDefinition,
+    LawpackAuthoringFailureKind, ValidatedLawpackBundle,
+};
+use serde::{Deserialize, Serialize};
+
+const LAWPACK_BUILD_SCHEMA: &str = "edict.lawpack-build/v1";
+const LAWPACK_OUTPUT_SCHEMA: &str = "edict.lawpack-output/v1";
+const OUTPUT_INDEX_FILE: &str = "edict.lawpack-output.json";
+const MAX_LAWPACK_DOCUMENT_BYTES: u64 = 1024 * 1024;
+const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
+const MAX_DEPENDENCY_BUNDLES: usize = 192;
+
+#[derive(Debug)]
+pub(crate) struct LawpackBuildFailure {
+    pub(crate) kind: &'static str,
+    pub(crate) message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LawpackBuildDocument {
+    schema: String,
+    output_directory: PathBuf,
+    lawpack: LawpackAuthoringDefinition,
+    #[serde(default)]
+    dependency_bundles: Vec<LawpackDependencyBundle>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct LawpackDependencyBundle {
+    manifest: PathBuf,
+    exports: PathBuf,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LawpackOutputIndex<'a> {
+    schema: &'static str,
+    lawpack_id: &'a str,
+    lawpack_version: &'a str,
+    artifacts: Vec<LawpackOutputIndexEntry<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct LawpackOutputIndexEntry<'a> {
+    path: &'a str,
+    kind: &'static str,
+    coordinate: &'a str,
+    digest: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ExistingOutputIndex {
+    schema: String,
+    lawpack_id: String,
+    lawpack_version: String,
+    artifacts: Vec<ExistingOutputIndexEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ExistingOutputIndexEntry {
+    path: String,
+    kind: String,
+    coordinate: String,
+    digest: String,
+}
+
+/// Author and either publish or check one application-owned lawpack.
+pub(crate) fn build_lawpack(
+    document_path: &Path,
+    check_only: bool,
+) -> Result<(), LawpackBuildFailure> {
+    let document_path = fs::canonicalize(document_path).map_err(|error| {
+        failure(
+            "LawpackConfigReadFailed",
+            format!(
+                "failed to resolve lawpack build document `{}`: {error}",
+                document_path.display()
+            ),
+        )
+    })?;
+    let root = document_path.parent().ok_or_else(|| {
+        failure(
+            "InvalidLawpackConfig",
+            "lawpack build document must have a parent directory".to_owned(),
+        )
+    })?;
+    let document_bytes = read_bounded(
+        &document_path,
+        MAX_LAWPACK_DOCUMENT_BYTES,
+        "lawpack build document",
+        "LawpackConfigReadFailed",
+    )?;
+    let document =
+        serde_json::from_slice::<LawpackBuildDocument>(&document_bytes).map_err(|error| {
+            failure(
+                "InvalidLawpackConfig",
+                format!("invalid lawpack build document: {error}"),
+            )
+        })?;
+    validate_document(&document)?;
+
+    let dependencies = load_dependencies(root, &document.dependency_bundles)?;
+    let authored = author_lawpack(&document.lawpack, &dependencies).map_err(|failures| {
+        let Some(first) = failures.first() else {
+            return failure(
+                "LawpackAuthoringFailed",
+                "lawpack authoring failed without a diagnostic".to_owned(),
+            );
+        };
+        failure(
+            authoring_failure_kind(first.kind),
+            format!("{}: {}", first.path, first.obligation),
+        )
+    })?;
+
+    let output = resolve_output_directory(root, &document.output_directory)?;
+    let mut files = authored
+        .artifacts()
+        .iter()
+        .map(|artifact| (PathBuf::from(artifact.path()), artifact.bytes().to_vec()))
+        .collect::<BTreeMap<_, _>>();
+    let index = LawpackOutputIndex {
+        schema: LAWPACK_OUTPUT_SCHEMA,
+        lawpack_id: &document.lawpack.id,
+        lawpack_version: &document.lawpack.version,
+        artifacts: authored
+            .artifacts()
+            .iter()
+            .map(|artifact| LawpackOutputIndexEntry {
+                path: artifact.path(),
+                kind: artifact_kind_name(artifact.kind()),
+                coordinate: artifact.coordinate(),
+                digest: artifact.digest(),
+            })
+            .collect(),
+    };
+    let mut index_bytes = serde_json::to_vec_pretty(&index).map_err(|error| {
+        failure(
+            "LawpackAuthoringFailed",
+            format!("failed to encode lawpack output index: {error}"),
+        )
+    })?;
+    index_bytes.push(b'\n');
+    files.insert(PathBuf::from(OUTPUT_INDEX_FILE), index_bytes);
+
+    if check_only {
+        check_output(&output, &files)
+    } else {
+        publish_output(&output, &files)
+    }
+}
+
+fn validate_document(document: &LawpackBuildDocument) -> Result<(), LawpackBuildFailure> {
+    if document.schema != LAWPACK_BUILD_SCHEMA {
+        return Err(failure(
+            "InvalidLawpackConfig",
+            format!("lawpack build schema must be `{LAWPACK_BUILD_SCHEMA}`"),
+        ));
+    }
+    if document.dependency_bundles.len() > MAX_DEPENDENCY_BUNDLES {
+        return Err(failure(
+            "InvalidLawpackConfig",
+            format!("dependencyBundles exceeds the maximum of {MAX_DEPENDENCY_BUNDLES}"),
+        ));
+    }
+    validate_relative_path(&document.output_directory, "outputDirectory")
+}
+
+fn load_dependencies(
+    root: &Path,
+    definitions: &[LawpackDependencyBundle],
+) -> Result<Vec<ValidatedLawpackBundle>, LawpackBuildFailure> {
+    definitions
+        .iter()
+        .enumerate()
+        .map(|(index, definition)| {
+            let manifest = resolve_existing_input(
+                root,
+                &definition.manifest,
+                &format!("dependencyBundles.{index}.manifest"),
+            )?;
+            let exports = resolve_existing_input(
+                root,
+                &definition.exports,
+                &format!("dependencyBundles.{index}.exports"),
+            )?;
+            let manifest = read_bounded(
+                &manifest,
+                MAX_LAWPACK_ARTIFACT_BYTES,
+                "dependency manifest",
+                "LawpackArtifactReadFailed",
+            )?;
+            let exports = read_bounded(
+                &exports,
+                MAX_LAWPACK_ARTIFACT_BYTES,
+                "dependency exports",
+                "LawpackArtifactReadFailed",
+            )?;
+            decode_lawpack_bundle(&manifest, &exports).map_err(|failures| {
+                failure(
+                    "InvalidLawpackDependency",
+                    format!("dependencyBundles.{index} failed validation: {failures:?}"),
+                )
+            })
+        })
+        .collect()
+}
+
+fn read_bounded(
+    path: &Path,
+    limit: u64,
+    subject: &str,
+    kind: &'static str,
+) -> Result<Vec<u8>, LawpackBuildFailure> {
+    let file = File::open(path).map_err(|error| {
+        failure(
+            kind,
+            format!("failed to open {subject} `{}`: {error}", path.display()),
+        )
+    })?;
+    let metadata = file.metadata().map_err(|error| {
+        failure(
+            kind,
+            format!("failed to inspect {subject} `{}`: {error}", path.display()),
+        )
+    })?;
+    if !metadata.is_file() || metadata.len() > limit {
+        return Err(failure(
+            kind,
+            format!(
+                "{subject} `{}` must be a regular file no larger than {limit} bytes",
+                path.display()
+            ),
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| {
+            failure(
+                kind,
+                format!("failed to read {subject} `{}`: {error}", path.display()),
+            )
+        })?;
+    if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit {
+        return Err(failure(
+            kind,
+            format!("{subject} `{}` exceeds {limit} bytes", path.display()),
+        ));
+    }
+    Ok(bytes)
+}
+
+fn resolve_existing_input(
+    root: &Path,
+    relative: &Path,
+    field: &str,
+) -> Result<PathBuf, LawpackBuildFailure> {
+    validate_relative_path(relative, field)?;
+    let resolved = fs::canonicalize(root.join(relative)).map_err(|error| {
+        failure(
+            "LawpackArtifactReadFailed",
+            format!(
+                "failed to resolve {field} `{}`: {error}",
+                relative.display()
+            ),
+        )
+    })?;
+    if !resolved.starts_with(root) {
+        return Err(failure(
+            "LawpackPathOutsideRoot",
+            format!("{field} resolves outside `{}`", root.display()),
+        ));
+    }
+    Ok(resolved)
+}
+
+fn resolve_output_directory(root: &Path, relative: &Path) -> Result<PathBuf, LawpackBuildFailure> {
+    validate_relative_path(relative, "outputDirectory")?;
+    let mut current = root.to_path_buf();
+    for component in relative.components() {
+        let Component::Normal(component) = component else {
+            return Err(failure(
+                "InvalidLawpackConfig",
+                "outputDirectory must contain only normal relative components".to_owned(),
+            ));
+        };
+        current.push(component);
+        match fs::symlink_metadata(&current) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(failure(
+                    "LawpackPathOutsideRoot",
+                    format!(
+                        "outputDirectory must not traverse symlink `{}`",
+                        current.display()
+                    ),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Err(error) => {
+                return Err(failure(
+                    "LawpackOutputWriteFailed",
+                    format!(
+                        "failed to inspect outputDirectory `{}`: {error}",
+                        current.display()
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(current)
+}
+
+fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFailure> {
+    if path.as_os_str().is_empty()
+        || path.is_absolute()
+        || path.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir
+                    | Component::CurDir
+                    | Component::RootDir
+                    | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(failure(
+            "InvalidLawpackConfig",
+            format!("{field} must be a non-empty confined relative path"),
+        ));
+    }
+    Ok(())
+}
+
+fn check_output(
+    output: &Path,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<(), LawpackBuildFailure> {
+    validate_owned_output(output, false)?;
+    let actual = read_output_tree(output)?;
+    if actual != *expected {
+        return Err(failure(
+            "LawpackOutputDrift",
+            format!(
+                "lawpack output `{}` does not equal the authored artifact set",
+                output.display()
+            ),
+        ));
+    }
+    Ok(())
+}
+
+fn read_output_tree(output: &Path) -> Result<BTreeMap<PathBuf, Vec<u8>>, LawpackBuildFailure> {
+    let mut files = BTreeMap::new();
+    let mut pending = vec![output.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let entries = fs::read_dir(&directory).map_err(|error| {
+            failure(
+                "LawpackOutputDrift",
+                format!(
+                    "failed to inspect output `{}`: {error}",
+                    directory.display()
+                ),
+            )
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|error| {
+                failure(
+                    "LawpackOutputDrift",
+                    format!("failed to inspect output entry: {error}"),
+                )
+            })?;
+            let file_type = entry.file_type().map_err(|error| {
+                failure(
+                    "LawpackOutputDrift",
+                    format!("failed to inspect `{}`: {error}", entry.path().display()),
+                )
+            })?;
+            if file_type.is_dir() {
+                pending.push(entry.path());
+            } else if file_type.is_file() {
+                let entry_path = entry.path();
+                let relative = entry_path.strip_prefix(output).map_err(|error| {
+                    failure(
+                        "LawpackOutputDrift",
+                        format!("failed to relativize output entry: {error}"),
+                    )
+                })?;
+                let bytes = read_bounded(
+                    &entry_path,
+                    MAX_LAWPACK_ARTIFACT_BYTES,
+                    "published lawpack artifact",
+                    "LawpackOutputDrift",
+                )?;
+                files.insert(relative.to_path_buf(), bytes);
+            } else {
+                return Err(failure(
+                    "LawpackOutputDrift",
+                    format!(
+                        "output entry `{}` must be a regular file or directory",
+                        entry.path().display()
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(files)
+}
+
+fn publish_output(
+    output: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<(), LawpackBuildFailure> {
+    publish_output_with_hook(output, files, || Ok(()))
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "directory publication keeps staging and every rollback path explicit"
+)]
+fn publish_output_with_hook(
+    output: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
+) -> Result<(), LawpackBuildFailure> {
+    let parent = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a parent directory".to_owned(),
+        )
+    })?;
+    fs::create_dir_all(parent).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to create output parent `{}`: {error}",
+                parent.display()
+            ),
+        )
+    })?;
+    let lock_path = output_lock_path(output);
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to open output lock `{}`: {error}",
+                    lock_path.display()
+                ),
+            )
+        })?;
+    lock.try_lock().map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "another lawpack build owns output `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    validate_owned_output(output, true)?;
+
+    let transaction = unique_sibling(output, "transaction")?;
+    fs::create_dir(&transaction).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to create output transaction `{}`: {error}",
+                transaction.display()
+            ),
+        )
+    })?;
+    if let Err(error) = stage_files(&transaction, files) {
+        let _ = fs::remove_dir_all(&transaction);
+        return Err(error);
+    }
+
+    let existed = output.exists();
+    let backup = match unique_sibling(output, "previous") {
+        Ok(backup) => backup,
+        Err(error) => {
+            let _ = fs::remove_dir_all(&transaction);
+            return Err(error);
+        }
+    };
+    if existed {
+        if let Err(error) = fs::rename(output, &backup) {
+            let _ = fs::remove_dir_all(&transaction);
+            return Err(failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to preserve previous output `{}`: {error}",
+                    output.display()
+                ),
+            ));
+        }
+    }
+
+    if let Err(error) = before_activation() {
+        let rollback = restore_output_directory(output, &backup, existed);
+        let _ = fs::remove_dir_all(&transaction);
+        return Err(rollback.err().unwrap_or(error));
+    }
+    if let Err(error) = fs::rename(&transaction, output) {
+        let rollback = restore_output_directory(output, &backup, existed);
+        let _ = fs::remove_dir_all(&transaction);
+        return Err(rollback.err().unwrap_or_else(|| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!("failed to activate output `{}`: {error}", output.display()),
+            )
+        }));
+    }
+    if existed {
+        fs::remove_dir_all(&backup).map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "published output but failed to remove backup `{}`: {error}",
+                    backup.display()
+                ),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn validate_owned_output(output: &Path, allow_missing: bool) -> Result<(), LawpackBuildFailure> {
+    let metadata = match fs::symlink_metadata(output) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound && allow_missing => return Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            return Err(failure(
+                "LawpackOutputDrift",
+                format!("lawpack output `{}` does not exist", output.display()),
+            ));
+        }
+        Err(error) => {
+            return Err(failure(
+                "LawpackOutputOwnershipFailed",
+                format!("failed to inspect output `{}`: {error}", output.display()),
+            ));
+        }
+    };
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "lawpack output `{}` must be a real directory",
+                output.display()
+            ),
+        ));
+    }
+    let mut entries = fs::read_dir(output).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!("failed to inspect output `{}`: {error}", output.display()),
+        )
+    })?;
+    if entries.next().is_none() {
+        return Ok(());
+    }
+    let index_path = output.join(OUTPUT_INDEX_FILE);
+    let index_bytes = read_bounded(
+        &index_path,
+        MAX_LAWPACK_ARTIFACT_BYTES,
+        "lawpack output ownership index",
+        "LawpackOutputOwnershipFailed",
+    )?;
+    let index = serde_json::from_slice::<ExistingOutputIndex>(&index_bytes).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!("invalid output ownership index: {error}"),
+        )
+    })?;
+    validate_existing_index(&index)
+}
+
+fn validate_existing_index(index: &ExistingOutputIndex) -> Result<(), LawpackBuildFailure> {
+    let mut paths = BTreeSet::new();
+    if index.schema != LAWPACK_OUTPUT_SCHEMA
+        || index.lawpack_id.is_empty()
+        || index.lawpack_version.is_empty()
+        || index.artifacts.is_empty()
+        || index.artifacts.iter().any(|artifact| {
+            let path = Path::new(&artifact.path);
+            artifact.path.is_empty()
+                || path.is_absolute()
+                || path
+                    .components()
+                    .any(|component| !matches!(component, Component::Normal(_)))
+                || !paths.insert(artifact.path.as_str())
+                || !is_artifact_kind(&artifact.kind)
+                || artifact.coordinate.is_empty()
+                || !is_lowercase_digest(&artifact.digest)
+        })
+    {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
+            "output ownership index does not match edict.lawpack-output/v1".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn stage_files(
+    transaction: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<(), LawpackBuildFailure> {
+    for (relative, bytes) in files {
+        validate_relative_path(relative, "authored artifact path")?;
+        let path = transaction.join(relative);
+        let parent = path.parent().ok_or_else(|| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!("authored artifact `{}` has no parent", relative.display()),
+            )
+        })?;
+        fs::create_dir_all(parent).map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!("failed to stage `{}`: {error}", relative.display()),
+            )
+        })?;
+        let mut file = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| {
+                failure(
+                    "LawpackOutputWriteFailed",
+                    format!("failed to stage `{}`: {error}", relative.display()),
+                )
+            })?;
+        file.write_all(bytes).map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!("failed to write staged `{}`: {error}", relative.display()),
+            )
+        })?;
+        file.sync_all().map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!("failed to sync staged `{}`: {error}", relative.display()),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn restore_output_directory(
+    output: &Path,
+    backup: &Path,
+    existed: bool,
+) -> Result<(), LawpackBuildFailure> {
+    if output.exists() {
+        fs::remove_dir_all(output).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to remove partial output `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+    }
+    if existed {
+        fs::rename(backup, output).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!("failed to restore output `{}`: {error}", output.display()),
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn unique_sibling(output: &Path, role: &str) -> Result<PathBuf, LawpackBuildFailure> {
+    let parent = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a parent directory".to_owned(),
+        )
+    })?;
+    let name = output.file_name().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a final path component".to_owned(),
+        )
+    })?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!("system clock cannot name output transaction: {error}"),
+            )
+        })?
+        .as_nanos();
+    for attempt in 0..16 {
+        let candidate = parent.join(format!(
+            ".{}-edict-lawpack-{role}-{}-{timestamp}-{attempt}",
+            name.to_string_lossy(),
+            std::process::id()
+        ));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(failure(
+        "LawpackOutputWriteFailed",
+        format!(
+            "failed to allocate a unique {role} path beside `{}`",
+            output.display()
+        ),
+    ))
+}
+
+fn output_lock_path(output: &Path) -> PathBuf {
+    let mut name = OsString::from(".");
+    name.push(
+        output
+            .file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("lawpack")),
+    );
+    name.push(".edict-lawpack-build.lock");
+    output.parent().unwrap_or_else(|| Path::new(".")).join(name)
+}
+
+const fn artifact_kind_name(kind: LawpackArtifactKind) -> &'static str {
+    match kind {
+        LawpackArtifactKind::Manifest => "manifest",
+        LawpackArtifactKind::ManifestDigest => "manifestDigest",
+        LawpackArtifactKind::Exports => "exports",
+        LawpackArtifactKind::ExportsDigest => "exportsDigest",
+        LawpackArtifactKind::Adapter => "adapter",
+        LawpackArtifactKind::AdapterDigest => "adapterDigest",
+        LawpackArtifactKind::LocalResource => "localResource",
+        LawpackArtifactKind::LocalResourceDigest => "localResourceDigest",
+    }
+}
+
+const fn authoring_failure_kind(kind: LawpackAuthoringFailureKind) -> &'static str {
+    match kind {
+        LawpackAuthoringFailureKind::InvalidDefinition => "LawpackAuthoringInvalidDefinition",
+        LawpackAuthoringFailureKind::InvalidDigest => "LawpackAuthoringInvalidDigest",
+        LawpackAuthoringFailureKind::InvalidCanonicalValue => {
+            "LawpackAuthoringInvalidCanonicalValue"
+        }
+        LawpackAuthoringFailureKind::MissingLocalResource => "LawpackAuthoringMissingLocalResource",
+        LawpackAuthoringFailureKind::DuplicateIdentity => "LawpackAuthoringDuplicateIdentity",
+        LawpackAuthoringFailureKind::InvalidOutputPath => "LawpackAuthoringInvalidOutputPath",
+        LawpackAuthoringFailureKind::EncodingFailed => "LawpackAuthoringEncodingFailed",
+        LawpackAuthoringFailureKind::InvalidLawpack => "LawpackAuthoringInvalidLawpack",
+        LawpackAuthoringFailureKind::InvalidAdapter => "LawpackAuthoringInvalidAdapter",
+        LawpackAuthoringFailureKind::MissingDependency => "LawpackAuthoringMissingDependency",
+        LawpackAuthoringFailureKind::DependencyDigestMismatch => {
+            "LawpackAuthoringDependencyDigestMismatch"
+        }
+        LawpackAuthoringFailureKind::InvalidDependencyClosure => {
+            "LawpackAuthoringInvalidDependencyClosure"
+        }
+    }
+}
+
+fn is_lowercase_digest(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return false;
+    };
+    hex.len() == 64
+        && hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn is_artifact_kind(value: &str) -> bool {
+    matches!(
+        value,
+        "manifest"
+            | "manifestDigest"
+            | "exports"
+            | "exportsDigest"
+            | "adapter"
+            | "adapterDigest"
+            | "localResource"
+            | "localResourceDigest"
+    )
+}
+
+fn failure(kind: &'static str, message: String) -> LawpackBuildFailure {
+    LawpackBuildFailure { kind, message }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use super::{
+        check_output, publish_output, publish_output_with_hook, read_output_tree,
+        LawpackBuildFailure,
+    };
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn publication_replaces_the_owned_tree_and_removes_stale_files() {
+        let root = temp_tree("replace");
+        let output = root.join("generated");
+        let first = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &first), "publish initial set");
+
+        let second = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        test_ok(publish_output(&output, &second), "replace owned set");
+
+        assert_eq!(test_ok(read_output_tree(&output), "read output"), second);
+        assert!(!output.join("old").exists());
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn injected_pre_activation_failure_restores_the_previous_tree() {
+        let root = temp_tree("rollback");
+        let output = root.join("generated");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let result = publish_output_with_hook(&output, &replacement, || {
+            Err(LawpackBuildFailure {
+                kind: "InjectedFailure",
+                message: "injected before activation".to_owned(),
+            })
+        });
+
+        assert_eq!(
+            test_err(result, "injection rejects").kind,
+            "InjectedFailure"
+        );
+        assert_eq!(test_ok(read_output_tree(&output), "read output"), original);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn check_only_detects_exact_tree_drift() {
+        let root = temp_tree("check");
+        let output = root.join("generated");
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        test_ok(publish_output(&output, &expected), "publish expected set");
+        test_ok(check_output(&output, &expected), "exact output passes");
+        test_ok(fs::write(output.join("one"), b"2"), "mutate output");
+
+        assert_eq!(
+            test_err(check_output(&output, &expected), "drift rejects").kind,
+            "LawpackOutputDrift"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    fn files(entries: &[(&str, &[u8])]) -> BTreeMap<PathBuf, Vec<u8>> {
+        entries
+            .iter()
+            .map(|(path, bytes)| (PathBuf::from(path), bytes.to_vec()))
+            .collect()
+    }
+
+    fn valid_index() -> &'static [u8] {
+        br#"{"schema":"edict.lawpack-output/v1","lawpackId":"test","lawpackVersion":"1","artifacts":[{"path":"manifest.cbor","kind":"manifest","coordinate":"edict.lawpack/v1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}]}"#
+    }
+
+    fn temp_tree(name: &str) -> PathBuf {
+        let unique = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "edict-lawpack-build-{name}-{}-{unique}",
+            std::process::id()
+        ));
+        test_ok(fs::create_dir_all(&path), "create test tree");
+        path
+    }
+
+    fn test_ok<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
+        match result {
+            Ok(value) => value,
+            Err(error) => panic!("{context}: {error:?}"),
+        }
+    }
+
+    fn test_err<T: std::fmt::Debug, E>(result: Result<T, E>, context: &str) -> E {
+        match result {
+            Ok(value) => panic!("{context}: expected error, got {value:?}"),
+            Err(error) => error,
+        }
+    }
+}

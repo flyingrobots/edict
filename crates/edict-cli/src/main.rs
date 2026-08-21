@@ -1,6 +1,7 @@
 #![deny(clippy::expect_used, clippy::unwrap_used)]
 
 mod application_build;
+mod lawpack_build;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -39,6 +40,9 @@ struct CompilerSettings {
     record_type: String,
     operation: Operation,
     application: Option<PathBuf>,
+    lawpack: Option<PathBuf>,
+    #[serde(default)]
+    check_only: bool,
     #[serde(default)]
     emit: Vec<ProjectionEmit>,
     compiler_context: Option<ProjectionCompilerContext>,
@@ -414,6 +418,21 @@ fn parse_settings(value: Value, line: usize) -> Result<CompilerSettings, CliFail
                 message: format!("build does not accept the `{field}` setting"),
             });
         }
+        if value.get("application").is_some() && value.get("checkOnly").is_some() {
+            return Err(CliFailure {
+                command,
+                kind: "InvalidSettings",
+                line: Some(line),
+                message: "application builds do not accept the `checkOnly` setting".to_owned(),
+            });
+        }
+    } else if let Some(field) = forbidden_nonbuild_settings_field(&value) {
+        return Err(CliFailure {
+            command,
+            kind: "InvalidSettings",
+            line: Some(line),
+            message: format!("{command} does not accept the `{field}` setting"),
+        });
     }
     let settings = serde_json::from_value::<CompilerSettings>(value).map_err(|err| CliFailure {
         command,
@@ -473,10 +492,23 @@ fn forbidden_build_settings_field(value: &Value) -> Option<&'static str> {
     .find(|field| value.get(field).is_some())
 }
 
-fn null_compiler_settings_field(value: &Value) -> Option<&'static str> {
-    ["application", "inputRoot", "compilerContext", "target"]
+fn forbidden_nonbuild_settings_field(value: &Value) -> Option<&'static str> {
+    ["application", "lawpack", "checkOnly"]
         .into_iter()
-        .find(|field| value.get(field).is_some_and(Value::is_null))
+        .find(|field| value.get(field).is_some())
+}
+
+fn null_compiler_settings_field(value: &Value) -> Option<&'static str> {
+    [
+        "application",
+        "lawpack",
+        "checkOnly",
+        "inputRoot",
+        "compilerContext",
+        "target",
+    ]
+    .into_iter()
+    .find(|field| value.get(field).is_some_and(Value::is_null))
 }
 
 fn settings_value_command(value: &Value) -> &'static str {
@@ -507,6 +539,22 @@ fn command_for_operation_name(operation: &str) -> Option<&'static str> {
 fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Result<(), CliFailure> {
     match settings.operation {
         Operation::Build => {
+            if settings.application.is_some() == settings.lawpack.is_some() {
+                return Err(CliFailure {
+                    command: COMMAND_BUILD,
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "build requires exactly one of `application` or `lawpack`".to_owned(),
+                });
+            }
+            if settings.check_only && settings.lawpack.is_none() {
+                return Err(CliFailure {
+                    command: COMMAND_BUILD,
+                    kind: "InvalidSettings",
+                    line: Some(line),
+                    message: "`checkOnly` is valid only for a lawpack build".to_owned(),
+                });
+            }
             if !settings.emit.is_empty()
                 || settings.compiler_context.is_some()
                 || settings.target.is_some()
@@ -518,19 +566,19 @@ fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Resu
                     command: COMMAND_BUILD,
                     kind: "InvalidSettings",
                     line: Some(line),
-                    message:
-                        "build accepts only the application path and directory-extension defaults"
-                            .to_owned(),
+                    message: "build accepts one build document plus optional lawpack `checkOnly`"
+                        .to_owned(),
                 });
             }
         }
         Operation::Check => {
-            if settings.application.is_some() {
+            if settings.application.is_some() || settings.lawpack.is_some() || settings.check_only {
                 return Err(CliFailure {
                     command: COMMAND_CHECK,
                     kind: "InvalidSettings",
                     line: Some(line),
-                    message: "`application` is a build-only setting".to_owned(),
+                    message: "`application`, `lawpack`, and `checkOnly` are build-only settings"
+                        .to_owned(),
                 });
             }
             if !settings.emit.is_empty()
@@ -547,12 +595,13 @@ fn validate_operation_settings(settings: &CompilerSettings, line: usize) -> Resu
             }
         }
         Operation::Project => {
-            if settings.application.is_some() {
+            if settings.application.is_some() || settings.lawpack.is_some() || settings.check_only {
                 return Err(CliFailure {
                     command: COMMAND_PROJECT,
                     kind: "InvalidSettings",
                     line: Some(line),
-                    message: "`application` is a build-only setting".to_owned(),
+                    message: "`application`, `lawpack`, and `checkOnly` are build-only settings"
+                        .to_owned(),
                 });
             }
             if settings.emit.is_empty() {
@@ -759,18 +808,28 @@ fn run_request(request: &Request) -> Result<i32, CliFailure> {
 }
 
 fn run_build_request(settings: &CompilerSettings) -> Result<i32, CliFailure> {
-    let path = settings.application.as_ref().ok_or_else(|| CliFailure {
-        command: COMMAND_BUILD,
-        kind: "InvalidSettings",
-        line: None,
-        message: "build operation requires `application`".to_owned(),
-    })?;
-    application_build::build_application(path).map_err(|failure| CliFailure {
-        command: COMMAND_BUILD,
-        kind: failure.kind,
-        line: None,
-        message: failure.message,
-    })?;
+    if let Some(path) = &settings.application {
+        application_build::build_application(path).map_err(|failure| CliFailure {
+            command: COMMAND_BUILD,
+            kind: failure.kind,
+            line: None,
+            message: failure.message,
+        })?;
+    } else if let Some(path) = &settings.lawpack {
+        lawpack_build::build_lawpack(path, settings.check_only).map_err(|failure| CliFailure {
+            command: COMMAND_BUILD,
+            kind: failure.kind,
+            line: None,
+            message: failure.message,
+        })?;
+    } else {
+        return Err(CliFailure {
+            command: COMMAND_BUILD,
+            kind: "InvalidSettings",
+            line: None,
+            message: "build requires exactly one of `application` or `lawpack`".to_owned(),
+        });
+    }
     let mut stdout = io::stdout().lock();
     write_record(
         &mut stdout,
@@ -2082,7 +2141,7 @@ fn help_record() -> Value {
         record_type: "info",
         usage: "edict reads JSONL request records on stdin and emits only JSONL records on \
                 stdout and stderr; it takes no positional arguments. A request is one compiler \
-                settings record followed by one or more compiler input records.",
+                settings record, followed by compiler inputs only for check or project.",
         version: env!("CARGO_PKG_VERSION"),
     })
 }

@@ -31,6 +31,15 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added a public application-owned lawpack authoring boundary. One bounded
+  `edict.lawpack-build/v1` review document now emits deterministic canonical
+  manifests, exports, adapters, local resources, and digest sidecars through
+  the existing public decoders and complete dependency-graph validator.
+  JSONL `build` requests support transactional owned-directory replacement and
+  no-write `checkOnly` drift detection. A standalone external witness authors
+  the workspace-snapshot closure without `xtask`, reproduces its reviewed
+  bytes, and feeds those exact generated artifacts into the public application
+  build; provider invocation and runtime execution remain outside authoring.
 - Added the generator-owned `workspace.patch.applyValidated@1` request closure.
   Exact compiler-owned Core and Target IR bind the canonical patch-input schema,
   workspace-root basis, writable-path-policy authority, CI-workflow exclusion,

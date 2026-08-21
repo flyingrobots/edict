@@ -1,0 +1,167 @@
+# Author an Application-Owned Lawpack
+
+This guide shows an application repository how to turn one reviewable JSON
+definition into the canonical lawpack artifacts consumed by `edict application
+build`. The application owns the vocabulary and declarations. Edict owns schema
+checking, canonical CBOR, digest framing, closure validation, and publication.
+No provider component or runtime participates in authoring.
+
+## Build a Lawpack
+
+Create an `edict.lawpack-build/v1` document in the application repository. Its
+paths are relative to the document, not the process working directory:
+
+```json
+{
+  "schema": "edict.lawpack-build/v1",
+  "outputDirectory": "generated/example-text",
+  "lawpack": {
+    "schema": "edict.lawpack-authoring/v1",
+    "id": "example.text",
+    "version": "1",
+    "acceptedCoreAbi": ["edict.core/v1"],
+    "dependencies": [],
+    "exportsCoordinate": "example.text.exports/v1",
+    "exports": {
+      "types": [{
+        "coordinate": "example.text@1.Key",
+        "definition": "String<max=64>"
+      }],
+      "constants": [],
+      "pureFunctions": [],
+      "effects": [],
+      "obstructions": [],
+      "operationProfiles": {}
+    },
+    "targetAdapters": [],
+    "verifier": {
+      "class": "declarative",
+      "ruleset": {
+        "id": "example.text.verifier/v1",
+        "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      }
+    },
+    "compatibility": {
+      "id": "example.text.compatibility/v1",
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "conformanceFixtureCorpus": {
+      "id": "example.text.fixtures/v1",
+      "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+    },
+    "localResources": []
+  },
+  "dependencyBundles": []
+}
+```
+
+Submit it through the normal JSONL CLI:
+
+```json
+{"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json"}
+```
+
+On success, `generated/example-text/` contains:
+
+- `manifest.cbor` and `manifest.sha256`;
+- `exports.cbor` and `exports.sha256`;
+- each declared adapter and its `.sha256` sidecar;
+- each declared local resource, including target configuration, and its
+  `.sha256` sidecar;
+- `edict.lawpack-output.json`, the ownership and review index for the generated
+  directory.
+
+The `.sha256` files are lowercase review strings ending in one newline. The
+canonical artifacts carry typed digest bytes internally; review strings are not
+their wire representation.
+
+## Check Generated Output
+
+Use `checkOnly` in CI or before committing vendored output:
+
+```json
+{"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","lawpack":"edict.lawpack.json","checkOnly":true}
+```
+
+Check-only mode performs the same bounded reads, construction, decoding, and
+closure validation, then compares the complete output tree byte for byte. It
+does not write. Missing, changed, or extra output is
+`LawpackOutputDrift`.
+
+## Resource And Dependency Identity
+
+An external resource uses an application-supplied exact identity:
+
+```json
+{"id":"echo.dpo@1","digest":"sha256:<64 lowercase hex>"}
+```
+
+A local resource places reviewable JSON in the authoring document:
+
+```json
+{
+  "name": "target-config",
+  "coordinate": "example.text.target-config/v1",
+  "output": "resources/target-config.cbor",
+  "value": {"maxBytes": 4096}
+}
+```
+
+Other declarations refer to it as `{"local":"target-config"}`. Edict converts
+the value to canonical CBOR and derives its coordinate-framed identity. JSON
+objects of the exact form `{"$edictBytes":"00ff"}` represent canonical byte
+strings; floating-point JSON numbers are rejected.
+
+Every `dependencies` edge names an id, version, and exact manifest digest. The
+matching canonical manifest and exports paths appear in `dependencyBundles`.
+The caller must supply the complete transitive closure and nothing disconnected
+from the authored root. Edict decodes each dependency, corroborates every pin,
+and runs the same complete-graph validator used by application builds.
+
+## Publication Policy
+
+`outputDirectory` is exclusively owned by this build after its output index is
+present. A write build stages a complete sibling directory, preserves the old
+directory, activates the replacement, and restores the old directory if
+activation fails. A later successful build replaces the whole owned directory,
+so artifacts removed from the definition cannot survive as stale output.
+
+An existing non-empty directory without a valid `edict.lawpack-output/v1`
+index is refused rather than deleted. Output paths and input dependency paths
+must be confined relative paths. Existing symlink traversal is rejected.
+Definition and dependency reads are bounded to 1 MiB per file, and the supplied
+dependency closure is bounded to 192 bundles. A persistent hidden lock file is
+kept beside the output directory so concurrent processes cannot acquire locks
+on different inodes while the directory itself is replaced; it is coordination
+state, not a canonical lawpack artifact, and should remain untracked.
+
+## The Five Artifacts That Must Stay Distinct
+
+| Artifact | Owner | Meaning |
+| --- | --- | --- |
+| Lawpack authoring JSON | Application | Reviewable semantic declarations and exact external pins. |
+| Generated lawpack artifacts | Edict encoder | Canonical manifest, exports, adapters, configurations, and derived identities. |
+| Application `.edict` source | Application | Executable application law that imports the exact generated manifest digest. |
+| Provider package | Target provider | Target profile plus bounded lowering and verification components; unused during authoring. |
+| Runtime receipt | Runtime | Evidence about one admitted execution; neither input to nor output from authoring. |
+
+The independent application witness
+`external_application_authors_vendors_and_builds_its_own_lawpack` runs outside
+the Edict checkout. It authors the workspace-snapshot closure through the
+public binary, reproduces the four reviewed canonical artifacts byte for byte,
+and then feeds those generated bytes to the public application build. The
+fixture proves authoring and compilation, not runtime execution.
+
+## Failure Boundary
+
+Malformed definitions fail before artifact return. Emitted manifest, exports,
+and adapter bytes are passed back through `decode_lawpack_bundle`,
+`decode_lawpack_adapter`, and `validate_lawpack_dependency_graph` before any
+publication. Stable CLI kinds distinguish invalid definitions or digests,
+unresolved local resources, invalid canonical values, incomplete adapters,
+dependency substitution, path escape, output ownership, output drift, and
+publication failure.
+
+Edict does not discover application semantics from schemas or fixtures, invoke
+a provider, build an executable package, admit an operation, or create a runtime
+receipt on this path.
