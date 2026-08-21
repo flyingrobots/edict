@@ -1482,6 +1482,16 @@ fn publish_output_with_hooks_in_authority(
         let _ = parent_dir.remove_dir_all(&transaction);
         return Err(error);
     }
+    let staged_identity = directory_identity(&transaction_dir, output).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to retain staged output identity for `{}`: {}",
+                output.display(),
+                error.message
+            ),
+        )
+    })?;
 
     if let Err(error) = before_capture() {
         let _ = parent_dir.remove_dir_all(&transaction);
@@ -1556,12 +1566,71 @@ fn publish_output_with_hooks_in_authority(
             )
         }));
     }
+    let activated = open_check_output_dir(parent_dir, output_name, output);
+    let activation_matches = activated
+        .as_ref()
+        .ok()
+        .and_then(|directory| directory_identity(directory, output).ok())
+        .is_some_and(|identity| identity == staged_identity);
+    if !activation_matches {
+        drop(activated);
+        drop(captured);
+        let rollback = restore_after_substituted_activation_in(
+            parent_dir,
+            output_name,
+            &transaction,
+            &backup,
+            output,
+            existed,
+        );
+        drop(Dir::remove_open_dir_all(transaction_dir));
+        return Err(rollback.err().unwrap_or_else(|| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "activated output `{}` did not match the retained staged transaction identity",
+                    output.display()
+                ),
+            )
+        }));
+    }
     if let Some(captured) = captured {
         // Activation is the commit point. Backup cleanup is best effort so a
         // committed replacement is never reported as an unchanged failure.
         drop(remove_backup(captured));
     }
     Ok(())
+}
+
+fn restore_after_substituted_activation_in(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    transaction: &Path,
+    backup: &Path,
+    output: &Path,
+    existed: bool,
+) -> Result<(), LawpackBuildFailure> {
+    if entry_exists(parent, transaction.as_os_str())? {
+        return Err(failure(
+            "LawpackOutputRollbackFailed",
+            format!(
+                "refused to overwrite a concurrently installed transaction while restoring `{}`",
+                output.display()
+            ),
+        ));
+    }
+    parent
+        .rename(output_name, parent, transaction)
+        .map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to preserve a substituted activation for `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+    restore_output_directory_in(parent, output_name, backup, output, existed)
 }
 
 fn acquire_output_lock_in(
@@ -2348,6 +2417,86 @@ mod tests {
         assert_eq!(
             test_ok(read_output_tree(&backup), "read captured output backup"),
             original
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn publication_rejects_a_substituted_staged_transaction() {
+        let root = temp_tree("staged-transaction-identity");
+        let output = root.join("generated");
+        let displaced_transaction = root.join("displaced-transaction");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let error = test_err(
+            publish_output_with_hook(&output, &replacement, || {
+                let transaction = test_ok(fs::read_dir(&root), "read publication root")
+                    .map(|entry| test_ok(entry, "read publication entry"))
+                    .find(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(".edict-lawpack-transaction-")
+                    })
+                    .map_or_else(
+                        || panic!("staged transaction must exist before activation"),
+                        |entry| entry.path(),
+                    );
+                fs::rename(&transaction, &displaced_transaction).map_err(|error| {
+                    super::failure(
+                        "InjectedFailure",
+                        format!("failed to displace staged transaction: {error}"),
+                    )
+                })?;
+                fs::create_dir(&transaction).map_err(|error| {
+                    super::failure(
+                        "InjectedFailure",
+                        format!("failed to install substitute transaction: {error}"),
+                    )
+                })?;
+                fs::write(transaction.join("substitute"), b"unadmitted").map_err(|error| {
+                    super::failure(
+                        "InjectedFailure",
+                        format!("failed to write substitute transaction: {error}"),
+                    )
+                })?;
+                Ok(())
+            }),
+            "substituted staged transaction rejects",
+        );
+
+        assert_eq!(error.kind, "LawpackOutputWriteFailed");
+        assert_eq!(
+            test_ok(read_output_tree(&output), "read restored output"),
+            original
+        );
+        assert!(!displaced_transaction.exists());
+        let preserved_substitute = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-transaction-")
+            })
+            .map_or_else(
+                || panic!("substituted transaction must remain recoverable"),
+                |entry| entry.path(),
+            );
+        assert_eq!(
+            test_ok(
+                fs::read(preserved_substitute.join("substitute")),
+                "read preserved substitute transaction",
+            ),
+            b"unadmitted"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
