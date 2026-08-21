@@ -30,8 +30,13 @@ pub const MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH: usize = 48;
 
 const LAWPACK_OUTPUT_INDEX_PATH: &str = "edict.lawpack-output.json";
 const EXPORT_VALUE_CANONICAL_ENCLOSING_DEPTH: usize = 3;
-const MAX_PORTABLE_OUTPUT_COMPONENT_BYTES: usize = 253;
-const MAX_PORTABLE_RELATIVE_OUTPUT_BYTES: usize = 1022;
+const MAX_PORTABLE_ARTIFACT_COMPONENT_BYTES: usize = 255;
+const MAX_PORTABLE_RELATIVE_ARTIFACT_BYTES: usize = 1024;
+const DIGEST_SIDECAR_EXTENSION_GROWTH: usize = ".sha256".len() - ".cbor".len();
+const MAX_PORTABLE_OUTPUT_COMPONENT_BYTES: usize =
+    MAX_PORTABLE_ARTIFACT_COMPONENT_BYTES - DIGEST_SIDECAR_EXTENSION_GROWTH;
+const MAX_PORTABLE_RELATIVE_OUTPUT_BYTES: usize =
+    MAX_PORTABLE_RELATIVE_ARTIFACT_BYTES - DIGEST_SIDECAR_EXTENSION_GROWTH;
 
 /// Stable lawpack-authoring failure categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -1796,39 +1801,37 @@ fn digest_sidecar_path(output: &str) -> Result<String, Vec<LawpackAuthoringFailu
     }
     let mut sidecar = path.to_path_buf();
     sidecar.set_extension("sha256");
-    sidecar.into_os_string().into_string().map_err(|_| {
+    let sidecar = sidecar.into_os_string().into_string().map_err(|_| {
         one(failure(
             LawpackAuthoringFailureKind::InvalidOutputPath,
             output,
             "a UTF-8 relative output path",
         ))
-    })
+    })?;
+    if !portable_output_path(
+        &sidecar,
+        "sha256",
+        MAX_PORTABLE_RELATIVE_ARTIFACT_BYTES,
+        MAX_PORTABLE_ARTIFACT_COMPONENT_BYTES,
+    ) {
+        return Err(one(failure(
+            LawpackAuthoringFailureKind::InvalidOutputPath,
+            output,
+            "a derived digest sidecar within portable relative-path and component limits",
+        )));
+    }
+    Ok(sidecar)
 }
 
 fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAuthoringFailure>> {
-    let output_path = Path::new(output);
     if output.is_empty()
         || output.as_bytes().contains(&0)
-        || !portable_output_path_grammar(output)
-        || output_path.is_absolute()
-        || output_path.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir
-                    | Component::CurDir
-                    | Component::RootDir
-                    | Component::Prefix(_)
-            )
-        })
-        || output_path
-            .extension()
-            .and_then(|extension| extension.to_str())
-            != Some("cbor")
-        || output.len() > MAX_PORTABLE_RELATIVE_OUTPUT_BYTES
-        || !output_path.components().all(|component| match component {
-            Component::Normal(component) => portable_output_component(component.to_str()),
-            _ => false,
-        })
+        || !portable_output_path(
+            output,
+            "cbor",
+            MAX_PORTABLE_RELATIVE_OUTPUT_BYTES,
+            MAX_PORTABLE_OUTPUT_COMPONENT_BYTES,
+        )
     {
         return Err(one(failure(
             LawpackAuthoringFailureKind::InvalidOutputPath,
@@ -1839,16 +1842,41 @@ fn validate_output_path(output: &str, path: &str) -> Result<(), Vec<LawpackAutho
     Ok(())
 }
 
+fn portable_output_path(
+    output: &str,
+    extension: &str,
+    max_path_bytes: usize,
+    max_component_bytes: usize,
+) -> bool {
+    let output_path = Path::new(output);
+    portable_output_path_grammar(output)
+        && !output_path.is_absolute()
+        && output_path
+            .extension()
+            .and_then(|candidate| candidate.to_str())
+            == Some(extension)
+        && output.len() <= max_path_bytes
+        && output_path.components().all(|component| match component {
+            Component::Normal(component) => {
+                portable_output_component(component.to_str(), max_component_bytes)
+            }
+            Component::ParentDir
+            | Component::CurDir
+            | Component::RootDir
+            | Component::Prefix(_) => false,
+        })
+}
+
 fn portable_output_path_grammar(output: &str) -> bool {
     !output.as_bytes().contains(&b'\\') && output.split('/').all(|component| !component.is_empty())
 }
 
-fn portable_output_component(component: Option<&str>) -> bool {
+fn portable_output_component(component: Option<&str>, max_bytes: usize) -> bool {
     let Some(component) = component else {
         return false;
     };
     if component.is_empty()
-        || component.len() > MAX_PORTABLE_OUTPUT_COMPONENT_BYTES
+        || component.len() > max_bytes
         || component.ends_with('.')
         || !component.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"._-".contains(&byte)

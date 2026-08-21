@@ -53,9 +53,12 @@ versions still track specification maturity rather than a released product.
   without creating its parent, while empty lawpack document paths reject as
   invalid settings. Artifact paths containing filesystem NUL bytes reject
   before output or dependency I/O. Pure preflight covers fixed artifacts,
-  sidecars, reserved namespaces, duplicates, and ancestor collisions. Artifact
-  paths follow a raw `/`-separated, alias-free, length-bounded lowercase
-  portable filename policy. Proper ancestor intent locks are acquired top-down
+  sidecars, reserved namespaces, duplicates, and ancestor collisions. Primary
+  `.cbor` paths reserve the two bytes needed when `.sha256` replaces the
+  extension, and each derived sidecar is independently checked against the
+  255-byte component and 1024-byte relative-artifact ceilings. Artifact paths
+  follow a raw `/`-separated, alias-free, length-bounded lowercase portable
+  filename policy. Proper ancestor intent locks are acquired top-down
   and shared by disjoint sibling outputs. Ownership and real-directory
   confinement are rechecked before activation, while capability-directory
   handles and their ancestor-intent locks remain one retained authority through

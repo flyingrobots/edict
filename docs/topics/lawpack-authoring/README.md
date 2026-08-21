@@ -170,16 +170,19 @@ input dependency paths must be confined relative paths, and dependency inputs
 must remain outside the owned output tree. Existing symlink traversal is
 rejected. Authored files may not collide by using another file as a parent, and
 the ownership-index path is reserved for Edict. Edict indexes every emitted
-file path and checks each
-proper ancestor against that set, so duplicate and file/descendant collisions
+file path and checks each proper ancestor against that set, so duplicate and
+file/descendant collisions
 remain fail-closed without pairwise growth as application-owned resource sets
 expand. Pure preflight derives the fixed manifest and exports, every authored
 artifact, every digest sidecar, and the reserved ownership-index namespace, then
 rejects duplicates and file/descendant collisions immediately after the build
 document is decoded and before output inspection, coordination, or dependency
-filesystem I/O. Output components use bounded lowercase ASCII letters, digits,
-`.`, `_`, and `-`, and reject Windows device names, filesystem NUL, case
-aliases, trailing-dot aliases, overlong components or relative paths, and
+filesystem I/O. Primary `.cbor` paths reserve the two bytes added when their
+extension becomes `.sha256`; derived sidecars are separately validated at the
+255-byte component and 1024-byte relative-artifact ceilings. Output components
+use bounded lowercase ASCII letters, digits, `.`, `_`, and `-`, and reject
+Windows device names, filesystem NUL, case aliases, trailing-dot aliases,
+overlong components or relative paths, and
 platform-specific forbidden punctuation. Only `/` separates non-empty raw path
 components; backslashes and repeated separators reject before host path parsing.
 

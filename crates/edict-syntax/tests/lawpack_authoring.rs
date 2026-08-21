@@ -1,10 +1,11 @@
 use edict_syntax::{
-    author_lawpack, decode_lawpack_adapter, decode_lawpack_bundle, CanonicalValue,
-    LawpackArtifactKind, LawpackAuthoringApertureRequirement, LawpackAuthoringDefinition,
-    LawpackAuthoringDependency, LawpackAuthoringFailureCause, LawpackAuthoringFailureKind,
-    LawpackAuthoringPureFunction, LawpackAuthoringVerifier, LawpackEffectKind,
-    LawpackExecutionClass, LawpackPureFunctionImplementation, LawpackValidationFailureKind,
-    LawpackVerifier, MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH,
+    author_lawpack, decode_lawpack_adapter, decode_lawpack_bundle,
+    preflight_lawpack_authoring_paths, CanonicalValue, LawpackArtifactKind,
+    LawpackAuthoringApertureRequirement, LawpackAuthoringDefinition, LawpackAuthoringDependency,
+    LawpackAuthoringFailureCause, LawpackAuthoringFailureKind, LawpackAuthoringPureFunction,
+    LawpackAuthoringVerifier, LawpackEffectKind, LawpackExecutionClass,
+    LawpackPureFunctionImplementation, LawpackValidationFailureKind, LawpackVerifier,
+    MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH,
 };
 
 const PIN_RULESET: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -568,6 +569,43 @@ fn large_unique_artifact_path_set_authors_successfully() {
 
     let authored = author_lawpack(&definition, &[]).expect("large unique path set authors");
     assert_eq!(authored.artifacts().len(), 2_010);
+}
+
+#[test]
+fn derived_digest_sidecars_use_reserved_portable_headroom() {
+    let component_boundary = format!("{}.cbor", "x".repeat(248));
+    let full_component = "x".repeat(253);
+    let path_boundary =
+        format!("{full_component}/{full_component}/{full_component}/{full_component}/x.cbor");
+
+    for (output, primary_limit, sidecar_limit) in
+        [(component_boundary, 253, 255), (path_boundary, 1022, 1024)]
+    {
+        let mut definition = full_definition();
+        definition.local_resources[0].output = output.clone();
+
+        preflight_lawpack_authoring_paths(&definition)
+            .expect("primary and digest sidecar fit their portable boundaries");
+        let authored = author_lawpack(&definition, &[])
+            .expect("portable boundary artifacts author successfully");
+        let sidecar = format!(
+            "{}.sha256",
+            output
+                .strip_suffix(".cbor")
+                .expect("test output has cbor extension")
+        );
+
+        assert_eq!(output.len(), primary_limit);
+        assert_eq!(sidecar.len(), sidecar_limit);
+        assert!(authored
+            .artifacts()
+            .iter()
+            .any(|artifact| artifact.path() == output));
+        assert!(authored
+            .artifacts()
+            .iter()
+            .any(|artifact| artifact.path() == sidecar));
+    }
 }
 
 #[test]
