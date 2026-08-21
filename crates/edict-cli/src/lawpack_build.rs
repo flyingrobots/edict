@@ -1962,7 +1962,7 @@ mod tests {
     #[test]
     fn output_directory_bounds_derived_lock_names() {
         let root = temp_tree("bounded-output-name");
-        let exact = "x".repeat(229);
+        let exact = "x".repeat(MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES);
         assert_eq!(
             test_ok(
                 resolve_output_directory(&root, &exact),
@@ -1970,7 +1970,7 @@ mod tests {
             ),
             root.join(&exact)
         );
-        let overlong = "x".repeat(230);
+        let overlong = "x".repeat(MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES + 1);
         let failure = test_err(
             resolve_output_directory(&root, &overlong),
             "overlong derived lock name rejects",
