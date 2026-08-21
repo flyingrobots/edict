@@ -8,8 +8,9 @@ use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use edict_syntax::{
-    author_lawpack, decode_lawpack_bundle, LawpackArtifactKind, LawpackAuthoringDefinition,
-    LawpackAuthoringFailureKind, ValidatedLawpackBundle,
+    author_lawpack, decode_lawpack_bundle, preflight_lawpack_authoring_paths, LawpackArtifactKind,
+    LawpackAuthoringDefinition, LawpackAuthoringFailure, LawpackAuthoringFailureKind,
+    ValidatedLawpackBundle,
 };
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -21,6 +22,7 @@ const OUTPUT_INDEX_FILE: &str = "edict.lawpack-output.json";
 const MAX_LAWPACK_DOCUMENT_BYTES: u64 = 1024 * 1024;
 const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_DEPENDENCY_BUNDLES: usize = 192;
+const PUBLICATION_COORDINATION_LOCK: &str = "edict-lawpack-publication.lock";
 
 #[derive(Debug)]
 pub(crate) struct LawpackBuildFailure {
@@ -194,21 +196,13 @@ pub(crate) fn build_lawpack(
     )?;
     let document = decode_lawpack_document(&document_bytes)?;
     validate_document(&document)?;
+    preflight_lawpack_authoring_paths(&document.lawpack).map_err(first_authoring_failure)?;
+    let _publication_coordination = acquire_publication_coordination_lock()?;
 
     let output = resolve_output_directory(root, &document.output_directory)?;
     let dependencies = load_dependencies(root, &document.dependency_bundles, &output)?;
-    let authored = author_lawpack(&document.lawpack, &dependencies).map_err(|failures| {
-        let Some(first) = failures.first() else {
-            return failure(
-                "LawpackAuthoringFailed",
-                "lawpack authoring failed without a diagnostic".to_owned(),
-            );
-        };
-        failure(
-            authoring_failure_kind(first.kind),
-            format!("{}: {}", first.path, first.obligation),
-        )
-    })?;
+    let authored =
+        author_lawpack(&document.lawpack, &dependencies).map_err(first_authoring_failure)?;
 
     let mut files = BTreeMap::new();
     for artifact in authored.artifacts() {
@@ -923,6 +917,35 @@ fn acquire_output_lock(output: &Path) -> Result<File, LawpackBuildFailure> {
     Ok(lock)
 }
 
+fn acquire_publication_coordination_lock() -> Result<File, LawpackBuildFailure> {
+    let lock_path = std::env::temp_dir().join(PUBLICATION_COORDINATION_LOCK);
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to open lawpack publication coordination lock `{}`: {error}",
+                    lock_path.display()
+                ),
+            )
+        })?;
+    lock.lock().map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to acquire lawpack publication coordination lock `{}`: {error}",
+                lock_path.display()
+            ),
+        )
+    })?;
+    Ok(lock)
+}
+
 fn expected_output_owner(
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(String, String), LawpackBuildFailure> {
@@ -1234,6 +1257,19 @@ fn failure(kind: &'static str, message: String) -> LawpackBuildFailure {
     LawpackBuildFailure { kind, message }
 }
 
+fn first_authoring_failure(failures: Vec<LawpackAuthoringFailure>) -> LawpackBuildFailure {
+    let Some(first) = failures.into_iter().next() else {
+        return failure(
+            "LawpackAuthoringFailed",
+            "lawpack authoring failed without a diagnostic".to_owned(),
+        );
+    };
+    failure(
+        authoring_failure_kind(first.kind),
+        format!("{}: {}", first.path, first.obligation),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -1241,13 +1277,14 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::mpsc;
+    use std::time::Duration;
 
     use super::{
-        acquire_output_ancestor_locks, check_output, decode_lawpack_document, encode_output_index,
-        load_dependencies, output_lock_path, publish_output, publish_output_with_hook,
-        publish_output_with_hooks, read_output_tree, resolve_output_directory,
-        validate_generated_artifact_size, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry,
+        acquire_output_ancestor_locks, acquire_publication_coordination_lock, build_lawpack,
+        check_output, decode_lawpack_document, encode_output_index, load_dependencies,
+        output_lock_path, publish_output, publish_output_with_hook, publish_output_with_hooks,
+        read_output_tree, resolve_output_directory, validate_generated_artifact_size,
+        LawpackBuildFailure, LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
     };
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -1316,6 +1353,37 @@ mod tests {
         assert!(!nested.exists());
         assert!(!output_lock_path(&nested).exists());
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn common_coordination_lock_serializes_cross_root_publication() {
+        let first = test_ok(
+            acquire_publication_coordination_lock(),
+            "acquire first coordination lock",
+        );
+        let (started_tx, started_rx) = mpsc::channel();
+        let (acquired_tx, acquired_rx) = mpsc::channel();
+        let contender = std::thread::spawn(move || {
+            test_ok(started_tx.send(()), "announce coordination attempt");
+            let guard = test_ok(
+                acquire_publication_coordination_lock(),
+                "acquire second coordination lock",
+            );
+            test_ok(acquired_tx.send(()), "announce coordination acquisition");
+            drop(guard);
+        });
+        test_ok(started_rx.recv(), "wait for coordination attempt");
+        assert!(
+            acquired_rx.recv_timeout(Duration::from_millis(50)).is_err(),
+            "second publication must wait while the common lock is held"
+        );
+
+        drop(first);
+        test_ok(
+            acquired_rx.recv_timeout(Duration::from_secs(1)),
+            "second publication acquires after release",
+        );
+        test_ok(contender.join(), "join coordination contender");
     }
 
     #[test]
@@ -1501,6 +1569,43 @@ mod tests {
             .kind,
             "InvalidLawpackConfig"
         );
+    }
+
+    #[test]
+    fn build_rejects_nul_path_before_missing_dependency_io() {
+        let root = temp_tree("nul-before-dependency");
+        let document_path = root.join("edict.lawpack.json");
+        let document = br#"{
+          "schema":"edict.lawpack-build/v1",
+          "outputDirectory":"generated",
+          "lawpack":{
+            "schema":"edict.lawpack-authoring/v1",
+            "id":"example.nul",
+            "version":"1",
+            "acceptedCoreAbi":["edict.core/v1"],
+            "dependencies":[],
+            "exportsCoordinate":"example.nul.exports/v1",
+            "exports":{"types":[],"constants":[],"pureFunctions":[],"effects":[],"obstructions":[],"operationProfiles":{}},
+            "targetAdapters":[],
+            "verifier":{"class":"declarative","ruleset":{"id":"example.rules/v1","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111"}},
+            "compatibility":{"id":"example.compat/v1","digest":"sha256:2222222222222222222222222222222222222222222222222222222222222222"},
+            "conformanceFixtureCorpus":{"id":"example.fixtures/v1","digest":"sha256:3333333333333333333333333333333333333333333333333333333333333333"},
+            "localResources":[{"name":"config","coordinate":"example.config/v1","output":"bad\u0000.cbor","value":{}}]
+          },
+          "dependencyBundles":[{"manifest":"missing-manifest.cbor","exports":"missing-exports.cbor"}]
+        }"#;
+        test_ok(fs::write(&document_path, document), "write build document");
+
+        assert_eq!(
+            test_err(
+                build_lawpack(&document_path, false),
+                "NUL path rejects before missing dependency I/O",
+            )
+            .kind,
+            "LawpackAuthoringInvalidOutputPath"
+        );
+        assert!(!root.join("generated").exists());
+        test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
     #[test]

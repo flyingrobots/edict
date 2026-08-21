@@ -156,8 +156,9 @@ pub use lawpack_adapter::{
     PreparedLawpackCompilation, ValidatedLawpackAdapter, LAWPACK_ADAPTER_API_VERSION,
 };
 pub use lawpack_authoring::{
-    author_lawpack, LawpackArtifactKind, LawpackAuthoredArtifact, LawpackAuthoredArtifactSet,
-    LawpackAuthoringAdapter, LawpackAuthoringAdapterBudget, LawpackAuthoringAdapterEffect,
+    author_lawpack, preflight_lawpack_authoring_paths, LawpackArtifactKind,
+    LawpackAuthoredArtifact, LawpackAuthoredArtifactSet, LawpackAuthoringAdapter,
+    LawpackAuthoringAdapterBudget, LawpackAuthoringAdapterEffect,
     LawpackAuthoringAdapterOperationProfile, LawpackAuthoringApertureRequirement,
     LawpackAuthoringAuthorityClass, LawpackAuthoringConstant, LawpackAuthoringDefinition,
     LawpackAuthoringDependency, LawpackAuthoringDeterminismClass, LawpackAuthoringEffect,

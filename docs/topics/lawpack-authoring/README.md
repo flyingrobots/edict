@@ -140,7 +140,11 @@ output cannot be nested beneath an ancestor containing another lawpack output
 index. Edict acquires every proper ancestor output lock in top-down order,
 rechecks ancestor ownership while holding those locks, and retains them through
 check or publication. Parent and child builds therefore cannot use different
-locks to race across overlapping replacement trees.
+locks to race across overlapping replacement trees. A blocking common
+publication coordinator is acquired before output inspection and remains held
+through completion, so the same rule covers parent and child outputs whose
+build documents have different roots. This deliberately serializes lawpack
+write and check operations across those roots.
 
 An existing non-empty directory without a valid `edict.lawpack-output/v1`
 index is refused rather than deleted. Output paths and input dependency paths
@@ -150,8 +154,9 @@ not collide by using another file as a parent, and the ownership-index path is
 reserved for Edict. Edict indexes every emitted file path and checks each
 proper ancestor against that set, so duplicate and file/descendant collisions
 remain fail-closed without pairwise growth as application-owned resource sets
-expand. Artifact paths containing a filesystem NUL byte reject during
-authoring, before any filesystem operation.
+expand. Artifact paths containing a filesystem NUL byte are preflighted
+immediately after the build document is decoded, before output inspection,
+coordination, or dependency filesystem I/O.
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
@@ -171,7 +176,9 @@ creating that parent or the sibling publication lock.
 A persistent hidden lock file is kept beside the output directory so concurrent
 processes cannot acquire locks on different inodes while the directory itself
 is replaced; it is coordination state, not a canonical lawpack artifact, and
-should remain untracked. Activation is the publication commit point. Failure to
+should remain untracked. A second persistent lock in the operating-system
+temporary directory is the common cross-root publication coordinator; it is
+also non-canonical coordination state. Activation is the publication commit point. Failure to
 remove the hidden previous-tree backup after activation does not turn a
 committed replacement into a failed command; that backup is best-effort cleanup
 state and may be removed by the operator.

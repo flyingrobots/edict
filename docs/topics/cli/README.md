@@ -53,7 +53,10 @@ ownership index, and it refuses to place one owned output inside another owned
 lawpack tree. Proper ancestor output locks are acquired top-down, ownership is
 rechecked under those locks, and the locks remain held through check or
 publication so parent and nested builds cannot race over the same tree.
-Artifact paths containing filesystem NUL bytes reject before authoring.
+One blocking common publication coordinator extends that exclusion across
+different build-document roots, deliberately serializing lawpack write and
+check operations. Artifact paths containing filesystem NUL bytes reject before
+output inspection, coordination, or dependency I/O.
 Dependency paths are canonicalized before overlap checks, so a
 symlink cannot route an input back under the replaceable output tree. A check-only build
 does not repair the owned artifact tree and reports `LawpackOutputDrift` unless

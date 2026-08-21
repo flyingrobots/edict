@@ -673,6 +673,7 @@ pub fn author_lawpack(
     dependencies: &[ValidatedLawpackBundle],
 ) -> Result<LawpackAuthoredArtifactSet, Vec<LawpackAuthoringFailure>> {
     validate_definition_header(definition)?;
+    preflight_lawpack_authoring_paths(definition)?;
     validate_dependencies(definition, dependencies)?;
     let resources = build_local_resources(&definition.local_resources)?;
     let exports_value = exports_value(&definition.exports, &resources)?;
@@ -737,6 +738,23 @@ pub fn author_lawpack(
     }
     validate_artifact_paths(&artifacts)?;
     Ok(LawpackAuthoredArtifactSet { artifacts })
+}
+
+/// Validate application-authored artifact paths without dependency or filesystem I/O.
+///
+/// # Errors
+///
+/// Returns the same structured output-path failures used by [`author_lawpack`].
+pub fn preflight_lawpack_authoring_paths(
+    definition: &LawpackAuthoringDefinition,
+) -> Result<(), Vec<LawpackAuthoringFailure>> {
+    for (index, resource) in definition.local_resources.iter().enumerate() {
+        validate_output_path(&resource.output, &format!("localResources.{index}"))?;
+    }
+    for (index, adapter) in definition.target_adapters.iter().enumerate() {
+        validate_output_path(&adapter.output, &format!("targetAdapters.{index}"))?;
+    }
+    Ok(())
 }
 
 fn validate_definition_header(

@@ -46,9 +46,10 @@ versions still track specification maturity rather than a released product.
   drift read stays bounded, check-only classifies a missing nested output as
   drift without creating its parent, empty lawpack document paths reject as
   invalid settings, artifact paths containing filesystem NUL bytes reject
-  before authoring, and proper ancestor output locks are acquired top-down and
-  ownership is rechecked while those locks cover check or publication, so
-  outputs cannot race into another owned lawpack tree,
+  before output or dependency I/O, and one blocking common publication
+  coordinator covers document-root boundaries before proper ancestor output
+  locks are acquired top-down and ownership is rechecked, so outputs cannot
+  race into another owned lawpack tree,
   canonical JSON accepts a scalar at the
   exact 128-container boundary while accounting for enclosing export
   structures, emitted artifact-path collision checks use an ordering-independent
