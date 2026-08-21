@@ -163,9 +163,9 @@ An existing non-empty directory without a valid
 `edict.lawpack-output/v1`) is refused rather than deleted. Output paths and
 input dependency paths must be confined relative paths, and dependency inputs
 must remain outside the owned output tree. Existing symlink traversal is
-rejected. Authored files may
-not collide by using another file as a parent, and the ownership-index path is
-reserved for Edict. Edict indexes every emitted file path and checks each
+rejected. Authored files may not collide by using another file as a parent, and
+the ownership-index path is reserved for Edict. Edict indexes every emitted
+file path and checks each
 proper ancestor against that set, so duplicate and file/descendant collisions
 remain fail-closed without pairwise growth as application-owned resource sets
 expand. Pure preflight derives the fixed manifest and exports, every authored
@@ -197,10 +197,10 @@ the ownership index after traversal and reports drift if its basis changed.
 A persistent hidden lock file is kept beside each write output and its proper
 ancestors. These files are footprint-coordination state, not canonical lawpack
 artifacts, and should remain untracked. There is no process-wide, host-wide, or
-filesystem-wide publication coordinator. Activation is the publication commit point. Failure to
-remove the hidden previous-tree backup after activation does not turn a
-committed replacement into a failed command; that backup is best-effort cleanup
-state and may be removed by the operator.
+filesystem-wide publication coordinator. Activation is the publication commit
+point. Failure to remove the hidden previous-tree backup after activation does
+not turn a committed replacement into a failed command; that backup is
+best-effort cleanup state and may be removed by the operator.
 
 ## The Five Artifacts That Must Stay Distinct
 
