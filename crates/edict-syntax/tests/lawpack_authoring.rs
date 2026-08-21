@@ -1,7 +1,7 @@
 use edict_syntax::{
     author_lawpack, decode_lawpack_adapter, decode_lawpack_bundle, LawpackArtifactKind,
-    LawpackAuthoringDefinition, LawpackAuthoringDependency, LawpackAuthoringFailureKind,
-    LawpackAuthoringPureFunction,
+    LawpackAuthoringApertureRequirement, LawpackAuthoringDefinition, LawpackAuthoringDependency,
+    LawpackAuthoringFailureKind, LawpackAuthoringPureFunction, LawpackAuthoringVerifier,
 };
 
 const PIN: &str = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
@@ -370,6 +370,61 @@ fn malformed_inputs_fail_with_stable_categories() {
     assert_eq!(
         failures[0].kind,
         LawpackAuthoringFailureKind::InvalidLawpack
+    );
+}
+
+#[test]
+fn artifact_paths_reject_file_ancestors_and_the_ownership_index_namespace() {
+    let mut prefix_collision = full_definition();
+    prefix_collision.local_resources[0].output = "resources/parent.cbor".to_owned();
+    prefix_collision.local_resources[1].output = "resources/parent.cbor/child.cbor".to_owned();
+    let failures = author_lawpack(&prefix_collision, &[])
+        .expect_err("an emitted file cannot be another artifact's ancestor");
+    assert_eq!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::DuplicateIdentity
+    );
+
+    let mut reserved_namespace = full_definition();
+    reserved_namespace.local_resources[0].output =
+        "edict.lawpack-output.json/child.cbor".to_owned();
+    let failures = author_lawpack(&reserved_namespace, &[])
+        .expect_err("the generated ownership index remains a file namespace");
+    assert_eq!(
+        failures[0].kind,
+        LawpackAuthoringFailureKind::InvalidOutputPath
+    );
+}
+
+#[test]
+fn tagged_authoring_variants_reject_unknown_fields() {
+    assert!(
+        serde_json::from_value::<LawpackAuthoringVerifier>(serde_json::json!({
+            "class": "declarative",
+            "ruleset": {"id": "example.rules/v1", "digest": PIN},
+            "rulesett": {"id": "ignored/v1", "digest": PIN}
+        }))
+        .is_err()
+    );
+    assert!(serde_json::from_value::<LawpackAuthoringPureFunction>(serde_json::json!({
+        "source": "edict",
+        "coordinate": "example.text@1.helper",
+        "typeParameters": [],
+        "parameterTypes": [],
+        "returnType": "U64",
+        "costTemplate": "example.text@1.smallBudget",
+        "determinismClass": "total",
+        "body": {"node": "core-fn-body", "statements": [], "result": {"node": "literal", "value": 1}},
+        "boddy": {}
+    }))
+    .is_err());
+    assert!(
+        serde_json::from_value::<LawpackAuthoringApertureRequirement>(serde_json::json!({
+            "kind": "footprintCeiling",
+            "reference": "example.text@1.oneRange",
+            "referense": "ignored"
+        }))
+        .is_err()
     );
 }
 

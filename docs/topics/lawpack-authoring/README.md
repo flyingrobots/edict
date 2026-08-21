@@ -128,12 +128,24 @@ so artifacts removed from the definition cannot survive as stale output.
 
 An existing non-empty directory without a valid `edict.lawpack-output/v1`
 index is refused rather than deleted. Output paths and input dependency paths
-must be confined relative paths. Existing symlink traversal is rejected.
-Definition and dependency reads are bounded to 1 MiB per file, and the supplied
-dependency closure is bounded to 192 bundles. A persistent hidden lock file is
-kept beside the output directory so concurrent processes cannot acquire locks
-on different inodes while the directory itself is replaced; it is coordination
-state, not a canonical lawpack artifact, and should remain untracked.
+must be confined relative paths, and dependency inputs must remain outside the
+owned output tree. Existing symlink traversal is rejected. Authored files may
+not collide by using another file as a parent, and the ownership-index path is
+reserved for Edict.
+
+Definition, dependency, generated-index, and published-artifact reads are
+bounded to 1 MiB per file, and the supplied dependency closure is bounded to
+192 bundles. Check-only traversal accepts only directories needed by expected
+artifacts and rejects an unexpected file before reading its contents, so drift
+cannot force accumulation of an arbitrary output tree in memory.
+
+A persistent hidden lock file is kept beside the output directory so concurrent
+processes cannot acquire locks on different inodes while the directory itself
+is replaced; it is coordination state, not a canonical lawpack artifact, and
+should remain untracked. Activation is the publication commit point. Failure to
+remove the hidden previous-tree backup after activation does not turn a
+committed replacement into a failed command; that backup is best-effort cleanup
+state and may be removed by the operator.
 
 ## The Five Artifacts That Must Stay Distinct
 
@@ -159,8 +171,8 @@ and adapter bytes are passed back through `decode_lawpack_bundle`,
 `decode_lawpack_adapter`, and `validate_lawpack_dependency_graph` before any
 publication. Stable CLI kinds distinguish invalid definitions or digests,
 unresolved local resources, invalid canonical values, incomplete adapters,
-dependency substitution, path escape, output ownership, output drift, and
-publication failure.
+dependency substitution, path escape or prefix collision, unknown tagged
+fields, output ownership, output size, output drift, and publication failure.
 
 Edict does not discover application semantics from schemas or fixtures, invoke
 a provider, build an executable package, admit an operation, or create a runtime

@@ -21,6 +21,8 @@ use crate::lawpack_adapter::decode_lawpack_adapter;
 /// Versioned review schema accepted by the public authoring boundary.
 pub const LAWPACK_AUTHORING_API_VERSION: &str = "edict.lawpack-authoring/v1";
 
+const LAWPACK_OUTPUT_INDEX_PATH: &str = "edict.lawpack-output.json";
+
 /// Stable lawpack-authoring failure categories.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LawpackAuthoringFailureKind {
@@ -128,8 +130,7 @@ pub struct LawpackAuthoringExecutableComponent {
 }
 
 /// Declarative or bounded executable verifier metadata.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(tag = "class", rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LawpackAuthoringVerifier {
     /// Authority-free declarative verifier rules.
     Declarative {
@@ -139,9 +140,52 @@ pub enum LawpackAuthoringVerifier {
     /// Bounded executable verifier.
     Executable {
         /// Exact executable component closure.
-        #[serde(flatten)]
         executable: LawpackAuthoringExecutableComponent,
     },
+}
+
+#[derive(Deserialize)]
+#[serde(
+    tag = "class",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+enum LawpackAuthoringVerifierWire {
+    Declarative {
+        ruleset: LawpackAuthoringResourceRef,
+    },
+    Executable {
+        component: LawpackAuthoringResourceRef,
+        sandbox: LawpackAuthoringResourceRef,
+        fuel_model: LawpackAuthoringResourceRef,
+    },
+}
+
+impl<'de> Deserialize<'de> for LawpackAuthoringVerifier {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(
+            match LawpackAuthoringVerifierWire::deserialize(deserializer)? {
+                LawpackAuthoringVerifierWire::Declarative { ruleset } => {
+                    Self::Declarative { ruleset }
+                }
+                LawpackAuthoringVerifierWire::Executable {
+                    component,
+                    sandbox,
+                    fuel_model,
+                } => Self::Executable {
+                    executable: LawpackAuthoringExecutableComponent {
+                        component,
+                        sandbox,
+                        fuel_model,
+                    },
+                },
+            },
+        )
+    }
 }
 
 /// One exported bounded type.
@@ -182,7 +226,8 @@ pub enum LawpackAuthoringDeterminismClass {
 #[serde(
     tag = "source",
     rename_all = "camelCase",
-    rename_all_fields = "camelCase"
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
 )]
 pub enum LawpackAuthoringPureFunction {
     /// Inline Edict pure-Core body.
@@ -327,7 +372,7 @@ pub struct LawpackAuthoringObstruction {
 
 /// Optional bounded aperture requirement.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum LawpackAuthoringApertureRequirement {
     /// Concrete footprint ceiling.
     FootprintCeiling {
@@ -1632,6 +1677,24 @@ fn validate_artifact_paths(
     let mut paths = BTreeSet::new();
     let mut coordinates = BTreeSet::new();
     for artifact in artifacts {
+        let artifact_path = Path::new(&artifact.path);
+        if artifact_path.starts_with(Path::new(LAWPACK_OUTPUT_INDEX_PATH)) {
+            return Err(one(failure(
+                LawpackAuthoringFailureKind::InvalidOutputPath,
+                &artifact.path,
+                "a path outside the generated ownership-index namespace",
+            )));
+        }
+        if paths.iter().any(|existing| {
+            artifact_path.starts_with(Path::new(existing))
+                || Path::new(existing).starts_with(artifact_path)
+        }) {
+            return Err(one(failure(
+                LawpackAuthoringFailureKind::DuplicateIdentity,
+                &artifact.path,
+                "emitted artifact paths without file/descendant collisions",
+            )));
+        }
         if !paths.insert(artifact.path.as_str()) {
             return Err(one(failure(
                 LawpackAuthoringFailureKind::DuplicateIdentity,
