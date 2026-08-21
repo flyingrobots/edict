@@ -863,6 +863,7 @@ fn open_check_output_parent_in_root(
             format!("failed to retain output root `{}`: {error}", root.display()),
         )
     })?;
+    reject_owned_output_ancestor_directory(&current, &current_path, output)?;
     for component in relative.components() {
         let Component::Normal(name) = component else {
             return Err(failure(
@@ -910,6 +911,7 @@ fn open_check_output_parent_in_root(
                 ),
             )
         })?;
+        reject_owned_output_ancestor_directory(&current, &current_path, output)?;
     }
     Ok(current)
 }
@@ -3559,6 +3561,39 @@ mod tests {
         test_ok(fs::remove_file(parent), "remove parent symlink");
         test_ok(fs::remove_dir_all(root), "remove test tree");
         test_ok(fs::remove_dir_all(outside), "remove outside tree");
+    }
+
+    #[test]
+    fn check_only_rechecks_ancestor_ownership_through_retained_chain() {
+        let root = temp_tree("check-ancestor-owner-recheck");
+        let parent = root.join("parent");
+        let output = parent.join("generated");
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        test_ok(fs::create_dir_all(&output), "create nested output");
+        for (relative, bytes) in &expected {
+            test_ok(
+                fs::write(output.join(relative), bytes),
+                "write expected output",
+            );
+        }
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, "parent/generated"),
+                "resolve unowned nested output",
+            ),
+            output
+        );
+        test_ok(
+            fs::write(parent.join("edict.lawpack-output.json"), valid_index()),
+            "install ancestor owner",
+        );
+
+        let failure_kind = check_output_in_root_with_hooks(&root, &output, &expected, || {}, || {})
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputOwnershipFailed"));
     }
 
     #[test]

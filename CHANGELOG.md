@@ -92,6 +92,8 @@ versions still track specification maturity rather than a released product.
   failures remain read-only ownership failures rather than write failures.
   Exact-tree traversal opens every inspected file and child directory relative
   to its retained parent without following a substituted symbolic link.
+  Both optimistic check passes also recheck ownership indexes at the retained
+  root and every output ancestor.
   Lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom. Emitted artifact-path collision checks use an ordering-independent
