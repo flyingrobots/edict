@@ -108,9 +108,10 @@ versions still track specification maturity rather than a released product.
   match that identity before rollback reports success; a mismatching destination
   is preserved and reported as rollback failure.
   The activated transaction is validated against the complete
-  authored byte map before backup cleanup makes the replacement final. If an
-  activation vanishes, rollback restores the captured output before considering
-  reuse of the now-free transaction name.
+  authored byte map and the public output name is rebound to the staged identity
+  before backup cleanup makes the replacement final. If that name vanishes or
+  changes, rollback preserves an observed substitute, restores the captured
+  output when the checked namespace transition permits it, and reports failure.
   Check-only pins the requested output without following a symbolic link that
   replaces it after file-type inspection, and output-resolution inspection
   failures remain read-only ownership failures rather than write failures.

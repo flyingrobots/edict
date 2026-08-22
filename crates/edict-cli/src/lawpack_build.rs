@@ -1682,6 +1682,33 @@ fn publish_output_with_capture_rename_hook(
         after_capture_rename,
         || Ok(()),
         || Ok(()),
+        || {},
+        Dir::remove_open_dir_all,
+    )
+}
+
+#[cfg(test)]
+fn publish_output_with_validation_hook(
+    output: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    after_validation: impl FnOnce(),
+) -> Result<(), LawpackBuildFailure> {
+    let root = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a parent directory".to_owned(),
+        )
+    })?;
+    let authority = acquire_output_ancestor_locks(root, output)?;
+    publish_output_with_hooks_in_authority(
+        &authority,
+        output,
+        files,
+        || Ok(()),
+        |_| Ok(()),
+        || Ok(()),
+        || Ok(()),
+        after_validation,
         Dir::remove_open_dir_all,
     )
 }
@@ -1734,6 +1761,7 @@ fn publish_output_with_hooks_in_root(
         |_| Ok(()),
         before_activation,
         || Ok(()),
+        || {},
         remove_backup,
     )
 }
@@ -1751,6 +1779,7 @@ fn publish_output_with_hooks_in_authority(
     after_capture_rename: impl FnOnce(&Path) -> Result<(), LawpackBuildFailure>,
     before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     after_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
+    after_validation: impl FnOnce(),
     remove_backup: impl FnOnce(Dir) -> std::io::Result<()>,
 ) -> Result<(), LawpackBuildFailure> {
     let output_name = output.file_name().ok_or_else(|| {
@@ -1981,11 +2010,49 @@ fn publish_output_with_hooks_in_authority(
             )
         }));
     }
+    after_validation();
+    let rebound = open_check_output_dir(parent_dir, output_name, output).and_then(|directory| {
+        if directory_identity(&directory, output)? == staged_identity {
+            Ok(directory)
+        } else {
+            Err(failure(
+                "LawpackOutputWriteFailed",
+                "the validated output name no longer identifies the staged transaction".to_owned(),
+            ))
+        }
+    });
+    let rebound = match rebound {
+        Ok(rebound) => rebound,
+        Err(error) => {
+            let error = failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "activated output `{}` changed after exact-tree validation: {}",
+                    output.display(),
+                    error.message
+                ),
+            );
+            let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
+            drop(captured);
+            let rollback = restore_after_substituted_activation_in(
+                parent_dir,
+                output_name,
+                &transaction,
+                &backup,
+                output,
+                existed,
+                captured_identity,
+            );
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(rollback.err().unwrap_or(error));
+        }
+    };
     if let Some((captured, _)) = captured {
         // Activation is the commit point. Backup cleanup is best effort so a
         // committed replacement is never reported as an unchanged failure.
         drop(remove_backup(captured));
     }
+    drop(rebound);
     Ok(())
 }
 
@@ -2671,8 +2738,8 @@ mod tests {
         publish_output_with_capture_hook, publish_output_with_capture_rename_hook,
         publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
-        read_output_tree, resolve_check_output_directory, resolve_output_directory,
-        restore_output_directory_with_hook, stage_files_in_with_hook,
+        publish_output_with_validation_hook, read_output_tree, resolve_check_output_directory,
+        resolve_output_directory, restore_output_directory_with_hook, stage_files_in_with_hook,
         validate_check_output_parent_chain, validate_generated_artifact_size,
         validate_output_tree_with_hook, validate_owned_output_dir_with_hook, LawpackBuildFailure,
         LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
@@ -3076,6 +3143,7 @@ mod tests {
                 |_| Ok(()),
                 || Ok(()),
                 || Ok(()),
+                || {},
                 cap_std::fs::Dir::remove_open_dir_all,
             ),
             "publish through admitted root identity",
@@ -3616,6 +3684,59 @@ mod tests {
         assert_eq!(observed, original);
     }
 
+    #[test]
+    fn publication_rebinds_the_activated_name_after_tree_validation() {
+        let root = temp_tree("activated-name-rebind");
+        let output = root.join("generated");
+        let displaced_activation = root.join("displaced-activation");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let result = publish_output_with_validation_hook(&output, &replacement, || {
+            test_ok(
+                fs::rename(&output, &displaced_activation),
+                "displace validated activation",
+            );
+            test_ok(
+                fs::create_dir(&output),
+                "install real-directory activation substitute",
+            );
+            test_ok(
+                fs::write(output.join("substitute"), b"unadmitted"),
+                "write activation substitute evidence",
+            );
+        });
+
+        let result_kind = result.err().map(|error| error.kind);
+        let restored = read_output_tree(&output).ok();
+        let preserved_substitute = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-transaction-")
+            })
+            .and_then(|entry| fs::read(entry.path().join("substitute")).ok());
+        let displaced_exists = displaced_activation.exists();
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(result_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(restored, Some(original));
+        assert_eq!(
+            preserved_substitute.as_deref(),
+            Some(b"unadmitted".as_slice())
+        );
+        assert!(!displaced_exists);
+    }
+
     #[cfg(unix)]
     #[test]
     fn publication_refuses_a_transaction_symlink_before_pinning() {
@@ -3890,6 +4011,7 @@ mod tests {
                         )
                     })
                 },
+                || {},
                 cap_std::fs::Dir::remove_open_dir_all,
             ),
             "vanished activation rejects",
@@ -3965,6 +4087,7 @@ mod tests {
                     )
                 })
             },
+            || {},
             cap_std::fs::Dir::remove_open_dir_all,
         )
         .err()

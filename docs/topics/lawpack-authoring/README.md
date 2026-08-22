@@ -206,11 +206,12 @@ process cannot mutate.
 
 After activation, the retained transaction identity and its complete artifact
 tree must still match the staged authoring result before backup cleanup commits
-the replacement. If the activated name vanishes, the captured output is
-restored directly before any reused transaction name is considered; that
-concurrent entry is left untouched when the observed namespace remains stable
-for the checked transition. Rollback refuses to delete an output that appeared
-concurrently.
+the replacement. After exact-tree traversal, the public output name is reopened
+and must still identify that staged transaction before the captured backup is
+removed. If the name vanished or changed, rollback preserves a substitute under
+the transaction recovery name, restores the captured output when the checked
+namespace transition permits it, and reports failure. Rollback refuses to
+delete an output that appeared concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping
 publication from different document roots is outside one namespace and must be
 avoided by the caller.
