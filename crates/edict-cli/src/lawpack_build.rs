@@ -98,7 +98,7 @@ struct OutputLockGuard {
 
 #[derive(Debug)]
 struct ProcessLockGuard {
-    coordinate: PathBuf,
+    coordinate: FilesystemIdentity,
     mode: OutputLockMode,
 }
 
@@ -108,14 +108,16 @@ struct ProcessLockState {
     exclusive: bool,
 }
 
-static PROCESS_OUTPUT_LOCKS: OnceLock<Mutex<BTreeMap<PathBuf, ProcessLockState>>> = OnceLock::new();
+static PROCESS_OUTPUT_LOCKS: OnceLock<Mutex<BTreeMap<FilesystemIdentity, ProcessLockState>>> =
+    OnceLock::new();
 
 struct OpenedDependencyInput {
     file: File,
     display: PathBuf,
 }
 
-type DirectoryIdentity = (u64, u64);
+type FilesystemIdentity = (u64, u64);
+type DirectoryIdentity = FilesystemIdentity;
 
 #[derive(Clone, Copy, Debug)]
 enum OutputLockMode {
@@ -2172,6 +2174,7 @@ fn restore_after_substituted_activation_in(
 }
 
 fn acquire_process_output_lock(
+    coordinate: FilesystemIdentity,
     output: &Path,
     mode: OutputLockMode,
 ) -> Result<ProcessLockGuard, LawpackBuildFailure> {
@@ -2185,7 +2188,7 @@ fn acquire_process_output_lock(
             ),
         )
     })?;
-    let state = locks.entry(output.to_path_buf()).or_default();
+    let state = locks.entry(coordinate).or_default();
     let conflicts = match mode {
         OutputLockMode::SharedIntent => state.exclusive,
         OutputLockMode::ExclusiveOutput => state.exclusive || state.shared != 0,
@@ -2203,10 +2206,7 @@ fn acquire_process_output_lock(
         OutputLockMode::SharedIntent => state.shared += 1,
         OutputLockMode::ExclusiveOutput => state.exclusive = true,
     }
-    Ok(ProcessLockGuard {
-        coordinate: output.to_path_buf(),
-        mode,
-    })
+    Ok(ProcessLockGuard { coordinate, mode })
 }
 
 fn acquire_output_lock_in(
@@ -2214,6 +2214,22 @@ fn acquire_output_lock_in(
     output_name: &std::ffi::OsStr,
     output: &Path,
     mode: OutputLockMode,
+) -> Result<OutputLockGuard, LawpackBuildFailure> {
+    acquire_output_lock_in_with(parent, output_name, output, mode, |lock, mode| {
+        match mode {
+            OutputLockMode::SharedIntent => lock.try_lock_shared()?,
+            OutputLockMode::ExclusiveOutput => lock.try_lock()?,
+        }
+        Ok(())
+    })
+}
+
+fn acquire_output_lock_in_with(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    output: &Path,
+    mode: OutputLockMode,
+    try_file_lock: impl FnOnce(&File, OutputLockMode) -> std::io::Result<()>,
 ) -> Result<OutputLockGuard, LawpackBuildFailure> {
     let lock_name = output_lock_name(output_name);
     let mut options = CapOpenOptions::new();
@@ -2226,43 +2242,98 @@ fn acquire_output_lock_in(
         OutputLockMode::SharedIntent => "output-intent lock",
         OutputLockMode::ExclusiveOutput => "output lock",
     };
-    let lock = parent
-        .open_with(&lock_name, &options)
-        .map(cap_std::fs::File::into_std)
-        .map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "failed to open {open_subject} for `{}`: {error}",
-                    output.display()
-                ),
-            )
-        })?;
-    let process = acquire_process_output_lock(output, mode)?;
-    match mode {
-        OutputLockMode::SharedIntent => lock.try_lock_shared().map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "an overlapping lawpack build owns output ancestor `{}`: {error}",
-                    output.display()
-                ),
-            )
-        })?,
-        OutputLockMode::ExclusiveOutput => lock.try_lock().map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "another lawpack build owns output `{}`: {error}",
-                    output.display()
-                ),
-            )
-        })?,
-    }
+    let lock = parent.open_with(&lock_name, &options).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to open {open_subject} for `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    let coordinate = output_lock_identity(&lock, output)?;
+    let lock = lock.into_std();
+    let process = acquire_process_output_lock(coordinate, output, mode)?;
+    try_file_lock(&lock, mode).map_err(|error| match mode {
+        OutputLockMode::SharedIntent => failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "an overlapping lawpack build owns output ancestor `{}`: {error}",
+                output.display()
+            ),
+        ),
+        OutputLockMode::ExclusiveOutput => failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "another lawpack build owns output `{}`: {error}",
+                output.display()
+            ),
+        ),
+    })?;
     Ok(OutputLockGuard {
         file: lock,
         process,
     })
+}
+
+#[cfg(any(unix, target_os = "wasi", target_os = "vxworks"))]
+fn output_lock_identity(
+    lock: &cap_std::fs::File,
+    output: &Path,
+) -> Result<FilesystemIdentity, LawpackBuildFailure> {
+    use cap_std::fs::MetadataExt as _;
+
+    let metadata = lock.metadata().map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to identify output lock for `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn output_lock_identity(
+    lock: &cap_std::fs::File,
+    output: &Path,
+) -> Result<FilesystemIdentity, LawpackBuildFailure> {
+    use std::os::windows::fs::MetadataExt as _;
+
+    let metadata = lock
+        .try_clone()
+        .map(cap_std::fs::File::into_std)
+        .and_then(|file| file.metadata())
+        .map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to identify output lock for `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+    let volume = metadata.volume_serial_number().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "output lock for `{}` has no stable volume identity",
+                output.display()
+            ),
+        )
+    })?;
+    let index = metadata.file_index().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "output lock for `{}` has no stable file identity",
+                output.display()
+            ),
+        )
+    })?;
+    Ok((u64::from(volume), index))
 }
 
 fn expected_output_owner(
@@ -2730,7 +2801,7 @@ fn first_authoring_failure(failures: Vec<LawpackAuthoringFailure>) -> LawpackBui
 #[cfg(test)]
 mod tests {
     use super::{
-        acquire_output_ancestor_locks, build_lawpack, check_output,
+        acquire_output_ancestor_locks, acquire_output_lock_in_with, build_lawpack, check_output,
         check_output_in_root_with_hooks, check_output_with_hook, create_transaction_dir_with_hook,
         decode_lawpack_document, encode_output_index, load_dependencies,
         load_dependencies_with_hook, open_captured_output_with_hook,
@@ -2743,7 +2814,7 @@ mod tests {
         resolve_output_directory, restore_output_directory_with_hook, stage_files_in_with_hook,
         validate_check_output_parent_chain, validate_generated_artifact_size,
         validate_output_tree_with_hook, validate_owned_output_dir_with_hook, LawpackBuildFailure,
-        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry, OutputLockMode,
         MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::cell::RefCell;
@@ -2940,6 +3011,67 @@ mod tests {
             "publish after releasing first output authority",
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn filesystem_equivalent_output_locks_share_process_exclusion() {
+        use std::os::unix::fs::MetadataExt as _;
+
+        let root = temp_tree("filesystem-equivalent-output-lock");
+        let first_output = root.join("Generated");
+        let second_output = root.join("generated");
+        let first_lock = output_lock_path(&first_output);
+        let second_lock = output_lock_path(&second_output);
+        test_ok(fs::write(&first_lock, b""), "create first lock name");
+        if !second_lock.exists() {
+            test_ok(
+                fs::hard_link(&first_lock, &second_lock),
+                "alias second lock name to first identity",
+            );
+        }
+        let first_metadata = test_ok(fs::metadata(&first_lock), "identify first lock name");
+        let second_metadata = test_ok(fs::metadata(&second_lock), "identify second lock name");
+        assert_eq!(
+            (first_metadata.dev(), first_metadata.ino()),
+            (second_metadata.dev(), second_metadata.ino())
+        );
+
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+        let first = test_ok(
+            acquire_output_lock_in_with(
+                &parent,
+                first_output
+                    .file_name()
+                    .unwrap_or_else(|| panic!("test output must have a name")),
+                &first_output,
+                OutputLockMode::ExclusiveOutput,
+                |_, _| Ok(()),
+            ),
+            "claim first output spelling",
+        );
+        let second = acquire_output_lock_in_with(
+            &parent,
+            second_output
+                .file_name()
+                .unwrap_or_else(|| panic!("test output must have a name")),
+            &second_output,
+            OutputLockMode::ExclusiveOutput,
+            |_, _| Ok(()),
+        );
+        let failure_kind = second.err().map(|error| error.kind);
+
+        drop(first);
+        test_ok(fs::remove_file(&first_lock), "remove first lock name");
+        if second_lock.exists() {
+            test_ok(fs::remove_file(&second_lock), "remove second lock name");
+        }
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
     }
 
     #[cfg(unix)]

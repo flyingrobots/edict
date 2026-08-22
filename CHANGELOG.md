@@ -85,8 +85,9 @@ versions still track specification maturity rather than a released product.
   Footprint lock files are opened without following symbolic links, preventing
   a substituted sibling name from redirecting overlapping publications onto
   different lock identities. The operating-system locks compose with
-  same-process shared/exclusive footprint exclusion, so lock-respecting
-  publishers cannot enter an identical or parent/child output boundary
+  same-process shared/exclusive footprint exclusion keyed by retained lock-file
+  identity, so alternate spellings of one lock object and parent/child
+  lock-respecting publishers cannot enter their publication boundary
   concurrently while siblings remain independent. Production transaction
   creation requires that retained exclusive output authority, so its portable
   create/open sequence is covered by the cooperating-writer guarantee. Newly
