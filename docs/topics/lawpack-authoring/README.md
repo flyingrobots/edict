@@ -184,10 +184,13 @@ identity before publication continues. Rollback likewise reopens the restored
 destination and requires the retained captured identity before reporting
 success; a mismatching destination remains intact as recovery evidence. One
 pathname-to-object binding remains incomplete: a transaction is created before
-it is reopened. No-follow opens reject symbolic links, but they do not by
+it is reopened. Operating-system footprint locks compose with in-process
+shared/exclusive exclusion, so identical and parent/child lock-respecting
+publishers cannot enter that boundary concurrently while siblings remain
+independent. No-follow opens reject symbolic links, but they do not by
 themselves prove that a real directory reopened by name is the object Edict
-previously authorized. That remaining gap is tracked as a planned case in the
-test plan and blocks publication readiness.
+previously created. That remaining gap is tracked as a planned case in the test
+plan and blocks publication readiness.
 
 An uncooperative process with write authority over the publication parent can
 rename any namespace entry between portable filesystem calls. Edict therefore

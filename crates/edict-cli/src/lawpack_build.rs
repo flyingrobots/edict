@@ -6,6 +6,7 @@ use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
@@ -44,8 +45,36 @@ struct PublicationAuthority {
         dead_code,
         reason = "lock handles keep ancestor intents held for the authority lifetime"
     )]
-    ancestor_locks: Vec<File>,
+    ancestor_locks: Vec<OutputLockGuard>,
 }
+
+#[derive(Debug)]
+struct OutputLockGuard {
+    #[allow(
+        dead_code,
+        reason = "the file handle retains the operating-system lock"
+    )]
+    file: File,
+    #[allow(
+        dead_code,
+        reason = "the guard retains same-process footprint exclusion"
+    )]
+    process: ProcessLockGuard,
+}
+
+#[derive(Debug)]
+struct ProcessLockGuard {
+    coordinate: PathBuf,
+    mode: OutputLockMode,
+}
+
+#[derive(Default)]
+struct ProcessLockState {
+    shared: usize,
+    exclusive: bool,
+}
+
+static PROCESS_OUTPUT_LOCKS: OnceLock<Mutex<BTreeMap<PathBuf, ProcessLockState>>> = OnceLock::new();
 
 struct OpenedDependencyInput {
     file: File,
@@ -54,10 +83,42 @@ struct OpenedDependencyInput {
 
 type DirectoryIdentity = (u64, u64);
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum OutputLockMode {
     SharedIntent,
     ExclusiveOutput,
+}
+
+impl Drop for ProcessLockGuard {
+    fn drop(&mut self) {
+        let locks = PROCESS_OUTPUT_LOCKS.get_or_init(|| Mutex::new(BTreeMap::new()));
+        let mut locks = locks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(state) = locks.get_mut(&self.coordinate) else {
+            panic!("retained process lock must have registry state");
+        };
+        match self.mode {
+            OutputLockMode::SharedIntent => {
+                assert!(
+                    state.shared != 0,
+                    "retained shared process lock must have a holder"
+                );
+                state.shared -= 1;
+            }
+            OutputLockMode::ExclusiveOutput => {
+                assert!(
+                    state.exclusive,
+                    "retained exclusive process lock must have a holder"
+                );
+                state.exclusive = false;
+            }
+        }
+        let remove = state.shared == 0 && !state.exclusive;
+        if remove {
+            locks.remove(&self.coordinate);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -2021,12 +2082,50 @@ fn restore_after_substituted_activation_in(
     )
 }
 
+fn acquire_process_output_lock(
+    output: &Path,
+    mode: OutputLockMode,
+) -> Result<ProcessLockGuard, LawpackBuildFailure> {
+    let locks = PROCESS_OUTPUT_LOCKS.get_or_init(|| Mutex::new(BTreeMap::new()));
+    let mut locks = locks.lock().map_err(|_| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "same-process output coordination was poisoned for `{}`",
+                output.display()
+            ),
+        )
+    })?;
+    let state = locks.entry(output.to_path_buf()).or_default();
+    let conflicts = match mode {
+        OutputLockMode::SharedIntent => state.exclusive,
+        OutputLockMode::ExclusiveOutput => state.exclusive || state.shared != 0,
+    };
+    if conflicts {
+        return Err(failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "another same-process lawpack build owns output footprint `{}`",
+                output.display()
+            ),
+        ));
+    }
+    match mode {
+        OutputLockMode::SharedIntent => state.shared += 1,
+        OutputLockMode::ExclusiveOutput => state.exclusive = true,
+    }
+    Ok(ProcessLockGuard {
+        coordinate: output.to_path_buf(),
+        mode,
+    })
+}
+
 fn acquire_output_lock_in(
     parent: &Dir,
     output_name: &std::ffi::OsStr,
     output: &Path,
     mode: OutputLockMode,
-) -> Result<File, LawpackBuildFailure> {
+) -> Result<OutputLockGuard, LawpackBuildFailure> {
     let lock_name = output_lock_name(output_name);
     let mut options = CapOpenOptions::new();
     options
@@ -2050,6 +2149,7 @@ fn acquire_output_lock_in(
                 ),
             )
         })?;
+    let process = acquire_process_output_lock(output, mode)?;
     match mode {
         OutputLockMode::SharedIntent => lock.try_lock_shared().map_err(|error| {
             failure(
@@ -2070,7 +2170,10 @@ fn acquire_output_lock_in(
             )
         })?,
     }
-    Ok(lock)
+    Ok(OutputLockGuard {
+        file: lock,
+        process,
+    })
 }
 
 fn expected_output_owner(
@@ -2704,6 +2807,51 @@ mod tests {
         assert_eq!(second_guards.len(), 1);
         drop(second_guards);
         drop(first_guards);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn identical_output_lock_blocks_competing_transaction_creation() {
+        let root = temp_tree("identical-output-lock");
+        let output = root.join("generated");
+        let authority = test_ok(
+            acquire_output_ancestor_locks(&root, &output),
+            "acquire first output authority",
+        );
+        let output_lock = test_ok(
+            super::acquire_output_lock_in(
+                &authority.output_parent,
+                output
+                    .file_name()
+                    .unwrap_or_else(|| panic!("test output must have a name")),
+                &output,
+                super::OutputLockMode::ExclusiveOutput,
+            ),
+            "claim first output",
+        );
+        let expected = files(&[("edict.lawpack-output.json", valid_index())]);
+
+        let failure = test_err(
+            publish_output(&output, &expected),
+            "competing publication must stop at the output lock",
+        );
+        let transaction_exists = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-transaction-")
+            });
+
+        assert_eq!(failure.kind, "LawpackOutputWriteFailed");
+        assert!(!transaction_exists);
+        drop(output_lock);
+        drop(authority);
+        test_ok(
+            publish_output(&output, &expected),
+            "publish after releasing first output authority",
+        );
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 

@@ -84,8 +84,12 @@ versions still track specification maturity rather than a released product.
   platform aliases, so only overlapping output footprints conflict.
   Footprint lock files are opened without following symbolic links, preventing
   a substituted sibling name from redirecting overlapping publications onto
-  different lock identities. Newly created transaction directories are also
-  pinned without following a substituted symbolic link before staging begins.
+  different lock identities. The operating-system locks compose with
+  same-process shared/exclusive footprint exclusion, so lock-respecting
+  publishers cannot enter an identical or parent/child output boundary
+  concurrently while siblings remain independent. Newly created transaction
+  directories are reopened without following a substituted symbolic link before
+  staging begins.
   Staging creates and reopens every artifact-parent component through retained
   no-follow directory handles, so an intermediate substitution cannot redirect
   an authored file write.
