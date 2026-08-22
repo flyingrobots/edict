@@ -89,6 +89,10 @@ versions still track specification maturity rather than a released product.
   Staging creates and reopens every artifact-parent component through retained
   no-follow directory handles, so an intermediate substitution cannot redirect
   an authored file write.
+  Existing outputs are opened, owner-validated, and identified before their
+  names are moved; the backup name must reopen to that retained identity before
+  publication continues, so a substituted real directory is not mistaken for
+  the authorized prior output.
   Captured backup names receive the same no-follow treatment; if a name is
   reused before pinning, publication refuses to move or delete the substitute
   during rollback. Every later rollback reopens that name without following

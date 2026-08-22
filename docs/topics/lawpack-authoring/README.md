@@ -178,13 +178,15 @@ chain is rechecked after intent acquisition. The publication root and output
 parent are then pinned as capability directories by traversing every component
 from the filesystem root without following symbolic links. Write mode stages
 the complete replacement and uses retained capability handles to keep opened
-directories confined. At the current branch head, three pathname-to-object
-bindings remain incomplete: the old output is opened only after it is renamed,
-a transaction is created before it is reopened, and a rollback rename occurs
-after the last backup identity check. No-follow opens reject symbolic links,
-but they do not prove that a real directory reopened by name is the object
-Edict previously authorized. Those gaps are tracked as planned cases in the
-test plan and block publication readiness.
+directories confined. The old output is opened, owner-validated, and identified
+before its name is moved; the backup name must then reopen to that retained
+identity before publication continues. Two pathname-to-object bindings remain
+incomplete: a transaction is created before it is reopened, and a rollback
+rename occurs after the last backup identity check. No-follow opens reject
+symbolic links, but they do not by themselves prove that a real directory
+reopened by name is the object Edict previously authorized. Those remaining
+gaps are tracked as planned cases in the test plan and block publication
+readiness.
 
 An uncooperative process with write authority over the publication parent can
 rename any namespace entry between portable filesystem calls. Edict therefore

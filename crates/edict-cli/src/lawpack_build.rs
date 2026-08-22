@@ -1566,6 +1566,31 @@ fn publish_output_with_capture_hook(
     )
 }
 
+#[cfg(test)]
+fn publish_output_with_capture_rename_hook(
+    output: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    after_capture_rename: impl FnOnce(&Path) -> Result<(), LawpackBuildFailure>,
+) -> Result<(), LawpackBuildFailure> {
+    let root = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a parent directory".to_owned(),
+        )
+    })?;
+    let authority = acquire_output_ancestor_locks(root, output)?;
+    publish_output_with_hooks_in_authority(
+        &authority,
+        output,
+        files,
+        || Ok(()),
+        after_capture_rename,
+        || Ok(()),
+        || Ok(()),
+        Dir::remove_open_dir_all,
+    )
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "directory publication keeps staging and every rollback path explicit"
@@ -1611,6 +1636,7 @@ fn publish_output_with_hooks_in_root(
         output,
         files,
         before_capture,
+        |_| Ok(()),
         before_activation,
         || Ok(()),
         remove_backup,
@@ -1618,14 +1644,16 @@ fn publish_output_with_hooks_in_root(
 }
 
 #[allow(
+    clippy::too_many_arguments,
     clippy::too_many_lines,
-    reason = "directory publication keeps staging and every rollback path explicit"
+    reason = "directory publication keeps deterministic race hooks and every rollback path explicit"
 )]
 fn publish_output_with_hooks_in_authority(
     authority: &PublicationAuthority,
     output: &Path,
     files: &BTreeMap<PathBuf, Vec<u8>>,
     before_capture: impl FnOnce() -> Result<(), LawpackBuildFailure>,
+    after_capture_rename: impl FnOnce(&Path) -> Result<(), LawpackBuildFailure>,
     before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     after_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     remove_backup: impl FnOnce(Dir) -> std::io::Result<()>,
@@ -1671,38 +1699,12 @@ fn publish_output_with_hooks_in_authority(
         return Err(error);
     }
     let existed = entry_exists(parent_dir, output_name)?;
-    let backup = match unique_sibling_in(parent_dir, output, "previous") {
-        Ok(backup) => backup,
-        Err(error) => {
-            drop(Dir::remove_open_dir_all(transaction_dir));
-            return Err(error);
-        }
-    };
-    if existed {
-        if let Err(error) = parent_dir.rename(output_name, parent_dir, &backup) {
-            drop(Dir::remove_open_dir_all(transaction_dir));
-            return Err(failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "failed to preserve previous output `{}`: {error}",
-                    output.display()
-                ),
-            ));
-        }
-    }
     let captured = if existed {
-        let captured = match open_captured_output_in(parent_dir, &backup, output) {
+        let captured = match open_check_output_dir(parent_dir, output_name, output) {
             Ok(captured) => captured,
             Err(error) => {
                 drop(Dir::remove_open_dir_all(transaction_dir));
-                return Err(failure(
-                    "LawpackOutputRollbackFailed",
-                    format!(
-                        "captured output `{}` changed before it could be pinned; refused to restore through the reused backup name: {}",
-                        output.display(),
-                        error.message
-                    ),
-                ));
+                return Err(error);
             }
         };
         let captured_identity = match directory_identity(&captured, output) {
@@ -1713,7 +1715,7 @@ fn publish_output_with_hooks_in_authority(
                 return Err(failure(
                     "LawpackOutputRollbackFailed",
                     format!(
-                        "failed to retain captured output identity for `{}`; the backup remains recoverable: {}",
+                        "failed to retain output identity before preserving `{}`: {}",
                         output.display(),
                         error.message
                     ),
@@ -1722,21 +1724,64 @@ fn publish_output_with_hooks_in_authority(
         };
         if let Err(error) = validate_owned_output_dir(&captured, output, &expected_owner) {
             drop(captured);
-            let rollback = restore_output_directory_in(
-                parent_dir,
-                output_name,
-                &backup,
-                output,
-                true,
-                Some(captured_identity),
-            );
             drop(Dir::remove_open_dir_all(transaction_dir));
-            return Err(rollback.err().unwrap_or(error));
+            return Err(error);
         }
         Some((captured, captured_identity))
     } else {
         None
     };
+    let backup = match unique_sibling_in(parent_dir, output, "previous") {
+        Ok(backup) => backup,
+        Err(error) => {
+            drop(captured);
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(error);
+        }
+    };
+    if existed {
+        if let Err(error) = parent_dir.rename(output_name, parent_dir, &backup) {
+            drop(captured);
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "failed to preserve previous output `{}`: {error}",
+                    output.display()
+                ),
+            ));
+        }
+        if let Err(error) = after_capture_rename(&backup) {
+            drop(captured);
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(error);
+        }
+        let expected_identity = captured
+            .as_ref()
+            .map(|(_, identity)| *identity)
+            .ok_or_else(|| {
+                failure(
+                    "LawpackOutputRollbackFailed",
+                    format!(
+                        "failed to retain the pre-rename output identity for `{}`",
+                        output.display()
+                    ),
+                )
+            })?;
+        if let Err(error) = open_captured_output_in(parent_dir, &backup, output, expected_identity)
+        {
+            drop(captured);
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "captured output `{}` changed after its rename; refused to continue through the reused backup name: {}",
+                    output.display(),
+                    error.message
+                ),
+            ));
+        }
+    }
 
     if let Err(error) = before_activation() {
         let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
@@ -1893,18 +1938,20 @@ fn open_captured_output_in(
     parent: &Dir,
     backup: &Path,
     output: &Path,
+    expected_identity: DirectoryIdentity,
 ) -> Result<Dir, LawpackBuildFailure> {
-    open_captured_output_with_hook(parent, backup, output, || {})
+    open_captured_output_with_hook(parent, backup, output, expected_identity, || {})
 }
 
 fn open_captured_output_with_hook(
     parent: &Dir,
     backup: &Path,
     output: &Path,
+    expected_identity: DirectoryIdentity,
     after_capture: impl FnOnce(),
 ) -> Result<Dir, LawpackBuildFailure> {
     after_capture();
-    parent.open_dir_nofollow(backup).map_err(|error| {
+    let captured = parent.open_dir_nofollow(backup).map_err(|error| {
         failure(
             "LawpackOutputOwnershipFailed",
             format!(
@@ -1912,7 +1959,17 @@ fn open_captured_output_with_hook(
                 output.display()
             ),
         )
-    })
+    })?;
+    if directory_identity(&captured, output)? != expected_identity {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "captured output `{}` does not match the output retained before rename",
+                output.display()
+            ),
+        ));
+    }
+    Ok(captured)
 }
 
 fn restore_after_substituted_activation_in(
@@ -2438,7 +2495,8 @@ mod tests {
         load_dependencies_with_hook, open_captured_output_with_hook,
         open_check_output_dir_with_hook, open_check_root_with_hook,
         open_dependency_input_with_hook, open_dependency_root, output_lock_path, publish_output,
-        publish_output_with_capture_hook, publish_output_with_hook, publish_output_with_hooks,
+        publish_output_with_capture_hook, publish_output_with_capture_rename_hook,
+        publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
         read_output_tree, resolve_check_output_directory, resolve_output_directory,
         stage_files_in_with_hook, validate_check_output_parent_chain,
@@ -2798,6 +2856,7 @@ mod tests {
                 &output,
                 &expected,
                 || Ok(()),
+                |_| Ok(()),
                 || Ok(()),
                 || Ok(()),
                 cap_std::fs::Dir::remove_open_dir_all,
@@ -2903,6 +2962,57 @@ mod tests {
             original
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn publication_requires_backup_to_match_the_pre_rename_output_identity() {
+        let root = temp_tree("capture-pre-rename-identity");
+        let output = root.join("generated");
+        let displaced_output = root.join("displaced-owned");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish owned output");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        let backup_path = RefCell::new(None::<PathBuf>);
+
+        let result = publish_output_with_capture_rename_hook(&output, &replacement, |backup| {
+            let backup = root.join(backup);
+            test_ok(
+                fs::rename(&backup, &displaced_output),
+                "displace the renamed old output",
+            );
+            test_ok(fs::create_dir(&backup), "install real-directory substitute");
+            test_ok(
+                fs::write(backup.join("edict.lawpack-output.json"), valid_index()),
+                "write substitute ownership",
+            );
+            test_ok(
+                fs::write(backup.join("substitute"), b"unadmitted"),
+                "write substitute evidence",
+            );
+            backup_path.replace(Some(backup));
+            Ok(())
+        });
+
+        let backup = backup_path
+            .into_inner()
+            .unwrap_or_else(|| panic!("backup path must be recorded"));
+        let result_kind = result.err().map(|error| error.kind);
+        let displaced_tree = test_ok(
+            read_output_tree(&displaced_output),
+            "read displaced authorized output",
+        );
+        let substitute = fs::read(backup.join("substitute")).ok();
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(result_kind, Some("LawpackOutputRollbackFailed"));
+        assert_eq!(displaced_tree, original);
+        assert_eq!(substitute.as_deref(), Some(b"unadmitted".as_slice()));
     }
 
     #[test]
@@ -3319,6 +3429,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn publication_refuses_a_captured_backup_symlink_before_pinning() {
+        use cap_fs_ext::DirExt as _;
         use std::os::unix::fs::symlink;
 
         let root = temp_tree("captured-backup-pin-symlink");
@@ -3336,23 +3447,33 @@ mod tests {
             cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
             "open publication parent",
         );
+        let retained_output = test_ok(
+            parent.open_dir_nofollow("generated"),
+            "retain original output",
+        );
+        let retained_identity = test_ok(
+            super::directory_identity(&retained_output, &output),
+            "identify original output",
+        );
         test_ok(
             parent.rename("generated", &parent, &backup),
             "capture original output",
         );
 
-        let failure_kind = open_captured_output_with_hook(&parent, &backup, &output, || {
-            test_ok(
-                fs::rename(root.join(&backup), &displaced),
-                "displace captured backup",
-            );
-            test_ok(
-                symlink("victim", root.join(&backup)),
-                "install captured backup symlink",
-            );
-        })
-        .err()
-        .map(|error| error.kind);
+        let failure_kind =
+            open_captured_output_with_hook(&parent, &backup, &output, retained_identity, || {
+                test_ok(
+                    fs::rename(root.join(&backup), &displaced),
+                    "displace captured backup",
+                );
+                test_ok(
+                    symlink("victim", root.join(&backup)),
+                    "install captured backup symlink",
+                );
+            })
+            .err()
+            .map(|error| error.kind);
+        drop(retained_output);
         drop(parent);
 
         assert_eq!(
@@ -3479,6 +3600,7 @@ mod tests {
                 &output,
                 &replacement,
                 || Ok(()),
+                |_| Ok(()),
                 || Ok(()),
                 || {
                     fs::rename(&output, &displaced_activation).map_err(|error| {
@@ -3528,6 +3650,7 @@ mod tests {
             &output,
             &replacement,
             || Ok(()),
+            |_| Ok(()),
             || {
                 let name = test_ok(fs::read_dir(&root), "read publication root")
                     .map(|entry| test_ok(entry, "read publication entry"))
