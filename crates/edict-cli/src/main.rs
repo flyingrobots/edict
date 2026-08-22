@@ -1,6 +1,10 @@
 #![deny(clippy::expect_used, clippy::unwrap_used)]
 
 mod application_build;
+#[cfg(not(windows))]
+mod lawpack_build;
+#[cfg(windows)]
+#[path = "lawpack_build_windows.rs"]
 mod lawpack_build;
 
 use std::collections::BTreeMap;

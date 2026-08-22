@@ -30,6 +30,12 @@ const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_DEPENDENCY_BUNDLES: usize = 192;
 const MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES: usize = 229;
 const MAX_OUTPUT_DIRECTORY_PATH_BYTES: usize = 1022;
+const LAWPACK_WRITE_PUBLICATION_SUPPORTED: bool = cfg!(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+));
 static PUBLICATION_NAME_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
@@ -307,6 +313,7 @@ pub(crate) fn build_lawpack(
     document_path: &Path,
     check_only: bool,
 ) -> Result<(), LawpackBuildFailure> {
+    require_lawpack_write_publication(check_only, LAWPACK_WRITE_PUBLICATION_SUPPORTED)?;
     let document_path = fs::canonicalize(document_path).map_err(|error| {
         failure(
             "LawpackConfigReadFailed",
@@ -376,6 +383,20 @@ pub(crate) fn build_lawpack(
     } else {
         publish_output_in_root(root, &output, &files)
     }
+}
+
+fn require_lawpack_write_publication(
+    check_only: bool,
+    write_publication_supported: bool,
+) -> Result<(), LawpackBuildFailure> {
+    if check_only || write_publication_supported {
+        return Ok(());
+    }
+    Err(failure(
+        "LawpackOutputWriteUnsupported",
+        "lawpack write publication is unsupported on this target because Edict has no atomic no-replace directory move backend"
+            .to_owned(),
+    ))
 }
 
 fn decode_lawpack_document(bytes: &[u8]) -> Result<LawpackBuildDocument, LawpackBuildFailure> {
@@ -2784,23 +2805,11 @@ fn rename_noreplace_in(
     .map_err(Into::into)
 }
 
-#[cfg(windows)]
-fn rename_noreplace_in(
-    parent: &Dir,
-    from: impl AsRef<Path>,
-    to: impl AsRef<Path>,
-) -> std::io::Result<()> {
-    // Windows directory rename refuses an existing destination. Keep the
-    // capability-relative operation so neither name escapes `parent`.
-    parent.rename(from, parent, to)
-}
-
 #[cfg(not(any(
     target_vendor = "apple",
     target_os = "linux",
     target_os = "android",
-    target_os = "redox",
-    windows
+    target_os = "redox"
 )))]
 fn rename_noreplace_in(
     _parent: &Dir,
@@ -2930,8 +2939,9 @@ mod tests {
         publish_output_with_capture_hook, publish_output_with_capture_rename_hook,
         publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
-        publish_output_with_validation_hook, read_output_tree, resolve_check_output_directory,
-        resolve_output_directory, restore_output_directory_with_hook, stage_files_in_with_hook,
+        publish_output_with_validation_hook, read_output_tree, require_lawpack_write_publication,
+        resolve_check_output_directory, resolve_output_directory,
+        restore_output_directory_with_hook, stage_files_in_with_hook,
         validate_check_output_parent_chain, validate_generated_artifact_size,
         validate_output_tree_with_hook, validate_owned_output_dir_with_hook, LawpackBuildFailure,
         LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry, OutputLockMode,
@@ -2945,6 +2955,19 @@ mod tests {
     use std::sync::mpsc;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn lawpack_target_support_keeps_check_only_available() {
+        assert_eq!(
+            test_err(
+                require_lawpack_write_publication(false, false),
+                "unsupported write publication refuses",
+            )
+            .kind,
+            "LawpackOutputWriteUnsupported"
+        );
+        assert!(require_lawpack_write_publication(true, false,).is_ok());
+    }
 
     #[test]
     fn nested_output_rejects_an_ancestor_owned_lawpack_tree() {

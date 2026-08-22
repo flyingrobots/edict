@@ -58,7 +58,14 @@ filesystem root without following symbolic links, then pins the output parent as
 a capability directory; staging, activation, rollback, and cleanup cannot follow
 a later ambient-path replacement. Publication moves never replace an existing
 destination; a concurrently installed empty directory is preserved and causes
-a typed failure. The document directory is the publication
+a typed failure. Write publication is supported on Apple targets, Linux,
+Android, and Redox. Windows and other targets without Edict's atomic
+no-replace directory-move backend return `LawpackOutputWriteUnsupported` before
+reading the build document or mutating its namespace. `checkOnly` remains
+available on unsupported non-Windows targets. Windows lawpack builds fail
+closed before document I/O in both modes, with `LawpackCheckUnsupported` for
+`checkOnly`, because Edict has no stable Windows filesystem-identity backend.
+The document directory is the publication
 namespace; callers must not concurrently publish overlapping trees from
 different document roots. Pure preflight derives fixed artifacts and sidecars and rejects reserved
 namespaces, duplicates, ancestor collisions, filesystem NUL, nonportable names,

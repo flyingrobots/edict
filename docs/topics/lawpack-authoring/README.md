@@ -190,9 +190,14 @@ success; a mismatching destination remains intact as recovery evidence.
 Every publication move whose destination must be absent uses an atomic
 no-replace operation, so an intervening empty directory is refused rather than
 silently overwritten. Apple, Linux, Android, and Redox use their
-capability-relative no-replace kernel operation. Windows directory rename
-already refuses an existing destination. On another target, write publication
-fails closed before moving a directory rather than weakening this invariant.
+capability-relative no-replace kernel operation. Windows and any other target
+without that backend refuse write publication with
+`LawpackOutputWriteUnsupported` before reading the build document or mutating
+the publication namespace. On unsupported non-Windows targets, `checkOnly`
+remains available because it performs no publication move. Windows lawpack
+builds currently fail closed before document I/O in both modes, using
+`LawpackCheckUnsupported` for `checkOnly`; Edict does not claim a Windows
+transactional publication or filesystem-identity backend.
 Production transaction creation is available only through retained exclusive
 output authority. Operating-system footprint locks compose with in-process
 shared/exclusive exclusion keyed by the retained lock file's filesystem

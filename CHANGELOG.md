@@ -44,7 +44,13 @@ versions still track specification maturity rather than a released product.
   deleting unknown objects, but does not promise restoration to the original
   pathname. Publication directory moves use atomic no-replace semantics and
   preserve even an empty destination installed immediately before the move;
-  targets without a supported no-replace directory operation fail closed.
+  Apple targets, Linux, Android, and Redox implement that write-publication
+  operation. Windows and other unsupported targets now return the stable
+  `LawpackOutputWriteUnsupported` failure before reading the build document or
+  mutating the publication namespace. Unsupported non-Windows targets retain
+  check-only. Windows lawpack builds fail closed before document I/O in both
+  modes, returning `LawpackCheckUnsupported` for check-only until native
+  publication and filesystem-identity backends exist.
   Non-repairing, filesystem-read-only `checkOnly` drift
   detection traverses real parent directories from one retained root
   capability, verifies that the parent chain and requested output still name
