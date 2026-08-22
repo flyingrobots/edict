@@ -183,6 +183,12 @@ before its name is moved; the backup name must then reopen to that retained
 identity before publication continues. Rollback likewise reopens the restored
 destination and requires the retained captured identity before reporting
 success; a mismatching destination remains intact as recovery evidence.
+Every publication move whose destination must be absent uses an atomic
+no-replace operation, so an intervening empty directory is refused rather than
+silently overwritten. Apple, Linux, Android, and Redox use their
+capability-relative no-replace kernel operation. Windows directory rename
+already refuses an existing destination. On another target, write publication
+fails closed before moving a directory rather than weakening this invariant.
 Production transaction creation is available only through retained exclusive
 output authority. Operating-system footprint locks compose with in-process
 shared/exclusive exclusion keyed by the retained lock file's filesystem

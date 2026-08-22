@@ -406,6 +406,7 @@ dependencies = [
  "edict-provider-schema",
  "edict-syntax",
  "glob",
+ "rustix",
  "serde",
  "serde_json",
 ]

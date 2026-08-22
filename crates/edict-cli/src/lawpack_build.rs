@@ -1861,7 +1861,7 @@ fn publish_output_with_hooks_in_authority(
         }
     };
     if existed {
-        if let Err(error) = parent_dir.rename(output_name, parent_dir, &backup) {
+        if let Err(error) = rename_noreplace_in(parent_dir, output_name, &backup) {
             drop(captured);
             drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(failure(
@@ -1918,7 +1918,7 @@ fn publish_output_with_hooks_in_authority(
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or(error));
     }
-    if let Err(error) = parent_dir.rename(&transaction, parent_dir, output_name) {
+    if let Err(error) = rename_noreplace_in(parent_dir, &transaction, output_name) {
         let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
         drop(captured);
         let rollback = restore_output_directory_in(
@@ -2127,17 +2127,15 @@ fn restore_after_substituted_activation_in(
             ),
         ));
     }
-    parent
-        .rename(output_name, parent, transaction)
-        .map_err(|error| {
-            failure(
-                "LawpackOutputRollbackFailed",
-                format!(
-                    "failed to preserve a substituted activation for `{}`: {error}",
-                    output.display()
-                ),
-            )
-        })?;
+    rename_noreplace_in(parent, output_name, transaction).map_err(|error| {
+        failure(
+            "LawpackOutputRollbackFailed",
+            format!(
+                "failed to preserve a substituted activation for `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
     restore_output_directory_in(
         parent,
         output_name,
@@ -2594,14 +2592,12 @@ fn restore_output_directory_with_hook(
             ));
         }
         before_restore_rename();
-        parent
-            .rename(backup, parent, output_name)
-            .map_err(|error| {
-                failure(
-                    "LawpackOutputRollbackFailed",
-                    format!("failed to restore output `{}`: {error}", output.display()),
-                )
-            })?;
+        rename_noreplace_in(parent, backup, output_name).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!("failed to restore output `{}`: {error}", output.display()),
+            )
+        })?;
         let restored = parent.open_dir_nofollow(output_name).map_err(|error| {
             failure(
                 "LawpackOutputRollbackFailed",
@@ -2665,6 +2661,56 @@ fn unique_sibling_in(
             "failed to allocate a unique {role} path beside `{}`",
             output.display()
         ),
+    ))
+}
+
+#[cfg(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+))]
+fn rename_noreplace_in(
+    parent: &Dir,
+    from: impl AsRef<Path>,
+    to: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    rustix::fs::renameat_with(
+        parent,
+        from.as_ref(),
+        parent,
+        to.as_ref(),
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(Into::into)
+}
+
+#[cfg(windows)]
+fn rename_noreplace_in(
+    parent: &Dir,
+    from: impl AsRef<Path>,
+    to: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    // Windows directory rename refuses an existing destination. Keep the
+    // capability-relative operation so neither name escapes `parent`.
+    parent.rename(from, parent, to)
+}
+
+#[cfg(not(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox",
+    windows
+)))]
+fn rename_noreplace_in(
+    _parent: &Dir,
+    _from: impl AsRef<Path>,
+    _to: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        ErrorKind::Unsupported,
+        "atomic no-replace directory rename is unsupported on this platform",
     ))
 }
 
@@ -3654,6 +3700,53 @@ mod tests {
             test_ok(fs::read(output.join("victim")), "read concurrent output"),
             b"keep"
         );
+        let backup = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-previous-")
+            })
+            .map_or_else(
+                || panic!("captured output backup must remain recoverable"),
+                |entry| entry.path(),
+            );
+        assert_eq!(
+            test_ok(read_output_tree(&backup), "read captured output backup"),
+            original
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn activation_refuses_to_replace_a_concurrently_installed_empty_output() {
+        let root = temp_tree("activation-empty-output-race");
+        let output = root.join("generated");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let result = publish_output_with_hook(&output, &replacement, || {
+            fs::create_dir(&output).map_err(|error| {
+                super::failure(
+                    "InjectedFailure",
+                    format!("failed to install concurrent empty output: {error}"),
+                )
+            })
+        });
+
+        assert_eq!(
+            test_err(result, "concurrent empty output blocks activation").kind,
+            "LawpackOutputRollbackFailed"
+        );
+        assert!(test_ok(read_output_tree(&output), "read concurrent empty output").is_empty());
         let backup = test_ok(fs::read_dir(&root), "read publication root")
             .map(|entry| test_ok(entry, "read publication entry"))
             .find(|entry| {

@@ -42,7 +42,10 @@ versions still track specification maturity rather than a released product.
   between portable filesystem calls. In that adversarial case Edict detects
   substitutions at verified boundaries and refuses without deliberately
   deleting unknown objects, but does not promise restoration to the original
-  pathname. Non-repairing, filesystem-read-only `checkOnly` drift
+  pathname. Publication directory moves use atomic no-replace semantics and
+  preserve even an empty destination installed immediately before the move;
+  targets without a supported no-replace directory operation fail closed.
+  Non-repairing, filesystem-read-only `checkOnly` drift
   detection traverses real parent directories from one retained root
   capability, verifies that the parent chain and requested output still name
   those same filesystem identities and ownership basis, and validates the exact
