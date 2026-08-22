@@ -252,6 +252,17 @@ relative paths, and platform-specific forbidden punctuation. Only `/` separates
 non-empty raw path components; backslashes and repeated separators reject before
 host path parsing.
 
+For example, the raw `outputDirectory` grammar produces these results before
+publication performs filesystem access:
+
+| Raw `outputDirectory` | Result | Reason |
+| --- | --- | --- |
+| `generated/Package_1` | accepted | Both non-empty components use the portable character set |
+| `generated\\child` | `InvalidLawpackConfig` | A backslash is not a path separator in the raw grammar |
+| `generated//child` | `InvalidLawpackConfig` | The repeated separator creates an empty component |
+| `generated./child` | `InvalidLawpackConfig` | The first component has a trailing-dot alias |
+| 230 ASCII `x` characters | `InvalidLawpackConfig` | The component exceeds the 229-byte limit reserved for its derived lock name |
+
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
 that tree otherwise carries a structurally valid ownership index.
