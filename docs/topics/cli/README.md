@@ -53,18 +53,32 @@ ownership index, and it refuses to place one owned output inside another owned
 lawpack tree. Write builds acquire shared intent locks for proper ancestors and
 an exclusive lock for the output itself, so disjoint sibling outputs remain
 parallel while parent/child or identical output footprints conflict. After
-coordination, Edict pins the publication root and output parent as capability
-directories; staging, activation, rollback, and cleanup cannot follow a later
-ambient-path replacement. The document directory is the publication namespace;
-callers must not concurrently publish overlapping trees from different document
-roots. Pure preflight derives fixed artifacts and sidecars and rejects reserved
+coordination, Edict traverses every publication-root component from the
+filesystem root without following symbolic links, then pins the output parent as
+a capability directory; staging, activation, rollback, and cleanup cannot follow
+a later ambient-path replacement. Publication moves never replace an existing
+destination; a concurrently installed empty directory is preserved and causes
+a typed failure. Write publication is supported on Apple targets, Linux,
+Android, and Redox. Windows and other targets without Edict's atomic
+no-replace directory-move backend return `LawpackOutputWriteUnsupported` before
+reading the build document or mutating its namespace. `checkOnly` remains
+available on unsupported non-Windows targets. Windows lawpack builds fail
+closed before document I/O in both modes, with `LawpackCheckUnsupported` for
+`checkOnly`, because Edict has no stable Windows filesystem-identity backend.
+The document directory is the publication
+namespace; callers must not concurrently publish overlapping trees from
+different document roots. Pure preflight derives fixed artifacts and sidecars and rejects reserved
 namespaces, duplicates, ancestor collisions, filesystem NUL, nonportable names,
 trailing-dot aliases, overlong paths, and case aliases before output inspection,
 coordination, or dependency I/O. Raw output-directory paths use one portable
 `/`-separated grammar, reserve internal names case-insensitively, and leave room
-for every derived lock filename. Dependency paths are canonicalized before
-overlap checks, so a symlink cannot route an input back under the replaceable
-output tree. A check-only build does not repair the owned artifact tree and
+for every derived lock filename. Every dependency path component must be real;
+Edict opens each one without following symbolic links and retains the accepted
+file identity through overlap checks and bounded reading. Existing output
+directories and traversed dependency parents are also compared by filesystem
+identity, so a case-insensitive alias cannot route an input back under the
+replaceable output tree. A check-only build
+does not repair the owned artifact tree and
 reports `LawpackOutputDrift` unless the complete existing tree is
 byte-identical. It creates no directories or lock files and rechecks the
 ownership basis after traversal:

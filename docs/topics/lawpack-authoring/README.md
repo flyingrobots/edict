@@ -91,11 +91,17 @@ Use `checkOnly` in CI or before committing vendored output:
 
 Check-only mode performs the same bounded reads, construction, decoding, and
 closure validation, then compares the complete output tree byte for byte through
-one pinned directory handle reached by traversing real parent directories from
-a retained root capability. Before returning success it retraverses that parent
-chain from the retained root, verifies that both the parent and requested output
-name still denote the pinned filesystem identities and ownership basis, then
-validates the exact tree a second time through the reopened handle.
+one pinned directory handle reached by traversing every document-root component
+from the filesystem root without following symbolic links, then traversing real
+output-parent directories from that retained root capability. The final
+output-directory open does not follow a
+symbolic link installed after inspection. Before returning success it
+retraverses that parent chain from the retained root, verifies that both the
+parent and requested output name still denote the pinned filesystem identities
+and ownership basis, rejects an ownership index that appeared at the retained
+root or any output ancestor, then validates the exact tree a second time through
+the reopened handle. Each inspected artifact and child directory is opened
+relative to its retained parent without following symbolic links.
 It never repairs or changes the owned artifact tree and creates no parent
 directories or lock files. This is optimistic two-pass validation, not an atomic
 filesystem snapshot; an uncooperative process can still mutate after the final
@@ -103,7 +109,8 @@ observation.
 Missing, changed, or extra output is `LawpackOutputDrift`.
 Missing output ancestors also report `LawpackOutputDrift`; non-directory or
 symlinked ancestors report `LawpackOutputOwnershipFailed`. Check-only never
-reports `LawpackOutputWriteFailed` because it performs no publication. Its
+reports `LawpackOutputWriteFailed` because it performs no publication,
+including during initial output-path resolution. Its
 parent-chain gate rejects every component that is not a normal relative name.
 
 ## Resource And Dependency Identity
@@ -140,15 +147,22 @@ Every `dependencies` edge names an id, version, and exact manifest digest. The
 matching canonical manifest and exports paths appear in `dependencyBundles`.
 The caller must supply the complete transitive closure and nothing disconnected
 from the authored root. Edict decodes each dependency, corroborates every pin,
-and runs the same complete-graph validator used by application builds.
+and runs the same complete-graph validator used by application builds. When the
+output directory already exists, dependency traversal retains its filesystem
+identity and rejects any dependency parent with that identity. This closes
+case-insensitive and other filesystem-equivalent aliases that a lexical path
+comparison cannot see.
 
 ### 5. Apply Publication Policy
 
-`outputDirectory` is exclusively owned by this build after its output index is
-present. A write build stages a complete sibling directory, preserves the old
-directory, activates the replacement, and restores the old directory if
-activation fails. A later successful build replaces the whole owned directory,
-so artifacts removed from the definition cannot survive as stale output. An
+The lawpack contract assigns `outputDirectory` exclusively to this build after
+its output index is present. The filesystem does not enforce that ownership
+against another process that can mutate the publication parent. Among
+publishers that honor Edict's footprint locks, a write build stages a complete
+sibling directory, preserves the old directory, activates the replacement, and
+restores the old directory if activation fails. A later successful build
+replaces the whole owned directory, so artifacts removed from the definition
+cannot survive as stale output. An
 internal transaction or backup name is fixed-length and independent of the
 user-selected output component, so every accepted output name remains
 publishable within portable component limits. Output-directory components that
@@ -161,13 +175,60 @@ cannot be nested beneath an ancestor containing another lawpack output index.
 Within one document-root publication namespace, Edict acquires shared
 intent locks for proper output ancestors in top-down order and an exclusive lock
 for the output itself. Sibling output footprints can publish concurrently;
-identical and parent/child footprints conflict. The real-directory ancestor
+identical and parent/child footprints conflict. Lock-file opens do not follow
+symbolic links, so another entry cannot redirect a footprint claim to a
+different file identity. The real-directory ancestor
 chain is rechecked after intent acquisition. The publication root and output
-parent are then pinned as capability directories. Write mode stages the complete
-replacement, captures the currently named output, and authorizes that exact
-captured directory through a retained capability handle. Staging, activation,
-rollback, and cleanup cannot be redirected by a later ambient-path replacement,
-and rollback refuses to delete an output that appeared concurrently.
+parent are then pinned as capability directories by traversing every component
+from the filesystem root without following symbolic links. Write mode stages
+the complete replacement and uses retained capability handles to keep opened
+directories confined. The old output is opened, owner-validated, and identified
+before its name is moved; the backup name must then reopen to that retained
+identity before publication continues. Rollback likewise reopens the restored
+destination and requires the retained captured identity before reporting
+success; a mismatching destination remains intact as recovery evidence.
+Every publication move whose destination must be absent uses an atomic
+no-replace operation, so an intervening empty directory is refused rather than
+silently overwritten. Apple, Linux, Android, and Redox use their
+capability-relative no-replace kernel operation. Windows and any other target
+without that backend refuse write publication with
+`LawpackOutputWriteUnsupported` before reading the build document or mutating
+the publication namespace. On unsupported non-Windows targets, `checkOnly`
+remains available because it performs no publication move. Windows lawpack
+builds currently fail closed before document I/O in both modes, using
+`LawpackCheckUnsupported` for `checkOnly`; Edict does not claim a Windows
+transactional publication or filesystem-identity backend.
+Production transaction creation is available only through retained exclusive
+output authority. Operating-system footprint locks compose with in-process
+shared/exclusive exclusion keyed by the retained lock file's filesystem
+identity, so alternate spellings of one lock object and parent/child
+lock-respecting publishers cannot enter the create/open boundary concurrently
+while siblings remain independent. This is the supported cooperating-writer
+proof; it does not
+turn portable create-then-open into hostile-writer object continuity. No-follow
+opens reject symbolic links, but they do not by themselves prove that a real
+directory reopened by name is the object Edict previously created.
+
+An uncooperative process with write authority over the publication parent can
+rename any namespace entry between portable filesystem calls. Edict therefore
+does not promise to restore the old output to its original pathname against
+such a process. The supported failure-atomic guarantee is for lock-respecting
+publishers in the same document-root namespace. Under uncooperative mutation,
+the safety contract is narrower: retained capabilities confine I/O, symbolic
+links are never followed, detected substitutes are not deliberately overwritten
+or deleted, and the command refuses rather than claiming an unverified commit
+or rollback. Exact recovery of a directory whose only name was moved by another
+process requires stronger kernel-enforced exclusion or a parent directory the
+process cannot mutate.
+
+After activation, the retained transaction identity and its complete artifact
+tree must still match the staged authoring result before backup cleanup commits
+the replacement. After exact-tree traversal, the public output name is reopened
+and must still identify that staged transaction before the captured backup is
+removed. If the name vanished or changed, rollback preserves a substitute under
+the transaction recovery name, restores the captured output when the checked
+namespace transition permits it, and reports failure. Rollback refuses to
+delete an output that appeared concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping
 publication from different document roots is outside one namespace and must be
 avoided by the caller.
@@ -189,11 +250,23 @@ document is decoded and before output inspection, coordination, or dependency
 filesystem I/O. Primary `.cbor` paths reserve the two bytes added when their
 extension becomes `.sha256`; derived sidecars are separately validated at the
 255-byte component and 1024-byte relative-artifact ceilings. Output components
-use bounded lowercase ASCII letters, digits, `.`, `_`, and `-`, and reject
-Windows device names, filesystem NUL, case aliases, trailing-dot aliases,
-overlong components or relative paths, and
-platform-specific forbidden punctuation. Only `/` separates non-empty raw path
-components; backslashes and repeated separators reject before host path parsing.
+use bounded ASCII letters, digits, `.`, `_`, and `-`, and reject
+Windows device names, filesystem NUL, case-insensitive aliases of Edict's
+internal publication names, trailing-dot aliases, overlong components or
+relative paths, and platform-specific forbidden punctuation. Only `/` separates
+non-empty raw path components; backslashes and repeated separators reject before
+host path parsing.
+
+For example, the raw `outputDirectory` grammar produces these results before
+publication performs filesystem access:
+
+| Raw `outputDirectory` | Result | Reason |
+| --- | --- | --- |
+| `generated/Package_1` | accepted | Both non-empty components use the portable character set |
+| `generated\\child` | `InvalidLawpackConfig` | A backslash is not a path separator in the raw grammar |
+| `generated//child` | `InvalidLawpackConfig` | The repeated separator creates an empty component |
+| `generated./child` | `InvalidLawpackConfig` | The first component has a trailing-dot alias |
+| 230 ASCII `x` characters | `InvalidLawpackConfig` | The component exceeds the 229-byte limit reserved for its derived lock name |
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
@@ -215,11 +288,14 @@ exact-tree pass.
 
 A persistent hidden lock file is kept beside each write output and its proper
 ancestors. These files are footprint-coordination state, not canonical lawpack
-artifacts, and should remain untracked. There is no process-wide, host-wide, or
-filesystem-wide publication coordinator. Activation is the publication commit
-point. Failure to remove the hidden previous-tree backup after activation does
-not turn a committed replacement into a failed command; that backup is
-best-effort cleanup state and may be removed by the operator.
+artifacts, and should remain untracked. A process-wide registry keyed by each
+retained lock file's filesystem identity composes with those cooperative
+operating-system locks; there is no host-wide or filesystem-wide coordinator
+that excludes an uncooperative namespace writer. The successful
+post-validation public-name identity rebind is the publication commit point.
+Failure to remove the hidden previous-tree backup after that boundary does not
+turn a committed replacement into a failed command; that backup is best-effort
+cleanup state and may be removed by the operator.
 
 ## The Five Artifacts That Must Stay Distinct
 

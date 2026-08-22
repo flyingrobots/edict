@@ -6,6 +6,7 @@ use std::fs::{self, File};
 use std::io::{ErrorKind, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, OnceLock};
 
 use cap_fs_ext::{DirExt as _, FollowSymlinks, OpenOptionsFollowExt as _};
 use cap_std::ambient_authority;
@@ -29,6 +30,12 @@ const MAX_LAWPACK_ARTIFACT_BYTES: u64 = 1024 * 1024;
 const MAX_DEPENDENCY_BUNDLES: usize = 192;
 const MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES: usize = 229;
 const MAX_OUTPUT_DIRECTORY_PATH_BYTES: usize = 1022;
+const LAWPACK_WRITE_PUBLICATION_SUPPORTED: bool = cfg!(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+));
 static PUBLICATION_NAME_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug)]
@@ -44,18 +51,116 @@ struct PublicationAuthority {
         dead_code,
         reason = "lock handles keep ancestor intents held for the authority lifetime"
     )]
-    ancestor_locks: Vec<File>,
+    ancestor_locks: Vec<OutputLockGuard>,
 }
+
+impl PublicationAuthority {
+    fn claim_output<'a>(
+        &'a self,
+        output_name: &std::ffi::OsStr,
+        output: &Path,
+    ) -> Result<OutputPublicationAuthority<'a>, LawpackBuildFailure> {
+        let lock = acquire_output_lock_in(
+            &self.output_parent,
+            output_name,
+            output,
+            OutputLockMode::ExclusiveOutput,
+        )?;
+        Ok(OutputPublicationAuthority {
+            parent: &self.output_parent,
+            _lock: lock,
+        })
+    }
+}
+
+struct OutputPublicationAuthority<'a> {
+    parent: &'a Dir,
+    _lock: OutputLockGuard,
+}
+
+impl OutputPublicationAuthority<'_> {
+    fn create_transaction_dir(
+        &self,
+        transaction: &Path,
+        output: &Path,
+    ) -> Result<Dir, LawpackBuildFailure> {
+        create_transaction_dir_with_hook(self.parent, transaction, output, || {})
+    }
+}
+
+#[derive(Debug)]
+struct OutputLockGuard {
+    #[allow(
+        dead_code,
+        reason = "the file handle retains the operating-system lock"
+    )]
+    file: File,
+    #[allow(
+        dead_code,
+        reason = "the guard retains same-process footprint exclusion"
+    )]
+    process: ProcessLockGuard,
+}
+
+#[derive(Debug)]
+struct ProcessLockGuard {
+    coordinate: FilesystemIdentity,
+    mode: OutputLockMode,
+}
+
+#[derive(Default)]
+struct ProcessLockState {
+    shared: usize,
+    exclusive: bool,
+}
+
+static PROCESS_OUTPUT_LOCKS: OnceLock<Mutex<BTreeMap<FilesystemIdentity, ProcessLockState>>> =
+    OnceLock::new();
 
 struct OpenedDependencyInput {
     file: File,
     display: PathBuf,
 }
 
-#[derive(Clone, Copy)]
+type FilesystemIdentity = (u64, u64);
+type DirectoryIdentity = FilesystemIdentity;
+
+#[derive(Clone, Copy, Debug)]
 enum OutputLockMode {
     SharedIntent,
     ExclusiveOutput,
+}
+
+impl Drop for ProcessLockGuard {
+    fn drop(&mut self) {
+        let locks = PROCESS_OUTPUT_LOCKS.get_or_init(|| Mutex::new(BTreeMap::new()));
+        let mut locks = locks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(state) = locks.get_mut(&self.coordinate) else {
+            panic!("retained process lock must have registry state");
+        };
+        match self.mode {
+            OutputLockMode::SharedIntent => {
+                assert!(
+                    state.shared != 0,
+                    "retained shared process lock must have a holder"
+                );
+                state.shared -= 1;
+            }
+            OutputLockMode::ExclusiveOutput => {
+                assert!(
+                    state.exclusive,
+                    "retained exclusive process lock must have a holder"
+                );
+                state.exclusive = false;
+            }
+        }
+        let remove = state.shared == 0 && !state.exclusive;
+        if remove {
+            locks.remove(&self.coordinate);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -208,6 +313,7 @@ pub(crate) fn build_lawpack(
     document_path: &Path,
     check_only: bool,
 ) -> Result<(), LawpackBuildFailure> {
+    require_lawpack_write_publication(check_only, LAWPACK_WRITE_PUBLICATION_SUPPORTED)?;
     let document_path = fs::canonicalize(document_path).map_err(|error| {
         failure(
             "LawpackConfigReadFailed",
@@ -232,7 +338,11 @@ pub(crate) fn build_lawpack(
     let document = decode_lawpack_document(&document_bytes)?;
     validate_document(&document)?;
     preflight_lawpack_authoring_paths(&document.lawpack).map_err(first_authoring_failure)?;
-    let output = resolve_output_directory(root, &document.output_directory)?;
+    let output = if check_only {
+        resolve_check_output_directory(root, &document.output_directory)?
+    } else {
+        resolve_output_directory(root, &document.output_directory)?
+    };
     let dependencies = load_dependencies(root, &document.dependency_bundles, &output)?;
     let authored =
         author_lawpack(&document.lawpack, &dependencies).map_err(first_authoring_failure)?;
@@ -273,6 +383,20 @@ pub(crate) fn build_lawpack(
     } else {
         publish_output_in_root(root, &output, &files)
     }
+}
+
+fn require_lawpack_write_publication(
+    check_only: bool,
+    write_publication_supported: bool,
+) -> Result<(), LawpackBuildFailure> {
+    if check_only || write_publication_supported {
+        return Ok(());
+    }
+    Err(failure(
+        "LawpackOutputWriteUnsupported",
+        "lawpack write publication is unsupported on this target because Edict has no atomic no-replace directory move backend"
+            .to_owned(),
+    ))
 }
 
 fn decode_lawpack_document(bytes: &[u8]) -> Result<LawpackBuildDocument, LawpackBuildFailure> {
@@ -365,6 +489,8 @@ fn load_dependencies_with_hook(
             ),
         )
     })?;
+    let output_identity =
+        existing_dependency_output_identity(&root_dir, root, relative_output, output)?;
     let resolved = definitions
         .iter()
         .enumerate()
@@ -374,6 +500,7 @@ fn load_dependencies_with_hook(
                 root,
                 &definition.manifest,
                 relative_output,
+                output_identity,
                 &format!("dependencyBundles.{index}.manifest"),
             )?;
             let exports = open_dependency_input(
@@ -381,6 +508,7 @@ fn load_dependencies_with_hook(
                 root,
                 &definition.exports,
                 relative_output,
+                output_identity,
                 &format!("dependencyBundles.{index}.exports"),
             )?;
             Ok((manifest, exports))
@@ -416,20 +544,127 @@ fn load_dependencies_with_hook(
 }
 
 fn open_dependency_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
-    let open_failure = |error| {
+    open_absolute_dir_nofollow(root, "LawpackArtifactReadFailed", "lawpack dependency root")
+}
+
+fn existing_dependency_output_identity(
+    root_dir: &Dir,
+    root: &Path,
+    relative_output: &Path,
+    output: &Path,
+) -> Result<Option<DirectoryIdentity>, LawpackBuildFailure> {
+    let mut directory = root_dir.try_clone().map_err(|error| {
         failure(
             "LawpackArtifactReadFailed",
+            format!("failed to retain lawpack root while checking dependency confinement: {error}"),
+        )
+    })?;
+    let mut display = root.to_path_buf();
+    for component in relative_output.components() {
+        let Component::Normal(name) = component else {
+            return Err(failure(
+                "LawpackPathOutsideRoot",
+                "outputDirectory must contain only normal relative components".to_owned(),
+            ));
+        };
+        display.push(name);
+        let metadata = match directory.symlink_metadata(name) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(failure(
+                    "LawpackArtifactReadFailed",
+                    format!(
+                        "failed to inspect output while checking dependency confinement `{}`: {error}",
+                        display.display()
+                    ),
+                ));
+            }
+        };
+        if metadata.is_symlink() {
+            return Err(failure(
+                "InvalidLawpackConfig",
+                format!(
+                    "outputDirectory must not traverse symlink `{}`",
+                    display.display()
+                ),
+            ));
+        }
+        if !metadata.is_dir() {
+            return Ok(None);
+        }
+        directory = directory.open_dir_nofollow(name).map_err(|error| {
+            failure(
+                "LawpackArtifactReadFailed",
+                format!(
+                    "failed to pin output while checking dependency confinement `{}`: {error}",
+                    display.display()
+                ),
+            )
+        })?;
+    }
+    identify_dependency_directory(&directory, output).map(Some)
+}
+
+fn open_absolute_dir_nofollow(
+    path: &Path,
+    kind: &'static str,
+    subject: &str,
+) -> Result<Dir, LawpackBuildFailure> {
+    let mut anchor = PathBuf::new();
+    let mut names = Vec::new();
+    let mut rooted = false;
+    for component in path.components() {
+        match component {
+            Component::Prefix(prefix) => anchor.push(prefix.as_os_str()),
+            Component::RootDir => {
+                anchor.push(Path::new(std::path::MAIN_SEPARATOR_STR));
+                rooted = true;
+            }
+            Component::Normal(name) => names.push(name),
+            Component::CurDir | Component::ParentDir => {
+                return Err(failure(
+                    kind,
+                    format!(
+                        "{subject} `{}` must be an absolute normalized path",
+                        path.display()
+                    ),
+                ));
+            }
+        }
+    }
+    if !rooted {
+        return Err(failure(
+            kind,
             format!(
-                "failed to open lawpack dependency root `{}`: {error}",
-                root.display()
+                "{subject} `{}` must be an absolute normalized path",
+                path.display()
+            ),
+        ));
+    }
+    let mut directory = Dir::open_ambient_dir(&anchor, ambient_authority()).map_err(|error| {
+        failure(
+            kind,
+            format!(
+                "failed to open filesystem anchor for {subject} `{}`: {error}",
+                path.display()
             ),
         )
-    };
-    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
-        return Dir::open_ambient_dir(root, ambient_authority()).map_err(open_failure);
-    };
-    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(open_failure)?;
-    parent_dir.open_dir_nofollow(name).map_err(open_failure)
+    })?;
+    let mut display = anchor;
+    for name in names {
+        display.push(name);
+        directory = directory.open_dir_nofollow(name).map_err(|error| {
+            failure(
+                kind,
+                format!(
+                    "failed to pin {subject} component `{}`: {error}",
+                    display.display()
+                ),
+            )
+        })?;
+    }
+    Ok(directory)
 }
 
 fn open_dependency_input(
@@ -437,9 +672,18 @@ fn open_dependency_input(
     root: &Path,
     relative: &Path,
     relative_output: &Path,
+    output_identity: Option<DirectoryIdentity>,
     field: &str,
 ) -> Result<OpenedDependencyInput, LawpackBuildFailure> {
-    open_dependency_input_with_hook(root_dir, root, relative, relative_output, field, || {})
+    open_dependency_input_with_hook(
+        root_dir,
+        root,
+        relative,
+        relative_output,
+        output_identity,
+        field,
+        || {},
+    )
 }
 
 fn open_dependency_input_with_hook(
@@ -447,6 +691,7 @@ fn open_dependency_input_with_hook(
     root: &Path,
     relative: &Path,
     relative_output: &Path,
+    output_identity: Option<DirectoryIdentity>,
     field: &str,
     after_inspection: impl FnOnce(),
 ) -> Result<OpenedDependencyInput, LawpackBuildFailure> {
@@ -458,7 +703,8 @@ fn open_dependency_input_with_hook(
         ));
     }
     let parent = relative.parent().unwrap_or_else(|| Path::new(""));
-    let (directory, mut display) = open_dependency_parent(root_dir, root, parent, field)?;
+    let (directory, mut display) =
+        open_dependency_parent(root_dir, root, parent, output_identity, field)?;
     let name = relative.file_name().ok_or_else(|| {
         failure(
             "InvalidLawpackConfig",
@@ -509,6 +755,7 @@ fn open_dependency_parent(
     root_dir: &Dir,
     root: &Path,
     parent: &Path,
+    output_identity: Option<DirectoryIdentity>,
     field: &str,
 ) -> Result<(Dir, PathBuf), LawpackBuildFailure> {
     let mut directory = root_dir.try_clone().map_err(|error| {
@@ -562,8 +809,32 @@ fn open_dependency_parent(
                 ),
             )
         })?;
+        if let Some(output) = output_identity {
+            if identify_dependency_directory(&directory, &display)? == output {
+                return Err(failure(
+                    "InvalidLawpackConfig",
+                    format!("{field} must be outside outputDirectory"),
+                ));
+            }
+        }
     }
     Ok((directory, display))
+}
+
+fn identify_dependency_directory(
+    directory: &Dir,
+    display: &Path,
+) -> Result<DirectoryIdentity, LawpackBuildFailure> {
+    directory_identity(directory, display).map_err(|error| {
+        failure(
+            "LawpackArtifactReadFailed",
+            format!(
+                "failed to identify dependency confinement directory `{}`: {}",
+                display.display(),
+                error.message
+            ),
+        )
+    })
 }
 
 fn read_bounded(
@@ -643,6 +914,21 @@ fn read_bounded_in(
 }
 
 fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, LawpackBuildFailure> {
+    resolve_output_directory_with_inspection_kind(root, relative, "LawpackOutputWriteFailed")
+}
+
+fn resolve_check_output_directory(
+    root: &Path,
+    relative: &str,
+) -> Result<PathBuf, LawpackBuildFailure> {
+    resolve_output_directory_with_inspection_kind(root, relative, "LawpackOutputOwnershipFailed")
+}
+
+fn resolve_output_directory_with_inspection_kind(
+    root: &Path,
+    relative: &str,
+    inspection_kind: &'static str,
+) -> Result<PathBuf, LawpackBuildFailure> {
     validate_output_directory_path(relative)?;
     let relative = Path::new(relative);
     let mut current = root.to_path_buf();
@@ -668,7 +954,7 @@ fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, Lawp
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => {
                 return Err(failure(
-                    "LawpackOutputWriteFailed",
+                    inspection_kind,
                     format!(
                         "failed to inspect outputDirectory `{}`: {error}",
                         current.display()
@@ -677,11 +963,15 @@ fn resolve_output_directory(root: &Path, relative: &str) -> Result<PathBuf, Lawp
             }
         }
     }
-    reject_owned_output_ancestor(root, &current)?;
+    reject_owned_output_ancestor(root, &current, inspection_kind)?;
     Ok(current)
 }
 
-fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), LawpackBuildFailure> {
+fn reject_owned_output_ancestor(
+    root: &Path,
+    output: &Path,
+    inspection_kind: &'static str,
+) -> Result<(), LawpackBuildFailure> {
     let mut ancestor = output.parent();
     while let Some(directory) = ancestor {
         if !directory.starts_with(root) {
@@ -701,7 +991,7 @@ fn reject_owned_output_ancestor(root: &Path, output: &Path) -> Result<(), Lawpac
             Err(error) if error.kind() == ErrorKind::NotFound => {}
             Err(error) => {
                 return Err(failure(
-                    "LawpackOutputWriteFailed",
+                    inspection_kind,
                     format!(
                         "failed to inspect output ancestor `{}`: {error}",
                         directory.display()
@@ -781,35 +1071,7 @@ fn open_check_root_with_hook(
         ));
     }
     after_inspection();
-    let (Some(parent), Some(name)) = (root.parent(), root.file_name()) else {
-        return Dir::open_ambient_dir(root, ambient_authority()).map_err(|error| {
-            failure(
-                "LawpackOutputOwnershipFailed",
-                format!(
-                    "failed to pin output ancestor `{}`: {error}",
-                    root.display()
-                ),
-            )
-        });
-    };
-    let parent_dir = Dir::open_ambient_dir(parent, ambient_authority()).map_err(|error| {
-        failure(
-            "LawpackOutputOwnershipFailed",
-            format!(
-                "failed to pin parent of output ancestor `{}`: {error}",
-                root.display()
-            ),
-        )
-    })?;
-    parent_dir.open_dir_nofollow(name).map_err(|error| {
-        failure(
-            "LawpackOutputOwnershipFailed",
-            format!(
-                "failed to pin output ancestor `{}`: {error}",
-                root.display()
-            ),
-        )
-    })
+    open_absolute_dir_nofollow(root, "LawpackOutputOwnershipFailed", "output root")
 }
 
 fn open_check_output_parent_in_root(
@@ -840,6 +1102,7 @@ fn open_check_output_parent_in_root(
             format!("failed to retain output root `{}`: {error}", root.display()),
         )
     })?;
+    reject_owned_output_ancestor_directory(&current, &current_path, output)?;
     for component in relative.components() {
         let Component::Normal(name) = component else {
             return Err(failure(
@@ -887,6 +1150,7 @@ fn open_check_output_parent_in_root(
                 ),
             )
         })?;
+        reject_owned_output_ancestor_directory(&current, &current_path, output)?;
     }
     Ok(current)
 }
@@ -960,7 +1224,7 @@ fn acquire_output_ancestor_locks(
                 ),
             ));
         }
-        directory = directory.open_dir(name).map_err(|error| {
+        directory = directory.open_dir_nofollow(name).map_err(|error| {
             failure(
                 "LawpackPathOutsideRoot",
                 format!(
@@ -1003,15 +1267,7 @@ fn reject_owned_output_ancestor_directory(
 }
 
 fn open_publication_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
-    Dir::open_ambient_dir(root, ambient_authority()).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to open lawpack publication root `{}`: {error}",
-                root.display()
-            ),
-        )
-    })
+    open_absolute_dir_nofollow(root, "LawpackOutputWriteFailed", "lawpack publication root")
 }
 
 fn validate_relative_path(path: &Path, field: &str) -> Result<(), LawpackBuildFailure> {
@@ -1176,6 +1432,15 @@ fn validate_output_tree(
     output_dir: Dir,
     expected: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
+    validate_output_tree_with_hook(output, output_dir, expected, |_| {})
+}
+
+fn validate_output_tree_with_hook(
+    output: &Path,
+    output_dir: Dir,
+    expected: &BTreeMap<PathBuf, Vec<u8>>,
+    mut after_inspection: impl FnMut(&Path),
+) -> Result<(), LawpackBuildFailure> {
     let mut permitted_directories = BTreeSet::new();
     for path in expected.keys() {
         let mut parent = path.parent();
@@ -1215,23 +1480,28 @@ fn validate_output_tree(
                     format!("failed to inspect `{}`: {error}", entry_path.display()),
                 )
             })?;
+            after_inspection(&relative);
             if file_type.is_dir() {
                 if !permitted_directories.contains(&relative) {
                     return Err(unexpected_output_path(output, &relative));
                 }
-                let child = entry.open_dir().map_err(|error| {
-                    failure(
-                        "LawpackOutputDrift",
-                        format!("failed to pin `{}`: {error}", entry_path.display()),
-                    )
-                })?;
+                let child = directory
+                    .open_dir_nofollow(entry.file_name())
+                    .map_err(|error| {
+                        failure(
+                            "LawpackOutputDrift",
+                            format!("failed to pin `{}`: {error}", entry_path.display()),
+                        )
+                    })?;
                 pending.push((child, relative));
             } else if file_type.is_file() {
                 let Some(expected_bytes) = expected.get(&relative) else {
                     return Err(unexpected_output_path(output, &relative));
                 };
-                let file = entry
-                    .open()
+                let mut options = CapOpenOptions::new();
+                options.read(true).follow(FollowSymlinks::No);
+                let file = directory
+                    .open_with(entry.file_name(), &options)
                     .map(cap_std::fs::File::into_std)
                     .map_err(|error| {
                         failure(
@@ -1278,6 +1548,15 @@ fn open_check_output_dir(
     output_name: &std::ffi::OsStr,
     output: &Path,
 ) -> Result<Dir, LawpackBuildFailure> {
+    open_check_output_dir_with_hook(parent, output_name, output, || {})
+}
+
+fn open_check_output_dir_with_hook(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    output: &Path,
+    after_inspection: impl FnOnce(),
+) -> Result<Dir, LawpackBuildFailure> {
     let metadata = parent.symlink_metadata(output_name).map_err(|error| {
         failure(
             "LawpackOutputDrift",
@@ -1293,7 +1572,8 @@ fn open_check_output_dir(
             ),
         ));
     }
-    parent.open_dir(output_name).map_err(|error| {
+    after_inspection();
+    parent.open_dir_nofollow(output_name).map_err(|error| {
         failure(
             "LawpackOutputDrift",
             format!("failed to pin output `{}`: {error}", output.display()),
@@ -1302,7 +1582,10 @@ fn open_check_output_dir(
 }
 
 #[cfg(any(unix, target_os = "wasi", target_os = "vxworks"))]
-fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), LawpackBuildFailure> {
+fn directory_identity(
+    directory: &Dir,
+    output: &Path,
+) -> Result<DirectoryIdentity, LawpackBuildFailure> {
     use cap_std::fs::MetadataExt as _;
 
     let metadata = directory.dir_metadata().map_err(|error| {
@@ -1318,7 +1601,10 @@ fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), Lawp
 }
 
 #[cfg(windows)]
-fn directory_identity(directory: &Dir, output: &Path) -> Result<(u64, u64), LawpackBuildFailure> {
+fn directory_identity(
+    directory: &Dir,
+    output: &Path,
+) -> Result<DirectoryIdentity, LawpackBuildFailure> {
     use std::os::windows::fs::MetadataExt as _;
 
     let metadata = directory
@@ -1497,6 +1783,58 @@ fn publish_output_with_capture_hook(
     )
 }
 
+#[cfg(test)]
+fn publish_output_with_capture_rename_hook(
+    output: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    after_capture_rename: impl FnOnce(&Path) -> Result<(), LawpackBuildFailure>,
+) -> Result<(), LawpackBuildFailure> {
+    let root = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a parent directory".to_owned(),
+        )
+    })?;
+    let authority = acquire_output_ancestor_locks(root, output)?;
+    publish_output_with_hooks_in_authority(
+        &authority,
+        output,
+        files,
+        || Ok(()),
+        after_capture_rename,
+        || Ok(()),
+        || Ok(()),
+        || {},
+        Dir::remove_open_dir_all,
+    )
+}
+
+#[cfg(test)]
+fn publish_output_with_validation_hook(
+    output: &Path,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    after_validation: impl FnOnce(),
+) -> Result<(), LawpackBuildFailure> {
+    let root = output.parent().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            "lawpack output must have a parent directory".to_owned(),
+        )
+    })?;
+    let authority = acquire_output_ancestor_locks(root, output)?;
+    publish_output_with_hooks_in_authority(
+        &authority,
+        output,
+        files,
+        || Ok(()),
+        |_| Ok(()),
+        || Ok(()),
+        || Ok(()),
+        after_validation,
+        Dir::remove_open_dir_all,
+    )
+}
+
 #[allow(
     clippy::too_many_lines,
     reason = "directory publication keeps staging and every rollback path explicit"
@@ -1542,26 +1880,30 @@ fn publish_output_with_hooks_in_root(
         output,
         files,
         before_capture,
+        |_| Ok(()),
         before_activation,
         || Ok(()),
+        || {},
         remove_backup,
     )
 }
 
 #[allow(
+    clippy::too_many_arguments,
     clippy::too_many_lines,
-    reason = "directory publication keeps staging and every rollback path explicit"
+    reason = "directory publication keeps deterministic race hooks and every rollback path explicit"
 )]
 fn publish_output_with_hooks_in_authority(
     authority: &PublicationAuthority,
     output: &Path,
     files: &BTreeMap<PathBuf, Vec<u8>>,
     before_capture: impl FnOnce() -> Result<(), LawpackBuildFailure>,
+    after_capture_rename: impl FnOnce(&Path) -> Result<(), LawpackBuildFailure>,
     before_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     after_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
+    after_validation: impl FnOnce(),
     remove_backup: impl FnOnce(Dir) -> std::io::Result<()>,
 ) -> Result<(), LawpackBuildFailure> {
-    let parent_dir = &authority.output_parent;
     let output_name = output.file_name().ok_or_else(|| {
         failure(
             "LawpackOutputWriteFailed",
@@ -1569,32 +1911,11 @@ fn publish_output_with_hooks_in_authority(
         )
     })?;
     let expected_owner = expected_output_owner(files)?;
-    let _lock = acquire_output_lock_in(
-        parent_dir,
-        output_name,
-        output,
-        OutputLockMode::ExclusiveOutput,
-    )?;
+    let output_authority = authority.claim_output(output_name, output)?;
+    let parent_dir = output_authority.parent;
 
     let transaction = unique_sibling_in(parent_dir, output, "transaction")?;
-    parent_dir.create_dir(&transaction).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to create output transaction `{}`: {error}",
-                transaction.display()
-            ),
-        )
-    })?;
-    let transaction_dir = parent_dir.open_dir(&transaction).map_err(|error| {
-        failure(
-            "LawpackOutputWriteFailed",
-            format!(
-                "failed to pin output transaction beside `{}`: {error}",
-                output.display()
-            ),
-        )
-    })?;
+    let transaction_dir = output_authority.create_transaction_dir(&transaction, output)?;
     if let Err(error) = stage_files_in(&transaction_dir, files) {
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(error);
@@ -1619,15 +1940,49 @@ fn publish_output_with_hooks_in_authority(
         return Err(error);
     }
     let existed = entry_exists(parent_dir, output_name)?;
+    let captured = if existed {
+        let captured = match open_check_output_dir(parent_dir, output_name, output) {
+            Ok(captured) => captured,
+            Err(error) => {
+                drop(Dir::remove_open_dir_all(transaction_dir));
+                return Err(error);
+            }
+        };
+        let captured_identity = match directory_identity(&captured, output) {
+            Ok(identity) => identity,
+            Err(error) => {
+                drop(captured);
+                drop(Dir::remove_open_dir_all(transaction_dir));
+                return Err(failure(
+                    "LawpackOutputRollbackFailed",
+                    format!(
+                        "failed to retain output identity before preserving `{}`: {}",
+                        output.display(),
+                        error.message
+                    ),
+                ));
+            }
+        };
+        if let Err(error) = validate_owned_output_dir(&captured, output, &expected_owner) {
+            drop(captured);
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(error);
+        }
+        Some((captured, captured_identity))
+    } else {
+        None
+    };
     let backup = match unique_sibling_in(parent_dir, output, "previous") {
         Ok(backup) => backup,
         Err(error) => {
+            drop(captured);
             drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(error);
         }
     };
     if existed {
-        if let Err(error) = parent_dir.rename(output_name, parent_dir, &backup) {
+        if let Err(error) = rename_noreplace_in(parent_dir, output_name, &backup) {
+            drop(captured);
             drop(Dir::remove_open_dir_all(transaction_dir));
             return Err(failure(
                 "LawpackOutputWriteFailed",
@@ -1637,48 +1992,63 @@ fn publish_output_with_hooks_in_authority(
                 ),
             ));
         }
-    }
-    let captured = if existed {
-        let captured = match parent_dir.open_dir(&backup) {
-            Ok(captured) => captured,
-            Err(error) => {
-                let rollback =
-                    restore_output_directory_in(parent_dir, output_name, &backup, output, true);
-                drop(Dir::remove_open_dir_all(transaction_dir));
-                return Err(rollback.err().unwrap_or_else(|| {
-                    failure(
-                        "LawpackOutputOwnershipFailed",
-                        format!(
-                            "failed to pin captured output `{}`: {error}",
-                            output.display()
-                        ),
-                    )
-                }));
-            }
-        };
-        if let Err(error) = validate_owned_output_dir(&captured, output, &expected_owner) {
+        if let Err(error) = after_capture_rename(&backup) {
             drop(captured);
-            let rollback =
-                restore_output_directory_in(parent_dir, output_name, &backup, output, true);
             drop(Dir::remove_open_dir_all(transaction_dir));
-            return Err(rollback.err().unwrap_or(error));
+            return Err(error);
         }
-        Some(captured)
-    } else {
-        None
-    };
+        let expected_identity = captured
+            .as_ref()
+            .map(|(_, identity)| *identity)
+            .ok_or_else(|| {
+                failure(
+                    "LawpackOutputRollbackFailed",
+                    format!(
+                        "failed to retain the pre-rename output identity for `{}`",
+                        output.display()
+                    ),
+                )
+            })?;
+        if let Err(error) = open_captured_output_in(parent_dir, &backup, output, expected_identity)
+        {
+            drop(captured);
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            return Err(failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "captured output `{}` changed after its rename; refused to continue through the reused backup name: {}",
+                    output.display(),
+                    error.message
+                ),
+            ));
+        }
+    }
 
     if let Err(error) = before_activation() {
+        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
         drop(captured);
-        let rollback =
-            restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
+        let rollback = restore_output_directory_in(
+            parent_dir,
+            output_name,
+            &backup,
+            output,
+            existed,
+            captured_identity,
+        );
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or(error));
     }
-    if let Err(error) = parent_dir.rename(&transaction, parent_dir, output_name) {
+    if let Err(error) = rename_noreplace_in(parent_dir, &transaction, output_name) {
+        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
         drop(captured);
-        let rollback =
-            restore_output_directory_in(parent_dir, output_name, &backup, output, existed);
+        let rollback = restore_output_directory_in(
+            parent_dir,
+            output_name,
+            &backup,
+            output,
+            existed,
+            captured_identity,
+        );
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(rollback.err().unwrap_or_else(|| {
             failure(
@@ -1687,53 +2057,166 @@ fn publish_output_with_hooks_in_authority(
             )
         }));
     }
+    let rollback_after_activation =
+        |captured: Option<(Dir, DirectoryIdentity)>,
+         transaction_dir: Dir,
+         error: LawpackBuildFailure| {
+            let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
+            drop(captured);
+            let rollback = restore_after_substituted_activation_in(
+                parent_dir,
+                output_name,
+                &transaction,
+                &backup,
+                output,
+                existed,
+                captured_identity,
+            );
+            drop(Dir::remove_open_dir_all(transaction_dir));
+            rollback.err().unwrap_or(error)
+        };
     if let Err(error) = after_activation() {
-        drop(captured);
-        let rollback = restore_after_substituted_activation_in(
-            parent_dir,
-            output_name,
-            &transaction,
-            &backup,
-            output,
-            existed,
-        );
-        drop(Dir::remove_open_dir_all(transaction_dir));
-        return Err(rollback.err().unwrap_or(error));
+        return Err(rollback_after_activation(captured, transaction_dir, error));
     }
-    let activated = open_check_output_dir(parent_dir, output_name, output);
-    let activation_matches = activated
-        .as_ref()
-        .ok()
-        .and_then(|directory| directory_identity(directory, output).ok())
-        .is_some_and(|identity| identity == staged_identity);
-    if !activation_matches {
-        drop(activated);
-        drop(captured);
-        let rollback = restore_after_substituted_activation_in(
-            parent_dir,
-            output_name,
-            &transaction,
-            &backup,
-            output,
-            existed,
+    let activated = match reopen_staged_activation(
+        parent_dir,
+        output_name,
+        output,
+        staged_identity,
+        "the activated directory identity differs from the staged transaction",
+        "did not retain the staged transaction identity",
+    ) {
+        Ok(activated) => activated,
+        Err(error) => {
+            return Err(rollback_after_activation(captured, transaction_dir, error));
+        }
+    };
+    if let Err(error) = validate_output_tree(output, activated, files) {
+        let error = failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "activated output `{}` did not match the authored artifact tree: {}",
+                output.display(),
+                error.message
+            ),
         );
-        drop(Dir::remove_open_dir_all(transaction_dir));
-        return Err(rollback.err().unwrap_or_else(|| {
+        return Err(rollback_after_activation(captured, transaction_dir, error));
+    }
+    after_validation();
+    let rebound = match reopen_staged_activation(
+        parent_dir,
+        output_name,
+        output,
+        staged_identity,
+        "the validated output name no longer identifies the staged transaction",
+        "changed after exact-tree validation",
+    ) {
+        Ok(rebound) => rebound,
+        Err(error) => {
+            return Err(rollback_after_activation(captured, transaction_dir, error));
+        }
+    };
+    if let Some((captured, _)) = captured {
+        // The successful post-validation public-name rebind is the commit
+        // point. Backup cleanup is best effort so a committed replacement is
+        // never reported as an unchanged failure.
+        drop(remove_backup(captured));
+    }
+    drop(rebound);
+    Ok(())
+}
+
+fn reopen_staged_activation(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    output: &Path,
+    staged_identity: DirectoryIdentity,
+    mismatch: &str,
+    context: &str,
+) -> Result<Dir, LawpackBuildFailure> {
+    open_check_output_dir(parent, output_name, output)
+        .and_then(|directory| {
+            if directory_identity(&directory, output)? == staged_identity {
+                Ok(directory)
+            } else {
+                Err(failure("LawpackOutputWriteFailed", mismatch.to_owned()))
+            }
+        })
+        .map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
                 format!(
-                    "activated output `{}` did not match the retained staged transaction identity",
-                    output.display()
+                    "activated output `{}` {context}: {}",
+                    output.display(),
+                    error.message
                 ),
             )
-        }));
+        })
+}
+
+fn create_transaction_dir_with_hook(
+    parent: &Dir,
+    transaction: &Path,
+    output: &Path,
+    after_create: impl FnOnce(),
+) -> Result<Dir, LawpackBuildFailure> {
+    parent.create_dir(transaction).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to create output transaction `{}`: {error}",
+                transaction.display()
+            ),
+        )
+    })?;
+    after_create();
+    parent.open_dir_nofollow(transaction).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to pin output transaction beside `{}`: {error}",
+                output.display()
+            ),
+        )
+    })
+}
+
+fn open_captured_output_in(
+    parent: &Dir,
+    backup: &Path,
+    output: &Path,
+    expected_identity: DirectoryIdentity,
+) -> Result<Dir, LawpackBuildFailure> {
+    open_captured_output_with_hook(parent, backup, output, expected_identity, || {})
+}
+
+fn open_captured_output_with_hook(
+    parent: &Dir,
+    backup: &Path,
+    output: &Path,
+    expected_identity: DirectoryIdentity,
+    after_capture: impl FnOnce(),
+) -> Result<Dir, LawpackBuildFailure> {
+    after_capture();
+    let captured = parent.open_dir_nofollow(backup).map_err(|error| {
+        failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "failed to pin captured output `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    if directory_identity(&captured, output)? != expected_identity {
+        return Err(failure(
+            "LawpackOutputOwnershipFailed",
+            format!(
+                "captured output `{}` does not match the output retained before rename",
+                output.display()
+            ),
+        ));
     }
-    if let Some(captured) = captured {
-        // Activation is the commit point. Backup cleanup is best effort so a
-        // committed replacement is never reported as an unchanged failure.
-        drop(remove_backup(captured));
-    }
-    Ok(())
+    Ok(captured)
 }
 
 fn restore_after_substituted_activation_in(
@@ -1743,7 +2226,18 @@ fn restore_after_substituted_activation_in(
     backup: &Path,
     output: &Path,
     existed: bool,
+    captured_identity: Option<DirectoryIdentity>,
 ) -> Result<(), LawpackBuildFailure> {
+    if !entry_exists(parent, output_name)? {
+        return restore_output_directory_in(
+            parent,
+            output_name,
+            backup,
+            output,
+            existed,
+            captured_identity,
+        );
+    }
     if entry_exists(parent, transaction.as_os_str())? {
         return Err(failure(
             "LawpackOutputRollbackFailed",
@@ -1753,21 +2247,59 @@ fn restore_after_substituted_activation_in(
             ),
         ));
     }
-    if !entry_exists(parent, output_name)? {
-        return restore_output_directory_in(parent, output_name, backup, output, existed);
+    rename_noreplace_in(parent, output_name, transaction).map_err(|error| {
+        failure(
+            "LawpackOutputRollbackFailed",
+            format!(
+                "failed to preserve a substituted activation for `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    restore_output_directory_in(
+        parent,
+        output_name,
+        backup,
+        output,
+        existed,
+        captured_identity,
+    )
+}
+
+fn acquire_process_output_lock(
+    coordinate: FilesystemIdentity,
+    output: &Path,
+    mode: OutputLockMode,
+) -> Result<ProcessLockGuard, LawpackBuildFailure> {
+    let locks = PROCESS_OUTPUT_LOCKS.get_or_init(|| Mutex::new(BTreeMap::new()));
+    let mut locks = locks.lock().map_err(|_| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "same-process output coordination was poisoned for `{}`",
+                output.display()
+            ),
+        )
+    })?;
+    let state = locks.entry(coordinate).or_default();
+    let conflicts = match mode {
+        OutputLockMode::SharedIntent => state.exclusive,
+        OutputLockMode::ExclusiveOutput => state.exclusive || state.shared != 0,
+    };
+    if conflicts {
+        return Err(failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "another same-process lawpack build owns output footprint `{}`",
+                output.display()
+            ),
+        ));
     }
-    parent
-        .rename(output_name, parent, transaction)
-        .map_err(|error| {
-            failure(
-                "LawpackOutputRollbackFailed",
-                format!(
-                    "failed to preserve a substituted activation for `{}`: {error}",
-                    output.display()
-                ),
-            )
-        })?;
-    restore_output_directory_in(parent, output_name, backup, output, existed)
+    match mode {
+        OutputLockMode::SharedIntent => state.shared += 1,
+        OutputLockMode::ExclusiveOutput => state.exclusive = true,
+    }
+    Ok(ProcessLockGuard { coordinate, mode })
 }
 
 fn acquire_output_lock_in(
@@ -1775,47 +2307,126 @@ fn acquire_output_lock_in(
     output_name: &std::ffi::OsStr,
     output: &Path,
     mode: OutputLockMode,
-) -> Result<File, LawpackBuildFailure> {
+) -> Result<OutputLockGuard, LawpackBuildFailure> {
+    acquire_output_lock_in_with(parent, output_name, output, mode, |lock, mode| {
+        match mode {
+            OutputLockMode::SharedIntent => lock.try_lock_shared()?,
+            OutputLockMode::ExclusiveOutput => lock.try_lock()?,
+        }
+        Ok(())
+    })
+}
+
+fn acquire_output_lock_in_with(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    output: &Path,
+    mode: OutputLockMode,
+    try_file_lock: impl FnOnce(&File, OutputLockMode) -> std::io::Result<()>,
+) -> Result<OutputLockGuard, LawpackBuildFailure> {
     let lock_name = output_lock_name(output_name);
     let mut options = CapOpenOptions::new();
-    options.create(true).read(true).write(true);
+    options
+        .create(true)
+        .read(true)
+        .write(true)
+        .follow(FollowSymlinks::No);
     let open_subject = match mode {
         OutputLockMode::SharedIntent => "output-intent lock",
         OutputLockMode::ExclusiveOutput => "output lock",
     };
-    let lock = parent
-        .open_with(&lock_name, &options)
+    let lock = parent.open_with(&lock_name, &options).map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to open {open_subject} for `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    let coordinate = output_lock_identity(&lock, output)?;
+    let lock = lock.into_std();
+    let process = acquire_process_output_lock(coordinate, output, mode)?;
+    try_file_lock(&lock, mode).map_err(|error| match mode {
+        OutputLockMode::SharedIntent => failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "an overlapping lawpack build owns output ancestor `{}`: {error}",
+                output.display()
+            ),
+        ),
+        OutputLockMode::ExclusiveOutput => failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "another lawpack build owns output `{}`: {error}",
+                output.display()
+            ),
+        ),
+    })?;
+    Ok(OutputLockGuard {
+        file: lock,
+        process,
+    })
+}
+
+#[cfg(any(unix, target_os = "wasi", target_os = "vxworks"))]
+fn output_lock_identity(
+    lock: &cap_std::fs::File,
+    output: &Path,
+) -> Result<FilesystemIdentity, LawpackBuildFailure> {
+    use cap_std::fs::MetadataExt as _;
+
+    let metadata = lock.metadata().map_err(|error| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "failed to identify output lock for `{}`: {error}",
+                output.display()
+            ),
+        )
+    })?;
+    Ok((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(windows)]
+fn output_lock_identity(
+    lock: &cap_std::fs::File,
+    output: &Path,
+) -> Result<FilesystemIdentity, LawpackBuildFailure> {
+    use std::os::windows::fs::MetadataExt as _;
+
+    let metadata = lock
+        .try_clone()
         .map(cap_std::fs::File::into_std)
+        .and_then(|file| file.metadata())
         .map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
                 format!(
-                    "failed to open {open_subject} for `{}`: {error}",
+                    "failed to identify output lock for `{}`: {error}",
                     output.display()
                 ),
             )
         })?;
-    match mode {
-        OutputLockMode::SharedIntent => lock.try_lock_shared().map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "an overlapping lawpack build owns output ancestor `{}`: {error}",
-                    output.display()
-                ),
-            )
-        })?,
-        OutputLockMode::ExclusiveOutput => lock.try_lock().map_err(|error| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "another lawpack build owns output `{}`: {error}",
-                    output.display()
-                ),
-            )
-        })?,
-    }
-    Ok(lock)
+    let volume = metadata.volume_serial_number().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "output lock for `{}` has no stable volume identity",
+                output.display()
+            ),
+        )
+    })?;
+    let index = metadata.file_index().ok_or_else(|| {
+        failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "output lock for `{}` has no stable file identity",
+                output.display()
+            ),
+        )
+    })?;
+    Ok((u64::from(volume), index))
 }
 
 fn expected_output_owner(
@@ -1931,6 +2542,14 @@ fn stage_files_in(
     transaction: &Dir,
     files: &BTreeMap<PathBuf, Vec<u8>>,
 ) -> Result<(), LawpackBuildFailure> {
+    stage_files_in_with_hook(transaction, files, |_| {})
+}
+
+fn stage_files_in_with_hook(
+    transaction: &Dir,
+    files: &BTreeMap<PathBuf, Vec<u8>>,
+    mut after_parent_creation: impl FnMut(&Path),
+) -> Result<(), LawpackBuildFailure> {
     for (relative, bytes) in files {
         validate_relative_path(relative, "authored artifact path")?;
         let parent = relative.parent().ok_or_else(|| {
@@ -1939,15 +2558,63 @@ fn stage_files_in(
                 format!("authored artifact `{}` has no parent", relative.display()),
             )
         })?;
-        transaction.create_dir_all(parent).map_err(|error| {
+        let mut parent_dir = transaction.try_clone().map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
-                format!("failed to stage `{}`: {error}", relative.display()),
+                format!("failed to retain staging root: {error}"),
+            )
+        })?;
+        let mut parent_display = PathBuf::new();
+        for component in parent.components() {
+            let Component::Normal(name) = component else {
+                return Err(failure(
+                    "LawpackOutputWriteFailed",
+                    format!(
+                        "authored artifact parent `{}` must contain only normal components",
+                        parent.display()
+                    ),
+                ));
+            };
+            parent_display.push(name);
+            match parent_dir.create_dir(name) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                Err(error) => {
+                    return Err(failure(
+                        "LawpackOutputWriteFailed",
+                        format!(
+                            "failed to create staged directory `{}`: {error}",
+                            parent_display.display()
+                        ),
+                    ));
+                }
+            }
+            after_parent_creation(&parent_display);
+            parent_dir = parent_dir.open_dir_nofollow(name).map_err(|error| {
+                failure(
+                    "LawpackOutputWriteFailed",
+                    format!(
+                        "failed to pin staged directory `{}`: {error}",
+                        parent_display.display()
+                    ),
+                )
+            })?;
+        }
+        let file_name = relative.file_name().ok_or_else(|| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "authored artifact `{}` has no file name",
+                    relative.display()
+                ),
             )
         })?;
         let mut options = CapOpenOptions::new();
-        options.create_new(true).write(true);
-        let mut file = transaction.open_with(relative, &options).map_err(|error| {
+        options
+            .create_new(true)
+            .write(true)
+            .follow(FollowSymlinks::No);
+        let mut file = parent_dir.open_with(file_name, &options).map_err(|error| {
             failure(
                 "LawpackOutputWriteFailed",
                 format!("failed to stage `{}`: {error}", relative.display()),
@@ -1975,8 +2642,66 @@ fn restore_output_directory_in(
     backup: &Path,
     output: &Path,
     existed: bool,
+    captured_identity: Option<DirectoryIdentity>,
+) -> Result<(), LawpackBuildFailure> {
+    restore_output_directory_with_hook(
+        parent,
+        output_name,
+        backup,
+        output,
+        existed,
+        captured_identity,
+        || {},
+    )
+}
+
+fn restore_output_directory_with_hook(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    backup: &Path,
+    output: &Path,
+    existed: bool,
+    captured_identity: Option<DirectoryIdentity>,
+    before_restore_rename: impl FnOnce(),
 ) -> Result<(), LawpackBuildFailure> {
     if existed {
+        let expected_identity = captured_identity.ok_or_else(|| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "refused to restore `{}` without the captured output identity",
+                    output.display()
+                ),
+            )
+        })?;
+        let named_backup = parent.open_dir_nofollow(backup).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to re-pin the captured output while restoring `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+        let named_identity = directory_identity(&named_backup, output).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to re-identify the captured output while restoring `{}`: {}",
+                    output.display(),
+                    error.message
+                ),
+            )
+        })?;
+        if named_identity != expected_identity {
+            return Err(failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "refused to restore `{}` through a reused backup name",
+                    output.display()
+                ),
+            ));
+        }
         if entry_exists(parent, output_name)? {
             return Err(failure(
                 "LawpackOutputRollbackFailed",
@@ -1986,14 +2711,41 @@ fn restore_output_directory_in(
                 ),
             ));
         }
-        parent
-            .rename(backup, parent, output_name)
-            .map_err(|error| {
-                failure(
-                    "LawpackOutputRollbackFailed",
-                    format!("failed to restore output `{}`: {error}", output.display()),
-                )
-            })?;
+        before_restore_rename();
+        rename_noreplace_in(parent, backup, output_name).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!("failed to restore output `{}`: {error}", output.display()),
+            )
+        })?;
+        let restored = parent.open_dir_nofollow(output_name).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to verify the restored output `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+        let restored_identity = directory_identity(&restored, output).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to identify the restored output `{}`: {}",
+                    output.display(),
+                    error.message
+                ),
+            )
+        })?;
+        if restored_identity != expected_identity {
+            return Err(failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "restored output `{}` does not match the retained captured identity; preserved the observed destination",
+                    output.display()
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -2029,6 +2781,44 @@ fn unique_sibling_in(
             "failed to allocate a unique {role} path beside `{}`",
             output.display()
         ),
+    ))
+}
+
+#[cfg(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+))]
+fn rename_noreplace_in(
+    parent: &Dir,
+    from: impl AsRef<Path>,
+    to: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    rustix::fs::renameat_with(
+        parent,
+        from.as_ref(),
+        parent,
+        to.as_ref(),
+        rustix::fs::RenameFlags::NOREPLACE,
+    )
+    .map_err(Into::into)
+}
+
+#[cfg(not(any(
+    target_vendor = "apple",
+    target_os = "linux",
+    target_os = "android",
+    target_os = "redox"
+)))]
+fn rename_noreplace_in(
+    _parent: &Dir,
+    _from: impl AsRef<Path>,
+    _to: impl AsRef<Path>,
+) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        ErrorKind::Unsupported,
+        "atomic no-replace directory rename is unsupported on this platform",
     ))
 }
 
@@ -2140,17 +2930,24 @@ fn first_authoring_failure(failures: Vec<LawpackAuthoringFailure>) -> LawpackBui
 #[cfg(test)]
 mod tests {
     use super::{
-        acquire_output_ancestor_locks, build_lawpack, check_output,
-        check_output_in_root_with_hooks, check_output_with_hook, decode_lawpack_document,
-        encode_output_index, load_dependencies, load_dependencies_with_hook,
-        open_check_root_with_hook, open_dependency_input_with_hook, output_lock_path,
-        publish_output, publish_output_with_capture_hook, publish_output_with_hook,
-        publish_output_with_hooks, publish_output_with_hooks_in_authority,
-        publish_output_with_hooks_in_root, read_output_tree, resolve_output_directory,
+        acquire_output_ancestor_locks, acquire_output_lock_in_with, build_lawpack, check_output,
+        check_output_in_root_with_hooks, check_output_with_hook, create_transaction_dir_with_hook,
+        decode_lawpack_document, encode_output_index, load_dependencies,
+        load_dependencies_with_hook, open_captured_output_with_hook,
+        open_check_output_dir_with_hook, open_check_root_with_hook,
+        open_dependency_input_with_hook, open_dependency_root, output_lock_path, publish_output,
+        publish_output_with_capture_hook, publish_output_with_capture_rename_hook,
+        publish_output_with_hook, publish_output_with_hooks,
+        publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
+        publish_output_with_validation_hook, read_output_tree, require_lawpack_write_publication,
+        resolve_check_output_directory, resolve_output_directory,
+        restore_output_directory_with_hook, stage_files_in_with_hook,
         validate_check_output_parent_chain, validate_generated_artifact_size,
-        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        validate_output_tree_with_hook, validate_owned_output_dir_with_hook, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry, OutputLockMode,
+        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
+    use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
     use std::fs;
     use std::path::PathBuf;
@@ -2158,6 +2955,19 @@ mod tests {
     use std::sync::mpsc;
 
     static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    #[test]
+    fn lawpack_target_support_keeps_check_only_available() {
+        assert_eq!(
+            test_err(
+                require_lawpack_write_publication(false, false),
+                "unsupported write publication refuses",
+            )
+            .kind,
+            "LawpackOutputWriteUnsupported"
+        );
+        assert!(require_lawpack_write_publication(true, false,).is_ok());
+    }
 
     #[test]
     fn nested_output_rejects_an_ancestor_owned_lawpack_tree() {
@@ -2304,6 +3114,276 @@ mod tests {
     }
 
     #[test]
+    fn identical_output_lock_blocks_competing_transaction_creation() {
+        let root = temp_tree("identical-output-lock");
+        let output = root.join("generated");
+        let authority = test_ok(
+            acquire_output_ancestor_locks(&root, &output),
+            "acquire first output authority",
+        );
+        let output_authority = test_ok(
+            authority.claim_output(
+                output
+                    .file_name()
+                    .unwrap_or_else(|| panic!("test output must have a name")),
+                &output,
+            ),
+            "claim first output",
+        );
+        let expected = files(&[("edict.lawpack-output.json", valid_index())]);
+
+        let failure = test_err(
+            publish_output(&output, &expected),
+            "competing publication must stop at the output lock",
+        );
+        let transaction_exists = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .any(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-transaction-")
+            });
+
+        assert_eq!(failure.kind, "LawpackOutputWriteFailed");
+        assert!(!transaction_exists);
+        drop(output_authority);
+        drop(authority);
+        test_ok(
+            publish_output(&output, &expected),
+            "publish after releasing first output authority",
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn filesystem_equivalent_output_locks_share_process_exclusion() {
+        use std::os::unix::fs::MetadataExt as _;
+
+        let root = temp_tree("filesystem-equivalent-output-lock");
+        let first_output = root.join("Generated");
+        let second_output = root.join("generated");
+        let first_lock = output_lock_path(&first_output);
+        let second_lock = output_lock_path(&second_output);
+        test_ok(fs::write(&first_lock, b""), "create first lock name");
+        // Case-sensitive filesystems need two hard-linked names to model one
+        // lock identity. Case-insensitive filesystems already resolve both
+        // spellings to the same name, so they exercise self-exclusion rather
+        // than providing independent distinct-name alias evidence.
+        if !second_lock.exists() {
+            test_ok(
+                fs::hard_link(&first_lock, &second_lock),
+                "alias second lock name to first identity",
+            );
+        }
+        let first_metadata = test_ok(fs::metadata(&first_lock), "identify first lock name");
+        let second_metadata = test_ok(fs::metadata(&second_lock), "identify second lock name");
+        assert_eq!(
+            (first_metadata.dev(), first_metadata.ino()),
+            (second_metadata.dev(), second_metadata.ino())
+        );
+
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+        let first = test_ok(
+            acquire_output_lock_in_with(
+                &parent,
+                first_output
+                    .file_name()
+                    .unwrap_or_else(|| panic!("test output must have a name")),
+                &first_output,
+                OutputLockMode::ExclusiveOutput,
+                |_, _| Ok(()),
+            ),
+            "claim first output spelling",
+        );
+        let second = acquire_output_lock_in_with(
+            &parent,
+            second_output
+                .file_name()
+                .unwrap_or_else(|| panic!("test output must have a name")),
+            &second_output,
+            OutputLockMode::ExclusiveOutput,
+            |_, _| Ok(()),
+        );
+        let failure_kind = second.err().map(|error| error.kind);
+
+        drop(first);
+        test_ok(fs::remove_file(&first_lock), "remove first lock name");
+        if second_lock.exists() {
+            test_ok(fs::remove_file(&second_lock), "remove second lock name");
+        }
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_rejects_a_symlinked_output_lock() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("symlinked-output-lock");
+        let output = root.join("generated");
+        let victim = root.join("victim");
+        test_ok(fs::write(&victim, b"untouched"), "write lock target");
+        test_ok(
+            symlink("victim", output_lock_path(&output)),
+            "install substituted output lock",
+        );
+        let expected = files(&[("edict.lawpack-output.json", valid_index())]);
+
+        let failure_kind = publish_output(&output, &expected)
+            .err()
+            .map(|error| error.kind);
+        let output_was_published = output.exists();
+        let victim_bytes = test_ok(fs::read(&victim), "read lock target");
+
+        if output_was_published {
+            test_ok(fs::remove_dir_all(&output), "remove unexpected output");
+        }
+        test_ok(
+            fs::remove_file(output_lock_path(&output)),
+            "remove substituted output lock",
+        );
+        test_ok(fs::remove_dir_all(root), "remove publication tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert!(!output_was_published);
+        assert_eq!(victim_bytes, b"untouched");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_authority_rejects_root_symlink_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("publication-root-symlink-container");
+        let root = container.join("root");
+        let displaced_root = container.join("displaced-root");
+        let outside = temp_tree("publication-root-symlink-outside");
+        let output = root.join("generated");
+        test_ok(fs::create_dir(&root), "create admitted publication root");
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, "generated"),
+                "resolve admitted output",
+            ),
+            output
+        );
+        test_ok(fs::rename(&root, &displaced_root), "displace admitted root");
+        test_ok(symlink(&outside, &root), "install substituted root symlink");
+
+        let failure_kind = acquire_output_ancestor_locks(&root, &output)
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(fs::remove_file(&root), "remove substituted root symlink");
+        test_ok(fs::rename(&displaced_root, &root), "restore admitted root");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_authority_rejects_ancestor_symlink_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("publication-ancestor-symlink-container");
+        let parent = container.join("parent");
+        let displaced_parent = container.join("displaced-parent");
+        let root = parent.join("root");
+        let outside = temp_tree("publication-ancestor-symlink-outside");
+        let outside_root = outside.join("root");
+        let output = root.join("generated");
+        test_ok(
+            fs::create_dir_all(&root),
+            "create admitted publication root",
+        );
+        test_ok(fs::create_dir(&outside_root), "create outside root");
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, "generated"),
+                "resolve admitted output",
+            ),
+            output
+        );
+        test_ok(fs::rename(&parent, &displaced_parent), "displace ancestor");
+        test_ok(symlink(&outside, &parent), "install ancestor symlink");
+
+        let failure_kind = acquire_output_ancestor_locks(&root, &output)
+            .err()
+            .map(|error| error.kind);
+        let outside_entries = test_ok(fs::read_dir(&outside_root), "read outside root").count();
+
+        test_ok(fs::remove_file(&parent), "remove ancestor symlink");
+        test_ok(fs::rename(&displaced_parent, &parent), "restore ancestor");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(outside_entries, 0, "outside root must remain untouched");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_root_rejects_ancestor_symlink_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("check-ancestor-symlink-container");
+        let parent = container.join("parent");
+        let displaced_parent = container.join("displaced-parent");
+        let root = parent.join("root");
+        let outside = temp_tree("check-ancestor-symlink-outside");
+        let outside_root = outside.join("root");
+        test_ok(fs::create_dir_all(&root), "create admitted check root");
+        test_ok(fs::create_dir(&outside_root), "create outside check root");
+
+        let failure_kind = open_check_root_with_hook(&root, || {
+            test_ok(fs::rename(&parent, &displaced_parent), "displace ancestor");
+            test_ok(symlink(&outside, &parent), "install ancestor symlink");
+        })
+        .err()
+        .map(|error| error.kind);
+
+        test_ok(fs::remove_file(&parent), "remove ancestor symlink");
+        test_ok(fs::rename(&displaced_parent, &parent), "restore ancestor");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackOutputOwnershipFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dependency_root_rejects_an_ancestor_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let container = temp_tree("dependency-ancestor-symlink-container");
+        let parent = container.join("parent");
+        let displaced_parent = container.join("displaced-parent");
+        let root = parent.join("root");
+        let outside = temp_tree("dependency-ancestor-symlink-outside");
+        let outside_root = outside.join("root");
+        test_ok(fs::create_dir_all(&root), "create admitted dependency root");
+        test_ok(
+            fs::create_dir(&outside_root),
+            "create outside dependency root",
+        );
+        test_ok(fs::rename(&parent, &displaced_parent), "displace ancestor");
+        test_ok(symlink(&outside, &parent), "install ancestor symlink");
+
+        let failure_kind = open_dependency_root(&root).err().map(|error| error.kind);
+
+        test_ok(fs::remove_file(&parent), "remove ancestor symlink");
+        test_ok(fs::rename(&displaced_parent, &parent), "restore ancestor");
+        test_ok(fs::remove_dir_all(container), "remove admitted tree");
+        test_ok(fs::remove_dir_all(outside), "remove outside tree");
+        assert_eq!(failure_kind, Some("LawpackArtifactReadFailed"));
+    }
+
+    #[test]
     fn publication_keeps_the_locked_root_identity_after_real_directory_substitution() {
         let root = temp_tree("root-identity");
         let admitted_root = root.with_extension("admitted");
@@ -2340,8 +3420,10 @@ mod tests {
                 &output,
                 &expected,
                 || Ok(()),
+                |_| Ok(()),
                 || Ok(()),
                 || Ok(()),
+                || {},
                 cap_std::fs::Dir::remove_open_dir_all,
             ),
             "publish through admitted root identity",
@@ -2448,6 +3530,57 @@ mod tests {
     }
 
     #[test]
+    fn publication_requires_backup_to_match_the_pre_rename_output_identity() {
+        let root = temp_tree("capture-pre-rename-identity");
+        let output = root.join("generated");
+        let displaced_output = root.join("displaced-owned");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish owned output");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        let backup_path = RefCell::new(None::<PathBuf>);
+
+        let result = publish_output_with_capture_rename_hook(&output, &replacement, |backup| {
+            let backup = root.join(backup);
+            test_ok(
+                fs::rename(&backup, &displaced_output),
+                "displace the renamed old output",
+            );
+            test_ok(fs::create_dir(&backup), "install real-directory substitute");
+            test_ok(
+                fs::write(backup.join("edict.lawpack-output.json"), valid_index()),
+                "write substitute ownership",
+            );
+            test_ok(
+                fs::write(backup.join("substitute"), b"unadmitted"),
+                "write substitute evidence",
+            );
+            backup_path.replace(Some(backup));
+            Ok(())
+        });
+
+        let backup = backup_path
+            .into_inner()
+            .unwrap_or_else(|| panic!("backup path must be recorded"));
+        let result_kind = result.err().map(|error| error.kind);
+        let displaced_tree = test_ok(
+            read_output_tree(&displaced_output),
+            "read displaced authorized output",
+        );
+        let substitute = fs::read(backup.join("substitute")).ok();
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(result_kind, Some("LawpackOutputRollbackFailed"));
+        assert_eq!(displaced_tree, original);
+        assert_eq!(substitute.as_deref(), Some(b"unadmitted".as_slice()));
+    }
+
+    #[test]
     fn publication_bounds_internal_names_for_long_output_components() {
         let root = temp_tree("long-output-component");
         let output = root.join("x".repeat(MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES));
@@ -2512,6 +3645,143 @@ mod tests {
     }
 
     #[test]
+    fn rollback_refuses_a_reused_captured_backup_name() {
+        let root = temp_tree("rollback-reused-backup");
+        let output = root.join("generated");
+        let displaced_backup = root.join("displaced-backup");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        let backup_name = RefCell::new(None::<PathBuf>);
+
+        let result = publish_output_with_hook(&output, &replacement, || {
+            let backup = test_ok(fs::read_dir(&root), "read publication root")
+                .map(|entry| test_ok(entry, "read publication entry"))
+                .find(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".edict-lawpack-previous-")
+                })
+                .map_or_else(
+                    || panic!("captured backup must exist before activation"),
+                    |entry| entry.path(),
+                );
+            test_ok(
+                fs::rename(&backup, &displaced_backup),
+                "displace captured backup",
+            );
+            test_ok(fs::create_dir(&backup), "install backup substitute");
+            test_ok(
+                fs::write(backup.join("substitute"), b"unadmitted"),
+                "write backup substitute",
+            );
+            *backup_name.borrow_mut() = backup.file_name().map(PathBuf::from);
+            Err(super::failure(
+                "InjectedFailure",
+                "stop before activation".to_owned(),
+            ))
+        });
+
+        let backup_name = backup_name
+            .into_inner()
+            .unwrap_or_else(|| panic!("backup name must be recorded"));
+        let substitute = root.join(backup_name);
+        assert_eq!(
+            test_err(result, "reused backup name blocks rollback").kind,
+            "LawpackOutputRollbackFailed"
+        );
+        assert!(
+            !output.exists(),
+            "untrusted substitute must not be restored"
+        );
+        assert_eq!(
+            test_ok(
+                read_output_tree(&displaced_backup),
+                "read displaced original output",
+            ),
+            original
+        );
+        assert_eq!(
+            test_ok(
+                fs::read(substitute.join("substitute")),
+                "read backup substitute",
+            ),
+            b"unadmitted"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn rollback_requires_the_restored_destination_to_match_the_captured_identity() {
+        let root = temp_tree("rollback-destination-identity");
+        let output = root.join("generated");
+        let backup = PathBuf::from("backup");
+        let backup_path = root.join(&backup);
+        let displaced_backup = root.join("displaced-backup");
+        test_ok(fs::create_dir(&backup_path), "create captured backup");
+        test_ok(
+            fs::write(backup_path.join("old"), b"old"),
+            "write captured output",
+        );
+        let captured = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&backup_path, cap_std::ambient_authority()),
+            "retain captured output",
+        );
+        let captured_identity = test_ok(
+            super::directory_identity(&captured, &output),
+            "identify captured output",
+        );
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+
+        let result = restore_output_directory_with_hook(
+            &parent,
+            std::ffi::OsStr::new("generated"),
+            &backup,
+            &output,
+            true,
+            Some(captured_identity),
+            || {
+                test_ok(
+                    fs::rename(&backup_path, &displaced_backup),
+                    "displace backup after identity validation",
+                );
+                test_ok(
+                    fs::create_dir(&backup_path),
+                    "install real-directory backup substitute",
+                );
+                test_ok(
+                    fs::write(backup_path.join("substitute"), b"unadmitted"),
+                    "write backup substitute evidence",
+                );
+            },
+        );
+
+        let result_kind = result.err().map(|error| error.kind);
+        let restored_substitute = fs::read(output.join("substitute")).ok();
+        let displaced_original = fs::read(displaced_backup.join("old")).ok();
+        drop(parent);
+        drop(captured);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(result_kind, Some("LawpackOutputRollbackFailed"));
+        assert_eq!(
+            restored_substitute.as_deref(),
+            Some(b"unadmitted".as_slice())
+        );
+        assert_eq!(displaced_original.as_deref(), Some(b"old".as_slice()));
+    }
+
+    #[test]
     fn rollback_refuses_to_delete_a_concurrently_installed_output() {
         let root = temp_tree("rollback-concurrent-output");
         let output = root.join("generated");
@@ -2552,6 +3822,53 @@ mod tests {
             test_ok(fs::read(output.join("victim")), "read concurrent output"),
             b"keep"
         );
+        let backup = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-previous-")
+            })
+            .map_or_else(
+                || panic!("captured output backup must remain recoverable"),
+                |entry| entry.path(),
+            );
+        assert_eq!(
+            test_ok(read_output_tree(&backup), "read captured output backup"),
+            original
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn activation_refuses_to_replace_a_concurrently_installed_empty_output() {
+        let root = temp_tree("activation-empty-output-race");
+        let output = root.join("generated");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let result = publish_output_with_hook(&output, &replacement, || {
+            fs::create_dir(&output).map_err(|error| {
+                super::failure(
+                    "InjectedFailure",
+                    format!("failed to install concurrent empty output: {error}"),
+                )
+            })
+        });
+
+        assert_eq!(
+            test_err(result, "concurrent empty output blocks activation").kind,
+            "LawpackOutputRollbackFailed"
+        );
+        assert!(test_ok(read_output_tree(&output), "read concurrent empty output").is_empty());
         let backup = test_ok(fs::read_dir(&root), "read publication root")
             .map(|entry| test_ok(entry, "read publication entry"))
             .find(|entry| {
@@ -2649,6 +3966,262 @@ mod tests {
             b"unadmitted"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn publication_rejects_staged_bytes_changed_before_activation() {
+        let root = temp_tree("staged-bytes-changed");
+        let output = root.join("generated");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let failure_kind = publish_output_with_hook(&output, &replacement, || {
+            let transaction = test_ok(fs::read_dir(&root), "read publication root")
+                .map(|entry| test_ok(entry, "read publication entry"))
+                .find(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(".edict-lawpack-transaction-")
+                })
+                .map_or_else(
+                    || panic!("staged transaction must exist before activation"),
+                    |entry| entry.path(),
+                );
+            fs::write(transaction.join("new"), b"tampered").map_err(|error| {
+                super::failure(
+                    "InjectedFailure",
+                    format!("failed to tamper with staged artifact: {error}"),
+                )
+            })
+        })
+        .err()
+        .map(|error| error.kind);
+
+        let observed = test_ok(read_output_tree(&output), "read output after attempt");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(observed, original);
+    }
+
+    #[test]
+    fn publication_rebinds_the_activated_name_after_tree_validation() {
+        let root = temp_tree("activated-name-rebind");
+        let output = root.join("generated");
+        let displaced_activation = root.join("displaced-activation");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+
+        let result = publish_output_with_validation_hook(&output, &replacement, || {
+            test_ok(
+                fs::rename(&output, &displaced_activation),
+                "displace validated activation",
+            );
+            test_ok(
+                fs::create_dir(&output),
+                "install real-directory activation substitute",
+            );
+            test_ok(
+                fs::write(output.join("substitute"), b"unadmitted"),
+                "write activation substitute evidence",
+            );
+        });
+
+        let result_kind = result.err().map(|error| error.kind);
+        let restored = read_output_tree(&output).ok();
+        let preserved_substitute = test_ok(fs::read_dir(&root), "read publication root")
+            .map(|entry| test_ok(entry, "read publication entry"))
+            .find(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".edict-lawpack-transaction-")
+            })
+            .and_then(|entry| fs::read(entry.path().join("substitute")).ok());
+        let displaced_exists = displaced_activation.exists();
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(result_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(restored, Some(original));
+        assert_eq!(
+            preserved_substitute.as_deref(),
+            Some(b"unadmitted".as_slice())
+        );
+        assert!(!displaced_exists);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_refuses_a_transaction_symlink_before_pinning() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("transaction-pin-symlink");
+        let output = root.join("generated");
+        let transaction = PathBuf::from("transaction");
+        let displaced = root.join("displaced-transaction");
+        let victim = root.join("victim");
+        test_ok(fs::create_dir(&victim), "create transaction victim");
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+
+        let failure_kind = create_transaction_dir_with_hook(&parent, &transaction, &output, || {
+            test_ok(
+                fs::rename(root.join(&transaction), &displaced),
+                "displace created transaction",
+            );
+            test_ok(
+                symlink("victim", root.join(&transaction)),
+                "install transaction symlink",
+            );
+        })
+        .err()
+        .map(|error| error.kind);
+        drop(parent);
+
+        test_ok(
+            fs::remove_file(root.join(&transaction)),
+            "remove transaction symlink",
+        );
+        assert!(
+            test_ok(fs::read_dir(&victim), "read victim")
+                .next()
+                .is_none(),
+            "transaction victim must remain untouched",
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn staging_refuses_an_intermediate_directory_link_substitution() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("staging-intermediate-link");
+        let transaction_path = root.join("transaction");
+        let displaced = root.join("displaced-nested");
+        let victim = transaction_path.join("victim");
+        test_ok(fs::create_dir(&transaction_path), "create transaction");
+        test_ok(fs::create_dir(&victim), "create staged-link victim");
+        let transaction = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&transaction_path, cap_std::ambient_authority()),
+            "open transaction",
+        );
+        let expected = files(&[("nested/value", b"staged")]);
+
+        let failure_kind = stage_files_in_with_hook(&transaction, &expected, |parent| {
+            if parent == "nested" {
+                test_ok(
+                    fs::rename(transaction_path.join(parent), &displaced),
+                    "displace staged parent",
+                );
+                test_ok(
+                    symlink("victim", transaction_path.join(parent)),
+                    "install staged parent link",
+                );
+            }
+        })
+        .err()
+        .map(|error| error.kind);
+        drop(transaction);
+
+        let victim_value = victim.join("value");
+        let victim_was_written = victim_value.exists();
+        if victim_was_written {
+            test_ok(fs::remove_file(&victim_value), "remove redirected artifact");
+        }
+        test_ok(fs::remove_dir_all(root), "remove transaction tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert!(
+            !victim_was_written,
+            "staging must not follow the substitute"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn publication_refuses_a_captured_backup_symlink_before_pinning() {
+        use cap_fs_ext::DirExt as _;
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("captured-backup-pin-symlink");
+        let output = root.join("generated");
+        let backup = PathBuf::from("backup");
+        let displaced = root.join("displaced-backup");
+        let victim = root.join("victim");
+        test_ok(fs::create_dir(&output), "create original output");
+        test_ok(
+            fs::write(output.join("old"), b"old"),
+            "write original output",
+        );
+        test_ok(fs::create_dir(&victim), "create backup victim");
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+        let retained_output = test_ok(
+            parent.open_dir_nofollow("generated"),
+            "retain original output",
+        );
+        let retained_identity = test_ok(
+            super::directory_identity(&retained_output, &output),
+            "identify original output",
+        );
+        test_ok(
+            parent.rename("generated", &parent, &backup),
+            "capture original output",
+        );
+
+        let failure_kind =
+            open_captured_output_with_hook(&parent, &backup, &output, retained_identity, || {
+                test_ok(
+                    fs::rename(root.join(&backup), &displaced),
+                    "displace captured backup",
+                );
+                test_ok(
+                    symlink("victim", root.join(&backup)),
+                    "install captured backup symlink",
+                );
+            })
+            .err()
+            .map(|error| error.kind);
+        drop(retained_output);
+        drop(parent);
+
+        assert_eq!(
+            test_ok(fs::read(displaced.join("old")), "read original"),
+            b"old"
+        );
+        assert!(
+            test_ok(fs::read_dir(&victim), "read victim")
+                .next()
+                .is_none(),
+            "backup victim must remain untouched",
+        );
+        assert!(test_ok(
+            fs::symlink_metadata(root.join(&backup)),
+            "inspect backup substitute"
+        )
+        .file_type()
+        .is_symlink(),);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputOwnershipFailed"));
     }
 
     #[test]
@@ -2755,6 +4328,7 @@ mod tests {
                 &output,
                 &replacement,
                 || Ok(()),
+                |_| Ok(()),
                 || Ok(()),
                 || {
                     fs::rename(&output, &displaced_activation).map_err(|error| {
@@ -2764,6 +4338,7 @@ mod tests {
                         )
                     })
                 },
+                || {},
                 cap_std::fs::Dir::remove_open_dir_all,
             ),
             "vanished activation rejects",
@@ -2777,6 +4352,84 @@ mod tests {
         assert!(!displaced_activation.exists());
         drop(authority);
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn vanished_activation_restores_before_reused_transaction_check() {
+        let root = temp_tree("vanished-activation-reused-transaction");
+        let output = root.join("generated");
+        let displaced_activation = root.join("displaced-activation");
+        let original = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("old", b"old"),
+        ]);
+        test_ok(publish_output(&output, &original), "publish original");
+        let replacement = files(&[
+            ("edict.lawpack-output.json", valid_index()),
+            ("new", b"new"),
+        ]);
+        let authority = test_ok(
+            acquire_output_ancestor_locks(&root, &output),
+            "acquire publication authority",
+        );
+        let transaction_name = RefCell::new(None::<PathBuf>);
+
+        let failure_kind = publish_output_with_hooks_in_authority(
+            &authority,
+            &output,
+            &replacement,
+            || Ok(()),
+            |_| Ok(()),
+            || {
+                let name = test_ok(fs::read_dir(&root), "read publication root")
+                    .map(|entry| test_ok(entry, "read publication entry"))
+                    .find(|entry| {
+                        entry
+                            .file_name()
+                            .to_string_lossy()
+                            .starts_with(".edict-lawpack-transaction-")
+                    })
+                    .map_or_else(
+                        || panic!("staged transaction must exist before activation"),
+                        |entry| entry.file_name(),
+                    );
+                transaction_name.replace(Some(PathBuf::from(name)));
+                Ok(())
+            },
+            || {
+                fs::rename(&output, &displaced_activation).map_err(|error| {
+                    super::failure(
+                        "InjectedFailure",
+                        format!("failed to displace activated output: {error}"),
+                    )
+                })?;
+                let name = transaction_name
+                    .borrow()
+                    .clone()
+                    .unwrap_or_else(|| panic!("transaction name must be recorded"));
+                fs::create_dir(root.join(name)).map_err(|error| {
+                    super::failure(
+                        "InjectedFailure",
+                        format!("failed to reuse transaction name: {error}"),
+                    )
+                })
+            },
+            || {},
+            cap_std::fs::Dir::remove_open_dir_all,
+        )
+        .err()
+        .map(|error| error.kind);
+
+        let restored = read_output_tree(&output).ok();
+        let reused_name = transaction_name
+            .borrow()
+            .clone()
+            .unwrap_or_else(|| panic!("transaction name must be retained"));
+        assert!(root.join(reused_name).is_dir());
+        drop(authority);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputWriteFailed"));
+        assert_eq!(restored, Some(original));
     }
 
     #[test]
@@ -2839,6 +4492,47 @@ mod tests {
         test_ok(fs::remove_dir_all(root), "remove test tree");
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn check_only_rejects_output_symlinked_after_inspection() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("check-output-open-race");
+        let output = root.join("generated");
+        let observed = root.join("observed");
+        let substitute = root.join("substitute");
+        test_ok(fs::create_dir(&output), "create admitted output");
+        test_ok(fs::create_dir(&substitute), "create substitute output");
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open output parent",
+        );
+
+        let failure_kind = open_check_output_dir_with_hook(
+            &parent,
+            std::ffi::OsStr::new("generated"),
+            &output,
+            || {
+                test_ok(fs::rename(&output, &observed), "displace admitted output");
+                test_ok(
+                    symlink("substitute", &output),
+                    "install substituted output symlink",
+                );
+            },
+        )
+        .err()
+        .map(|error| error.kind);
+        drop(parent);
+
+        test_ok(
+            fs::remove_file(&output),
+            "remove substituted output symlink",
+        );
+        test_ok(fs::rename(&observed, &output), "restore admitted output");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputDrift"));
+    }
+
     #[test]
     fn check_only_rejects_in_place_tree_mutation_after_traversal() {
         let root = temp_tree("check-in-place-mutation");
@@ -2858,6 +4552,99 @@ mod tests {
 
         assert_eq!(error.kind, "LawpackOutputDrift");
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_only_traversal_refuses_a_file_link_substituted_after_inspection() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("check-traversal-file-link");
+        let output = root.join("generated");
+        let displaced = root.join("displaced-one");
+        let expected = files(&[("one", b"same"), ("target", b"same")]);
+        test_ok(fs::create_dir(&output), "create output");
+        for (relative, bytes) in &expected {
+            test_ok(
+                fs::write(output.join(relative), bytes),
+                "write expected file",
+            );
+        }
+        let output_dir = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&output, cap_std::ambient_authority()),
+            "open output",
+        );
+
+        let failure_kind =
+            validate_output_tree_with_hook(&output, output_dir, &expected, |relative| {
+                if relative == "one" {
+                    test_ok(fs::rename(output.join("one"), &displaced), "displace file");
+                    test_ok(symlink("target", output.join("one")), "install file link");
+                }
+            })
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(fs::remove_file(output.join("one")), "remove file link");
+        test_ok(fs::rename(&displaced, output.join("one")), "restore file");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputDrift"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn check_only_traversal_refuses_a_directory_link_substituted_after_inspection() {
+        use std::os::unix::fs::symlink;
+
+        let root = temp_tree("check-traversal-directory-link");
+        let output = root.join("generated");
+        let displaced = root.join("displaced-nested");
+        let expected = files(&[("nested/value", b"same"), ("target/value", b"same")]);
+        test_ok(
+            fs::create_dir_all(output.join("nested")),
+            "create nested output",
+        );
+        test_ok(
+            fs::create_dir(output.join("target")),
+            "create target output",
+        );
+        for (relative, bytes) in &expected {
+            test_ok(
+                fs::write(output.join(relative), bytes),
+                "write expected file",
+            );
+        }
+        let output_dir = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&output, cap_std::ambient_authority()),
+            "open output",
+        );
+
+        let failure_kind =
+            validate_output_tree_with_hook(&output, output_dir, &expected, |relative| {
+                if relative == "nested" {
+                    test_ok(
+                        fs::rename(output.join("nested"), &displaced),
+                        "displace directory",
+                    );
+                    test_ok(
+                        symlink("target", output.join("nested")),
+                        "install directory link",
+                    );
+                }
+            })
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(
+            fs::remove_file(output.join("nested")),
+            "remove directory link",
+        );
+        test_ok(
+            fs::rename(&displaced, output.join("nested")),
+            "restore directory",
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputDrift"));
     }
 
     #[cfg(unix)]
@@ -3008,6 +4795,39 @@ mod tests {
     }
 
     #[test]
+    fn check_only_rechecks_ancestor_ownership_through_retained_chain() {
+        let root = temp_tree("check-ancestor-owner-recheck");
+        let parent = root.join("parent");
+        let output = parent.join("generated");
+        let expected = files(&[("edict.lawpack-output.json", valid_index()), ("one", b"1")]);
+        test_ok(fs::create_dir_all(&output), "create nested output");
+        for (relative, bytes) in &expected {
+            test_ok(
+                fs::write(output.join(relative), bytes),
+                "write expected output",
+            );
+        }
+        assert_eq!(
+            test_ok(
+                resolve_output_directory(&root, "parent/generated"),
+                "resolve unowned nested output",
+            ),
+            output
+        );
+        test_ok(
+            fs::write(parent.join("edict.lawpack-output.json"), valid_index()),
+            "install ancestor owner",
+        );
+
+        let failure_kind = check_output_in_root_with_hooks(&root, &output, &expected, || {}, || {})
+            .err()
+            .map(|error| error.kind);
+
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+        assert_eq!(failure_kind, Some("LawpackOutputOwnershipFailed"));
+    }
+
+    #[test]
     fn check_only_parent_chain_uses_read_only_failure_kinds() {
         let root = temp_tree("check-parent-kinds");
         let missing_output = root.join("missing/generated");
@@ -3029,6 +4849,25 @@ mod tests {
             test_err(
                 validate_check_output_parent_chain(&root, &file_parent.join("generated")),
                 "non-directory check-only ancestor rejects ownership",
+            )
+            .kind,
+            "LawpackOutputOwnershipFailed"
+        );
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn check_only_output_resolution_uses_read_only_failure_kinds() {
+        let root = temp_tree("check-resolution-kinds");
+        test_ok(
+            fs::write(root.join("file-parent"), b"not a directory"),
+            "write file parent",
+        );
+
+        assert_eq!(
+            test_err(
+                resolve_check_output_directory(&root, "file-parent/generated"),
+                "check-only resolution rejects non-directory ancestor",
             )
             .kind,
             "LawpackOutputOwnershipFailed"
@@ -3418,6 +5257,79 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_equivalent_dependency_output_alias_rejects() {
+        let root = temp_tree("dependency-output-case-alias");
+        let actual_output = root.join("generated");
+        let configured_output = root.join("Generated");
+        test_ok(fs::create_dir(&actual_output), "create output alias target");
+        test_ok(
+            fs::write(
+                actual_output.join("manifest.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/manifest.cbor"),
+            ),
+            "write manifest",
+        );
+        test_ok(
+            fs::write(
+                actual_output.join("exports.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/exports.cbor"),
+            ),
+            "write exports",
+        );
+
+        if !configured_output.exists() {
+            // A case-sensitive filesystem has no alias at this spelling and
+            // therefore cannot exhibit the public-path bug this case covers.
+            test_ok(fs::remove_dir_all(root), "remove test tree");
+            return;
+        }
+
+        let definitions = [LawpackDependencyBundle {
+            manifest: PathBuf::from("generated/manifest.cbor"),
+            exports: PathBuf::from("generated/exports.cbor"),
+        }];
+        let failure = test_err(
+            load_dependencies(&root, &definitions, &configured_output),
+            "filesystem-equivalent dependency inside output rejects",
+        );
+
+        assert_eq!(failure.kind, "InvalidLawpackConfig");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn dependency_confinement_uses_filesystem_identity() {
+        let root = temp_tree("dependency-output-identity");
+        let output = root.join("generated");
+        test_ok(fs::create_dir(&output), "create output");
+        test_ok(
+            fs::write(output.join("manifest.cbor"), b"not read"),
+            "write manifest",
+        );
+        let root_dir = test_ok(open_dependency_root(&root), "open dependency root");
+        let output_dir = test_ok(root_dir.open_dir("generated"), "open output identity");
+        let output_identity = test_ok(
+            super::identify_dependency_directory(&output_dir, &output),
+            "identify output",
+        );
+
+        let Err(failure) = open_dependency_input_with_hook(
+            &root_dir,
+            &root,
+            std::path::Path::new("generated/manifest.cbor"),
+            std::path::Path::new("Generated"),
+            Some(output_identity),
+            "dependencyBundles.0.manifest",
+            || {},
+        ) else {
+            panic!("filesystem-identity overlap must reject despite lexical mismatch");
+        };
+
+        assert_eq!(failure.kind, "InvalidLawpackConfig");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
     fn dependency_root_is_opened_only_for_reads_and_uses_read_failure_kinds() {
         let missing_root = temp_tree("missing-dependency-root");
         test_ok(fs::remove_dir_all(&missing_root), "remove dependency root");
@@ -3538,6 +5450,7 @@ mod tests {
             &root,
             std::path::Path::new("dependencies/manifest.cbor"),
             std::path::Path::new("generated"),
+            None,
             "dependencyBundles.0.manifest",
             || {
                 test_ok(
@@ -3736,7 +5649,7 @@ mod tests {
             std::process::id()
         ));
         test_ok(fs::create_dir_all(&path), "create test tree");
-        path
+        test_ok(fs::canonicalize(path), "canonicalize test tree")
     }
 
     fn test_ok<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T {

@@ -43,6 +43,21 @@ jobs:
       - name: Provider component fixture inventory
         run: cargo +"${{ matrix.rust-version }}" xtask provider-component-fixtures --check
 
+  windows-lawpack-containment:
+    name: windows lawpack containment
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal
+      - name: Write publication fails closed before I/O
+        run: >-
+          cargo +stable test -p edict-cli
+          windows_lawpack_build_fails_closed_before_document_io
+          -- --nocapture
+
   supply-chain:
     name: supply-chain (cargo-deny)
     runs-on: ubuntu-latest

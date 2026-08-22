@@ -35,10 +35,23 @@ versions still track specification maturity rather than a released product.
   `edict.lawpack-build/v1` review document now emits deterministic canonical
   manifests, exports, adapters, local resources, and digest sidecars through
   the existing public decoders and complete dependency-graph validator.
-  JSONL `build` requests support transactional owned-directory replacement that
-  captures and authorizes the exact directory being replaced, retains that
-  directory through commit, and never deletes a concurrently installed output
-  during rollback. Non-repairing, filesystem-read-only `checkOnly` drift
+  JSONL `build` requests support transactional owned-directory replacement
+  among publishers that honor Edict's footprint locks. Retained capability
+  handles confine filesystem I/O, while an uncooperative process with mutation
+  authority over the publication parent can still rename namespace entries
+  between portable filesystem calls. In that adversarial case Edict detects
+  substitutions at verified boundaries and refuses without deliberately
+  deleting unknown objects, but does not promise restoration to the original
+  pathname. Publication directory moves use atomic no-replace semantics and
+  preserve even an empty destination installed immediately before the move;
+  Apple targets, Linux, Android, and Redox implement that write-publication
+  operation. Windows and other unsupported targets now return the stable
+  `LawpackOutputWriteUnsupported` failure before reading the build document or
+  mutating the publication namespace. Unsupported non-Windows targets retain
+  check-only. Windows lawpack builds fail closed before document I/O in both
+  modes, returning `LawpackCheckUnsupported` for check-only until native
+  publication and filesystem-identity backends exist.
+  Non-repairing, filesystem-read-only `checkOnly` drift
   detection traverses real parent directories from one retained root
   capability, verifies that the parent chain and requested output still name
   those same filesystem identities and ownership basis, and validates the exact
@@ -50,8 +63,10 @@ versions still track specification maturity rather than a released product.
   artifacts into the public application build.
   Tagged inputs and output paths fail closed. Dependency inputs use confined,
   no-symlink file handles that remain pinned from output-overlap validation
-  through bounded reading, so later path substitution cannot redirect them
-  under the replaced tree. Duplicate JSON keys reject before typed authoring,
+  through bounded reading. Existing output directories and traversed dependency
+  parents are compared by filesystem identity, so case-insensitive aliases and
+  later path substitution cannot redirect an accepted input under the replaced
+  tree. Duplicate JSON keys reject before typed authoring,
   ownership indexes must be real files, and every generated artifact and drift
   read stays bounded. Check-only classifies missing ancestors as drift and
   non-directory or symlinked ancestors as ownership failures, never as write
@@ -67,18 +82,60 @@ versions still track specification maturity rather than a released product.
   follow a raw `/`-separated, alias-free, length-bounded lowercase portable
   filename policy. Proper ancestor intent locks are acquired top-down
   and shared by disjoint sibling outputs. Ownership and real-directory
-  confinement are rechecked before activation, while capability-directory
-  handles and their ancestor-intent locks remain one retained authority through
-  every later mutation, even if the ambient document-root path is replaced by a
-  different real directory. Fixed-length clock-independent transaction names
+  confinement are rechecked before activation. Publication opens the filesystem
+  root once and traverses every component of the admitted document root and
+  every descendant without following symbolic links. Check-only observation and
+  dependency loading use the same full-chain root traversal, while capability
+  directory handles and their ancestor-intent locks remain one retained authority
+  through every later mutation, even if the ambient document-root path is replaced
+  by a different real directory. Fixed-length clock-independent transaction names
   keep every accepted output component publishable. Internal
   publication names are reserved case-insensitively from output directories,
   and raw output-directory components leave room for derived locks and reject
   platform aliases, so only overlapping output footprints conflict.
+  Footprint lock files are opened without following symbolic links, preventing
+  a substituted sibling name from redirecting overlapping publications onto
+  different lock identities. The operating-system locks compose with
+  same-process shared/exclusive footprint exclusion keyed by retained lock-file
+  identity, so alternate spellings of one lock object and parent/child
+  lock-respecting publishers cannot enter their publication boundary
+  concurrently while siblings remain independent. Production transaction
+  creation requires that retained exclusive output authority, so its portable
+  create/open sequence is covered by the cooperating-writer guarantee. Newly
+  created transaction directories are reopened without following a substituted
+  symbolic link before staging begins; this does not claim object continuity
+  against an uncooperative writer with control of the parent namespace.
+  Staging creates and reopens every artifact-parent component through retained
+  no-follow directory handles, so an intermediate substitution cannot redirect
+  an authored file write.
+  Existing outputs are opened, owner-validated, and identified before their
+  names are moved; the backup name must reopen to that retained identity before
+  publication continues, so a substituted real directory is not mistaken for
+  the authorized prior output.
+  Captured backup names receive the same no-follow treatment; if a name is
+  reused before pinning, publication refuses to move or delete the substitute
+  during rollback. Every later rollback reopens that name without following
+  links and requires the retained captured directory identity before restoration.
+  After the restoration rename, the destination is reopened and must still
+  match that identity before rollback reports success; a mismatching destination
+  is preserved and reported as rollback failure.
+  The activated transaction is validated against the complete
+  authored byte map and the public output name is rebound to the staged identity
+  before backup cleanup makes the replacement final. If that name vanishes or
+  changes, rollback preserves an observed substitute, restores the captured
+  output when the checked namespace transition permits it, and reports failure.
+  Check-only pins the requested output without following a symbolic link that
+  replaces it after file-type inspection, and output-resolution inspection
+  failures remain read-only ownership failures rather than write failures.
+  Exact-tree traversal opens every inspected file and child directory relative
+  to its retained parent without following a substituted symbolic link.
+  Both optimistic check passes also recheck ownership indexes at the retained
+  root and every output ancestor.
   Lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom. Emitted artifact-path collision checks use an ordering-independent
-  ancestor set, and activation is the publication commit point. Provider
+  ancestor set, and the successful post-validation public-name identity rebind
+  is the publication commit point. Provider
   invocation and runtime execution remain outside authoring.
 - Added the generator-owned `workspace.patch.applyValidated@1` request closure.
   Exact compiler-owned Core and Target IR bind the canonical patch-input schema,
