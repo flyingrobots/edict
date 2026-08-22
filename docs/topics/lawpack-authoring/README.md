@@ -261,11 +261,14 @@ exact-tree pass.
 
 A persistent hidden lock file is kept beside each write output and its proper
 ancestors. These files are footprint-coordination state, not canonical lawpack
-artifacts, and should remain untracked. There is no process-wide, host-wide, or
-filesystem-wide publication coordinator. Activation is the publication commit
-point. Failure to remove the hidden previous-tree backup after activation does
-not turn a committed replacement into a failed command; that backup is
-best-effort cleanup state and may be removed by the operator.
+artifacts, and should remain untracked. A process-wide registry keyed by each
+retained lock file's filesystem identity composes with those cooperative
+operating-system locks; there is no host-wide or filesystem-wide coordinator
+that excludes an uncooperative namespace writer. The successful
+post-validation public-name identity rebind is the publication commit point.
+Failure to remove the hidden previous-tree backup after that boundary does not
+turn a committed replacement into a failed command; that backup is best-effort
+cleanup state and may be removed by the operator.
 
 ## The Five Artifacts That Must Stay Distinct
 

@@ -123,7 +123,8 @@ versions still track specification maturity rather than a released product.
   Lawpack-authored JSON accepts a scalar at a 48-container boundary while
   accounting for enclosing export structures and retaining normal-thread stack
   headroom. Emitted artifact-path collision checks use an ordering-independent
-  ancestor set, and activation is the publication commit point. Provider
+  ancestor set, and the successful post-validation public-name identity rebind
+  is the publication commit point. Provider
   invocation and runtime execution remain outside authoring.
 - Added the generator-owned `workspace.patch.applyValidated@1` request closure.
   Exact compiler-owned Core and Target IR bind the canonical patch-input schema,
