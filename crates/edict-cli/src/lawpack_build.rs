@@ -2999,6 +2999,10 @@ mod tests {
         let first_lock = output_lock_path(&first_output);
         let second_lock = output_lock_path(&second_output);
         test_ok(fs::write(&first_lock, b""), "create first lock name");
+        // Case-sensitive filesystems need two hard-linked names to model one
+        // lock identity. Case-insensitive filesystems already resolve both
+        // spellings to the same name, so they exercise self-exclusion rather
+        // than providing independent distinct-name alias evidence.
         if !second_lock.exists() {
             test_ok(
                 fs::hard_link(&first_lock, &second_lock),
