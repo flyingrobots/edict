@@ -57,8 +57,10 @@ versions still track specification maturity rather than a released product.
   artifacts into the public application build.
   Tagged inputs and output paths fail closed. Dependency inputs use confined,
   no-symlink file handles that remain pinned from output-overlap validation
-  through bounded reading, so later path substitution cannot redirect them
-  under the replaced tree. Duplicate JSON keys reject before typed authoring,
+  through bounded reading. Existing output directories and traversed dependency
+  parents are compared by filesystem identity, so case-insensitive aliases and
+  later path substitution cannot redirect an accepted input under the replaced
+  tree. Duplicate JSON keys reject before typed authoring,
   ownership indexes must be real files, and every generated artifact and drift
   read stays bounded. Check-only classifies missing ancestors as drift and
   non-directory or symlinked ancestors as ownership failures, never as write

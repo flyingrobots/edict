@@ -67,8 +67,10 @@ coordination, or dependency I/O. Raw output-directory paths use one portable
 `/`-separated grammar, reserve internal names case-insensitively, and leave room
 for every derived lock filename. Every dependency path component must be real;
 Edict opens each one without following symbolic links and retains the accepted
-file identity through overlap checks and bounded reading. A symlink therefore
-cannot route an input back under the replaceable output tree. A check-only build
+file identity through overlap checks and bounded reading. Existing output
+directories and traversed dependency parents are also compared by filesystem
+identity, so a case-insensitive alias cannot route an input back under the
+replaceable output tree. A check-only build
 does not repair the owned artifact tree and
 reports `LawpackOutputDrift` unless the complete existing tree is
 byte-identical. It creates no directories or lock files and rechecks the

@@ -147,7 +147,11 @@ Every `dependencies` edge names an id, version, and exact manifest digest. The
 matching canonical manifest and exports paths appear in `dependencyBundles`.
 The caller must supply the complete transitive closure and nothing disconnected
 from the authored root. Edict decodes each dependency, corroborates every pin,
-and runs the same complete-graph validator used by application builds.
+and runs the same complete-graph validator used by application builds. When the
+output directory already exists, dependency traversal retains its filesystem
+identity and rejects any dependency parent with that identity. This closes
+case-insensitive and other filesystem-equivalent aliases that a lexical path
+comparison cannot see.
 
 ### 5. Apply Publication Policy
 
@@ -241,7 +245,7 @@ document is decoded and before output inspection, coordination, or dependency
 filesystem I/O. Primary `.cbor` paths reserve the two bytes added when their
 extension becomes `.sha256`; derived sidecars are separately validated at the
 255-byte component and 1024-byte relative-artifact ceilings. Output components
-use bounded lowercase ASCII letters, digits, `.`, `_`, and `-`, and reject
+use bounded ASCII letters, digits, `.`, `_`, and `-`, and reject
 Windows device names, filesystem NUL, case aliases, trailing-dot aliases,
 overlong components or relative paths, and
 platform-specific forbidden punctuation. Only `/` separates non-empty raw path

@@ -468,6 +468,8 @@ fn load_dependencies_with_hook(
             ),
         )
     })?;
+    let output_identity =
+        existing_dependency_output_identity(&root_dir, root, relative_output, output)?;
     let resolved = definitions
         .iter()
         .enumerate()
@@ -477,6 +479,7 @@ fn load_dependencies_with_hook(
                 root,
                 &definition.manifest,
                 relative_output,
+                output_identity,
                 &format!("dependencyBundles.{index}.manifest"),
             )?;
             let exports = open_dependency_input(
@@ -484,6 +487,7 @@ fn load_dependencies_with_hook(
                 root,
                 &definition.exports,
                 relative_output,
+                output_identity,
                 &format!("dependencyBundles.{index}.exports"),
             )?;
             Ok((manifest, exports))
@@ -520,6 +524,65 @@ fn load_dependencies_with_hook(
 
 fn open_dependency_root(root: &Path) -> Result<Dir, LawpackBuildFailure> {
     open_absolute_dir_nofollow(root, "LawpackArtifactReadFailed", "lawpack dependency root")
+}
+
+fn existing_dependency_output_identity(
+    root_dir: &Dir,
+    root: &Path,
+    relative_output: &Path,
+    output: &Path,
+) -> Result<Option<DirectoryIdentity>, LawpackBuildFailure> {
+    let mut directory = root_dir.try_clone().map_err(|error| {
+        failure(
+            "LawpackArtifactReadFailed",
+            format!("failed to retain lawpack root while checking dependency confinement: {error}"),
+        )
+    })?;
+    let mut display = root.to_path_buf();
+    for component in relative_output.components() {
+        let Component::Normal(name) = component else {
+            return Err(failure(
+                "LawpackPathOutsideRoot",
+                "outputDirectory must contain only normal relative components".to_owned(),
+            ));
+        };
+        display.push(name);
+        let metadata = match directory.symlink_metadata(name) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(failure(
+                    "LawpackArtifactReadFailed",
+                    format!(
+                        "failed to inspect output while checking dependency confinement `{}`: {error}",
+                        display.display()
+                    ),
+                ));
+            }
+        };
+        if metadata.is_symlink() {
+            return Err(failure(
+                "InvalidLawpackConfig",
+                format!(
+                    "outputDirectory must not traverse symlink `{}`",
+                    display.display()
+                ),
+            ));
+        }
+        if !metadata.is_dir() {
+            return Ok(None);
+        }
+        directory = directory.open_dir_nofollow(name).map_err(|error| {
+            failure(
+                "LawpackArtifactReadFailed",
+                format!(
+                    "failed to pin output while checking dependency confinement `{}`: {error}",
+                    display.display()
+                ),
+            )
+        })?;
+    }
+    identify_dependency_directory(&directory, output).map(Some)
 }
 
 fn open_absolute_dir_nofollow(
@@ -588,9 +651,18 @@ fn open_dependency_input(
     root: &Path,
     relative: &Path,
     relative_output: &Path,
+    output_identity: Option<DirectoryIdentity>,
     field: &str,
 ) -> Result<OpenedDependencyInput, LawpackBuildFailure> {
-    open_dependency_input_with_hook(root_dir, root, relative, relative_output, field, || {})
+    open_dependency_input_with_hook(
+        root_dir,
+        root,
+        relative,
+        relative_output,
+        output_identity,
+        field,
+        || {},
+    )
 }
 
 fn open_dependency_input_with_hook(
@@ -598,6 +670,7 @@ fn open_dependency_input_with_hook(
     root: &Path,
     relative: &Path,
     relative_output: &Path,
+    output_identity: Option<DirectoryIdentity>,
     field: &str,
     after_inspection: impl FnOnce(),
 ) -> Result<OpenedDependencyInput, LawpackBuildFailure> {
@@ -609,7 +682,8 @@ fn open_dependency_input_with_hook(
         ));
     }
     let parent = relative.parent().unwrap_or_else(|| Path::new(""));
-    let (directory, mut display) = open_dependency_parent(root_dir, root, parent, field)?;
+    let (directory, mut display) =
+        open_dependency_parent(root_dir, root, parent, output_identity, field)?;
     let name = relative.file_name().ok_or_else(|| {
         failure(
             "InvalidLawpackConfig",
@@ -660,6 +734,7 @@ fn open_dependency_parent(
     root_dir: &Dir,
     root: &Path,
     parent: &Path,
+    output_identity: Option<DirectoryIdentity>,
     field: &str,
 ) -> Result<(Dir, PathBuf), LawpackBuildFailure> {
     let mut directory = root_dir.try_clone().map_err(|error| {
@@ -713,8 +788,32 @@ fn open_dependency_parent(
                 ),
             )
         })?;
+        if let Some(output) = output_identity {
+            if identify_dependency_directory(&directory, &display)? == output {
+                return Err(failure(
+                    "InvalidLawpackConfig",
+                    format!("{field} must be outside outputDirectory"),
+                ));
+            }
+        }
     }
     Ok((directory, display))
+}
+
+fn identify_dependency_directory(
+    directory: &Dir,
+    display: &Path,
+) -> Result<DirectoryIdentity, LawpackBuildFailure> {
+    directory_identity(directory, display).map_err(|error| {
+        failure(
+            "LawpackArtifactReadFailed",
+            format!(
+                "failed to identify dependency confinement directory `{}`: {}",
+                display.display(),
+                error.message
+            ),
+        )
+    })
 }
 
 fn read_bounded(
@@ -5135,6 +5234,79 @@ mod tests {
     }
 
     #[test]
+    fn filesystem_equivalent_dependency_output_alias_rejects() {
+        let root = temp_tree("dependency-output-case-alias");
+        let actual_output = root.join("generated");
+        let configured_output = root.join("Generated");
+        test_ok(fs::create_dir(&actual_output), "create output alias target");
+        test_ok(
+            fs::write(
+                actual_output.join("manifest.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/manifest.cbor"),
+            ),
+            "write manifest",
+        );
+        test_ok(
+            fs::write(
+                actual_output.join("exports.cbor"),
+                include_bytes!("../../../fixtures/lawpack/workspace-snapshot/exports.cbor"),
+            ),
+            "write exports",
+        );
+
+        if !configured_output.exists() {
+            // A case-sensitive filesystem has no alias at this spelling and
+            // therefore cannot exhibit the public-path bug this case covers.
+            test_ok(fs::remove_dir_all(root), "remove test tree");
+            return;
+        }
+
+        let definitions = [LawpackDependencyBundle {
+            manifest: PathBuf::from("generated/manifest.cbor"),
+            exports: PathBuf::from("generated/exports.cbor"),
+        }];
+        let failure = test_err(
+            load_dependencies(&root, &definitions, &configured_output),
+            "filesystem-equivalent dependency inside output rejects",
+        );
+
+        assert_eq!(failure.kind, "InvalidLawpackConfig");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn dependency_confinement_uses_filesystem_identity() {
+        let root = temp_tree("dependency-output-identity");
+        let output = root.join("generated");
+        test_ok(fs::create_dir(&output), "create output");
+        test_ok(
+            fs::write(output.join("manifest.cbor"), b"not read"),
+            "write manifest",
+        );
+        let root_dir = test_ok(open_dependency_root(&root), "open dependency root");
+        let output_dir = test_ok(root_dir.open_dir("generated"), "open output identity");
+        let output_identity = test_ok(
+            super::identify_dependency_directory(&output_dir, &output),
+            "identify output",
+        );
+
+        let Err(failure) = open_dependency_input_with_hook(
+            &root_dir,
+            &root,
+            std::path::Path::new("generated/manifest.cbor"),
+            std::path::Path::new("Generated"),
+            Some(output_identity),
+            "dependencyBundles.0.manifest",
+            || {},
+        ) else {
+            panic!("filesystem-identity overlap must reject despite lexical mismatch");
+        };
+
+        assert_eq!(failure.kind, "InvalidLawpackConfig");
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
     fn dependency_root_is_opened_only_for_reads_and_uses_read_failure_kinds() {
         let missing_root = temp_tree("missing-dependency-root");
         test_ok(fs::remove_dir_all(&missing_root), "remove dependency root");
@@ -5255,6 +5427,7 @@ mod tests {
             &root,
             std::path::Path::new("dependencies/manifest.cbor"),
             std::path::Path::new("generated"),
+            None,
             "dependencyBundles.0.manifest",
             || {
                 test_ok(
