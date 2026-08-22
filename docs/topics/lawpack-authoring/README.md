@@ -222,10 +222,11 @@ process requires stronger kernel-enforced exclusion or a parent directory the
 process cannot mutate.
 
 After activation, the retained transaction identity and its complete artifact
-tree must still match the staged authoring result before backup cleanup commits
-the replacement. After exact-tree traversal, the public output name is reopened
-and must still identify that staged transaction before the captured backup is
-removed. If the name vanished or changed, rollback preserves a substitute under
+tree must still match the staged authoring result before the successful
+post-validation public-name identity rebind commits the replacement. After
+exact-tree traversal, the public output name is reopened and must still identify
+that staged transaction before the captured backup is removed. If the name
+vanished or changed, rollback preserves a substitute under
 the transaction recovery name, restores the captured output when the checked
 namespace transition permits it, and reports failure. Rollback refuses to
 delete an output that appeared concurrently.
