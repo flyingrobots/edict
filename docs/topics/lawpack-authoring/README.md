@@ -246,10 +246,11 @@ filesystem I/O. Primary `.cbor` paths reserve the two bytes added when their
 extension becomes `.sha256`; derived sidecars are separately validated at the
 255-byte component and 1024-byte relative-artifact ceilings. Output components
 use bounded ASCII letters, digits, `.`, `_`, and `-`, and reject
-Windows device names, filesystem NUL, case aliases, trailing-dot aliases,
-overlong components or relative paths, and
-platform-specific forbidden punctuation. Only `/` separates non-empty raw path
-components; backslashes and repeated separators reject before host path parsing.
+Windows device names, filesystem NUL, case-insensitive aliases of Edict's
+internal publication names, trailing-dot aliases, overlong components or
+relative paths, and platform-specific forbidden punctuation. Only `/` separates
+non-empty raw path components; backslashes and repeated separators reject before
+host path parsing.
 
 The index identity must match the lawpack being authored. Edict refuses to
 replace or check a tree owned by a different lawpack id or version even when
