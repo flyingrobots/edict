@@ -93,7 +93,7 @@ versions still track specification maturity rather than a released product.
   create/open sequence is covered by the cooperating-writer guarantee. Newly
   created transaction directories are reopened without following a substituted
   symbolic link before staging begins; this does not claim object continuity
-  against an uncooperative writer that controls the parent namespace.
+  against an uncooperative writer with control of the parent namespace.
   Staging creates and reopens every artifact-parent component through retained
   no-follow directory handles, so an intermediate substitution cannot redirect
   an authored file write.
