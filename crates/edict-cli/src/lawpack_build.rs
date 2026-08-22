@@ -2048,8 +2048,9 @@ fn publish_output_with_hooks_in_authority(
         }
     };
     if let Some((captured, _)) = captured {
-        // Activation is the commit point. Backup cleanup is best effort so a
-        // committed replacement is never reported as an unchanged failure.
+        // The successful post-validation public-name rebind is the commit
+        // point. Backup cleanup is best effort so a committed replacement is
+        // never reported as an unchanged failure.
         drop(remove_backup(captured));
     }
     drop(rebound);
