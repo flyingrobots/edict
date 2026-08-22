@@ -1937,42 +1937,10 @@ fn publish_output_with_hooks_in_authority(
             )
         }));
     }
-    if let Err(error) = after_activation() {
-        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
-        drop(captured);
-        let rollback = restore_after_substituted_activation_in(
-            parent_dir,
-            output_name,
-            &transaction,
-            &backup,
-            output,
-            existed,
-            captured_identity,
-        );
-        drop(Dir::remove_open_dir_all(transaction_dir));
-        return Err(rollback.err().unwrap_or(error));
-    }
-    let activated = open_check_output_dir(parent_dir, output_name, output).and_then(|directory| {
-        if directory_identity(&directory, output)? == staged_identity {
-            Ok(directory)
-        } else {
-            Err(failure(
-                "LawpackOutputWriteFailed",
-                "the activated directory identity differs from the staged transaction".to_owned(),
-            ))
-        }
-    });
-    let activated = match activated {
-        Ok(activated) => activated,
-        Err(error) => {
-            let error = failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "activated output `{}` did not retain the staged transaction identity: {}",
-                    output.display(),
-                    error.message
-                ),
-            );
+    let rollback_after_activation =
+        |captured: Option<(Dir, DirectoryIdentity)>,
+         transaction_dir: Dir,
+         error: LawpackBuildFailure| {
             let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
             drop(captured);
             let rollback = restore_after_substituted_activation_in(
@@ -1985,68 +1953,47 @@ fn publish_output_with_hooks_in_authority(
                 captured_identity,
             );
             drop(Dir::remove_open_dir_all(transaction_dir));
-            return Err(rollback.err().unwrap_or(error));
+            rollback.err().unwrap_or(error)
+        };
+    if let Err(error) = after_activation() {
+        return Err(rollback_after_activation(captured, transaction_dir, error));
+    }
+    let activated = match reopen_staged_activation(
+        parent_dir,
+        output_name,
+        output,
+        staged_identity,
+        "the activated directory identity differs from the staged transaction",
+        "did not retain the staged transaction identity",
+    ) {
+        Ok(activated) => activated,
+        Err(error) => {
+            return Err(rollback_after_activation(captured, transaction_dir, error));
         }
     };
     if let Err(error) = validate_output_tree(output, activated, files) {
-        let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
-        drop(captured);
-        let rollback = restore_after_substituted_activation_in(
-            parent_dir,
-            output_name,
-            &transaction,
-            &backup,
-            output,
-            existed,
-            captured_identity,
+        let error = failure(
+            "LawpackOutputWriteFailed",
+            format!(
+                "activated output `{}` did not match the authored artifact tree: {}",
+                output.display(),
+                error.message
+            ),
         );
-        drop(Dir::remove_open_dir_all(transaction_dir));
-        return Err(rollback.err().unwrap_or_else(|| {
-            failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "activated output `{}` did not match the authored artifact tree: {}",
-                    output.display(),
-                    error.message
-                ),
-            )
-        }));
+        return Err(rollback_after_activation(captured, transaction_dir, error));
     }
     after_validation();
-    let rebound = open_check_output_dir(parent_dir, output_name, output).and_then(|directory| {
-        if directory_identity(&directory, output)? == staged_identity {
-            Ok(directory)
-        } else {
-            Err(failure(
-                "LawpackOutputWriteFailed",
-                "the validated output name no longer identifies the staged transaction".to_owned(),
-            ))
-        }
-    });
-    let rebound = match rebound {
+    let rebound = match reopen_staged_activation(
+        parent_dir,
+        output_name,
+        output,
+        staged_identity,
+        "the validated output name no longer identifies the staged transaction",
+        "changed after exact-tree validation",
+    ) {
         Ok(rebound) => rebound,
         Err(error) => {
-            let error = failure(
-                "LawpackOutputWriteFailed",
-                format!(
-                    "activated output `{}` changed after exact-tree validation: {}",
-                    output.display(),
-                    error.message
-                ),
-            );
-            let captured_identity = captured.as_ref().map(|(_, identity)| *identity);
-            drop(captured);
-            let rollback = restore_after_substituted_activation_in(
-                parent_dir,
-                output_name,
-                &transaction,
-                &backup,
-                output,
-                existed,
-                captured_identity,
-            );
-            drop(Dir::remove_open_dir_all(transaction_dir));
-            return Err(rollback.err().unwrap_or(error));
+            return Err(rollback_after_activation(captured, transaction_dir, error));
         }
     };
     if let Some((captured, _)) = captured {
@@ -2057,6 +2004,34 @@ fn publish_output_with_hooks_in_authority(
     }
     drop(rebound);
     Ok(())
+}
+
+fn reopen_staged_activation(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    output: &Path,
+    staged_identity: DirectoryIdentity,
+    mismatch: &str,
+    context: &str,
+) -> Result<Dir, LawpackBuildFailure> {
+    open_check_output_dir(parent, output_name, output)
+        .and_then(|directory| {
+            if directory_identity(&directory, output)? == staged_identity {
+                Ok(directory)
+            } else {
+                Err(failure("LawpackOutputWriteFailed", mismatch.to_owned()))
+            }
+        })
+        .map_err(|error| {
+            failure(
+                "LawpackOutputWriteFailed",
+                format!(
+                    "activated output `{}` {context}: {}",
+                    output.display(),
+                    error.message
+                ),
+            )
+        })
 }
 
 fn create_transaction_dir_with_hook(
