@@ -97,6 +97,9 @@ versions still track specification maturity rather than a released product.
   reused before pinning, publication refuses to move or delete the substitute
   during rollback. Every later rollback reopens that name without following
   links and requires the retained captured directory identity before restoration.
+  After the restoration rename, the destination is reopened and must still
+  match that identity before rollback reports success; a mismatching destination
+  is preserved and reported as rollback failure.
   The activated transaction is validated against the complete
   authored byte map before backup cleanup makes the replacement final. If an
   activation vanishes, rollback restores the captured output before considering

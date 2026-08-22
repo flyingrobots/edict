@@ -180,13 +180,14 @@ from the filesystem root without following symbolic links. Write mode stages
 the complete replacement and uses retained capability handles to keep opened
 directories confined. The old output is opened, owner-validated, and identified
 before its name is moved; the backup name must then reopen to that retained
-identity before publication continues. Two pathname-to-object bindings remain
-incomplete: a transaction is created before it is reopened, and a rollback
-rename occurs after the last backup identity check. No-follow opens reject
-symbolic links, but they do not by themselves prove that a real directory
-reopened by name is the object Edict previously authorized. Those remaining
-gaps are tracked as planned cases in the test plan and block publication
-readiness.
+identity before publication continues. Rollback likewise reopens the restored
+destination and requires the retained captured identity before reporting
+success; a mismatching destination remains intact as recovery evidence. One
+pathname-to-object binding remains incomplete: a transaction is created before
+it is reopened. No-follow opens reject symbolic links, but they do not by
+themselves prove that a real directory reopened by name is the object Edict
+previously authorized. That remaining gap is tracked as a planned case in the
+test plan and blocks publication readiness.
 
 An uncooperative process with write authority over the publication parent can
 rename any namespace entry between portable filesystem calls. Edict therefore

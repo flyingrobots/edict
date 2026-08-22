@@ -2288,6 +2288,26 @@ fn restore_output_directory_in(
     existed: bool,
     captured_identity: Option<DirectoryIdentity>,
 ) -> Result<(), LawpackBuildFailure> {
+    restore_output_directory_with_hook(
+        parent,
+        output_name,
+        backup,
+        output,
+        existed,
+        captured_identity,
+        || {},
+    )
+}
+
+fn restore_output_directory_with_hook(
+    parent: &Dir,
+    output_name: &std::ffi::OsStr,
+    backup: &Path,
+    output: &Path,
+    existed: bool,
+    captured_identity: Option<DirectoryIdentity>,
+    before_restore_rename: impl FnOnce(),
+) -> Result<(), LawpackBuildFailure> {
     if existed {
         let expected_identity = captured_identity.ok_or_else(|| {
             failure(
@@ -2335,6 +2355,7 @@ fn restore_output_directory_in(
                 ),
             ));
         }
+        before_restore_rename();
         parent
             .rename(backup, parent, output_name)
             .map_err(|error| {
@@ -2343,6 +2364,34 @@ fn restore_output_directory_in(
                     format!("failed to restore output `{}`: {error}", output.display()),
                 )
             })?;
+        let restored = parent.open_dir_nofollow(output_name).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to verify the restored output `{}`: {error}",
+                    output.display()
+                ),
+            )
+        })?;
+        let restored_identity = directory_identity(&restored, output).map_err(|error| {
+            failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "failed to identify the restored output `{}`: {}",
+                    output.display(),
+                    error.message
+                ),
+            )
+        })?;
+        if restored_identity != expected_identity {
+            return Err(failure(
+                "LawpackOutputRollbackFailed",
+                format!(
+                    "restored output `{}` does not match the retained captured identity; preserved the observed destination",
+                    output.display()
+                ),
+            ));
+        }
     }
     Ok(())
 }
@@ -2499,10 +2548,11 @@ mod tests {
         publish_output_with_hook, publish_output_with_hooks,
         publish_output_with_hooks_in_authority, publish_output_with_hooks_in_root,
         read_output_tree, resolve_check_output_directory, resolve_output_directory,
-        stage_files_in_with_hook, validate_check_output_parent_chain,
-        validate_generated_artifact_size, validate_output_tree_with_hook,
-        validate_owned_output_dir_with_hook, LawpackBuildFailure, LawpackDependencyBundle,
-        LawpackOutputIndex, LawpackOutputIndexEntry, MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
+        restore_output_directory_with_hook, stage_files_in_with_hook,
+        validate_check_output_parent_chain, validate_generated_artifact_size,
+        validate_output_tree_with_hook, validate_owned_output_dir_with_hook, LawpackBuildFailure,
+        LawpackDependencyBundle, LawpackOutputIndex, LawpackOutputIndexEntry,
+        MAX_OUTPUT_DIRECTORY_COMPONENT_BYTES,
     };
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
@@ -3151,6 +3201,69 @@ mod tests {
             b"unadmitted"
         );
         test_ok(fs::remove_dir_all(root), "remove test tree");
+    }
+
+    #[test]
+    fn rollback_requires_the_restored_destination_to_match_the_captured_identity() {
+        let root = temp_tree("rollback-destination-identity");
+        let output = root.join("generated");
+        let backup = PathBuf::from("backup");
+        let backup_path = root.join(&backup);
+        let displaced_backup = root.join("displaced-backup");
+        test_ok(fs::create_dir(&backup_path), "create captured backup");
+        test_ok(
+            fs::write(backup_path.join("old"), b"old"),
+            "write captured output",
+        );
+        let captured = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&backup_path, cap_std::ambient_authority()),
+            "retain captured output",
+        );
+        let captured_identity = test_ok(
+            super::directory_identity(&captured, &output),
+            "identify captured output",
+        );
+        let parent = test_ok(
+            cap_std::fs::Dir::open_ambient_dir(&root, cap_std::ambient_authority()),
+            "open publication parent",
+        );
+
+        let result = restore_output_directory_with_hook(
+            &parent,
+            std::ffi::OsStr::new("generated"),
+            &backup,
+            &output,
+            true,
+            Some(captured_identity),
+            || {
+                test_ok(
+                    fs::rename(&backup_path, &displaced_backup),
+                    "displace backup after identity validation",
+                );
+                test_ok(
+                    fs::create_dir(&backup_path),
+                    "install real-directory backup substitute",
+                );
+                test_ok(
+                    fs::write(backup_path.join("substitute"), b"unadmitted"),
+                    "write backup substitute evidence",
+                );
+            },
+        );
+
+        let result_kind = result.err().map(|error| error.kind);
+        let restored_substitute = fs::read(output.join("substitute")).ok();
+        let displaced_original = fs::read(displaced_backup.join("old")).ok();
+        drop(parent);
+        drop(captured);
+        test_ok(fs::remove_dir_all(root), "remove test tree");
+
+        assert_eq!(result_kind, Some("LawpackOutputRollbackFailed"));
+        assert_eq!(
+            restored_substitute.as_deref(),
+            Some(b"unadmitted".as_slice())
+        );
+        assert_eq!(displaced_original.as_deref(), Some(b"old".as_slice()));
     }
 
     #[test]
