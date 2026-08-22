@@ -151,11 +151,14 @@ and runs the same complete-graph validator used by application builds.
 
 ### 5. Apply Publication Policy
 
-`outputDirectory` is exclusively owned by this build after its output index is
-present. A write build stages a complete sibling directory, preserves the old
-directory, activates the replacement, and restores the old directory if
-activation fails. A later successful build replaces the whole owned directory,
-so artifacts removed from the definition cannot survive as stale output. An
+The lawpack contract assigns `outputDirectory` exclusively to this build after
+its output index is present. The filesystem does not enforce that ownership
+against another process that can mutate the publication parent. Among
+publishers that honor Edict's footprint locks, a write build stages a complete
+sibling directory, preserves the old directory, activates the replacement, and
+restores the old directory if activation fails. A later successful build
+replaces the whole owned directory, so artifacts removed from the definition
+cannot survive as stale output. An
 internal transaction or backup name is fixed-length and independent of the
 user-selected output component, so every accepted output name remains
 publishable within portable component limits. Output-directory components that
@@ -173,24 +176,35 @@ symbolic links, so another entry cannot redirect a footprint claim to a
 different file identity. The real-directory ancestor
 chain is rechecked after intent acquisition. The publication root and output
 parent are then pinned as capability directories by traversing every component
-from the filesystem root without following symbolic links. Write mode stages the
-complete replacement, captures the currently named output, and authorizes that exact
-captured directory through a retained capability handle. A newly created
-transaction is pinned without following symbolic links before any artifact is
-staged. Every staged artifact parent is then created and reopened component by
-component through retained no-follow directory handles before the final file is
-created. Captured backup names are pinned the same way. If a backup name is
-reused before it can be pinned, publication reports rollback failure and leaves
-the substitute untouched rather than trusting that name for restoration. Every
-later rollback reopens the backup without following links and requires it to
-match the retained captured directory identity before restoring it by name.
+from the filesystem root without following symbolic links. Write mode stages
+the complete replacement and uses retained capability handles to keep opened
+directories confined. At the current branch head, three pathname-to-object
+bindings remain incomplete: the old output is opened only after it is renamed,
+a transaction is created before it is reopened, and a rollback rename occurs
+after the last backup identity check. No-follow opens reject symbolic links,
+but they do not prove that a real directory reopened by name is the object
+Edict previously authorized. Those gaps are tracked as planned cases in the
+test plan and block publication readiness.
+
+An uncooperative process with write authority over the publication parent can
+rename any namespace entry between portable filesystem calls. Edict therefore
+does not promise to restore the old output to its original pathname against
+such a process. The supported failure-atomic guarantee is for lock-respecting
+publishers in the same document-root namespace. Under uncooperative mutation,
+the safety contract is narrower: retained capabilities confine I/O, symbolic
+links are never followed, detected substitutes are not deliberately overwritten
+or deleted, and the command refuses rather than claiming an unverified commit
+or rollback. Exact recovery of a directory whose only name was moved by another
+process requires stronger kernel-enforced exclusion or a parent directory the
+process cannot mutate.
+
 After activation, the retained transaction identity and its complete artifact
 tree must still match the staged authoring result before backup cleanup commits
 the replacement. If the activated name vanishes, the captured output is
 restored directly before any reused transaction name is considered; that
-concurrent entry is left untouched. Staging, activation,
-rollback, and cleanup cannot be redirected by a later ambient-path replacement,
-and rollback refuses to delete an output that appeared concurrently.
+concurrent entry is left untouched when the observed namespace remains stable
+for the checked transition. Rollback refuses to delete an output that appeared
+concurrently.
 Check-only performs no locking or filesystem mutation. Concurrent overlapping
 publication from different document roots is outside one namespace and must be
 avoided by the caller.

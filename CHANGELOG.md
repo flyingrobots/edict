@@ -35,10 +35,14 @@ versions still track specification maturity rather than a released product.
   `edict.lawpack-build/v1` review document now emits deterministic canonical
   manifests, exports, adapters, local resources, and digest sidecars through
   the existing public decoders and complete dependency-graph validator.
-  JSONL `build` requests support transactional owned-directory replacement that
-  captures and authorizes the exact directory being replaced, retains that
-  directory through commit, and never deletes a concurrently installed output
-  during rollback. Non-repairing, filesystem-read-only `checkOnly` drift
+  JSONL `build` requests support transactional owned-directory replacement
+  among publishers that honor Edict's footprint locks. Retained capability
+  handles confine filesystem I/O, while an uncooperative process with mutation
+  authority over the publication parent can still rename namespace entries
+  between portable filesystem calls. In that adversarial case Edict detects
+  substitutions at verified boundaries and refuses without deliberately
+  deleting unknown objects, but does not promise restoration to the original
+  pathname. Non-repairing, filesystem-read-only `checkOnly` drift
   detection traverses real parent directories from one retained root
   capability, verifies that the parent chain and requested output still name
   those same filesystem identities and ownership basis, and validates the exact
