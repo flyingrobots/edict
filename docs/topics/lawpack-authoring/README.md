@@ -182,15 +182,15 @@ directories confined. The old output is opened, owner-validated, and identified
 before its name is moved; the backup name must then reopen to that retained
 identity before publication continues. Rollback likewise reopens the restored
 destination and requires the retained captured identity before reporting
-success; a mismatching destination remains intact as recovery evidence. One
-pathname-to-object binding remains incomplete: a transaction is created before
-it is reopened. Operating-system footprint locks compose with in-process
+success; a mismatching destination remains intact as recovery evidence.
+Production transaction creation is available only through retained exclusive
+output authority. Operating-system footprint locks compose with in-process
 shared/exclusive exclusion, so identical and parent/child lock-respecting
-publishers cannot enter that boundary concurrently while siblings remain
-independent. No-follow opens reject symbolic links, but they do not by
-themselves prove that a real directory reopened by name is the object Edict
-previously created. That remaining gap is tracked as a planned case in the test
-plan and blocks publication readiness.
+publishers cannot enter the create/open boundary concurrently while siblings
+remain independent. This is the supported cooperating-writer proof; it does not
+turn portable create-then-open into hostile-writer object continuity. No-follow
+opens reject symbolic links, but they do not by themselves prove that a real
+directory reopened by name is the object Edict previously created.
 
 An uncooperative process with write authority over the publication parent can
 rename any namespace entry between portable filesystem calls. Edict therefore

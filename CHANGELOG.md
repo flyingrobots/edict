@@ -87,9 +87,12 @@ versions still track specification maturity rather than a released product.
   different lock identities. The operating-system locks compose with
   same-process shared/exclusive footprint exclusion, so lock-respecting
   publishers cannot enter an identical or parent/child output boundary
-  concurrently while siblings remain independent. Newly created transaction
-  directories are reopened without following a substituted symbolic link before
-  staging begins.
+  concurrently while siblings remain independent. Production transaction
+  creation requires that retained exclusive output authority, so its portable
+  create/open sequence is covered by the cooperating-writer guarantee. Newly
+  created transaction directories are reopened without following a substituted
+  symbolic link before staging begins; this does not claim object continuity
+  against an uncooperative writer that controls the parent namespace.
   Staging creates and reopens every artifact-parent component through retained
   no-follow directory handles, so an intermediate substitution cannot redirect
   an authored file write.

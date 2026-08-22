@@ -48,6 +48,40 @@ struct PublicationAuthority {
     ancestor_locks: Vec<OutputLockGuard>,
 }
 
+impl PublicationAuthority {
+    fn claim_output<'a>(
+        &'a self,
+        output_name: &std::ffi::OsStr,
+        output: &Path,
+    ) -> Result<OutputPublicationAuthority<'a>, LawpackBuildFailure> {
+        let lock = acquire_output_lock_in(
+            &self.output_parent,
+            output_name,
+            output,
+            OutputLockMode::ExclusiveOutput,
+        )?;
+        Ok(OutputPublicationAuthority {
+            parent: &self.output_parent,
+            _lock: lock,
+        })
+    }
+}
+
+struct OutputPublicationAuthority<'a> {
+    parent: &'a Dir,
+    _lock: OutputLockGuard,
+}
+
+impl OutputPublicationAuthority<'_> {
+    fn create_transaction_dir(
+        &self,
+        transaction: &Path,
+        output: &Path,
+    ) -> Result<Dir, LawpackBuildFailure> {
+        create_transaction_dir_with_hook(self.parent, transaction, output, || {})
+    }
+}
+
 #[derive(Debug)]
 struct OutputLockGuard {
     #[allow(
@@ -1719,7 +1753,6 @@ fn publish_output_with_hooks_in_authority(
     after_activation: impl FnOnce() -> Result<(), LawpackBuildFailure>,
     remove_backup: impl FnOnce(Dir) -> std::io::Result<()>,
 ) -> Result<(), LawpackBuildFailure> {
-    let parent_dir = &authority.output_parent;
     let output_name = output.file_name().ok_or_else(|| {
         failure(
             "LawpackOutputWriteFailed",
@@ -1727,15 +1760,11 @@ fn publish_output_with_hooks_in_authority(
         )
     })?;
     let expected_owner = expected_output_owner(files)?;
-    let _lock = acquire_output_lock_in(
-        parent_dir,
-        output_name,
-        output,
-        OutputLockMode::ExclusiveOutput,
-    )?;
+    let output_authority = authority.claim_output(output_name, output)?;
+    let parent_dir = output_authority.parent;
 
     let transaction = unique_sibling_in(parent_dir, output, "transaction")?;
-    let transaction_dir = create_transaction_dir_in(parent_dir, &transaction, output)?;
+    let transaction_dir = output_authority.create_transaction_dir(&transaction, output)?;
     if let Err(error) = stage_files_in(&transaction_dir, files) {
         drop(Dir::remove_open_dir_all(transaction_dir));
         return Err(error);
@@ -1958,14 +1987,6 @@ fn publish_output_with_hooks_in_authority(
         drop(remove_backup(captured));
     }
     Ok(())
-}
-
-fn create_transaction_dir_in(
-    parent: &Dir,
-    transaction: &Path,
-    output: &Path,
-) -> Result<Dir, LawpackBuildFailure> {
-    create_transaction_dir_with_hook(parent, transaction, output, || {})
 }
 
 fn create_transaction_dir_with_hook(
@@ -2818,14 +2839,12 @@ mod tests {
             acquire_output_ancestor_locks(&root, &output),
             "acquire first output authority",
         );
-        let output_lock = test_ok(
-            super::acquire_output_lock_in(
-                &authority.output_parent,
+        let output_authority = test_ok(
+            authority.claim_output(
                 output
                     .file_name()
                     .unwrap_or_else(|| panic!("test output must have a name")),
                 &output,
-                super::OutputLockMode::ExclusiveOutput,
             ),
             "claim first output",
         );
@@ -2846,7 +2865,7 @@ mod tests {
 
         assert_eq!(failure.kind, "LawpackOutputWriteFailed");
         assert!(!transaction_exists);
-        drop(output_lock);
+        drop(output_authority);
         drop(authority);
         test_ok(
             publish_output(&output, &expected),
