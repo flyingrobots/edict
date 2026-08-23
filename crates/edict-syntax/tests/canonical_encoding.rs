@@ -14,7 +14,7 @@ use common::{bounded_hello_core, hello_context, BOUNDED_HELLO};
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_canonical_cbor,
     encode_core_module, parse_module, CanonicalErrorKind, CanonicalValue, CompilerContext,
-    CoreBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, InputConstraint,
+    CoreBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, CoreType, InputConstraint,
     InputConstraintSource, ResourceRef,
 };
 
@@ -74,6 +74,57 @@ fn find_branch_map(value: &CanonicalValue) -> Option<&[(CanonicalValue, Canonica
         | CanonicalValue::Bytes(_)
         | CanonicalValue::Text(_) => None,
     }
+}
+
+fn map_field<'a>(value: &'a CanonicalValue, field: &str) -> &'a CanonicalValue {
+    let CanonicalValue::Map(entries) = value else {
+        panic!("expected map while looking up {field:?}");
+    };
+    entries
+        .iter()
+        .find_map(|(key, value)| (key == &CanonicalValue::Text(field.to_owned())).then_some(value))
+        .unwrap_or_else(|| panic!("missing map field {field:?}"))
+}
+
+#[test]
+fn max_only_bytes_preserve_prior_canonical_shape() {
+    let source = "package a.b@1;\n\
+        type Input = { value: Bytes<max=32>, };\n\
+        type Output = { value: Bytes<max=32>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          return { value: input.value };\n\
+        }";
+    let module = parse_module(source).expect("max-only bytes parse");
+    let core = compile_to_core(&module, &statement_branch_context())
+        .expect("max-only bytes compile to Core");
+    let canonical =
+        decode_canonical_cbor(&encode_core_module(&core).expect("max-only byte Core encodes"))
+            .expect("max-only byte Core decodes");
+    let value = map_field(map_field(&canonical, "types"), "Input.value");
+    let CanonicalValue::Map(fields) = value else {
+        panic!("byte type is a canonical map");
+    };
+    assert!(fields
+        .iter()
+        .all(|(key, _)| key != &CanonicalValue::Text("min".to_owned())));
+    assert_eq!(map_field(value, "max"), &CanonicalValue::Integer(32));
+}
+
+#[test]
+fn invalid_byte_interval_rejects_before_core_identity() {
+    let mut core = bounded_hello_core();
+    core.types.insert(
+        "invalid.bytes".to_owned(),
+        CoreType::Bytes {
+            min: Some(33),
+            max: 32,
+        },
+    );
+    let failure = encode_core_module(&core).expect_err("invalid byte interval must reject");
+    assert_eq!(failure.kind(), CanonicalErrorKind::UnsupportedValue);
 }
 
 #[test]

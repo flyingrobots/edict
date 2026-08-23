@@ -902,7 +902,16 @@ fn source_type_fits_output(core: &CoreModule, source: &str, output: &str, depth:
                 canonical: right_canonical,
             },
         ) => left_max <= right_max && left_canonical == right_canonical,
-        (CoreType::Bytes { max: left }, CoreType::Bytes { max: right }) => left <= right,
+        (
+            CoreType::Bytes {
+                min: left_min,
+                max: left_max,
+            },
+            CoreType::Bytes {
+                min: right_min,
+                max: right_max,
+            },
+        ) => left_min.unwrap_or(0) >= right_min.unwrap_or(0) && left_max <= right_max,
         (
             CoreType::Record {
                 fields: left_fields,
@@ -999,11 +1008,21 @@ fn builtin_type(coordinate: &str) -> Option<CoreType> {
             canonical: canonical.to_owned(),
         });
     }
-    coordinate
+    if let Some(max) = coordinate
         .strip_prefix("Bytes<max=")
         .and_then(|value| value.strip_suffix('>'))
         .and_then(|max| max.parse().ok())
-        .map(|max| CoreType::Bytes { max })
+    {
+        return Some(CoreType::Bytes { min: None, max });
+    }
+    coordinate
+        .strip_prefix("Bytes<exact=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|exact| exact.parse().ok())
+        .map(|exact| CoreType::Bytes {
+            min: Some(exact),
+            max: exact,
+        })
 }
 
 fn validate_projection_bounds(

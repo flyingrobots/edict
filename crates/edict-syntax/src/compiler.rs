@@ -6,8 +6,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    BinOp, Block, BoundRef, Decl, DigestLockedPackageRef, ElseClause, Expr, FieldDecl, Import,
-    ImportKind, IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler,
+    BinOp, Block, BoundRef, BytesRefine, Decl, DigestLockedPackageRef, ElseClause, Expr, FieldDecl,
+    Import, ImportKind, IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler,
     ObstructionTarget, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
     TypeRef, UnOp, YieldBlock,
 };
@@ -508,7 +508,7 @@ enum TypeKind {
     Bool,
     Int { width: String },
     String { max: u64, canonical: String },
-    Bytes { max: u64 },
+    Bytes { min: Option<u64>, max: u64 },
     List { item: Box<TypeShape>, max: u64 },
     Record(BTreeMap<String, TypeShape>),
     ExternalActionRequest { settlement: Box<TypeShape> },
@@ -525,7 +525,10 @@ impl TypeShape {
                 max: *max,
                 canonical: canonical.clone(),
             },
-            TypeKind::Bytes { max } => CoreType::Bytes { max: *max },
+            TypeKind::Bytes { min, max } => CoreType::Bytes {
+                min: *min,
+                max: *max,
+            },
             TypeKind::List { item, max } => CoreType::List {
                 item: item.value_type_coord(),
                 max: *max,
@@ -547,7 +550,7 @@ impl TypeShape {
             TypeKind::Bool => "Bool".to_owned(),
             TypeKind::Int { width } => width.clone(),
             TypeKind::String { max, canonical } => string_type_coord(*max, canonical),
-            TypeKind::Bytes { max } => bytes_type_coord(*max),
+            TypeKind::Bytes { min, max } => bytes_type_coord(*min, *max),
             TypeKind::List { item, max } => list_type_coord(&item.value_type_coord(), *max),
             TypeKind::Record(_) | TypeKind::ExternalActionRequest { .. } => self.coord.clone(),
         }
@@ -760,6 +763,9 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
+            TypeRef::Named { path, args } if args.is_empty() && path.len() >= 2 => {
+                self.imported_source_type_shape(path, span)
+            }
             TypeRef::Named { path, args }
                 if path.as_slice() == ["ExternalActionRequest"] && args.len() == 1 =>
             {
@@ -772,7 +778,7 @@ impl<'a> TypeChecker<'a> {
                 })
             }
             TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span, coord_hint),
-            TypeRef::BytesTy(Some(bound)) => self.bytes_shape(bound, span, coord_hint),
+            TypeRef::BytesTy(Some(refine)) => self.bytes_shape(refine, span, coord_hint),
             TypeRef::List { elem, max } => {
                 let BoundRef::Int { value, .. } = max else {
                     self.errors.push(error(
@@ -840,11 +846,11 @@ impl<'a> TypeChecker<'a> {
 
     fn bytes_shape(
         &mut self,
-        bound: &BoundRef,
+        refine: &BytesRefine,
         span: Span,
         coord_hint: Option<String>,
     ) -> Option<TypeShape> {
-        let BoundRef::Int { value, .. } = bound else {
+        let BoundRef::Int { value: max, .. } = &refine.max else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnsupportedSourceShape,
@@ -853,9 +859,85 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
+        let min = match &refine.min {
+            Some(BoundRef::Int { value, .. }) => Some(*value),
+            Some(BoundRef::Coord(_)) => {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "coordinate byte bounds require bound proof in a later stage",
+                    span,
+                ));
+                return None;
+            }
+            None => None,
+        };
+        if min.is_some_and(|min| min > *max) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "byte minimum exceeds byte maximum",
+                span,
+            ));
+            return None;
+        }
         Some(TypeShape {
-            coord: coord_hint.unwrap_or_else(|| bytes_type_coord(*value)),
-            kind: TypeKind::Bytes { max: *value },
+            coord: coord_hint.unwrap_or_else(|| bytes_type_coord(min, *max)),
+            kind: TypeKind::Bytes { min, max: *max },
+        })
+    }
+
+    fn imported_source_type_shape(&mut self, path: &[String], span: Span) -> Option<TypeShape> {
+        let source_alias = &path[0];
+        let source_suffix = path[1..].join(".");
+        let Some(import) = self.resolved.imports.iter().find(|import| {
+            import.kind == CoreImportKind::Lawpack
+                && import.alias.as_deref() == Some(source_alias.as_str())
+        }) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "type `{}` has no exact owning lawpack import",
+                    path.join(".")
+                ),
+                span,
+            ));
+            return None;
+        };
+        let coordinate = format!("{}.{}", import.resource.coordinate, source_suffix);
+        let Some(fact) = self.resolved.type_shapes.get(&coordinate).cloned() else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!("type `{}` has no compiler context fact", path.join(".")),
+                span,
+            ));
+            return None;
+        };
+        if fact.coordinate != coordinate || fact.lawpack != import.resource {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "type `{}` is not owned by its exact imported lawpack",
+                    path.join(".")
+                ),
+                span,
+            ));
+            return None;
+        }
+        self.shape_from_imported_type(&fact).or_else(|| {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "type `{}` has an unsupported imported definition",
+                    path.join(".")
+                ),
+                span,
+            ));
+            None
         })
     }
 
@@ -3971,7 +4053,16 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
         ) => actual_max <= expected_max && actual_canonical == expected_canonical,
         (TypeKind::Bool, TypeKind::Bool) => true,
         (TypeKind::Int { width: expected }, TypeKind::Int { width: actual }) => expected == actual,
-        (TypeKind::Bytes { max: expected }, TypeKind::Bytes { max: actual }) => actual <= expected,
+        (
+            TypeKind::Bytes {
+                min: expected_min,
+                max: expected_max,
+            },
+            TypeKind::Bytes {
+                min: actual_min,
+                max: actual_max,
+            },
+        ) => actual_min.unwrap_or(0) >= expected_min.unwrap_or(0) && actual_max <= expected_max,
         (
             TypeKind::List {
                 item: expected_item,
@@ -4072,7 +4163,20 @@ fn imported_type_definition_shape(
     {
         return Some(TypeShape {
             coord: definition.to_owned(),
-            kind: TypeKind::Bytes { max },
+            kind: TypeKind::Bytes { min: None, max },
+        });
+    }
+    if let Some(exact) = definition
+        .strip_prefix("Bytes<exact=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|value| value.parse().ok())
+    {
+        return Some(TypeShape {
+            coord: definition.to_owned(),
+            kind: TypeKind::Bytes {
+                min: Some(exact),
+                max: exact,
+            },
         });
     }
     let inner = definition
@@ -4112,8 +4216,12 @@ fn imported_type_definition_shape(
     Some(shape)
 }
 
-fn bytes_type_coord(max: u64) -> String {
-    format!("Bytes<max={max}>")
+fn bytes_type_coord(min: Option<u64>, max: u64) -> String {
+    match min {
+        Some(min) if min == max => format!("Bytes<exact={max}>"),
+        Some(min) => format!("Bytes<min={min},max={max}>"),
+        None => format!("Bytes<max={max}>"),
+    }
 }
 
 fn list_type_coord(item: &str, max: u64) -> String {

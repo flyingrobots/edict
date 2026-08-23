@@ -136,8 +136,8 @@ pub enum TypeRef {
     },
     /// `String` / `String<max=N[, canonical=x]>`.
     StringTy(Option<ScalarRefine>),
-    /// `Bytes` / `Bytes<max=N>` (max-only; no canonicalization).
-    BytesTy(Option<BoundRef>),
+    /// `Bytes` / `Bytes<max=N>` / `Bytes<exact=N>` (no canonicalization).
+    BytesTy(Option<BytesRefine>),
     Option(Box<TypeRef>),
     CapabilityRef(Box<TypeRef>),
     List {
@@ -156,6 +156,17 @@ pub enum TypeRef {
 pub struct ScalarRefine {
     pub max: BoundRef,
     pub canonical: Option<String>,
+}
+
+/// A refined `Bytes` interval.
+///
+/// `Bytes<max=N>` has no minimum. `Bytes<exact=N>` is represented as the
+/// closed interval `min=N,max=N` so every later stage can preserve the exact
+/// structural contract without application vocabulary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BytesRefine {
+    pub min: Option<BoundRef>,
+    pub max: BoundRef,
 }
 
 /// `intent name(params) returns Ty <clauses> { body }`

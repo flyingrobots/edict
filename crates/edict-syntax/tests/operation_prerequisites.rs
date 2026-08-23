@@ -116,7 +116,10 @@ fn operation_prerequisite_fixture_preserves_fixed_width_basis_and_lawpack_closur
     );
     assert_eq!(
         core.types.get("SpliceInput.replacement"),
-        Some(&CoreType::Bytes { max: 4096 })
+        Some(&CoreType::Bytes {
+            min: None,
+            max: 4096,
+        })
     );
     let lawpack = core
         .imports

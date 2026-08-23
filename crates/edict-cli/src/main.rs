@@ -1463,7 +1463,7 @@ fn core_type_review(ty: &CoreType) -> Value {
         CoreType::String { max, canonical } => {
             json!({ "kind": "string", "max": max, "canonical": canonical })
         }
-        CoreType::Bytes { max } => json!({ "kind": "bytes", "max": max }),
+        CoreType::Bytes { min, max } => json!({ "kind": "bytes", "min": min, "max": max }),
         CoreType::Record { fields } => json!({ "kind": "record", "fields": fields }),
         CoreType::Variant { cases } => json!({ "kind": "variant", "cases": cases }),
         CoreType::Option { item } => json!({ "kind": "option", "item": item }),

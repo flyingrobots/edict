@@ -850,7 +850,7 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
                 module
                     .types
                     .iter()
-                    .map(|(name, ty)| Ok((name.as_str(), core_type_value(ty)))),
+                    .map(|(name, ty)| core_type_value(ty).map(|value| (name.as_str(), value))),
             )?,
         ),
         (
@@ -962,8 +962,8 @@ fn hex_value(byte: u8) -> Result<u8, CanonicalError> {
     }
 }
 
-fn core_type_value(ty: &CoreType) -> CanonicalValue {
-    match ty {
+fn core_type_value(ty: &CoreType) -> Result<CanonicalValue, CanonicalError> {
+    let value = match ty {
         CoreType::Bool => map([("kind", text("Bool"))]),
         CoreType::Int { width } => map([("kind", text(width))]),
         CoreType::String { max, canonical } => map([
@@ -971,7 +971,20 @@ fn core_type_value(ty: &CoreType) -> CanonicalValue {
             ("max", uint(*max)),
             ("canonical", text(canonical)),
         ]),
-        CoreType::Bytes { max } => map([("kind", text("Bytes")), ("max", uint(*max))]),
+        CoreType::Bytes { min, max } => {
+            if min.is_some_and(|min| min > *max) {
+                return Err(CanonicalError::new(
+                    CanonicalErrorKind::UnsupportedValue,
+                    "Core byte type minimum exceeds its maximum",
+                ));
+            }
+            let mut fields = vec![("kind", text("Bytes"))];
+            if let Some(min) = min {
+                fields.push(("min", uint(*min)));
+            }
+            fields.push(("max", uint(*max)));
+            map(fields)
+        }
         CoreType::Record { fields } => map([
             ("kind", text("Record")),
             (
@@ -1012,7 +1025,8 @@ fn core_type_value(ty: &CoreType) -> CanonicalValue {
             ("kind", text("ExternalActionRequest")),
             ("settlement", text(settlement)),
         ]),
-    }
+    };
+    Ok(value)
 }
 
 fn core_intent_value(intent: &CoreIntent) -> Result<CanonicalValue, CanonicalError> {

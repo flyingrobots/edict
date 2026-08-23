@@ -481,6 +481,60 @@ fn digest_bound_pure_helper_call_lowers_to_core() {
 }
 
 #[test]
+fn exact_bytes_and_imported_nominal_aliases_preserve_core_identity() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as text;\n\
+        type Input = { bufferId: text.BufferId, basisHeadId: text.HeadId, raw: Bytes<exact=32>, };\n\
+        type Output = { bufferId: text.BufferId, basisHeadId: text.HeadId, raw: Bytes<exact=32>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis input.basisHeadId\n\
+          budget <= p.tiny {\n\
+          return { bufferId: input.bufferId, basisHeadId: input.basisHeadId, raw: input.raw };\n\
+        }";
+    let lawpack = example_bounds_lawpack();
+    let context = pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.BufferId".to_owned(),
+            definition: "Bytes<exact=32>".to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack,
+            coordinate: "example.bounds@1.HeadId".to_owned(),
+            definition: "Bytes<exact=32>".to_owned(),
+        });
+    let module = parse_module(source).expect("exact-byte source parses");
+    let exact_core = compile_to_core(&module, &context).expect("exact-byte source compiles");
+
+    for field in [
+        "Input.bufferId",
+        "Input.basisHeadId",
+        "Input.raw",
+        "Output.bufferId",
+        "Output.basisHeadId",
+        "Output.raw",
+    ] {
+        assert_eq!(
+            exact_core.types.get(field),
+            Some(&CoreType::Bytes {
+                min: Some(32),
+                max: 32,
+            }),
+            "{field} must retain the exact byte interval",
+        );
+    }
+
+    let max_only = parse_module(&source.replace("Bytes<exact=32>", "Bytes<max=32>"))
+        .expect("max-only control parses");
+    let max_only_core = compile_to_core(&max_only, &context).expect("max-only control compiles");
+    assert_ne!(
+        digest_core_module(&exact_core).expect("exact Core digests"),
+        digest_core_module(&max_only_core).expect("max-only Core digests"),
+    );
+}
+
+#[test]
 fn malformed_imported_string_policy_rejects_as_unresolved_type() {
     let lawpack = ResourceRef {
         coordinate: "example.bounds@1".to_owned(),

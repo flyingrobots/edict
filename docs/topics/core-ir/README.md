@@ -41,9 +41,10 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 - Core types cover bounded scalars, records, variants, options, lists, maps,
   capability references, and typed external-action requests. Runtime-sized
   collections remain explicitly bounded at the Core schema boundary. Integer
-  type and value identity retains exact width and signedness, and byte payloads
-  carry an explicit maximum. [COREIR-REQ-002] [COREIR-REQ-019]
-  [COREIR-REQ-020]
+  type and value identity retains exact width and signedness. Byte payloads
+  carry an explicit maximum and may carry a minimum; equal bounds represent an
+  exact byte length, while max-only values omit the minimum from canonical Core.
+  [COREIR-REQ-002] [COREIR-REQ-019] [COREIR-REQ-020] [COREIR-REQ-022]
 - Core expressions and predicates are separate schema families. Expressions
   compute values; predicates express boolean obligations and input constraints.
   [COREIR-REQ-003]

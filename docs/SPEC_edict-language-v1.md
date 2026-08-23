@@ -1615,21 +1615,28 @@ lawpack-defined raw text scalar, not ambiently normalized `String`.
 #### Refined Scalar Types
 
 `String` and `Bytes` are bounded with the same `<max=...>` mechanism as `List`
-and `Map`, and `String` may also pin a canonicalization policy:
+and `Map`; `Bytes` may instead require one exact byte length, and `String` may
+also pin a canonicalization policy:
 
 ```edict
 String<max=128>
 String<max=128, canonical=nfc>
 Bytes<max=65536>
+Bytes<exact=32>
 
 type UserName = String<max=128, canonical=nfc>;
 type RawText  = Bytes<max=1048576>;
 ```
 
-Only `String` may pin a `canonical=` policy; `Bytes` carries `max` only.
+Only `String` may pin a `canonical=` policy; `Bytes` carries either `max` or
+`exact`.
 `Bytes<max=N, canonical=...>` is a syntax error (the grammar gives `Bytes` a
-max-only refinement), because bytes are measured and hashed raw and must not be
+length-only refinement), because bytes are measured and hashed raw and must not be
 normalized (`EDICT-LANG-BYTES-NOCANON-001`).
+
+`Bytes<exact=N>` is the closed structural interval `min=N,max=N` in Core. It is
+application-neutral: lawpacks may assign nominal coordinates such as `HeadId`
+or `BlobId`, while Edict owns only the exact byte-length invariant.
 
 Boundedness is expressible **everywhere** a type appears: intent parameters,
 return types, type aliases, record fields, function parameters and returns, and
@@ -1647,7 +1654,7 @@ Length and bound units are pinned (`EDICT-LANG-LEN-001`):
 - `len(value: String) -> U64` is the count of **Unicode scalar values**.
 - `len(value: Bytes) -> U64` is the count of **bytes**.
 - A `String<max=N>` bound is `N` Unicode scalar values; a `Bytes<max=N>` bound
-  is `N` bytes.
+  is at most `N` bytes; and `Bytes<exact=N>` is exactly `N` bytes.
 - `canonical=nfc` (or another versioned profile) is applied **before** length
   is measured and before comparison or hashing.
 - String/bytes concatenation result bounds are derived as the sum of operand

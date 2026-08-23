@@ -1639,13 +1639,23 @@ fn string_type_max(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<
 fn bytes_type_max(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<u64> {
     let definition = resolved_type_definition(ty, type_definitions);
     let inner = definition.strip_prefix("Bytes<")?.strip_suffix('>')?;
-    parse_named_max(inner)
+    parse_named_max(inner).or_else(|| parse_named_exact(inner))
 }
 
 fn parse_named_max(value: &str) -> Option<u64> {
     value
         .split_once('=')
         .filter(|(name, _)| name.trim() == "max")?
+        .1
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn parse_named_exact(value: &str) -> Option<u64> {
+    value
+        .split_once('=')
+        .filter(|(name, _)| name.trim() == "exact")?
         .1
         .trim()
         .parse()

@@ -7,8 +7,8 @@ use edict_syntax::{
     digest_core_module, digest_result_projection, emit_result_projection, encode_canonical_cbor,
     encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     verify_result_projection, CanonicalValue, CompilerContext, CoreBlock, CoreBound, CoreBudget,
-    CoreExpr, CoreModule, CoreNode, CorePredicate, LocalRef, ResourceRef, ResultProjection,
-    ResultProjectionArtifact, ResultProjectionExpr, ResultProjectionFailureKind,
+    CoreExpr, CoreModule, CoreNode, CorePredicate, CoreType, LocalRef, ResourceRef,
+    ResultProjection, ResultProjectionArtifact, ResultProjectionExpr, ResultProjectionFailureKind,
     ResultProjectionSource, TargetIrArtifact, TargetIrLoweringFacts, TargetLoweringReport,
     TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
     MAX_RESULT_PROJECTION_PATH_SEGMENTS, MAX_RESULT_PROJECTION_TEXT_BYTES,
@@ -574,6 +574,57 @@ fn incomplete_output_and_zero_output_bound_fail_closed() {
     assert_eq!(
         unbounded.kind(),
         ResultProjectionFailureKind::InvalidOutputBound
+    );
+}
+
+#[test]
+fn exact_byte_projection_refuses_a_max_only_source() {
+    let source = PURE_SOURCE
+        .replace("name: String<max=16>", "name: Bytes<exact=16>")
+        .replace("message: String<max=18>", "message: Bytes<exact=16>")
+        .replace("  let prefix = \"hi\";\n", "")
+        .replace("prefix + input.name", "input.name");
+    let module = parse_module(&source).expect("exact-byte projection source parses");
+    let mut core = edict_syntax::compile_to_core(
+        &module,
+        &CompilerContext::new()
+            .with_operation_profile("law.read", "continuum.profile.read-only/v1")
+            .with_budget(
+                "law.tiny",
+                CoreBudget {
+                    max_steps: 8,
+                    max_allocated_bytes: 256,
+                    max_output_bytes: 64,
+                },
+            ),
+    )
+    .expect("exact-byte projection Core compiles");
+    let facts = TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: "echo.dpo@1".to_owned(),
+            digest: Some(format!("sha256:{}", "1".repeat(64))),
+        },
+        target_ir_domain: "echo.span-ir/v1".to_owned(),
+        operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
+        obstruction_coordinates: Vec::new(),
+        effect_lowerings: Vec::new(),
+    };
+    let mut target = lower_to_target_ir(&core, &facts)
+        .artifact
+        .expect("exact-byte projection Target IR lowers");
+    emit_result_projection(&core, &target, "greet")
+        .expect("exact byte source fits exact byte output");
+
+    core.types.insert(
+        "Input.name".to_owned(),
+        CoreType::Bytes { min: None, max: 16 },
+    );
+    repin_target_core(&core, &mut target);
+    let failure = emit_result_projection(&core, &target, "greet")
+        .expect_err("max-only source cannot prove exact-byte output");
+    assert_eq!(
+        failure.kind(),
+        ResultProjectionFailureKind::OutputShapeMismatch
     );
 }
 

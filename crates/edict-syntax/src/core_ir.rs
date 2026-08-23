@@ -126,6 +126,7 @@ pub enum CoreType {
         canonical: String,
     },
     Bytes {
+        min: Option<u64>,
         max: u64,
     },
     Record {

@@ -319,7 +319,7 @@ fn validate_type_ref(ty: &TypeRef, span: Span, errors: &mut Vec<SemanticError>) 
         )),
         TypeRef::BytesTy(None) => errors.push(error(
             SemanticErrorKind::UnboundedScalar,
-            "runtime `Bytes` type must carry a `max=` bound",
+            "runtime `Bytes` type must carry a `max=` or `exact=` bound",
             span,
         )),
         TypeRef::StringTy(Some(_)) | TypeRef::BytesTy(Some(_)) => {}

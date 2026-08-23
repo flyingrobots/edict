@@ -58,8 +58,11 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   annotation, and record-return contexts. Unconstrained bare literals, overflow,
   negative unsigned values, and cross-width assignments reject in type checking;
   signed minima are accepted through unary-negative literal folding. Statically
-  bounded `Bytes<max=N>` lowers with its exact bound.
-  [CSPINE-REQ-019] [CSPINE-REQ-021]
+  bounded `Bytes<max=N>` lowers with its maximum, while `Bytes<exact=N>` lowers
+  as the closed `min=N,max=N` byte interval. Digest-bound imported lawpack type
+  aliases preserve their nominal coordinate while supplying that structural
+  shape.
+  [CSPINE-REQ-019] [CSPINE-REQ-021] [CSPINE-REQ-033]
 - An explicit basis expression is checked in the pure pre-body environment
   containing the intent parameter, before body locals exist. The typed
   expression is preserved in Core; this is authoring evidence, not runtime
