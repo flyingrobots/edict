@@ -927,7 +927,11 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
-        self.shape_from_imported_type(&fact).or_else(|| {
+        if let Some(shape) = self.shape_from_imported_type(&fact) {
+            self.core_types
+                .insert(shape.coord.clone(), shape.core_type());
+            Some(shape)
+        } else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnresolvedType,
@@ -938,7 +942,7 @@ impl<'a> TypeChecker<'a> {
                 span,
             ));
             None
-        })
+        }
     }
 
     fn check_intent(&mut self, intent: &ResolvedIntent) -> Option<TypedIntent> {

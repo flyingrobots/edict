@@ -524,6 +524,16 @@ fn exact_bytes_and_imported_nominal_aliases_preserve_core_identity() {
             "{field} must retain the exact byte interval",
         );
     }
+    for nominal in ["example.bounds@1.BufferId", "example.bounds@1.HeadId"] {
+        assert_eq!(
+            exact_core.types.get(nominal),
+            Some(&CoreType::Bytes {
+                min: Some(32),
+                max: 32,
+            }),
+            "{nominal} must remain structurally resolvable by downstream proof stages",
+        );
+    }
 
     let max_only = parse_module(&source.replace("Bytes<exact=32>", "Bytes<max=32>"))
         .expect("max-only control parses");
