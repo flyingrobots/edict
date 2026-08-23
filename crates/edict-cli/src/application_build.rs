@@ -3212,6 +3212,10 @@ mod tests {
             decode_lawpack_adapter(&loaded.bundle, "echo.dpo@1", &loaded.adapter_bytes),
             "decode request-only adapter",
         );
+        assert!(
+            adapter.effects().is_empty(),
+            "request-only fixture must remain effect-free"
+        );
 
         let configuration = test_ok(
             single_configuration(&adapter),
