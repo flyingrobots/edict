@@ -11,7 +11,7 @@ use crate::core_ir::CORE_APPLICATION_INPUT_LOCAL_ID;
 use crate::{
     decode_canonical_cbor, digest_canonical_artifact, encode_canonical_cbor, CanonicalValue,
     CoreDigest, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreType, LocalRef, TargetIrArtifact,
-    TargetIrIntent, TargetIrSemanticClosure, TargetIrStep,
+    TargetIrIntent, TargetIrPureBinding, TargetIrSemanticClosure, TargetIrStep,
 };
 
 /// Semantic schema identifier for result-projection values.
@@ -73,6 +73,7 @@ pub enum ResultProjectionExpr {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResultProjectionSource {
     ApplicationInput,
+    PureBinding { binding_id: String },
     CapabilityResult { step_id: String },
 }
 
@@ -384,6 +385,8 @@ struct ProjectionSemantics<'a> {
     core_intent: &'a CoreIntent,
     target_intent: &'a TargetIrIntent,
     input: LocalRef,
+    pure_by_local: BTreeMap<String, (String, LocalRef)>,
+    pure_by_id: BTreeMap<String, LocalRef>,
     capability_by_local: BTreeMap<String, (String, LocalRef)>,
     capability_by_step: BTreeMap<String, LocalRef>,
 }
@@ -406,14 +409,16 @@ impl<'a> ProjectionSemantics<'a> {
             expected_semantic_closure,
         )?;
         let input = resolve_application_input(core_intent, intent_name)?;
-        let (capability_by_local, capability_by_step) =
-            resolve_capability_sources(core_intent, target_intent, intent_name)?;
+        let (pure_by_local, pure_by_id, capability_by_local, capability_by_step) =
+            resolve_projection_sources(core_intent, target_intent, intent_name)?;
 
         Ok(Self {
             core,
             core_intent,
             target_intent,
             input,
+            pure_by_local,
+            pure_by_id,
             capability_by_local,
             capability_by_step,
         })
@@ -500,14 +505,31 @@ fn resolve_application_input(
     Ok(input)
 }
 
-type CapabilityByLocal = BTreeMap<String, (String, LocalRef)>;
-type CapabilityByStep = BTreeMap<String, LocalRef>;
+type ProjectionByLocal = BTreeMap<String, (String, LocalRef)>;
+type ProjectionById = BTreeMap<String, LocalRef>;
 
-fn resolve_capability_sources(
+fn resolve_projection_sources(
     core_intent: &CoreIntent,
     target_intent: &TargetIrIntent,
     intent_name: &str,
-) -> Result<(CapabilityByLocal, CapabilityByStep), ResultProjectionFailure> {
+) -> Result<
+    (
+        ProjectionByLocal,
+        ProjectionById,
+        ProjectionByLocal,
+        ProjectionById,
+    ),
+    ResultProjectionFailure,
+> {
+    let core_pure_bindings = core_intent
+        .body
+        .nodes
+        .iter()
+        .filter_map(|node| match node {
+            CoreNode::Let { binding, value } => Some((binding, value)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let mut core_effects = Vec::new();
     for node in &core_intent.body.nodes {
         match node {
@@ -528,6 +550,12 @@ fn resolve_capability_sources(
             }
         }
     }
+    if core_pure_bindings.len() != target_intent.pure_bindings.len() {
+        return Err(failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            format!("{intent_name}.pureBindings"),
+        ));
+    }
     if core_effects.len() != target_intent.steps.len() {
         return Err(failure(
             ResultProjectionFailureKind::CoreTargetMismatch,
@@ -535,6 +563,36 @@ fn resolve_capability_sources(
         ));
     }
 
+    let mut pure_by_local = BTreeMap::new();
+    let mut pure_by_id = BTreeMap::new();
+    for (binding_index, ((core_binding, core_value), binding)) in core_pure_bindings
+        .iter()
+        .zip(&target_intent.pure_bindings)
+        .enumerate()
+    {
+        validate_pure_binding_matches_core(
+            binding,
+            core_binding,
+            core_value,
+            intent_name,
+            binding_index,
+        )?;
+        if pure_by_local
+            .insert(
+                binding.binding.id.clone(),
+                (binding.id.clone(), binding.binding.clone()),
+            )
+            .is_some()
+            || pure_by_id
+                .insert(binding.id.clone(), binding.binding.clone())
+                .is_some()
+        {
+            return Err(failure(
+                ResultProjectionFailureKind::CoreTargetMismatch,
+                format!("{intent_name}.pureBindings"),
+            ));
+        }
+    }
     let mut capability_by_local = BTreeMap::new();
     let mut capability_by_step = BTreeMap::new();
     for step in &target_intent.steps {
@@ -555,7 +613,31 @@ fn resolve_capability_sources(
             ));
         }
     }
-    Ok((capability_by_local, capability_by_step))
+    Ok((
+        pure_by_local,
+        pure_by_id,
+        capability_by_local,
+        capability_by_step,
+    ))
+}
+
+fn validate_pure_binding_matches_core(
+    binding: &TargetIrPureBinding,
+    core_binding: &LocalRef,
+    core_value: &CoreExpr,
+    intent_name: &str,
+    binding_index: usize,
+) -> Result<(), ResultProjectionFailure> {
+    let expected_id = format!("{intent_name}.binding.{binding_index}");
+    if binding.id == expected_id && core_binding == &binding.binding && core_value == &binding.value
+    {
+        Ok(())
+    } else {
+        Err(failure(
+            ResultProjectionFailureKind::CoreTargetMismatch,
+            format!("{intent_name}.{}", binding.id),
+        ))
+    }
 }
 
 fn validate_step_matches_core(
@@ -594,6 +676,16 @@ fn project_core_expression(
             let (reference, path) = source_path(expression)?;
             let source = if reference == &semantics.input {
                 ResultProjectionSource::ApplicationInput
+            } else if let Some((binding_id, binding)) = semantics.pure_by_local.get(&reference.id) {
+                if binding != reference {
+                    return Err(failure(
+                        ResultProjectionFailureKind::UndeclaredProjectionSource,
+                        &reference.id,
+                    ));
+                }
+                ResultProjectionSource::PureBinding {
+                    binding_id: binding_id.clone(),
+                }
             } else if let Some((step_id, binding)) =
                 semantics.capability_by_local.get(&reference.id)
             {
@@ -658,6 +750,16 @@ fn reconstruct_core_expression(
         ResultProjectionExpr::Source { source, path } => {
             let reference = match source {
                 ResultProjectionSource::ApplicationInput => semantics.input.clone(),
+                ResultProjectionSource::PureBinding { binding_id } => semantics
+                    .pure_by_id
+                    .get(binding_id)
+                    .cloned()
+                    .ok_or_else(|| {
+                        failure(
+                            ResultProjectionFailureKind::UndeclaredProjectionSource,
+                            binding_id,
+                        )
+                    })?,
                 ResultProjectionSource::CapabilityResult { step_id } => semantics
                     .capability_by_step
                     .get(step_id)
@@ -716,7 +818,7 @@ fn validate_output_shape(
         }
         ResultProjectionExpr::Source { source, path } => {
             let source_type = source_type(semantics, source, path)?;
-            if types_are_compatible(semantics.core, source_type, expected_type, 0) {
+            if source_type_fits_output(semantics.core, source_type, expected_type, 0) {
                 Ok(())
             } else {
                 Err(failure(
@@ -735,6 +837,16 @@ fn source_type<'a>(
 ) -> Result<&'a str, ResultProjectionFailure> {
     let mut coordinate = match source {
         ResultProjectionSource::ApplicationInput => semantics.input.ty.as_str(),
+        ResultProjectionSource::PureBinding { binding_id } => semantics
+            .pure_by_id
+            .get(binding_id)
+            .map(|binding| binding.ty.as_str())
+            .ok_or_else(|| {
+                failure(
+                    ResultProjectionFailureKind::UndeclaredProjectionSource,
+                    binding_id,
+                )
+            })?,
         ResultProjectionSource::CapabilityResult { step_id } => semantics
             .capability_by_step
             .get(step_id)
@@ -769,14 +881,15 @@ fn resolve_type<'a>(core: &'a CoreModule, coordinate: &str) -> Option<&'a CoreTy
     })
 }
 
-fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize) -> bool {
+fn source_type_fits_output(core: &CoreModule, source: &str, output: &str, depth: usize) -> bool {
     if depth > MAX_RESULT_PROJECTION_TYPE_DEPTH {
         return false;
     }
-    let (Some(left), Some(right)) = (resolve_type(core, left), resolve_type(core, right)) else {
+    let (Some(left), Some(right)) = (resolved_type(core, source), resolved_type(core, output))
+    else {
         return false;
     };
-    match (left, right) {
+    match (&left, &right) {
         (CoreType::Bool, CoreType::Bool) => true,
         (CoreType::Int { width: left }, CoreType::Int { width: right }) => left == right,
         (
@@ -788,8 +901,8 @@ fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize
                 max: right_max,
                 canonical: right_canonical,
             },
-        ) => left_max == right_max && left_canonical == right_canonical,
-        (CoreType::Bytes { max: left }, CoreType::Bytes { max: right }) => left == right,
+        ) => left_max <= right_max && left_canonical == right_canonical,
+        (CoreType::Bytes { max: left }, CoreType::Bytes { max: right }) => left <= right,
         (
             CoreType::Record {
                 fields: left_fields,
@@ -800,7 +913,7 @@ fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize
         ) => {
             left_fields.keys().eq(right_fields.keys())
                 && left_fields.iter().all(|(field, left_type)| {
-                    types_are_compatible(
+                    source_type_fits_output(
                         core,
                         left_type,
                         right_fields.get(field).expect("equal field keys"),
@@ -817,7 +930,7 @@ fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize
                     ) {
                         (None, None) => true,
                         (Some(left), Some(right)) => {
-                            types_are_compatible(core, left, right, depth + 1)
+                            source_type_fits_output(core, left, right, depth + 1)
                         }
                         (None, Some(_)) | (Some(_), None) => false,
                     }
@@ -825,12 +938,12 @@ fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize
         }
         (CoreType::Option { item: left }, CoreType::Option { item: right })
         | (CoreType::CapabilityRef { item: left }, CoreType::CapabilityRef { item: right }) => {
-            types_are_compatible(core, left, right, depth + 1)
+            source_type_fits_output(core, left, right, depth + 1)
         }
         (
             CoreType::ExternalActionRequest { settlement: left },
             CoreType::ExternalActionRequest { settlement: right },
-        ) => types_are_compatible(core, left, right, depth + 1),
+        ) => source_type_fits_output(core, left, right, depth + 1),
         (
             CoreType::List {
                 item: left,
@@ -840,7 +953,7 @@ fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize
                 item: right,
                 max: right_max,
             },
-        ) => left_max == right_max && types_are_compatible(core, left, right, depth + 1),
+        ) => left_max <= right_max && source_type_fits_output(core, left, right, depth + 1),
         (
             CoreType::Map {
                 key: left_key,
@@ -853,12 +966,44 @@ fn types_are_compatible(core: &CoreModule, left: &str, right: &str, depth: usize
                 max: right_max,
             },
         ) => {
-            left_max == right_max
-                && types_are_compatible(core, left_key, right_key, depth + 1)
-                && types_are_compatible(core, left_value, right_value, depth + 1)
+            left_max <= right_max
+                && source_type_fits_output(core, left_key, right_key, depth + 1)
+                && source_type_fits_output(core, left_value, right_value, depth + 1)
         }
         _ => false,
     }
+}
+
+fn resolved_type(core: &CoreModule, coordinate: &str) -> Option<CoreType> {
+    resolve_type(core, coordinate)
+        .cloned()
+        .or_else(|| builtin_type(coordinate))
+}
+
+fn builtin_type(coordinate: &str) -> Option<CoreType> {
+    if coordinate == "Bool" {
+        return Some(CoreType::Bool);
+    }
+    if matches!(coordinate, "I32" | "I64" | "U32" | "U64") {
+        return Some(CoreType::Int {
+            width: coordinate.to_owned(),
+        });
+    }
+    if let Some(inner) = coordinate
+        .strip_prefix("String<max=")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let (max, canonical) = inner.split_once(",canonical=")?;
+        return Some(CoreType::String {
+            max: max.parse().ok()?,
+            canonical: canonical.to_owned(),
+        });
+    }
+    coordinate
+        .strip_prefix("Bytes<max=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|max| max.parse().ok())
+        .map(|max| CoreType::Bytes { max })
 }
 
 fn validate_projection_bounds(
@@ -903,8 +1048,14 @@ fn validate_expression_bounds(
             Ok(nodes)
         }
         ResultProjectionExpr::Source { source, path } => {
-            if let ResultProjectionSource::CapabilityResult { step_id } = source {
-                validate_text(step_id, "capability step")?;
+            match source {
+                ResultProjectionSource::ApplicationInput => {}
+                ResultProjectionSource::PureBinding { binding_id } => {
+                    validate_text(binding_id, "pure binding")?;
+                }
+                ResultProjectionSource::CapabilityResult { step_id } => {
+                    validate_text(step_id, "capability step")?;
+                }
             }
             if path.len() > MAX_RESULT_PROJECTION_PATH_SEGMENTS {
                 return Err(limit_failure("source path"));
@@ -974,6 +1125,10 @@ fn expression_value(expression: &ResultProjectionExpr) -> CanonicalValue {
 fn source_value(source: &ResultProjectionSource) -> CanonicalValue {
     match source {
         ResultProjectionSource::ApplicationInput => map([("kind", text("applicationInput"))]),
+        ResultProjectionSource::PureBinding { binding_id } => map([
+            ("kind", text("pureBinding")),
+            ("bindingId", text(binding_id)),
+        ]),
         ResultProjectionSource::CapabilityResult { step_id } => map([
             ("kind", text("capabilityResult")),
             ("stepId", text(step_id)),
@@ -1089,6 +1244,13 @@ fn source_from_value(
             )?;
             Ok(ResultProjectionSource::CapabilityResult {
                 step_id: take_text(&mut fields, "stepId", "capability result source")?,
+            })
+        }
+        "pureBinding" => {
+            let mut fields = exact_map(value, &["kind", "bindingId"], "pure binding source")?;
+            require_text(&mut fields, "kind", "pureBinding", "pure binding source")?;
+            Ok(ResultProjectionSource::PureBinding {
+                binding_id: take_text(&mut fields, "bindingId", "pure binding source")?,
             })
         }
         _ => Err(invalid_artifact("projection source kind")),

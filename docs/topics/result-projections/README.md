@@ -21,6 +21,8 @@ matching Target IR artifact, and an intent name. The emitter requires:
   budget to agree;
 - the application input to be the declared `arg.0` local with the intent input
   type; and
+- every pure-binding source to identify the same source-ordered binding,
+  compiler local, and exact Core expression in Core and Target IR; and
 - every capability-result source to identify exactly one Target IR step whose
   binding, effect coordinate, and input expression match the corresponding
   Core effect node.
@@ -44,6 +46,8 @@ The closed `edict.result-projection/v1` expression language contains only:
 
 - records with canonically ordered field names;
 - the declared application input;
+- compiler-owned pure bindings addressed by deterministic Target IR binding
+  identity;
 - capability results addressed by Target IR step identity; and
 - bounded field paths rooted at one of those declared sources.
 
@@ -97,7 +101,8 @@ digest. It:
 4. recomputes the domain-framed identity;
 5. independently reconstructs and compares the complete Core-derived semantic
    closure;
-6. independently rebuilds the Core-to-Target step/source correspondence;
+6. independently rebuilds the source-ordered Core-to-Target pure-binding and
+   capability-step correspondence;
 7. reconstructs a Core result expression from the projection; and
 8. requires that reconstruction to equal both the authored Core result and the
    matching Target IR result.

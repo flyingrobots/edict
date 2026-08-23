@@ -10,6 +10,14 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Lowered bounded source-ordered pure Core bindings into generic Target IR with
+  exact compiler-local identities, expressions, helper and conditional
+  dependencies, semantic closure, canonical identity, and independently
+  verifiable result-projection sources. Malformed binding graphs, substituted or
+  reordered target bindings, duplicate identities, and closure stripping now
+  fail before provider invocation. Effect-free adapters now supply their
+  operation-profile target configuration to application provider inputs instead
+  of requiring a synthetic runtime effect.
 - Replaced sentinel external-request schema and reconciliation identities
   with generator-owned canonical artifacts. External-action application builds
   now require an exact `externalActionResources` closure, independently validate

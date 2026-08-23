@@ -226,10 +226,10 @@ pub use result_projection::{
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{
     lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest,
-    TargetIrIntent, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrRequirement,
-    TargetIrSemanticClosure, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
-    TargetLoweringReport, TargetLoweringStatus, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
-    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    TargetIrIntent, TargetIrLoweringFacts, TargetIrPureBinding, TargetIrRequireFailure,
+    TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep, TargetLoweringFailure,
+    TargetLoweringFailureKind, TargetLoweringReport, TargetLoweringStatus, ECHO_DPO_TARGET_PROFILE,
+    ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 pub use target_profile::{
     validate_target_profile_manifest, TargetProfileConformanceFailure,

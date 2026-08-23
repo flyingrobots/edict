@@ -857,6 +857,10 @@ result-projection-source = {
 result-projection-source-kind =
   { kind: "applicationInput" } /
   {
+    kind: "pureBinding",
+    bindingId: bounded-projection-text,
+  } /
+  {
     kind: "capabilityResult",
     stepId: bounded-projection-text,
   }
@@ -913,6 +917,7 @@ target-ir-semantic-closure = {
 target-ir-intent = {
   target-ir-intent-common,
   ? basis: core-expr,
+  ? pureBindings: [1* target-ir-pure-binding],
   ? externalActionRequests: [* target-ir-external-action-request],
 }
 
@@ -933,6 +938,12 @@ target-ir-requirement = {
   id: tstr,
   predicate: core-predicate,
   onFailure: require-failure-arm,
+}
+
+target-ir-pure-binding = {
+  id: tstr .regexp "(?s).+",
+  binding: local-ref,
+  value: core-expr,
 }
 
 target-ir-step = {

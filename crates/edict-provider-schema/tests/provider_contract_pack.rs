@@ -17,7 +17,7 @@ use edict_syntax::{
     CoreExternalActionBudget, CoreObstructionReason, CorePredicate, CoreValue, LocalRef,
     ProviderArtifactSchemaValidationErrorKind, ResourceRef, ResultProjection, ResultProjectionExpr,
     ResultProjectionSource, TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent,
-    TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure,
+    TargetIrPureBinding, TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure,
     TargetProfileContractResource, WriteClass, AUTHORITY_FACTS_API_VERSION,
     CORE_MODULE_DIGEST_DOMAIN, PROVIDER_LAWPACK_ARTIFACT_DOMAIN, RESULT_PROJECTION_DIGEST_DOMAIN,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN, TARGET_PROFILE_API_VERSION,
@@ -309,12 +309,55 @@ fn target_ir_root_matches_reference_encoder() {
 }
 
 #[test]
+fn target_ir_root_accepts_only_closed_nonempty_pure_bindings() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    let encoded_pure = encoded_target_ir_with_pure_binding();
+    pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &encoded_pure)
+        .expect("encoder output with a pure binding satisfies the closed root");
+
+    let mut pure_without_closure = encoded_pure.clone();
+    remove_map_field(&mut pure_without_closure, "semanticClosure");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &pure_without_closure),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "pure bindings cannot validate through the legacy closure-free root"
+    );
+
+    let mut empty_pure_binding_id = encoded_pure;
+    let CanonicalValue::Map(intents) = map_value_mut(&mut empty_pure_binding_id, "intents") else {
+        panic!("Target IR intents must be a map");
+    };
+    let intent = &mut intents.first_mut().expect("pure Target IR intent").1;
+    let CanonicalValue::Array(bindings) = map_value_mut(intent, "pureBindings") else {
+        panic!("Target IR pure bindings must be an array");
+    };
+    *map_value_mut(bindings.first_mut().expect("one pure binding"), "id") = text("");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &empty_pure_binding_id),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "published Target IR schema must reject an empty pure binding id"
+    );
+}
+
+#[test]
 fn result_projection_root_matches_reference_encoder() {
     let pack = assemble(canonical_target_profile_contract_resources());
     let projection =
         decode_canonical_cbor(RESULT_PROJECTION_FIXTURE).expect("projection fixture is canonical");
     pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &projection)
         .expect("projection fixture satisfies the compiler-owned root");
+
+    let pure_projection = representative_pure_result_projection();
+    pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &pure_projection)
+        .expect("pure-binding projection satisfies the compiler-owned root");
+    let mut empty_binding_id = pure_projection;
+    let source = map_value_mut(map_value_mut(&mut empty_binding_id, "expression"), "source");
+    *map_value_mut(source, "bindingId") = text("");
+    assert_eq!(
+        pack.validate_domain(RESULT_PROJECTION_DIGEST_DOMAIN, &empty_binding_id),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),
+        "published projection schema must reject an empty pure binding id"
+    );
 
     let mut missing_output_bound = projection;
     remove_map_field(&mut missing_output_bound, "maxOutputBytes");
@@ -733,6 +776,23 @@ fn representative_result_projection() -> CanonicalValue {
     decode_canonical_cbor(&bytes).expect("representative projection is canonical")
 }
 
+fn representative_pure_result_projection() -> CanonicalValue {
+    let projection = ResultProjection {
+        api_version: edict_syntax::RESULT_PROJECTION_API_VERSION.to_owned(),
+        operation_coordinate: "example.application@1.compute".to_owned(),
+        output_type: "example.application@1.Computed".to_owned(),
+        max_output_bytes: 512,
+        expression: ResultProjectionExpr::Source {
+            source: ResultProjectionSource::PureBinding {
+                binding_id: "compute.binding.0".to_owned(),
+            },
+            path: Vec::new(),
+        },
+    };
+    let bytes = encode_result_projection(&projection).expect("pure projection encodes");
+    decode_canonical_cbor(&bytes).expect("pure projection is canonical")
+}
+
 fn encoded_target_ir_with_requirements() -> CanonicalValue {
     encoded_target_ir_with_coordinate("example.target-profile@1")
 }
@@ -797,6 +857,29 @@ fn encoded_target_ir_with_external_request() -> CanonicalValue {
     encode_target_ir_value(&artifact)
 }
 
+fn encoded_target_ir_with_pure_binding() -> CanonicalValue {
+    let mut artifact = representative_target_ir("example.target-profile@1");
+    let binding = LocalRef {
+        id: "local.0".to_owned(),
+        alpha_name: "$local0".to_owned(),
+        ty: "U64".to_owned(),
+    };
+    let intent = artifact
+        .intents
+        .get_mut("apply")
+        .expect("representative intent");
+    intent.pure_bindings.push(TargetIrPureBinding {
+        id: "apply.binding.0".to_owned(),
+        binding: binding.clone(),
+        value: CoreExpr::Const(CoreValue::Int {
+            width: "U64".to_owned(),
+            value: "1".to_owned(),
+        }),
+    });
+    intent.result = CoreExpr::Local { reference: binding };
+    encode_target_ir_value(&artifact)
+}
+
 fn representative_target_ir(coordinate: &str) -> TargetIrArtifact {
     let terminal_reason = CoreObstructionReason {
         kind: "example.Terminal".to_owned(),
@@ -843,6 +926,7 @@ fn representative_target_ir(coordinate: &str) -> TargetIrArtifact {
                     max_allocated_bytes: 1,
                     max_output_bytes: 1,
                 },
+                pure_bindings: Vec::new(),
                 requirements: vec![
                     TargetIrRequirement {
                         id: "apply.require.0".to_owned(),

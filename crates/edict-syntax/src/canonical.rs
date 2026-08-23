@@ -18,8 +18,8 @@ use crate::core_ir::{
     InputConstraintSource, LocalRef, ResourceRef,
 };
 use crate::target_ir::{
-    TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrRequireFailure,
-    TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
+    TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrPureBinding,
+    TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
 };
 
 /// Canonical encoding profile for Core artifacts.
@@ -503,16 +503,21 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
         .intents
         .values()
         .any(|intent| !intent.external_action_requests.is_empty());
+    let has_pure_bindings = artifact
+        .intents
+        .values()
+        .any(|intent| !intent.pure_bindings.is_empty());
     if artifact.semantic_closure.is_none()
         && (artifact
             .intents
             .values()
             .any(|intent| intent.basis.is_some())
+            || has_pure_bindings
             || has_external_action_requests)
     {
         return Err(CanonicalError::new(
             CanonicalErrorKind::UnsupportedValue,
-            "basis- or external-action-bearing Target IR requires a semantic closure",
+            "basis-, pure-binding-, or external-action-bearing Target IR requires a semantic closure",
         ));
     }
     if let Some(closure) = &artifact.semantic_closure {
@@ -645,6 +650,18 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
 }
 
 fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+    let mut binding_ids = BTreeSet::new();
+    for binding in &intent.pure_bindings {
+        if binding.id.is_empty() || !binding_ids.insert(binding.id.as_str()) {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                format!(
+                    "Target IR pure binding id `{}` is empty or duplicated",
+                    binding.id
+                ),
+            ));
+        }
+    }
     let mut request_ids = BTreeSet::new();
     for request in &intent.external_action_requests {
         if !request_ids.insert(request.id.as_str()) {
@@ -680,6 +697,17 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
     if let Some(basis) = &intent.basis {
         entries.push(("basis", core_expr_value(basis)?));
     }
+    if !intent.pure_bindings.is_empty() {
+        entries.push((
+            "pureBindings",
+            array_results(
+                intent
+                    .pure_bindings
+                    .iter()
+                    .map(target_ir_pure_binding_value),
+            )?,
+        ));
+    }
     if !intent.external_action_requests.is_empty() {
         entries.push((
             "externalActionRequests",
@@ -692,6 +720,16 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
         ));
     }
     Ok(map(entries))
+}
+
+fn target_ir_pure_binding_value(
+    binding: &TargetIrPureBinding,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("id", text(&binding.id)),
+        ("binding", local_ref_value(&binding.binding)),
+        ("value", core_expr_value(&binding.value)?),
+    ]))
 }
 
 fn target_ir_external_action_request_value(

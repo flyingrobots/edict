@@ -1637,7 +1637,13 @@ fn single_configuration(
         adapter
             .effects()
             .values()
-            .map(|effect| &effect.target_configuration),
+            .map(|effect| &effect.target_configuration)
+            .chain(
+                adapter
+                    .operation_profiles()
+                    .values()
+                    .filter_map(|profile| profile.target_configuration.as_ref()),
+            ),
     )
 }
 
@@ -2402,13 +2408,14 @@ mod tests {
 
     use super::{
         build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
-        read, selected_adapter_reference, single_result_projection, single_unique_configuration,
-        validate_application_manifest, validate_external_action_artifacts,
-        with_result_projection_input, write_external_action_outputs, write_outputs,
-        ApplicationBuildKind, ApplicationExternalActionResource, ApplicationLawpack,
-        ApplicationManifest, ApplicationTarget, ExternalActionResourceKind,
-        LoadedExternalActionResource, LoadedLawpack, EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN,
-        MAX_EXTERNAL_ACTION_RESOURCES, RESULT_PROJECTION_ROLE,
+        read, selected_adapter_reference, single_configuration, single_result_projection,
+        single_unique_configuration, validate_application_manifest,
+        validate_external_action_artifacts, with_result_projection_input,
+        write_external_action_outputs, write_outputs, ApplicationBuildKind,
+        ApplicationExternalActionResource, ApplicationLawpack, ApplicationManifest,
+        ApplicationTarget, ExternalActionResourceKind, LoadedExternalActionResource, LoadedLawpack,
+        EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, MAX_EXTERNAL_ACTION_RESOURCES,
+        RESULT_PROJECTION_ROLE,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -3196,6 +3203,22 @@ mod tests {
         );
 
         assert_eq!(actual, &configuration);
+    }
+
+    #[test]
+    fn operation_profile_configuration_is_selected_when_adapter_has_no_effects() {
+        let loaded = external_action_loaded_lawpack();
+        let adapter = test_ok(
+            decode_lawpack_adapter(&loaded.bundle, "echo.dpo@1", &loaded.adapter_bytes),
+            "decode request-only adapter",
+        );
+
+        let configuration = test_ok(
+            single_configuration(&adapter),
+            "profile-owned target configuration",
+        );
+
+        assert_eq!(configuration.id, "workspace.snapshot.request-profile/v1");
     }
 
     #[test]

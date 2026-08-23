@@ -9,12 +9,12 @@ use std::collections::BTreeMap;
 use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
-    CompilerContext, CoreBudget, CoreExpr, CoreImport, CoreImportKind, CoreNode, CorePredicate,
-    CoreValue, GuardKind, InputConstraint, InputConstraintSource, LowerabilityStatus,
-    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
-    TargetEffectLowering, TargetIrArtifact, TargetIrLoweringFacts, TargetIrRequireFailure,
-    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, WriteClass,
-    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
+    CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreImport, CoreImportKind,
+    CoreNode, CorePredicate, CoreValue, GuardKind, InputConstraint, InputConstraintSource,
+    LocalRef, LowerabilityStatus, LoweringRequirements, NativeEffectSupport, ResourceRef,
+    SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact, TargetIrLoweringFacts,
+    TargetIrRequireFailure, TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts,
+    WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
     GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
@@ -155,6 +155,20 @@ fn gitwarp_artifact() -> edict_syntax::TargetIrArtifact {
 fn pure_core() -> edict_syntax::CoreModule {
     let module = edict_syntax::parse_module(PURE_LOCAL_RECORD).expect("pure source parses");
     compile_to_core(&module, &pure_context()).expect("pure source compiles to Core")
+}
+
+fn pure_target_facts() -> TargetIrLoweringFacts {
+    let mut facts = echo_facts();
+    facts
+        .operation_profiles
+        .push("continuum.profile.read-only/v1".to_owned());
+    facts
+}
+
+fn pure_artifact() -> TargetIrArtifact {
+    lower_to_target_ir(&pure_core(), &pure_target_facts())
+        .artifact
+        .expect("pure source lowers to Target IR")
 }
 
 fn gitwarp_core() -> edict_syntax::CoreModule {
@@ -1081,7 +1095,7 @@ fn empty_core_modules_reject_without_artifact() {
 }
 
 #[test]
-fn unsupported_core_nodes_reject_without_artifact() {
+fn pure_core_bindings_lower_as_generic_target_program() {
     let core = pure_core();
     let mut facts = echo_facts();
     facts
@@ -1089,12 +1103,148 @@ fn unsupported_core_nodes_reject_without_artifact() {
         .push("continuum.profile.read-only/v1".to_owned());
     let report = lower_to_target_ir(&core, &facts);
 
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    let artifact = report.artifact.as_ref().expect("pure Target IR");
+    let intent = artifact.intents.get("sayHello").expect("pure intent");
+    assert_eq!(intent.pure_bindings.len(), 1);
+    assert_eq!(intent.pure_bindings[0].id, "sayHello.binding.0");
+    assert!(matches!(
+        intent.pure_bindings[0].value,
+        CoreExpr::Call { ref callee, .. } if callee == "core.string.concat"
+    ));
+    assert!(
+        report.result_projections.contains_key("sayHello"),
+        "projection failures: {:?}",
+        report.result_projection_failures
+    );
+}
+
+#[test]
+fn unsupported_core_nodes_reject_without_artifact() {
+    let mut core = pure_core();
+    core.intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .nodes = vec![CoreNode::For {
+        binder: LocalRef {
+            id: "local.1".to_owned(),
+            alpha_name: "$local1".to_owned(),
+            ty: "U64".to_owned(),
+        },
+        iter: CoreExpr::Const(CoreValue::Null),
+        bound: CoreBound::Literal(1),
+        body: CoreBlock {
+            locals: Vec::new(),
+            nodes: Vec::new(),
+            result: CoreExpr::Const(CoreValue::Null),
+        },
+    }];
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
     assert_eq!(report.status, TargetLoweringStatus::Unsupported);
     assert!(report.artifact.is_none());
     assert_eq!(
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::UnsupportedCoreNode]
     );
+}
+
+#[test]
+fn malformed_pure_binding_graphs_reject_before_target_artifact() {
+    let cases = [
+        (
+            "dangling local",
+            LocalRef {
+                id: "local.999".to_owned(),
+                alpha_name: "$local999".to_owned(),
+                ty: "String<max=512,canonical=raw-utf8>".to_owned(),
+            },
+        ),
+        (
+            "self reference",
+            LocalRef {
+                id: "local.0".to_owned(),
+                alpha_name: "$local0".to_owned(),
+                ty: "String<max=512,canonical=raw-utf8>".to_owned(),
+            },
+        ),
+        (
+            "conflicting local type",
+            LocalRef {
+                id: "arg.0".to_owned(),
+                alpha_name: "$arg0".to_owned(),
+                ty: "Bytes<max=32>".to_owned(),
+            },
+        ),
+    ];
+
+    for (case, reference) in cases {
+        let mut core = pure_core();
+        let intent = core.intents.get_mut("sayHello").expect("pure intent");
+        let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+            panic!("pure fixture starts with a let");
+        };
+        *value = CoreExpr::Local { reference };
+
+        let report = lower_to_target_ir(&core, &pure_target_facts());
+
+        assert_eq!(report.status, TargetLoweringStatus::Unsupported, "{case}");
+        assert!(report.artifact.is_none(), "{case}");
+        assert_eq!(
+            failure_kinds(&report),
+            vec![TargetLoweringFailureKind::InvalidCoreIdentity],
+            "{case}"
+        );
+    }
+
+    let mut duplicate = pure_core();
+    let intent = duplicate.intents.get_mut("sayHello").expect("pure intent");
+    intent.body.nodes.push(intent.body.nodes[0].clone());
+    let report = lower_to_target_ir(&duplicate, &pure_target_facts());
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+
+    let mut duplicate_local = pure_core();
+    let intent = duplicate_local
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent");
+    intent.body.locals.push(intent.body.locals[1].clone());
+    let report = lower_to_target_ir(&duplicate_local, &pure_target_facts());
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+}
+
+#[test]
+fn pure_program_without_imports_or_basis_still_binds_source_core_identity() {
+    let mut core = pure_core();
+    core.imports.clear();
+    core.intents.get_mut("sayHello").expect("pure intent").basis = None;
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(
+        report
+            .artifact
+            .as_ref()
+            .expect("pure Target IR")
+            .semantic_closure
+            .is_some(),
+        "pure executable expressions require an exact source-Core closure"
+    );
+    assert!(report.result_projections.contains_key("sayHello"));
 }
 
 #[test]
@@ -1316,6 +1466,97 @@ fn target_ir_obstruction_arm_value_mutation_moves_digest() {
 }
 
 #[test]
+fn pure_binding_semantic_mutations_move_target_ir_identity() {
+    let baseline = pure_artifact();
+    assert_target_ir_digest_changes(&baseline, "pure binding id", |artifact| {
+        pure_binding_mut(artifact).id = "sayHello.binding.changed".to_owned();
+    });
+    assert_target_ir_digest_changes(&baseline, "pure binding local", |artifact| {
+        pure_binding_mut(artifact).binding.alpha_name = "$changed".to_owned();
+    });
+    assert_target_ir_digest_changes(&baseline, "pure helper identity", |artifact| {
+        let CoreExpr::Call { callee, .. } = &mut pure_binding_mut(artifact).value else {
+            panic!("pure fixture binding is a helper call");
+        };
+        *callee = "core.string.other".to_owned();
+    });
+    assert_target_ir_digest_changes(
+        &baseline,
+        "pure helper implementation closure",
+        |artifact| {
+            artifact
+                .semantic_closure
+                .as_mut()
+                .expect("pure artifact is closed")
+                .lawpacks[0]
+                .digest = Some(format!("sha256:{}", "f".repeat(64)));
+        },
+    );
+    assert_target_ir_digest_changes(&baseline, "pure conditional arm", |artifact| {
+        pure_binding_mut(artifact).value = CoreExpr::If {
+            predicate: Box::new(CorePredicate::True),
+            then_value: Box::new(CoreExpr::Const(CoreValue::String("then".to_owned()))),
+            else_value: Box::new(CoreExpr::Const(CoreValue::String("else".to_owned()))),
+        };
+    });
+    assert_target_ir_digest_changes(&baseline, "pure result dependency", |artifact| {
+        artifact
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .result = CoreExpr::Const(CoreValue::Null);
+    });
+
+    let mut two_bindings = baseline;
+    let first = pure_binding_mut(&mut two_bindings).clone();
+    let mut second = first;
+    second.id = "sayHello.binding.1".to_owned();
+    second.binding.id = "local.1".to_owned();
+    second.binding.alpha_name = "$local1".to_owned();
+    two_bindings
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .pure_bindings
+        .push(second);
+    assert_target_ir_digest_changes(&two_bindings, "pure binding order", |artifact| {
+        artifact
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .pure_bindings
+            .swap(0, 1);
+    });
+}
+
+#[test]
+fn pure_binding_encoder_rejects_duplicate_identity_or_missing_closure() {
+    let mut duplicate = pure_artifact();
+    let binding = pure_binding_mut(&mut duplicate).clone();
+    duplicate
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .pure_bindings
+        .push(binding);
+    assert_eq!(
+        encode_target_ir_artifact(&duplicate)
+            .expect_err("duplicate pure binding id must reject")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+
+    let mut unclosed = pure_artifact();
+    unclosed.semantic_closure = None;
+    assert_eq!(
+        encode_target_ir_artifact(&unclosed)
+            .expect_err("pure binding without semantic closure must reject")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+}
+
+#[test]
 fn target_ir_encoder_rejects_unlocked_or_uppercase_target_profile_digest() {
     let mut missing = effectful_artifact(EFFECTFUL_REPLACE);
     missing.target_profile.digest = None;
@@ -1365,6 +1606,16 @@ fn target_step_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::Target
         .steps
         .get_mut(0)
         .expect("step 0")
+}
+
+fn pure_binding_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::TargetIrPureBinding {
+    artifact
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .pure_bindings
+        .get_mut(0)
+        .expect("pure binding 0")
 }
 
 fn requirement_mut(artifact: &mut TargetIrArtifact) -> &mut edict_syntax::TargetIrRequirement {

@@ -10,6 +10,7 @@ use crate::core_ir::{
     is_lowercase_sha256_review_digest, CoreBudget, CoreExpr, CoreExternalActionBudget,
     CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
     CorePredicate, CoreRequireFailureArm, InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION,
+    CORE_APPLICATION_INPUT_LOCAL_ID,
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
@@ -212,10 +213,19 @@ pub struct TargetIrIntent {
     pub basis: Option<CoreExpr>,
     pub input_constraints: Vec<InputConstraint>,
     pub core_evaluation_budget: CoreBudget,
+    pub pure_bindings: Vec<TargetIrPureBinding>,
     pub requirements: Vec<TargetIrRequirement>,
     pub steps: Vec<TargetIrStep>,
     pub external_action_requests: Vec<TargetIrExternalActionRequest>,
     pub result: CoreExpr,
+}
+
+/// One source-ordered pure Core binding retained for target evaluation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetIrPureBinding {
+    pub id: String,
+    pub binding: LocalRef,
+    pub value: CoreExpr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -367,7 +377,14 @@ pub(crate) fn semantic_closure_for_core(
     let lawpacks = digest_locked_import_set(core, CoreImportKind::Lawpack, "lawpack")?;
     let capabilities = digest_locked_import_set(core, CoreImportKind::Capability, "capability")?;
     let has_explicit_basis = core.intents.values().any(|intent| intent.basis.is_some());
-    if !has_explicit_basis && lawpacks.is_empty() && capabilities.is_empty() {
+    let has_pure_bindings = core.intents.values().any(|intent| {
+        intent
+            .body
+            .nodes
+            .iter()
+            .any(|node| matches!(node, CoreNode::Let { .. }))
+    });
+    if !has_explicit_basis && !has_pure_bindings && lawpacks.is_empty() && capabilities.is_empty() {
         return Ok(None);
     }
 
@@ -504,7 +521,8 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
     if !floating_imports.is_empty() {
         return floating_imports;
     }
-    core.required_core_capabilities
+    let capability_failures = core
+        .required_core_capabilities
         .iter()
         .map(|capability| TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedCoreCapability,
@@ -512,7 +530,148 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
             node_index: None,
             detail: capability.clone(),
         })
-        .collect()
+        .collect::<Vec<_>>();
+    if !capability_failures.is_empty() {
+        return capability_failures;
+    }
+    validate_pure_binding_graphs(core)
+}
+
+fn validate_pure_binding_graphs(core: &CoreModule) -> Vec<TargetLoweringFailure> {
+    let mut failures = Vec::new();
+    for (intent_name, intent) in &core.intents {
+        if !intent
+            .body
+            .nodes
+            .iter()
+            .any(|node| matches!(node, CoreNode::Let { .. }))
+        {
+            continue;
+        }
+        let locals = intent
+            .body
+            .locals
+            .iter()
+            .map(|local| (local.id.as_str(), local))
+            .collect::<BTreeMap<_, _>>();
+        if locals.len() != intent.body.locals.len() {
+            failures.push(invalid_pure_binding(
+                intent_name,
+                None,
+                "Core local table contains a duplicate identity",
+            ));
+            continue;
+        }
+        let Some(input) = locals.get(CORE_APPLICATION_INPUT_LOCAL_ID).copied() else {
+            failures.push(invalid_pure_binding(
+                intent_name,
+                None,
+                "missing application input local",
+            ));
+            continue;
+        };
+        if input.ty != intent.input {
+            failures.push(invalid_pure_binding(
+                intent_name,
+                None,
+                "application input local type does not match the intent input",
+            ));
+            continue;
+        }
+
+        let mut available = BTreeMap::from([(input.id.as_str(), input)]);
+        for (node_index, node) in intent.body.nodes.iter().enumerate() {
+            let binding = match node {
+                CoreNode::Let { binding, value } => {
+                    if !expression_references_are_available(value, &available) {
+                        failures.push(invalid_pure_binding(
+                            intent_name,
+                            Some(node_index),
+                            "pure binding references an undeclared, conflicting, or later local",
+                        ));
+                        break;
+                    }
+                    Some(binding)
+                }
+                CoreNode::Effect { binding, .. }
+                | CoreNode::ExternalActionRequest { binding, .. } => Some(binding),
+                CoreNode::Branch { binding, .. } => binding.as_ref(),
+                CoreNode::Require { .. } | CoreNode::For { .. } => None,
+            };
+            let Some(binding) = binding else {
+                continue;
+            };
+            if locals.get(binding.id.as_str()).copied() != Some(binding)
+                || available.insert(binding.id.as_str(), binding).is_some()
+            {
+                failures.push(invalid_pure_binding(
+                    intent_name,
+                    Some(node_index),
+                    "binding identity is missing, duplicated, or conflicts with the Core local table",
+                ));
+                break;
+            }
+        }
+    }
+    failures
+}
+
+fn invalid_pure_binding(
+    intent_name: &str,
+    node_index: Option<usize>,
+    detail: &str,
+) -> TargetLoweringFailure {
+    TargetLoweringFailure {
+        kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+        intent: Some(intent_name.to_owned()),
+        node_index,
+        detail: detail.to_owned(),
+    }
+}
+
+fn expression_references_are_available(
+    expression: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    match expression {
+        CoreExpr::Local { reference } => {
+            available.get(reference.id.as_str()).copied() == Some(reference)
+        }
+        CoreExpr::Const(_) => true,
+        CoreExpr::Record { fields } => fields
+            .values()
+            .all(|value| expression_references_are_available(value, available)),
+        CoreExpr::Field { base, .. } => expression_references_are_available(base, available),
+        CoreExpr::Call { args, .. } => args
+            .iter()
+            .all(|argument| expression_references_are_available(argument, available)),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            predicate_references_are_available(predicate, available)
+                && expression_references_are_available(then_value, available)
+                && expression_references_are_available(else_value, available)
+        }
+    }
+}
+
+fn predicate_references_are_available(
+    predicate: &CorePredicate,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    match predicate {
+        CorePredicate::True | CorePredicate::False => true,
+        CorePredicate::Not(value) => predicate_references_are_available(value, available),
+        CorePredicate::All(values) | CorePredicate::Any(values) => values
+            .iter()
+            .all(|value| predicate_references_are_available(value, available)),
+        CorePredicate::Compare { left, right, .. } => {
+            expression_references_are_available(left, available)
+                && expression_references_are_available(right, available)
+        }
+    }
 }
 
 fn lower_intent(
@@ -535,7 +694,8 @@ fn lower_intent(
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
         lower_node(intent_name, node_index, node, context, &mut state, failures);
     }
-    if state.requirements.is_empty()
+    if state.pure_bindings.is_empty()
+        && state.requirements.is_empty()
         && state.steps.is_empty()
         && state.external_action_requests.is_empty()
         && intent.body.nodes.is_empty()
@@ -553,6 +713,7 @@ fn lower_intent(
         basis: intent.basis.clone(),
         input_constraints: intent.input_constraints.clone(),
         core_evaluation_budget: intent.core_evaluation_budget.clone(),
+        pure_bindings: state.pure_bindings,
         requirements: state.requirements,
         steps: state.steps,
         external_action_requests: state.external_action_requests,
@@ -568,6 +729,7 @@ struct TargetLoweringContext<'a> {
 
 #[derive(Default)]
 struct IntentLoweringState {
+    pure_bindings: Vec<TargetIrPureBinding>,
     requirements: Vec<TargetIrRequirement>,
     steps: Vec<TargetIrStep>,
     external_action_requests: Vec<TargetIrExternalActionRequest>,
@@ -639,12 +801,13 @@ fn lower_node(
                 budget: budget.as_ref().clone(),
                 reconciliation_law: reconciliation_law.clone(),
             }),
-        CoreNode::Let { .. } => failures.push(TargetLoweringFailure {
-            kind: TargetLoweringFailureKind::UnsupportedCoreNode,
-            intent: Some(intent_name.to_owned()),
-            node_index: Some(node_index),
-            detail: "let".to_owned(),
-        }),
+        CoreNode::Let { binding, value } => {
+            state.pure_bindings.push(TargetIrPureBinding {
+                id: format!("{}.binding.{}", intent_name, state.pure_bindings.len()),
+                binding: binding.clone(),
+                value: value.clone(),
+            });
+        }
         CoreNode::Require { predicate, arm } => lower_require_node(
             intent_name,
             node_index,

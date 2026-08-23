@@ -14,8 +14,9 @@ The current target IR implementation is deliberately narrow:
 - selected target profile: `echo.dpo@1` or `gitwarp.ref_crdt@1`;
 - selected Target IR artifact domain: `echo.span-ir/v1` or
   `gitwarp.commit-reducer-ir/v1`;
-- selected source/Core shape: the first supported effectful Core effect node,
-  Echo `require` guard requirements, and typed external-action request data;
+- selected source/Core shape: source-ordered pure `let` bindings, the first
+  supported effectful Core effect node, Echo `require` guard requirements, and
+  typed external-action request data;
 - selected outcome: a deterministic target-owned review artifact with canonical
   `edict.canonical-cbor/v1` bytes and a reviewed
   `edict.target-ir.artifact/v1` digest;
@@ -24,7 +25,8 @@ The current target IR implementation is deliberately narrow:
 
 The `edict_syntax` crate exposes `lower_to_target_ir`,
 `TargetIrLoweringFacts`, `TargetLoweringReport`, `TargetIrArtifact`,
-`TargetIrSemanticClosure`, `TargetIrExternalActionRequest`,
+`TargetIrSemanticClosure`, `TargetIrPureBinding`,
+`TargetIrExternalActionRequest`,
 `encode_target_ir_artifact`, `digest_target_ir_artifact`, and stable
 `TargetLoweringFailureKind` values. The lowerer consumes an already-built
 `CoreModule` and explicit target-lowering facts supplied by the caller. It does
@@ -108,13 +110,18 @@ future artifact-model change.
 
 Each Target IR intent also preserves an explicit Core basis expression when
 present, the Core input constraints, Core evaluation budget, source-ordered
-requirements, source-ordered effect steps, and structured Core result
-expression for the supported slice. This records authored basis, preconditions,
-evaluation limits, guard dispositions, and success-output semantics without
-resolving a runtime basis, executing Echo, or admitting a bundle.
+pure bindings, source-ordered requirements, source-ordered effect steps, and
+structured Core result expression for the supported slice. Each pure binding
+retains its exact compiler local, Core expression, and deterministic intent-local
+identity. The lowerer neither evaluates nor duplicates helper calls and
+conditionals. Malformed Core with a dangling, conflicting, forward, self, or
+duplicate pure binding fails with `InvalidCoreIdentity` before Target IR exists.
+This records authored basis, preconditions, evaluation limits, pure computation,
+guard dispositions, and success-output semantics without resolving a runtime
+basis, executing Echo, or admitting a bundle. [TIR-REQ-018]
 
-When any intent has an explicit basis, the Core module imports a lawpack, or the
-Core module imports a requestable capability, the artifact carries a
+When any intent has an explicit basis or pure binding, the Core module imports a
+lawpack, or the Core module imports a requestable capability, the artifact carries a
 `TargetIrSemanticClosure`. The closure binds the exact canonical Core
 coordinate/digest plus coordinate-keyed, lowercase digest-locked lawpack and
 capability sets. Equivalent resource order and duplicate identical references
@@ -134,10 +141,11 @@ CBOR for:
 The canonical value includes the artifact's own domain, digest-locked target
 profile resource, non-empty source Core coordinate, optional semantic closure,
 sorted intent map, optional explicit basis expressions, input constraints, Core
-evaluation budget, source-ordered requirements, requirement predicates and
-failure dispositions, source-ordered target steps, source-ordered external
-requests, sorted obstruction failure keys and arms, and structured Core result
-expression. Target profile and semantic-closure digests are strict artifact
+evaluation budget, source-ordered pure bindings and exact expressions,
+source-ordered requirements, requirement predicates and failure dispositions,
+source-ordered target steps, source-ordered external requests, sorted
+obstruction failure keys and arms, and structured Core result expression. Target
+profile and semantic-closure digests are strict artifact
 references: missing digests and non-lowercase `sha256:<64 hex>` review strings
 reject before hashing.
 
@@ -181,15 +189,16 @@ with an unsupported ABI rejects with
 floating imports rejects with `TargetLoweringFailureKind::UndigestedCoreImport`.
 Supplying unsupported Core capability flags rejects with
 `TargetLoweringFailureKind::UnsupportedCoreCapability`. Supplying Core nodes
-outside the supported effect, external-request, and Echo requirement shapes
+outside the supported pure binding, effect, external-request, and Echo
+requirement shapes
 rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Supplying a target-specific
 Core feature that the selected target does not support rejects with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`. Missing or ambiguous
 effect lowering facts, non-Echo target intrinsics, missing operation-profile
 support, and obstruction keys absent from the selected target facts also reject
-before any artifact is emitted. A Core intent with no target-owned requirements,
-steps, or external requests, or a Core module with no intents, rejects with
+before any artifact is emitted. A Core intent with no target-owned pure bindings,
+requirements, steps, or external requests, or a Core module with no intents, rejects with
 `TargetLoweringFailureKind::NoTargetSteps`. Duplicate target-lowering facts are
 ambiguous only when they match an effect used by the Core module being lowered;
 unrelated duplicate facts do not block the supported artifact.

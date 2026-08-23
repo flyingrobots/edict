@@ -30,6 +30,10 @@ result-projection-source = {
 result-projection-source-kind =
   { kind: "applicationInput" } /
   {
+    kind: "pureBinding",
+    bindingId: bounded-projection-text,
+  } /
+  {
     kind: "capabilityResult",
     stepId: bounded-projection-text,
   }

@@ -45,7 +45,7 @@ The current executable Rust surfaces touching lawpacks are:
 - complete dependency-set validation with exact manifest-digest edges;
 - canonical direct-adapter loading with exact target selection, adapter digest
   corroboration, complete callable profile/effect/budget coverage, and
-  request-only profiles whose exact budget and target configuration confer no
+  effect-free profiles whose exact budget and target configuration confer no
   callable effect authority;
 - compiler and Target IR fact derivation from the exact
   module/lawpack/adapter closure;
@@ -89,8 +89,10 @@ The current executable Rust surfaces touching lawpacks are:
   runtime-effect, budget, footprint, cost, and named-failure coverage before
   returning an opaque validated adapter. Each callable effect carries one
   typed, digest-locked target-configuration reference. A profile with no
-  semantic effects is request-only and must carry its own exact budget
-  obligation and target configuration. Compilation preserves the
+  semantic effects may govern a pure executable program or a request-only
+  program and must carry its own exact budget obligation and target
+  configuration. Application provider inputs select that profile-owned
+  configuration even when the adapter has no effects. Compilation preserves the
   profile-to-budget association and rejects source that selects another
   profile's budget. The exact adapter budget set also covers every exported
   pure helper's cost template. Edict preserves those references but does not
