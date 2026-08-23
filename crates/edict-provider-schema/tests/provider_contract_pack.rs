@@ -317,6 +317,13 @@ fn target_ir_root_accepts_only_closed_nonempty_pure_bindings() {
 
     let mut pure_without_closure = encoded_pure.clone();
     remove_map_field(&mut pure_without_closure, "semanticClosure");
+    let CanonicalValue::Map(intents) = map_value_mut(&mut pure_without_closure, "intents") else {
+        panic!("Target IR intents must be a map");
+    };
+    remove_map_field(
+        &mut intents.first_mut().expect("pure Target IR intent").1,
+        "basis",
+    );
     assert_eq!(
         pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &pure_without_closure),
         Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch),

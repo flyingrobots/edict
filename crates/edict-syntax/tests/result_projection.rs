@@ -8,9 +8,9 @@ use edict_syntax::{
     encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
     verify_result_projection, CanonicalValue, CompilerContext, CoreBlock, CoreBound, CoreBudget,
     CoreExpr, CoreModule, CoreNode, CorePredicate, LocalRef, ResourceRef, ResultProjection,
-    ResultProjectionExpr, ResultProjectionFailureKind, ResultProjectionSource, TargetIrArtifact,
-    TargetIrLoweringFacts, TargetLoweringReport, TargetLoweringStatus,
-    MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
+    ResultProjectionArtifact, ResultProjectionExpr, ResultProjectionFailureKind,
+    ResultProjectionSource, TargetIrArtifact, TargetIrLoweringFacts, TargetLoweringReport,
+    TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
     MAX_RESULT_PROJECTION_PATH_SEGMENTS, MAX_RESULT_PROJECTION_TEXT_BYTES,
     RESULT_PROJECTION_API_VERSION,
 };
@@ -275,9 +275,13 @@ fn pure_binding_result_projection_round_trips_through_independent_verification()
 }
 
 #[test]
-fn pure_binding_projection_rejects_missing_substituted_and_reordered_target_authority() {
+fn pure_binding_projection_rejects_missing_substituted_reordered_and_duplicate_target_authority() {
     let (core, report) = pure_lowering();
     let target = report.artifact.expect("pure Target IR");
+    let projection = report
+        .result_projections
+        .get("greet")
+        .expect("pure result projection");
 
     let mut missing = target.clone();
     missing
@@ -286,12 +290,7 @@ fn pure_binding_projection_rejects_missing_substituted_and_reordered_target_auth
         .expect("pure intent")
         .pure_bindings
         .pop();
-    assert_eq!(
-        emit_result_projection(&core, &missing, "greet")
-            .expect_err("missing pure binding must reject")
-            .kind(),
-        ResultProjectionFailureKind::CoreTargetMismatch
-    );
+    assert_pure_target_authority_rejected(&core, &missing, projection);
 
     let mut substituted = target.clone();
     substituted
@@ -300,24 +299,48 @@ fn pure_binding_projection_rejects_missing_substituted_and_reordered_target_auth
         .expect("pure intent")
         .pure_bindings[1]
         .value = CoreExpr::Const(edict_syntax::CoreValue::String("wrong".to_owned()));
-    assert_eq!(
-        emit_result_projection(&core, &substituted, "greet")
-            .expect_err("substituted pure binding must reject")
-            .kind(),
-        ResultProjectionFailureKind::CoreTargetMismatch
-    );
+    assert_pure_target_authority_rejected(&core, &substituted, projection);
 
-    let mut reordered = target;
+    let mut reordered = target.clone();
     reordered
         .intents
         .get_mut("greet")
         .expect("pure intent")
         .pure_bindings
         .swap(0, 1);
+    assert_pure_target_authority_rejected(&core, &reordered, projection);
+
+    let mut duplicated = target;
+    let bindings = &mut duplicated
+        .intents
+        .get_mut("greet")
+        .expect("pure intent")
+        .pure_bindings;
+    bindings[1].id = bindings[0].id.clone();
+    assert_pure_target_authority_rejected(&core, &duplicated, projection);
+}
+
+fn assert_pure_target_authority_rejected(
+    core: &CoreModule,
+    target: &TargetIrArtifact,
+    projection: &ResultProjectionArtifact,
+) {
     assert_eq!(
-        emit_result_projection(&core, &reordered, "greet")
-            .expect_err("reordered pure bindings must reject")
+        emit_result_projection(core, target, "greet")
+            .expect_err("mutated pure binding authority must reject during emission")
             .kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(
+        verify_result_projection(
+            core,
+            target,
+            "greet",
+            projection.canonical_bytes(),
+            projection.digest(),
+        )
+        .expect_err("mutated pure binding authority must reject during verification")
+        .kind(),
         ResultProjectionFailureKind::CoreTargetMismatch
     );
 }

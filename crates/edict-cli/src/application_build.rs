@@ -2407,9 +2407,9 @@ mod tests {
     };
 
     use super::{
-        build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
-        read, selected_adapter_reference, single_configuration, single_result_projection,
-        single_unique_configuration, validate_application_manifest,
+        build_application, canonical_application_root, lowering_inputs, output_lock_path,
+        provider_schema_artifacts, read, selected_adapter_reference, single_configuration,
+        single_result_projection, single_unique_configuration, validate_application_manifest,
         validate_external_action_artifacts, with_result_projection_input,
         write_external_action_outputs, write_outputs, ApplicationBuildKind,
         ApplicationExternalActionResource, ApplicationLawpack, ApplicationManifest,
@@ -3219,6 +3219,63 @@ mod tests {
         );
 
         assert_eq!(configuration.id, "workspace.snapshot.request-profile/v1");
+
+        let source_bytes = test_ok(
+            encode_canonical_cbor(&CanonicalValue::Bytes(
+                include_str!(
+                    "../../../fixtures/lawpack/workspace-snapshot/observe-workspace.edict"
+                )
+                .as_bytes()
+                .to_vec(),
+            )),
+            "encode the invocation source artifact",
+        );
+        let target_ir_bytes = include_bytes!(
+            "../../../fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor"
+        );
+
+        let inputs = test_ok(
+            lowering_inputs(
+                &loaded,
+                &adapter,
+                "examples.workspace_observer@1",
+                &source_bytes,
+                target_ir_bytes,
+                &result_projection_artifact(),
+            ),
+            "construct the lowerer invocation inputs",
+        );
+        let Some(configuration_input) = inputs
+            .iter()
+            .find(|input| input.role == "05-target-configuration")
+        else {
+            panic!("lowerer invocation carries the selected target configuration");
+        };
+        assert_eq!(configuration_input.role, "05-target-configuration");
+        assert_eq!(
+            configuration_input.kind,
+            edict_syntax::ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned())
+        );
+        assert_eq!(
+            configuration_input.artifact.reference.coordinate,
+            configuration.id
+        );
+        assert_eq!(
+            configuration_input.artifact.reference.digest.algorithm,
+            edict_syntax::ProviderDigestAlgorithm::Sha256
+        );
+        assert_eq!(
+            configuration_input.artifact.reference.digest.bytes,
+            configuration.digest
+        );
+        assert_eq!(
+            configuration_input.artifact.artifact.domain,
+            configuration.id
+        );
+        assert_eq!(
+            configuration_input.artifact.artifact.bytes,
+            loaded.configuration_bytes
+        );
     }
 
     #[test]
