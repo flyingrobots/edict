@@ -17,7 +17,9 @@ versions still track specification maturity rather than a released product.
   reordered target bindings, duplicate identities, and closure stripping now
   fail before provider invocation. Effect-free adapters now supply their
   operation-profile target configuration to application provider inputs instead
-  of requiring a synthetic runtime effect.
+  of requiring a synthetic runtime effect, and configurations owned only by
+  adapter profiles whose Core mapping is not required by the compiled
+  application no longer create false application-build ambiguity.
 - Replaced sentinel external-request schema and reconciliation identities
   with generator-owned canonical artifacts. External-action application builds
   now require an exact `externalActionResources` closure, independently validate

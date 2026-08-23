@@ -141,6 +141,7 @@ struct ProviderInvocationContext<'a> {
     target_profile: &'a ProviderBoundArtifact,
     loaded: &'a LoadedLawpack,
     adapter: &'a edict_syntax::ValidatedLawpackAdapter,
+    configuration: &'a edict_syntax::LawpackResourceRef,
     source_bytes: &'a [u8],
     target_ir_bytes: &'a [u8],
     result_projection: &'a ResultProjectionArtifact,
@@ -282,8 +283,6 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             "lawpack adapter target profile digest does not match the selected provider profile",
         ));
     }
-    validate_target_configuration_binding(&adapter, &loaded.configuration_bytes)?;
-
     let preparation =
         prepare_lawpack_compilation(&module, &loaded.bundle, &adapter).map_err(|failures| {
             failure(
@@ -306,6 +305,13 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             ),
         ));
     }
+    let required_core_profiles = core
+        .intents
+        .values()
+        .map(|intent| intent.required_operation_profile.as_str())
+        .collect::<BTreeSet<_>>();
+    let configuration = single_configuration(&adapter, &required_core_profiles)?;
+    validate_target_configuration_binding(configuration, &loaded.configuration_bytes)?;
     let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
     if target_ir_report.status != TargetLoweringStatus::Lowered {
         return Err(failure(
@@ -429,6 +435,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         target_profile: &target_profile,
         loaded,
         adapter: &adapter,
+        configuration,
         source_bytes: &source_artifact_bytes,
         target_ir_bytes: &target_ir_bytes,
         result_projection,
@@ -1264,21 +1271,9 @@ fn read_provider_artifact(
 }
 
 fn validate_target_configuration_binding(
-    adapter: &edict_syntax::ValidatedLawpackAdapter,
+    reference: &edict_syntax::LawpackResourceRef,
     bytes: &[u8],
 ) -> Result<(), ApplicationBuildFailure> {
-    let reference = single_unique_configuration(
-        adapter
-            .effects()
-            .values()
-            .map(|effect| &effect.target_configuration)
-            .chain(
-                adapter
-                    .operation_profiles()
-                    .values()
-                    .filter_map(|profile| profile.target_configuration.as_ref()),
-            ),
-    )?;
     let digest = provider_digest(&reference.id, bytes)?;
     if reference.digest_review_string() != rendered_digest(&digest) {
         return Err(failure(
@@ -1324,6 +1319,7 @@ fn invoke_lowerer(
     let semantic_inputs = lowering_inputs(
         invocation.loaded,
         invocation.adapter,
+        invocation.configuration,
         invocation.coordinate,
         invocation.source_bytes,
         invocation.target_ir_bytes,
@@ -1428,6 +1424,7 @@ fn invoke_verifier(
     let semantic_inputs = verification_inputs(
         invocation.loaded,
         invocation.adapter,
+        invocation.configuration,
         invocation.coordinate,
         invocation.source_bytes,
         package_bytes,
@@ -1501,12 +1498,12 @@ fn invoke_verifier(
 fn lowering_inputs(
     loaded: &LoadedLawpack,
     adapter: &edict_syntax::ValidatedLawpackAdapter,
+    configuration: &edict_syntax::LawpackResourceRef,
     coordinate: &str,
     source_bytes: &[u8],
     target_ir_bytes: &[u8],
     result_projection: &ResultProjectionArtifact,
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
-    let configuration = single_configuration(adapter)?;
     let adapter_reference = selected_adapter_reference(
         &loaded.bundle.manifest().target_adapters,
         adapter.target_profile(),
@@ -1567,12 +1564,12 @@ fn lowering_inputs(
 fn verification_inputs(
     loaded: &LoadedLawpack,
     adapter: &edict_syntax::ValidatedLawpackAdapter,
+    configuration: &edict_syntax::LawpackResourceRef,
     coordinate: &str,
     source_bytes: &[u8],
     package_bytes: &[u8],
     result_projection: &ResultProjectionArtifact,
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
-    let configuration = single_configuration(adapter)?;
     let adapter_reference = selected_adapter_reference(
         &loaded.bundle.manifest().target_adapters,
         adapter.target_profile(),
@@ -1630,21 +1627,62 @@ fn verification_inputs(
     )
 }
 
-fn single_configuration(
-    adapter: &edict_syntax::ValidatedLawpackAdapter,
-) -> Result<&edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
-    single_unique_configuration(
-        adapter
-            .effects()
-            .values()
-            .map(|effect| &effect.target_configuration)
-            .chain(
-                adapter
-                    .operation_profiles()
-                    .values()
-                    .filter_map(|profile| profile.target_configuration.as_ref()),
-            ),
+fn single_configuration<'a>(
+    adapter: &'a edict_syntax::ValidatedLawpackAdapter,
+    required_core_profiles: &BTreeSet<&str>,
+) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    single_configuration_for_required_core_profiles(
+        adapter.operation_profiles(),
+        adapter.effects(),
+        required_core_profiles,
     )
+}
+
+fn single_configuration_for_required_core_profiles<'a>(
+    operation_profiles: &'a BTreeMap<String, edict_syntax::LawpackAdapterOperationProfile>,
+    effects: &'a BTreeMap<String, edict_syntax::LawpackAdapterEffect>,
+    required_core_profiles: &BTreeSet<&str>,
+) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    let mut configurations = Vec::new();
+    for required_core_profile in required_core_profiles {
+        let mut matched = false;
+        for (coordinate, profile) in operation_profiles
+            .iter()
+            .filter(|(_, profile)| profile.core == *required_core_profile)
+        {
+            matched = true;
+            if profile.semantic_effects.is_empty() {
+                let configuration = profile.target_configuration.as_ref().ok_or_else(|| {
+                    failure(
+                        "InvalidLawpackAdapter",
+                        format!("operation profile `{coordinate}` has no target configuration"),
+                    )
+                })?;
+                configurations.push(configuration);
+            } else {
+                for effect_coordinate in &profile.semantic_effects {
+                    let effect = effects.get(effect_coordinate).ok_or_else(|| {
+                        failure(
+                            "InvalidLawpackAdapter",
+                            format!(
+                                "operation profile `{coordinate}` selects unknown effect `{effect_coordinate}`"
+                            ),
+                        )
+                    })?;
+                    configurations.push(&effect.target_configuration);
+                }
+            }
+        }
+        if !matched {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core requires unknown operation profile `{required_core_profile}`"
+                ),
+            ));
+        }
+    }
+    single_unique_configuration(configurations)
 }
 
 fn single_result_projection<'a>(
@@ -2400,16 +2438,18 @@ mod tests {
         compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
         decode_result_projection, digest_canonical_artifact, encode_canonical_cbor,
         lower_to_target_ir, parse_module, prepare_lawpack_compilation, CanonicalValue,
-        LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef,
-        ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
-        ResultProjectionArtifact, TargetIrArtifact, TargetLoweringReport, TargetProviderManifest,
-        RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+        LawpackAdapterOperationProfile, LawpackResourceRef, LawpackTargetAdapter,
+        ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource, ProviderSchemaBinding,
+        ProviderSchemaFormat, ResourceRef, ResultProjectionArtifact, TargetIrArtifact,
+        TargetLoweringReport, TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN,
+        TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
     };
 
     use super::{
         build_application, canonical_application_root, lowering_inputs, output_lock_path,
         provider_schema_artifacts, read, selected_adapter_reference, single_configuration,
-        single_result_projection, single_unique_configuration, validate_application_manifest,
+        single_configuration_for_required_core_profiles, single_result_projection,
+        single_unique_configuration, validate_application_manifest,
         validate_external_action_artifacts, with_result_projection_input,
         write_external_action_outputs, write_outputs, ApplicationBuildKind,
         ApplicationExternalActionResource, ApplicationLawpack, ApplicationManifest,
@@ -3217,8 +3257,9 @@ mod tests {
             "request-only fixture must remain effect-free"
         );
 
+        let required_core_profiles = BTreeSet::from(["continuum.profile.read-only/v1"]);
         let configuration = test_ok(
-            single_configuration(&adapter),
+            single_configuration(&adapter, &required_core_profiles),
             "profile-owned target configuration",
         );
 
@@ -3242,6 +3283,7 @@ mod tests {
             lowering_inputs(
                 &loaded,
                 &adapter,
+                configuration,
                 "examples.workspace_observer@1",
                 &source_bytes,
                 target_ir_bytes,
@@ -3280,6 +3322,45 @@ mod tests {
             configuration_input.artifact.artifact.bytes,
             loaded.configuration_bytes
         );
+    }
+
+    #[test]
+    fn unused_operation_profile_configuration_does_not_enter_application_selection() {
+        let selected_configuration = lawpack_ref("target.selected-configuration@1", 0x45);
+        let unused_configuration = lawpack_ref("target.unused-configuration@1", 0x46);
+        let operation_profiles = BTreeMap::from([
+            (
+                "profile.selected@1".to_owned(),
+                LawpackAdapterOperationProfile {
+                    core: "continuum.profile.read-only/v1".to_owned(),
+                    semantic_effects: Vec::new(),
+                    budget_obligation: Some("budget.selected@1".to_owned()),
+                    target_configuration: Some(selected_configuration.clone()),
+                },
+            ),
+            (
+                "profile.unused@1".to_owned(),
+                LawpackAdapterOperationProfile {
+                    core: "continuum.profile.write-only/v1".to_owned(),
+                    semantic_effects: Vec::new(),
+                    budget_obligation: Some("budget.unused@1".to_owned()),
+                    target_configuration: Some(unused_configuration),
+                },
+            ),
+        ]);
+        let required_core_profiles = BTreeSet::from(["continuum.profile.read-only/v1"]);
+        let effects = BTreeMap::new();
+
+        let actual = test_ok(
+            single_configuration_for_required_core_profiles(
+                &operation_profiles,
+                &effects,
+                &required_core_profiles,
+            ),
+            "configuration from the Core-selected operation profile",
+        );
+
+        assert_eq!(actual, &selected_configuration);
     }
 
     #[test]
