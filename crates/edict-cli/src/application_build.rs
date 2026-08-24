@@ -3365,7 +3365,7 @@ mod tests {
     }
 
     #[test]
-    fn public_application_selects_configuration_from_compiled_core_profiles() {
+    fn public_application_selects_and_binds_configuration_from_compiled_core_profiles() {
         let root = temp_tree("public-selected-core-profile");
         let config_path = write_external_action_application(&root);
         install_two_profile_workspace_lawpack(&root);
@@ -3378,6 +3378,41 @@ mod tests {
         assert!(root.join(".build/application/core.cbor").is_file());
         assert!(root.join(".build/application/target-ir.cbor").is_file());
         test_ok(fs::remove_dir_all(root), "remove two-profile build tree");
+
+        let root = temp_tree("public-mismatched-core-profile");
+        let config_path = write_external_action_application(&root);
+        install_two_profile_workspace_lawpack(&root);
+        let mut config = test_ok(
+            serde_json::from_slice::<serde_json::Value>(&test_ok(
+                fs::read(&config_path),
+                "read application manifest",
+            )),
+            "decode application manifest",
+        );
+        config["lawpacks"][0]["targetConfiguration"] =
+            serde_json::json!("vendor/workspace-snapshot/unused-profile-configuration.cbor");
+        test_ok(
+            fs::write(
+                &config_path,
+                test_ok(
+                    serde_json::to_vec_pretty(&config),
+                    "encode mismatched application manifest",
+                ),
+            ),
+            "write mismatched application manifest",
+        );
+
+        let failure = test_err(
+            build_application(&config_path),
+            "the unused configuration cannot impersonate the selected profile",
+        );
+
+        assert_eq!(failure.kind, "TargetConfigurationMismatch");
+        assert!(
+            !root.join(".build/application").exists(),
+            "a configuration mismatch must reject before publication"
+        );
+        test_ok(fs::remove_dir_all(root), "remove mismatched build tree");
     }
 
     #[test]
