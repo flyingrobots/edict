@@ -4202,28 +4202,8 @@ fn imported_type_definition_shape(
             },
         });
     }
-    if let Some(max) = definition
-        .strip_prefix("Bytes<max=")
-        .and_then(|value| value.strip_suffix('>'))
-        .and_then(|value| value.parse().ok())
-    {
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::Bytes { min: None, max },
-        });
-    }
-    if let Some(exact) = definition
-        .strip_prefix("Bytes<exact=")
-        .and_then(|value| value.strip_suffix('>'))
-        .and_then(|value| value.parse().ok())
-    {
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::Bytes {
-                min: Some(exact),
-                max: exact,
-            },
-        });
+    if definition.starts_with("Bytes<") {
+        return imported_bytes_type_definition(definition);
     }
     let inner = definition
         .strip_prefix("List<")
@@ -4262,6 +4242,35 @@ fn imported_type_definition_shape(
     resolving.remove(definition);
     shape.coord.clone_from(&fact.coordinate);
     Some(shape)
+}
+
+fn imported_bytes_type_definition(definition: &str) -> Option<TypeShape> {
+    let (min, max) = if let Some(inner) = definition
+        .strip_prefix("Bytes<min=")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let (min, max) = inner.split_once(",max=")?;
+        (Some(min.parse().ok()?), max.parse().ok()?)
+    } else if let Some(exact) = definition
+        .strip_prefix("Bytes<exact=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|value| value.parse().ok())
+    {
+        (Some(exact), exact)
+    } else {
+        let max = definition
+            .strip_prefix("Bytes<max=")
+            .and_then(|value| value.strip_suffix('>'))
+            .and_then(|value| value.parse().ok())?;
+        (None, max)
+    };
+    if min.is_some_and(|min| min > max) {
+        return None;
+    }
+    Some(TypeShape {
+        coord: definition.to_owned(),
+        kind: TypeKind::Bytes { min, max },
+    })
 }
 
 fn imported_nominal_type_definition_shape(

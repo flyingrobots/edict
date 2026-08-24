@@ -545,6 +545,44 @@ fn exact_bytes_and_imported_nominal_aliases_preserve_core_identity() {
 }
 
 #[test]
+fn imported_nominal_byte_interval_preserves_both_bounds() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as text;\n\
+        type Input = { slice: text.BoundedSlice, };\n\
+        type Output = { slice: text.BoundedSlice, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          return { slice: input.slice };\n\
+        }";
+    let lawpack = example_bounds_lawpack();
+    let context = pure_context().with_type_shape(TypeShapeFact {
+        lawpack,
+        coordinate: "example.bounds@1.BoundedSlice".to_owned(),
+        definition: "Nominal<Bytes<min=4,max=8>>".to_owned(),
+    });
+    let module = parse_module(source).expect("bounded imported byte source parses");
+    let core = compile_to_core(&module, &context)
+        .expect("bounded imported byte interval compiles to Core");
+
+    for coordinate in [
+        "Input.slice",
+        "Output.slice",
+        "example.bounds@1.BoundedSlice",
+    ] {
+        assert_eq!(
+            core.types.get(coordinate),
+            Some(&CoreType::Nominal {
+                contract: "example.bounds@1.BoundedSlice".to_owned(),
+                representation: "Bytes<min=4,max=8>".to_owned(),
+            }),
+            "{coordinate} must retain the imported byte interval",
+        );
+    }
+}
+
+#[test]
 fn imported_nominal_identifiers_reject_cross_assignment() {
     let source = "package a.b@1;\n\
         use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as text;\n\
