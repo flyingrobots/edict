@@ -1227,6 +1227,50 @@ fn malformed_pure_binding_graphs_reject_before_target_artifact() {
 }
 
 #[test]
+fn dangling_pure_result_rejects_before_target_artifact() {
+    let mut core = pure_core();
+    core.intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .result = CoreExpr::Local {
+        reference: LocalRef {
+            id: "local.999".to_owned(),
+            alpha_name: "$local999".to_owned(),
+            ty: "examples.hello@1.HelloReading".to_owned(),
+        },
+    };
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+}
+
+#[test]
+fn type_incompatible_pure_binding_rejects_before_target_artifact() {
+    let mut core = pure_core();
+    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+    let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    *value = CoreExpr::Const(CoreValue::Bool(true));
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+}
+
+#[test]
 fn pure_program_without_imports_or_basis_still_binds_source_core_identity() {
     let mut core = pure_core();
     core.imports.clear();

@@ -320,6 +320,34 @@ fn pure_binding_projection_rejects_missing_substituted_reordered_and_duplicate_t
     assert_pure_target_authority_rejected(&core, &duplicated, projection);
 }
 
+#[test]
+fn projection_rejects_local_identity_shared_with_application_input() {
+    let (mut core, report) = pure_lowering();
+    let mut target = report.artifact.expect("pure Target IR");
+    let intent = core.intents.get_mut("greet").expect("pure Core intent");
+    let CoreNode::Let { binding, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    binding.id = "arg.0".to_owned();
+    intent.body.locals[1].id = "arg.0".to_owned();
+    target
+        .intents
+        .get_mut("greet")
+        .expect("pure Target IR intent")
+        .pure_bindings[0]
+        .binding
+        .id = "arg.0".to_owned();
+    repin_target_core(&core, &mut target);
+
+    let failure = emit_result_projection(&core, &target, "greet")
+        .expect_err("one local identity cannot name input and pure-binding producers");
+
+    assert_eq!(
+        failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+}
+
 fn assert_pure_target_authority_rejected(
     core: &CoreModule,
     target: &TargetIrArtifact,

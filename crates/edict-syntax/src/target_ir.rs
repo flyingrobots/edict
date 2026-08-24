@@ -7,10 +7,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, CoreBudget, CoreExpr, CoreExternalActionBudget,
-    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
-    CorePredicate, CoreRequireFailureArm, InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION,
-    CORE_APPLICATION_INPUT_LOCAL_ID,
+    core_type_fits, is_lowercase_sha256_review_digest, resolved_core_type, CoreBudget, CoreExpr,
+    CoreExternalActionBudget, CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm,
+    CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, CoreValue,
+    InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
@@ -538,82 +538,309 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
 }
 
 fn validate_pure_binding_graphs(core: &CoreModule) -> Vec<TargetLoweringFailure> {
-    let mut failures = Vec::new();
-    for (intent_name, intent) in &core.intents {
-        if !intent
-            .body
-            .nodes
-            .iter()
-            .any(|node| matches!(node, CoreNode::Let { .. }))
-        {
-            continue;
-        }
-        let locals = intent
-            .body
-            .locals
-            .iter()
-            .map(|local| (local.id.as_str(), local))
-            .collect::<BTreeMap<_, _>>();
-        if locals.len() != intent.body.locals.len() {
-            failures.push(invalid_pure_binding(
-                intent_name,
-                None,
-                "Core local table contains a duplicate identity",
-            ));
-            continue;
-        }
-        let Some(input) = locals.get(CORE_APPLICATION_INPUT_LOCAL_ID).copied() else {
-            failures.push(invalid_pure_binding(
-                intent_name,
-                None,
-                "missing application input local",
-            ));
+    core.intents
+        .iter()
+        .filter(|(_, intent)| {
+            !intent
+                .body
+                .nodes
+                .iter()
+                .any(|node| matches!(node, CoreNode::For { .. } | CoreNode::Branch { .. }))
+        })
+        .filter_map(|(intent_name, intent)| validate_pure_binding_graph(core, intent_name, intent))
+        .collect()
+}
+
+fn validate_pure_binding_graph(
+    core: &CoreModule,
+    intent_name: &str,
+    intent: &CoreIntent,
+) -> Option<TargetLoweringFailure> {
+    let locals = intent
+        .body
+        .locals
+        .iter()
+        .map(|local| (local.id.as_str(), local))
+        .collect::<BTreeMap<_, _>>();
+    if locals.len() != intent.body.locals.len() {
+        return Some(invalid_pure_binding(
+            intent_name,
+            None,
+            "Core local table contains a duplicate identity",
+        ));
+    }
+    let Some(input) = locals.get(CORE_APPLICATION_INPUT_LOCAL_ID).copied() else {
+        return Some(invalid_pure_binding(
+            intent_name,
+            None,
+            "missing application input local",
+        ));
+    };
+    if input.ty != intent.input {
+        return Some(invalid_pure_binding(
+            intent_name,
+            None,
+            "application input local type does not match the intent input",
+        ));
+    }
+
+    let mut available = BTreeMap::from([(input.id.as_str(), input)]);
+    for (node_index, node) in intent.body.nodes.iter().enumerate() {
+        let binding = match node {
+            CoreNode::Let { binding, value } => {
+                if !expression_references_are_available(value, &available) {
+                    return Some(invalid_pure_binding(
+                        intent_name,
+                        Some(node_index),
+                        "pure binding references an undeclared, conflicting, or later local",
+                    ));
+                }
+                if !expression_fits_declared_type(core, value, &binding.ty, &available) {
+                    return Some(invalid_pure_binding(
+                        intent_name,
+                        Some(node_index),
+                        "pure binding value does not match its declared type",
+                    ));
+                }
+                Some(binding)
+            }
+            CoreNode::Effect { binding, .. } | CoreNode::ExternalActionRequest { binding, .. } => {
+                Some(binding)
+            }
+            CoreNode::Branch { binding, .. } => binding.as_ref(),
+            CoreNode::Require { .. } | CoreNode::For { .. } => None,
+        };
+        let Some(binding) = binding else {
             continue;
         };
-        if input.ty != intent.input {
-            failures.push(invalid_pure_binding(
+        if locals.get(binding.id.as_str()).copied() != Some(binding)
+            || available.insert(binding.id.as_str(), binding).is_some()
+        {
+            return Some(invalid_pure_binding(
                 intent_name,
-                None,
-                "application input local type does not match the intent input",
+                Some(node_index),
+                "binding identity is missing, duplicated, or conflicts with the Core local table",
             ));
-            continue;
-        }
-
-        let mut available = BTreeMap::from([(input.id.as_str(), input)]);
-        for (node_index, node) in intent.body.nodes.iter().enumerate() {
-            let binding = match node {
-                CoreNode::Let { binding, value } => {
-                    if !expression_references_are_available(value, &available) {
-                        failures.push(invalid_pure_binding(
-                            intent_name,
-                            Some(node_index),
-                            "pure binding references an undeclared, conflicting, or later local",
-                        ));
-                        break;
-                    }
-                    Some(binding)
-                }
-                CoreNode::Effect { binding, .. }
-                | CoreNode::ExternalActionRequest { binding, .. } => Some(binding),
-                CoreNode::Branch { binding, .. } => binding.as_ref(),
-                CoreNode::Require { .. } | CoreNode::For { .. } => None,
-            };
-            let Some(binding) = binding else {
-                continue;
-            };
-            if locals.get(binding.id.as_str()).copied() != Some(binding)
-                || available.insert(binding.id.as_str(), binding).is_some()
-            {
-                failures.push(invalid_pure_binding(
-                    intent_name,
-                    Some(node_index),
-                    "binding identity is missing, duplicated, or conflicts with the Core local table",
-                ));
-                break;
-            }
         }
     }
-    failures
+    if !expression_references_are_available(&intent.body.result, &available) {
+        return Some(invalid_pure_binding(
+            intent_name,
+            None,
+            "result references an undeclared or conflicting local",
+        ));
+    }
+    (!expression_fits_declared_type(core, &intent.body.result, &intent.output, &available)).then(
+        || {
+            invalid_pure_binding(
+                intent_name,
+                None,
+                &format!(
+                    "result expression does not match declared output type `{}`",
+                    intent.output
+                ),
+            )
+        },
+    )
+}
+
+fn expression_fits_declared_type(
+    core: &CoreModule,
+    expression: &CoreExpr,
+    expected: &str,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    match expression {
+        CoreExpr::Local { reference } => {
+            available.get(reference.id.as_str()).copied() == Some(reference)
+                && core_type_fits(core, &reference.ty, expected)
+        }
+        CoreExpr::Const(value) => core_value_fits_declared_type(core, value, expected),
+        CoreExpr::Record { fields } => {
+            let Some(CoreType::Record {
+                fields: expected_fields,
+            }) = resolved_core_type(core, expected)
+            else {
+                return false;
+            };
+            fields.keys().eq(expected_fields.keys())
+                && fields.iter().all(|(field, value)| {
+                    expression_fits_declared_type(
+                        core,
+                        value,
+                        expected_fields.get(field).expect("equal record field keys"),
+                        available,
+                    )
+                })
+        }
+        CoreExpr::Field { base, field } => expression_type_coordinate(core, base, available)
+            .and_then(|base_type| resolved_core_type(core, &base_type))
+            .and_then(|base_type| match base_type {
+                CoreType::Record { fields } => fields.get(field).cloned(),
+                _ => None,
+            })
+            .is_some_and(|field_type| core_type_fits(core, &field_type, expected)),
+        CoreExpr::Call { callee, args, .. } if callee == "core.string.concat" => {
+            let Some(CoreType::String {
+                max: expected_max,
+                canonical: expected_canonical,
+            }) = resolved_core_type(core, expected)
+            else {
+                return false;
+            };
+            let mut actual_max = 0_u64;
+            args.iter().all(|argument| {
+                let Some((max, canonical)) = expression_string_shape(core, argument, available)
+                else {
+                    return false;
+                };
+                let Some(next_max) = actual_max.checked_add(max) else {
+                    return false;
+                };
+                actual_max = next_max;
+                canonical == expected_canonical
+            }) && actual_max <= expected_max
+        }
+        CoreExpr::Call { .. } => {
+            // Imported pure-call signatures are verified while constructing the
+            // compiler-owned Core. The initial Core ABI does not duplicate the
+            // return signature on each call, so this boundary can validate only
+            // reference closure until that ABI carries a self-describing call.
+            expression_references_are_available(expression, available)
+                && resolved_core_type(core, expected).is_some()
+        }
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            predicate_references_are_available(predicate, available)
+                && expression_fits_declared_type(core, then_value, expected, available)
+                && expression_fits_declared_type(core, else_value, expected, available)
+        }
+    }
+}
+
+fn expression_string_shape(
+    core: &CoreModule,
+    expression: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> Option<(u64, String)> {
+    match expression {
+        CoreExpr::Const(CoreValue::String(value)) => Some((
+            u64::try_from(value.chars().count()).ok()?,
+            "raw-utf8".to_owned(),
+        )),
+        CoreExpr::Local { .. } | CoreExpr::Field { .. } => {
+            let coordinate = expression_type_coordinate(core, expression, available)?;
+            let CoreType::String { max, canonical } = resolved_core_type(core, &coordinate)? else {
+                return None;
+            };
+            Some((max, canonical))
+        }
+        CoreExpr::Call { callee, args, .. } if callee == "core.string.concat" => {
+            let mut max = 0_u64;
+            let mut canonical = None;
+            for argument in args {
+                let (argument_max, argument_canonical) =
+                    expression_string_shape(core, argument, available)?;
+                if canonical
+                    .as_ref()
+                    .is_some_and(|canonical| canonical != &argument_canonical)
+                {
+                    return None;
+                }
+                canonical = Some(argument_canonical);
+                max = max.checked_add(argument_max)?;
+            }
+            Some((max, canonical.unwrap_or_else(|| "raw-utf8".to_owned())))
+        }
+        CoreExpr::If {
+            then_value,
+            else_value,
+            ..
+        } => {
+            let (then_max, then_canonical) = expression_string_shape(core, then_value, available)?;
+            let (else_max, else_canonical) = expression_string_shape(core, else_value, available)?;
+            (then_canonical == else_canonical).then_some((then_max.max(else_max), then_canonical))
+        }
+        CoreExpr::Const(
+            CoreValue::Null | CoreValue::Bool(_) | CoreValue::Int { .. } | CoreValue::Bytes(_),
+        )
+        | CoreExpr::Record { .. }
+        | CoreExpr::Call { .. } => None,
+    }
+}
+
+fn expression_type_coordinate(
+    core: &CoreModule,
+    expression: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> Option<String> {
+    match expression {
+        CoreExpr::Local { reference }
+            if available.get(reference.id.as_str()).copied() == Some(reference) =>
+        {
+            Some(reference.ty.clone())
+        }
+        CoreExpr::Const(CoreValue::Bool(_)) => Some("Bool".to_owned()),
+        CoreExpr::Const(CoreValue::Int { width, .. }) => Some(width.clone()),
+        CoreExpr::Field { base, field } => expression_type_coordinate(core, base, available)
+            .and_then(|base_type| resolved_core_type(core, &base_type))
+            .and_then(|base_type| match base_type {
+                CoreType::Record { fields } => fields.get(field).cloned(),
+                _ => None,
+            }),
+        CoreExpr::If {
+            then_value,
+            else_value,
+            ..
+        } => {
+            let then_type = expression_type_coordinate(core, then_value, available)?;
+            (expression_type_coordinate(core, else_value, available)? == then_type)
+                .then_some(then_type)
+        }
+        CoreExpr::Local { .. }
+        | CoreExpr::Const(CoreValue::Null | CoreValue::String(_) | CoreValue::Bytes(_))
+        | CoreExpr::Record { .. }
+        | CoreExpr::Call { .. } => None,
+    }
+}
+
+fn core_value_fits_declared_type(core: &CoreModule, value: &CoreValue, expected: &str) -> bool {
+    let Some(expected) = resolved_core_type(core, expected) else {
+        return false;
+    };
+    match (value, expected) {
+        (CoreValue::Null, CoreType::Option { .. }) | (CoreValue::Bool(_), CoreType::Bool) => true,
+        (
+            CoreValue::Int {
+                width: actual_width,
+                value,
+            },
+            CoreType::Int { width },
+        ) => actual_width == &width && crate::core_ir::parse_core_integer(&width, value).is_some(),
+        (CoreValue::String(value), CoreType::String { max, .. }) => {
+            u64::try_from(value.chars().count()).is_ok_and(|length| length <= max)
+        }
+        (CoreValue::Bytes(value), CoreType::Bytes { min, max }) => u64::try_from(value.len())
+            .is_ok_and(|length| length >= min.unwrap_or(0) && length <= max),
+        (
+            _,
+            CoreType::Nominal { .. }
+            | CoreType::Record { .. }
+            | CoreType::Variant { .. }
+            | CoreType::List { .. }
+            | CoreType::Map { .. }
+            | CoreType::CapabilityRef { .. }
+            | CoreType::ExternalActionRequest { .. }
+            | CoreType::Option { .. }
+            | CoreType::Bool
+            | CoreType::Int { .. }
+            | CoreType::String { .. }
+            | CoreType::Bytes { .. },
+        ) => false,
+    }
 }
 
 fn invalid_pure_binding(

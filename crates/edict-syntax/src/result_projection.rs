@@ -4,10 +4,10 @@
 //! or grant runtime authority. Emitters derive it from exact Core and Target IR;
 //! verifiers reconstruct the authored Core result from the claimed projection.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::core_ir::CORE_APPLICATION_INPUT_LOCAL_ID;
+use crate::core_ir::{core_type_fits, CORE_APPLICATION_INPUT_LOCAL_ID};
 use crate::{
     decode_canonical_cbor, digest_canonical_artifact, encode_canonical_cbor, CanonicalValue,
     CoreDigest, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreType, LocalRef, TargetIrArtifact,
@@ -34,9 +34,6 @@ pub const MAX_RESULT_PROJECTION_TEXT_BYTES: usize = 1_024;
 
 /// Maximum canonical bytes in one projection artifact.
 pub const MAX_RESULT_PROJECTION_ARTIFACT_BYTES: usize = 64 * 1_024;
-
-/// Maximum recursive type comparisons while validating projection output shape.
-const MAX_RESULT_PROJECTION_TYPE_DEPTH: usize = 32;
 
 /// Untrusted result-projection candidate for one application operation.
 ///
@@ -410,7 +407,7 @@ impl<'a> ProjectionSemantics<'a> {
         )?;
         let input = resolve_application_input(core_intent, intent_name)?;
         let (pure_by_local, pure_by_id, capability_by_local, capability_by_step) =
-            resolve_projection_sources(core_intent, target_intent, intent_name)?;
+            resolve_projection_sources(core_intent, target_intent, intent_name, &input)?;
 
         Ok(Self {
             core,
@@ -512,6 +509,7 @@ fn resolve_projection_sources(
     core_intent: &CoreIntent,
     target_intent: &TargetIrIntent,
     intent_name: &str,
+    input: &LocalRef,
 ) -> Result<
     (
         ProjectionByLocal,
@@ -563,6 +561,7 @@ fn resolve_projection_sources(
         ));
     }
 
+    let mut claimed_local_ids = BTreeSet::from([input.id.clone()]);
     let mut pure_by_local = BTreeMap::new();
     let mut pure_by_id = BTreeMap::new();
     for (binding_index, ((core_binding, core_value), binding)) in core_pure_bindings
@@ -577,12 +576,13 @@ fn resolve_projection_sources(
             intent_name,
             binding_index,
         )?;
-        if pure_by_local
-            .insert(
-                binding.binding.id.clone(),
-                (binding.id.clone(), binding.binding.clone()),
-            )
-            .is_some()
+        if !claimed_local_ids.insert(binding.binding.id.clone())
+            || pure_by_local
+                .insert(
+                    binding.binding.id.clone(),
+                    (binding.id.clone(), binding.binding.clone()),
+                )
+                .is_some()
             || pure_by_id
                 .insert(binding.id.clone(), binding.binding.clone())
                 .is_some()
@@ -597,12 +597,13 @@ fn resolve_projection_sources(
     let mut capability_by_step = BTreeMap::new();
     for step in &target_intent.steps {
         validate_step_matches_core(step, &core_effects, intent_name)?;
-        if capability_by_local
-            .insert(
-                step.binding.id.clone(),
-                (step.id.clone(), step.binding.clone()),
-            )
-            .is_some()
+        if !claimed_local_ids.insert(step.binding.id.clone())
+            || capability_by_local
+                .insert(
+                    step.binding.id.clone(),
+                    (step.id.clone(), step.binding.clone()),
+                )
+                .is_some()
             || capability_by_step
                 .insert(step.id.clone(), step.binding.clone())
                 .is_some()
@@ -818,7 +819,7 @@ fn validate_output_shape(
         }
         ResultProjectionExpr::Source { source, path } => {
             let source_type = source_type(semantics, source, path)?;
-            if source_type_fits_output(semantics.core, source_type, expected_type, 0) {
+            if core_type_fits(semantics.core, source_type, expected_type) {
                 Ok(())
             } else {
                 Err(failure(
@@ -879,179 +880,6 @@ fn resolve_type<'a>(core: &'a CoreModule, coordinate: &str) -> Option<&'a CoreTy
             .and_then(|relative| relative.strip_prefix('.'))
             .and_then(|relative| core.types.get(relative))
     })
-}
-
-fn source_type_fits_output(core: &CoreModule, source: &str, output: &str, depth: usize) -> bool {
-    if depth > MAX_RESULT_PROJECTION_TYPE_DEPTH {
-        return false;
-    }
-    let (Some(left), Some(right)) = (resolved_type(core, source), resolved_type(core, output))
-    else {
-        return false;
-    };
-    if let Some(fits) = nominal_types_fit(&left, &right) {
-        return fits;
-    }
-    if let Some(fits) = scalar_types_fit(&left, &right) {
-        return fits;
-    }
-    match (&left, &right) {
-        (
-            CoreType::Record {
-                fields: left_fields,
-            },
-            CoreType::Record {
-                fields: right_fields,
-            },
-        ) => {
-            left_fields.keys().eq(right_fields.keys())
-                && left_fields.iter().all(|(field, left_type)| {
-                    source_type_fits_output(
-                        core,
-                        left_type,
-                        right_fields.get(field).expect("equal field keys"),
-                        depth + 1,
-                    )
-                })
-        }
-        (CoreType::Variant { cases: left }, CoreType::Variant { cases: right }) => {
-            left.keys().eq(right.keys())
-                && left.iter().all(|(case, left_payload)| {
-                    match (
-                        left_payload,
-                        right.get(case).expect("equal variant case keys"),
-                    ) {
-                        (None, None) => true,
-                        (Some(left), Some(right)) => {
-                            source_type_fits_output(core, left, right, depth + 1)
-                        }
-                        (None, Some(_)) | (Some(_), None) => false,
-                    }
-                })
-        }
-        (CoreType::Option { item: left }, CoreType::Option { item: right })
-        | (CoreType::CapabilityRef { item: left }, CoreType::CapabilityRef { item: right }) => {
-            source_type_fits_output(core, left, right, depth + 1)
-        }
-        (
-            CoreType::ExternalActionRequest { settlement: left },
-            CoreType::ExternalActionRequest { settlement: right },
-        ) => source_type_fits_output(core, left, right, depth + 1),
-        (
-            CoreType::List {
-                item: left,
-                max: left_max,
-            },
-            CoreType::List {
-                item: right,
-                max: right_max,
-            },
-        ) => left_max <= right_max && source_type_fits_output(core, left, right, depth + 1),
-        (
-            CoreType::Map {
-                key: left_key,
-                value: left_value,
-                max: left_max,
-            },
-            CoreType::Map {
-                key: right_key,
-                value: right_value,
-                max: right_max,
-            },
-        ) => {
-            left_max <= right_max
-                && source_type_fits_output(core, left_key, right_key, depth + 1)
-                && source_type_fits_output(core, left_value, right_value, depth + 1)
-        }
-        _ => false,
-    }
-}
-
-fn scalar_types_fit(left: &CoreType, right: &CoreType) -> Option<bool> {
-    match (left, right) {
-        (CoreType::Bool, CoreType::Bool) => Some(true),
-        (CoreType::Int { width: left }, CoreType::Int { width: right }) => Some(left == right),
-        (
-            CoreType::String {
-                max: left_max,
-                canonical: left_canonical,
-            },
-            CoreType::String {
-                max: right_max,
-                canonical: right_canonical,
-            },
-        ) => Some(left_max <= right_max && left_canonical == right_canonical),
-        (
-            CoreType::Bytes {
-                min: left_min,
-                max: left_max,
-            },
-            CoreType::Bytes {
-                min: right_min,
-                max: right_max,
-            },
-        ) => Some(left_min.unwrap_or(0) >= right_min.unwrap_or(0) && left_max <= right_max),
-        _ => None,
-    }
-}
-
-fn nominal_types_fit(left: &CoreType, right: &CoreType) -> Option<bool> {
-    match (left, right) {
-        (
-            CoreType::Nominal {
-                contract: left_contract,
-                representation: left_representation,
-            },
-            CoreType::Nominal {
-                contract: right_contract,
-                representation: right_representation,
-            },
-        ) => Some(left_contract == right_contract && left_representation == right_representation),
-        (CoreType::Nominal { .. }, _) | (_, CoreType::Nominal { .. }) => Some(false),
-        _ => None,
-    }
-}
-
-fn resolved_type(core: &CoreModule, coordinate: &str) -> Option<CoreType> {
-    resolve_type(core, coordinate)
-        .cloned()
-        .or_else(|| builtin_type(coordinate))
-}
-
-fn builtin_type(coordinate: &str) -> Option<CoreType> {
-    if coordinate == "Bool" {
-        return Some(CoreType::Bool);
-    }
-    if matches!(coordinate, "I32" | "I64" | "U32" | "U64") {
-        return Some(CoreType::Int {
-            width: coordinate.to_owned(),
-        });
-    }
-    if let Some(inner) = coordinate
-        .strip_prefix("String<max=")
-        .and_then(|value| value.strip_suffix('>'))
-    {
-        let (max, canonical) = inner.split_once(",canonical=")?;
-        return Some(CoreType::String {
-            max: max.parse().ok()?,
-            canonical: canonical.to_owned(),
-        });
-    }
-    if let Some(max) = coordinate
-        .strip_prefix("Bytes<max=")
-        .and_then(|value| value.strip_suffix('>'))
-        .and_then(|max| max.parse().ok())
-    {
-        return Some(CoreType::Bytes { min: None, max });
-    }
-    coordinate
-        .strip_prefix("Bytes<exact=")
-        .and_then(|value| value.strip_suffix('>'))
-        .and_then(|exact| exact.parse().ok())
-        .map(|exact| CoreType::Bytes {
-            min: Some(exact),
-            max: exact,
-        })
 }
 
 fn validate_projection_bounds(

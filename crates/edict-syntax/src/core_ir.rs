@@ -159,6 +159,222 @@ pub enum CoreType {
     },
 }
 
+const MAX_CORE_TYPE_COMPATIBILITY_DEPTH: usize = 64;
+
+pub(crate) fn core_type_fits(core: &CoreModule, source: &str, target: &str) -> bool {
+    core_type_fits_at_depth(core, source, target, 0)
+}
+
+fn core_type_fits_at_depth(core: &CoreModule, source: &str, target: &str, depth: usize) -> bool {
+    if depth > MAX_CORE_TYPE_COMPATIBILITY_DEPTH {
+        return false;
+    }
+    let (Some(left), Some(right)) = (
+        resolved_core_type(core, source),
+        resolved_core_type(core, target),
+    ) else {
+        return false;
+    };
+    if let Some(fits) = nominal_types_fit(&left, &right) {
+        return fits;
+    }
+    if let Some(fits) = scalar_types_fit(&left, &right) {
+        return fits;
+    }
+    match (&left, &right) {
+        (
+            CoreType::Record {
+                fields: left_fields,
+            },
+            CoreType::Record {
+                fields: right_fields,
+            },
+        ) => {
+            left_fields.keys().eq(right_fields.keys())
+                && left_fields.iter().all(|(field, left_type)| {
+                    core_type_fits_at_depth(
+                        core,
+                        left_type,
+                        right_fields.get(field).expect("equal field keys"),
+                        depth + 1,
+                    )
+                })
+        }
+        (CoreType::Variant { cases: left }, CoreType::Variant { cases: right }) => {
+            left.keys().eq(right.keys())
+                && left.iter().all(|(case, left_payload)| {
+                    match (
+                        left_payload,
+                        right.get(case).expect("equal variant case keys"),
+                    ) {
+                        (None, None) => true,
+                        (Some(left), Some(right)) => {
+                            core_type_fits_at_depth(core, left, right, depth + 1)
+                        }
+                        (None, Some(_)) | (Some(_), None) => false,
+                    }
+                })
+        }
+        (CoreType::Option { item: left }, CoreType::Option { item: right })
+        | (CoreType::CapabilityRef { item: left }, CoreType::CapabilityRef { item: right }) => {
+            core_type_fits_at_depth(core, left, right, depth + 1)
+        }
+        (
+            CoreType::ExternalActionRequest { settlement: left },
+            CoreType::ExternalActionRequest { settlement: right },
+        ) => core_type_fits_at_depth(core, left, right, depth + 1),
+        (
+            CoreType::List {
+                item: left,
+                max: left_max,
+            },
+            CoreType::List {
+                item: right,
+                max: right_max,
+            },
+        ) => left_max <= right_max && core_type_fits_at_depth(core, left, right, depth + 1),
+        (
+            CoreType::Map {
+                key: left_key,
+                value: left_value,
+                max: left_max,
+            },
+            CoreType::Map {
+                key: right_key,
+                value: right_value,
+                max: right_max,
+            },
+        ) => {
+            left_max <= right_max
+                && core_type_fits_at_depth(core, left_key, right_key, depth + 1)
+                && core_type_fits_at_depth(core, left_value, right_value, depth + 1)
+        }
+        _ => false,
+    }
+}
+
+pub(crate) fn resolved_core_type(core: &CoreModule, coordinate: &str) -> Option<CoreType> {
+    core.types
+        .get(coordinate)
+        .or_else(|| {
+            coordinate
+                .strip_prefix(core.coordinate.as_str())
+                .and_then(|relative| relative.strip_prefix('.'))
+                .and_then(|relative| core.types.get(relative))
+        })
+        .cloned()
+        .or_else(|| builtin_core_type(coordinate))
+}
+
+fn builtin_core_type(coordinate: &str) -> Option<CoreType> {
+    if coordinate == "Bool" {
+        return Some(CoreType::Bool);
+    }
+    if matches!(coordinate, "I32" | "I64" | "U32" | "U64") {
+        return Some(CoreType::Int {
+            width: coordinate.to_owned(),
+        });
+    }
+    if let Some(item) = coordinate
+        .strip_prefix("Option<")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        return Some(CoreType::Option {
+            item: item.to_owned(),
+        });
+    }
+    if let Some(item) = coordinate
+        .strip_prefix("CapabilityRef<")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        return Some(CoreType::CapabilityRef {
+            item: item.to_owned(),
+        });
+    }
+    if let Some(settlement) = [
+        "ExternalActionRequest<",
+        "edict.external-action.request/v1<",
+    ]
+    .into_iter()
+    .find_map(|prefix| coordinate.strip_prefix(prefix))
+    .and_then(|value| value.strip_suffix('>'))
+    {
+        return Some(CoreType::ExternalActionRequest {
+            settlement: settlement.to_owned(),
+        });
+    }
+    if let Some(inner) = coordinate
+        .strip_prefix("String<max=")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let (max, canonical) = inner.split_once(",canonical=")?;
+        return Some(CoreType::String {
+            max: max.parse().ok()?,
+            canonical: canonical.to_owned(),
+        });
+    }
+    if let Some(max) = coordinate
+        .strip_prefix("Bytes<max=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|max| max.parse().ok())
+    {
+        return Some(CoreType::Bytes { min: None, max });
+    }
+    coordinate
+        .strip_prefix("Bytes<exact=")
+        .and_then(|value| value.strip_suffix('>'))
+        .and_then(|exact| exact.parse().ok())
+        .map(|exact| CoreType::Bytes {
+            min: Some(exact),
+            max: exact,
+        })
+}
+
+fn scalar_types_fit(left: &CoreType, right: &CoreType) -> Option<bool> {
+    match (left, right) {
+        (CoreType::Bool, CoreType::Bool) => Some(true),
+        (CoreType::Int { width: left }, CoreType::Int { width: right }) => Some(left == right),
+        (
+            CoreType::String {
+                max: left_max,
+                canonical: left_canonical,
+            },
+            CoreType::String {
+                max: right_max,
+                canonical: right_canonical,
+            },
+        ) => Some(left_max <= right_max && left_canonical == right_canonical),
+        (
+            CoreType::Bytes {
+                min: left_min,
+                max: left_max,
+            },
+            CoreType::Bytes {
+                min: right_min,
+                max: right_max,
+            },
+        ) => Some(left_min.unwrap_or(0) >= right_min.unwrap_or(0) && left_max <= right_max),
+        _ => None,
+    }
+}
+
+fn nominal_types_fit(left: &CoreType, right: &CoreType) -> Option<bool> {
+    match (left, right) {
+        (
+            CoreType::Nominal {
+                contract: left_contract,
+                representation: left_representation,
+            },
+            CoreType::Nominal {
+                contract: right_contract,
+                representation: right_representation,
+            },
+        ) => Some(left_contract == right_contract && left_representation == right_representation),
+        (CoreType::Nominal { .. }, _) | (_, CoreType::Nominal { .. }) => Some(false),
+        _ => None,
+    }
+}
+
 /// Alpha-stable local reference.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalRef {
