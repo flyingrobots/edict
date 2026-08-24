@@ -1590,6 +1590,22 @@ fn pure_binding_encoder_rejects_duplicate_identity_or_missing_closure() {
         CanonicalErrorKind::UnsupportedValue
     );
 
+    let mut duplicate_local = pure_artifact();
+    let mut binding = pure_binding_mut(&mut duplicate_local).clone();
+    binding.id = "sayHello.binding.1".to_owned();
+    duplicate_local
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .pure_bindings
+        .push(binding);
+    assert_eq!(
+        encode_target_ir_artifact(&duplicate_local)
+            .expect_err("distinct target ids cannot share one compiler-local identity")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+
     let mut unclosed = pure_artifact();
     unclosed.semantic_closure = None;
     assert_eq!(

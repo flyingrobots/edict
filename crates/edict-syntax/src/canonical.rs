@@ -651,6 +651,7 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
 
 fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
     let mut binding_ids = BTreeSet::new();
+    let mut local_ids = BTreeSet::new();
     for binding in &intent.pure_bindings {
         if binding.id.is_empty() || !binding_ids.insert(binding.id.as_str()) {
             return Err(CanonicalError::new(
@@ -658,6 +659,15 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
                 format!(
                     "Target IR pure binding id `{}` is empty or duplicated",
                     binding.id
+                ),
+            ));
+        }
+        if binding.binding.id.is_empty() || !local_ids.insert(binding.binding.id.as_str()) {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                format!(
+                    "Target IR pure binding local id `{}` is empty or duplicated",
+                    binding.binding.id
                 ),
             ));
         }
