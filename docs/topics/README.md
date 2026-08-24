@@ -68,6 +68,9 @@ cargo xtask verify
   validation, explicit in-process compatibility adapters for the current
   built-in target lowerers, the external provider WIT contract, and pure
   invocation request/result validation with host-authored output identity.
+- [Public Rust API](./public-rust-api/README.md): curated non-publishing Rust
+  facade for source checking, stable diagnostic kinds, and canonical artifact
+  identities.
 - [Result Projections](./result-projections/README.md): compiler-owned,
   canonical, bounded application-result assembly from declared input and
   capability-result sources with independent reverse verification.

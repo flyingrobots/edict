@@ -5,9 +5,10 @@ current branch; it is not a future package plan.
 
 ## Workspace Shape
 
-The Rust workspace has five members:
+The Rust workspace has six members:
 
 ```text
+flyingrobots-edict  ->  edict-syntax
 edict-cli  ->  edict-syntax
 xtask      ->  edict-syntax
 edict-provider-schema  ->  edict-syntax
@@ -25,6 +26,18 @@ validate provider artifact instances without a component-runtime dependency.
 runtime without exposing Wasmtime types through Edict contracts.
 
 ## Crates
+
+### `flyingrobots-edict`
+
+`flyingrobots-edict` exposes the Rust library name `edict`. It is the curated
+public facade for source checking, stable diagnostic classifications, and
+canonical Core, Target IR, and result-projection artifact identity operations.
+It deliberately does not re-export the implementation crate's module tree.
+
+The package remains `publish = false`. Its presence defines and tests the
+intended public Rust boundary; it neither authorizes nor claims crates.io
+publication. The CLI remains the complete application-build and JSONL process
+boundary.
 
 ### `edict-syntax`
 

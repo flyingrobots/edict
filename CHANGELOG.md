@@ -31,6 +31,13 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added the non-publishing `flyingrobots-edict` package with the Rust library
+  name `edict`. The curated facade exposes source checking, stable diagnostic
+  classifications, and canonical Core, Target IR, and result-projection
+  artifact identity operations without making the implementation crate's
+  module tree part of the recommended public API. The package remains
+  `publish = false`; registry naming, publication, and release authorization
+  are explicitly outside this change.
 - Added a public application-owned lawpack authoring boundary. One bounded
   `edict.lawpack-build/v1` review document now emits deterministic canonical
   manifests, exports, adapters, local resources, and digest sidecars through
