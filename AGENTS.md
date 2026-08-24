@@ -84,6 +84,40 @@ request body or final report.
 - Avoid ceremonial documentation. Update shelves because the contract changed,
   not because a path changed.
 
+## Durable Decision Discipline
+
+Important decisions are incomplete until their durable owner is current.
+Architecture, authority, identity, canonical-format, recovery, compatibility,
+ownership, public-API, and release-boundary decisions MUST be recorded in the
+same change in the canonical topic shelf, specification, requirement, or release
+document that owns the concept. Chat transcripts, Think memories, pull-request
+prose, and review threads may explain or motivate a decision, but they are not
+its canonical repository home.
+
+For every such decision:
+
+1. Identify one canonical owner before completing the change. Prefer the
+   relevant `docs/topics/<topic>/README.md` for current behavior,
+   `architecture.md` for machinery, a normative `docs/SPEC_*.md` or ABI schema
+   for protocol law, and `test-plan.md` for planned and implemented evidence.
+2. Record the accepted rule, its current-versus-target posture, and explicit
+   refinement, supersession, dependency, and related-document edges.
+3. Update `docs/topics/README.md`, `docs/README.md`, or another relevant router
+   when a durable page or topic shelf is added, moved, or renamed.
+4. Link to the canonical owner from reader-specific pages instead of copying
+   the same rule into several places.
+5. Keep implementation checklists, review state, and delivery status in GitHub.
+   Current topic shelves describe branch or HEAD truth; they are not a second
+   project tracker.
+6. Revisit the same canonical owner whenever later work refines the decision.
+   A refinement is not complete while code, schemas, packages, fixtures, or
+   release behavior disagree with the documented rule.
+
+Treat missing or stale canonical decision documentation as incomplete
+engineering work, not optional polish. Historical design and release documents
+remain evidence; update the current owning shelf rather than silently relying
+on an old decision record.
+
 ## RED/GREEN Testing Discipline
 
 Edict uses RED/GREEN test-driven development for nontrivial changes. The shared
