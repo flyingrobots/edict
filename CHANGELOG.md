@@ -41,6 +41,9 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added explicit imported `Nominal<T>` lawpack contracts. Nominal contracts
+  preserve their shared bounded storage representation in Core while rejecting
+  cross-assignment between distinct contract coordinates before lowering.
 - Added a public application-owned lawpack authoring boundary. One bounded
   `edict.lawpack-build/v1` review document now emits deterministic canonical
   manifests, exports, adapters, local resources, and digest sidecars through

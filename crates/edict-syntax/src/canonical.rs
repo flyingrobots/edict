@@ -985,6 +985,14 @@ fn core_type_value(ty: &CoreType) -> Result<CanonicalValue, CanonicalError> {
             fields.push(("max", uint(*max)));
             map(fields)
         }
+        CoreType::Nominal {
+            contract,
+            representation,
+        } => map([
+            ("kind", text("Nominal")),
+            ("contract", text(contract)),
+            ("representation", text(representation)),
+        ]),
         CoreType::Record { fields } => map([
             ("kind", text("Record")),
             (

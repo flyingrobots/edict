@@ -506,12 +506,29 @@ struct TypeShape {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TypeKind {
     Bool,
-    Int { width: String },
-    String { max: u64, canonical: String },
-    Bytes { min: Option<u64>, max: u64 },
-    List { item: Box<TypeShape>, max: u64 },
+    Int {
+        width: String,
+    },
+    String {
+        max: u64,
+        canonical: String,
+    },
+    Bytes {
+        min: Option<u64>,
+        max: u64,
+    },
+    Nominal {
+        contract: String,
+        representation: Box<TypeShape>,
+    },
+    List {
+        item: Box<TypeShape>,
+        max: u64,
+    },
     Record(BTreeMap<String, TypeShape>),
-    ExternalActionRequest { settlement: Box<TypeShape> },
+    ExternalActionRequest {
+        settlement: Box<TypeShape>,
+    },
 }
 
 impl TypeShape {
@@ -528,6 +545,13 @@ impl TypeShape {
             TypeKind::Bytes { min, max } => CoreType::Bytes {
                 min: *min,
                 max: *max,
+            },
+            TypeKind::Nominal {
+                contract,
+                representation,
+            } => CoreType::Nominal {
+                contract: contract.clone(),
+                representation: representation.value_type_coord(),
             },
             TypeKind::List { item, max } => CoreType::List {
                 item: item.value_type_coord(),
@@ -551,6 +575,7 @@ impl TypeShape {
             TypeKind::Int { width } => width.clone(),
             TypeKind::String { max, canonical } => string_type_coord(*max, canonical),
             TypeKind::Bytes { min, max } => bytes_type_coord(*min, *max),
+            TypeKind::Nominal { contract, .. } => contract.clone(),
             TypeKind::List { item, max } => list_type_coord(&item.value_type_coord(), *max),
             TypeKind::Record(_) | TypeKind::ExternalActionRequest { .. } => self.coord.clone(),
         }
@@ -3639,6 +3664,7 @@ impl<'a> TypeChecker<'a> {
             &self.resolved.type_shapes,
             &fact.lawpack,
             &mut resolving,
+            Some(&fact.coordinate),
             1,
         )?;
         shape.coord.clone_from(&fact.coordinate);
@@ -4044,6 +4070,11 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
     if expected.coord == actual.coord {
         return true;
     }
+    if matches!(expected.kind, TypeKind::Nominal { .. })
+        || matches!(actual.kind, TypeKind::Nominal { .. })
+    {
+        return false;
+    }
     match (&expected.kind, &actual.kind) {
         (
             TypeKind::String {
@@ -4128,11 +4159,22 @@ fn imported_type_definition_shape(
     type_shapes: &BTreeMap<String, TypeShapeFact>,
     lawpack: &ResourceRef,
     resolving: &mut BTreeSet<String>,
+    definition_coordinate: Option<&str>,
     depth: usize,
 ) -> Option<TypeShape> {
     const MAX_IMPORTED_TYPE_DEPTH: usize = 128;
     if depth > MAX_IMPORTED_TYPE_DEPTH {
         return None;
+    }
+    if definition.starts_with("Nominal<") {
+        return imported_nominal_type_definition_shape(
+            definition,
+            type_shapes,
+            lawpack,
+            resolving,
+            definition_coordinate?,
+            depth,
+        );
     }
     if definition == "Bool" {
         return Some(TypeShape {
@@ -4196,6 +4238,7 @@ fn imported_type_definition_shape(
                     type_shapes,
                     lawpack,
                     resolving,
+                    None,
                     depth + 1,
                 )?),
                 max: max.parse().ok()?,
@@ -4213,11 +4256,32 @@ fn imported_type_definition_shape(
         type_shapes,
         lawpack,
         resolving,
+        Some(&fact.coordinate),
         depth + 1,
     )?;
     resolving.remove(definition);
     shape.coord.clone_from(&fact.coordinate);
     Some(shape)
+}
+
+fn imported_nominal_type_definition_shape(
+    definition: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+    resolving: &mut BTreeSet<String>,
+    contract: &str,
+    depth: usize,
+) -> Option<TypeShape> {
+    let inner = definition.strip_prefix("Nominal<")?.strip_suffix('>')?;
+    let representation =
+        imported_type_definition_shape(inner, type_shapes, lawpack, resolving, None, depth + 1)?;
+    Some(TypeShape {
+        coord: contract.to_owned(),
+        kind: TypeKind::Nominal {
+            contract: contract.to_owned(),
+            representation: Box::new(representation),
+        },
+    })
 }
 
 fn bytes_type_coord(min: Option<u64>, max: u64) -> String {

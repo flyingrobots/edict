@@ -889,29 +889,13 @@ fn source_type_fits_output(core: &CoreModule, source: &str, output: &str, depth:
     else {
         return false;
     };
+    if let Some(fits) = nominal_types_fit(&left, &right) {
+        return fits;
+    }
+    if let Some(fits) = scalar_types_fit(&left, &right) {
+        return fits;
+    }
     match (&left, &right) {
-        (CoreType::Bool, CoreType::Bool) => true,
-        (CoreType::Int { width: left }, CoreType::Int { width: right }) => left == right,
-        (
-            CoreType::String {
-                max: left_max,
-                canonical: left_canonical,
-            },
-            CoreType::String {
-                max: right_max,
-                canonical: right_canonical,
-            },
-        ) => left_max <= right_max && left_canonical == right_canonical,
-        (
-            CoreType::Bytes {
-                min: left_min,
-                max: left_max,
-            },
-            CoreType::Bytes {
-                min: right_min,
-                max: right_max,
-            },
-        ) => left_min.unwrap_or(0) >= right_min.unwrap_or(0) && left_max <= right_max,
         (
             CoreType::Record {
                 fields: left_fields,
@@ -980,6 +964,51 @@ fn source_type_fits_output(core: &CoreModule, source: &str, output: &str, depth:
                 && source_type_fits_output(core, left_value, right_value, depth + 1)
         }
         _ => false,
+    }
+}
+
+fn scalar_types_fit(left: &CoreType, right: &CoreType) -> Option<bool> {
+    match (left, right) {
+        (CoreType::Bool, CoreType::Bool) => Some(true),
+        (CoreType::Int { width: left }, CoreType::Int { width: right }) => Some(left == right),
+        (
+            CoreType::String {
+                max: left_max,
+                canonical: left_canonical,
+            },
+            CoreType::String {
+                max: right_max,
+                canonical: right_canonical,
+            },
+        ) => Some(left_max <= right_max && left_canonical == right_canonical),
+        (
+            CoreType::Bytes {
+                min: left_min,
+                max: left_max,
+            },
+            CoreType::Bytes {
+                min: right_min,
+                max: right_max,
+            },
+        ) => Some(left_min.unwrap_or(0) >= right_min.unwrap_or(0) && left_max <= right_max),
+        _ => None,
+    }
+}
+
+fn nominal_types_fit(left: &CoreType, right: &CoreType) -> Option<bool> {
+    match (left, right) {
+        (
+            CoreType::Nominal {
+                contract: left_contract,
+                representation: left_representation,
+            },
+            CoreType::Nominal {
+                contract: right_contract,
+                representation: right_representation,
+            },
+        ) => Some(left_contract == right_contract && left_representation == right_representation),
+        (CoreType::Nominal { .. }, _) | (_, CoreType::Nominal { .. }) => Some(false),
+        _ => None,
     }
 }
 

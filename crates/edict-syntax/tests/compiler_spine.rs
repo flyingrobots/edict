@@ -497,24 +497,17 @@ fn exact_bytes_and_imported_nominal_aliases_preserve_core_identity() {
         .with_type_shape(TypeShapeFact {
             lawpack: lawpack.clone(),
             coordinate: "example.bounds@1.BufferId".to_owned(),
-            definition: "Bytes<exact=32>".to_owned(),
+            definition: "Nominal<Bytes<exact=32>>".to_owned(),
         })
         .with_type_shape(TypeShapeFact {
             lawpack,
             coordinate: "example.bounds@1.HeadId".to_owned(),
-            definition: "Bytes<exact=32>".to_owned(),
+            definition: "Nominal<Bytes<exact=32>>".to_owned(),
         });
     let module = parse_module(source).expect("exact-byte source parses");
     let exact_core = compile_to_core(&module, &context).expect("exact-byte source compiles");
 
-    for field in [
-        "Input.bufferId",
-        "Input.basisHeadId",
-        "Input.raw",
-        "Output.bufferId",
-        "Output.basisHeadId",
-        "Output.raw",
-    ] {
+    for field in ["Input.raw", "Output.raw"] {
         assert_eq!(
             exact_core.types.get(field),
             Some(&CoreType::Bytes {
@@ -524,14 +517,21 @@ fn exact_bytes_and_imported_nominal_aliases_preserve_core_identity() {
             "{field} must retain the exact byte interval",
         );
     }
-    for nominal in ["example.bounds@1.BufferId", "example.bounds@1.HeadId"] {
+    for (field, contract) in [
+        ("Input.bufferId", "example.bounds@1.BufferId"),
+        ("Output.bufferId", "example.bounds@1.BufferId"),
+        ("Input.basisHeadId", "example.bounds@1.HeadId"),
+        ("Output.basisHeadId", "example.bounds@1.HeadId"),
+        ("example.bounds@1.BufferId", "example.bounds@1.BufferId"),
+        ("example.bounds@1.HeadId", "example.bounds@1.HeadId"),
+    ] {
         assert_eq!(
-            exact_core.types.get(nominal),
-            Some(&CoreType::Bytes {
-                min: Some(32),
-                max: 32,
+            exact_core.types.get(field),
+            Some(&CoreType::Nominal {
+                contract: contract.to_owned(),
+                representation: "Bytes<exact=32>".to_owned(),
             }),
-            "{nominal} must remain structurally resolvable by downstream proof stages",
+            "{field} must retain the nominal contract and its exact storage ABI",
         );
     }
 
@@ -542,6 +542,42 @@ fn exact_bytes_and_imported_nominal_aliases_preserve_core_identity() {
         digest_core_module(&exact_core).expect("exact Core digests"),
         digest_core_module(&max_only_core).expect("max-only Core digests"),
     );
+}
+
+#[test]
+fn imported_nominal_identifiers_reject_cross_assignment() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as text;\n\
+        type Input = { bufferId: text.BufferId, basisHeadId: text.HeadId, };\n\
+        type Output = { bufferId: text.BufferId, basisHeadId: text.HeadId, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis input.basisHeadId\n\
+          budget <= p.tiny {\n\
+          return { bufferId: input.basisHeadId, basisHeadId: input.bufferId };\n\
+        }";
+    let lawpack = example_bounds_lawpack();
+    let context = pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.BufferId".to_owned(),
+            definition: "Nominal<Bytes<exact=32>>".to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack,
+            coordinate: "example.bounds@1.HeadId".to_owned(),
+            definition: "Nominal<Bytes<exact=32>>".to_owned(),
+        });
+    let module = parse_module(source).expect("nominal identifier source parses");
+    let failures = compile_to_core(&module, &context)
+        .expect_err("distinct imported nominal identifiers must not cross-assign");
+
+    assert!(failures
+        .iter()
+        .any(|failure| failure.kind == CompilerErrorKind::TypeMismatch));
+    assert!(failures
+        .iter()
+        .all(|failure| failure.kind != CompilerErrorKind::UnresolvedType));
 }
 
 #[test]

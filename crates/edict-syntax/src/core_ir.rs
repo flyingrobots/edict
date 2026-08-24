@@ -129,6 +129,10 @@ pub enum CoreType {
         min: Option<u64>,
         max: u64,
     },
+    Nominal {
+        contract: String,
+        representation: String,
+    },
     Record {
         fields: BTreeMap<String, String>,
     },
