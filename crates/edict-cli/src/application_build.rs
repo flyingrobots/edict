@@ -2435,14 +2435,15 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use edict_syntax::{
-        compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
-        decode_result_projection, digest_canonical_artifact, encode_canonical_cbor,
-        lower_to_target_ir, parse_module, prepare_lawpack_compilation, CanonicalValue,
-        LawpackAdapterOperationProfile, LawpackResourceRef, LawpackTargetAdapter,
-        ProviderArtifactKind, ProviderArtifactRef, ProviderArtifactSource, ProviderSchemaBinding,
-        ProviderSchemaFormat, ResourceRef, ResultProjectionArtifact, TargetIrArtifact,
-        TargetLoweringReport, TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN,
-        TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+        author_lawpack, compile_to_core, decode_canonical_cbor, decode_lawpack_adapter,
+        decode_lawpack_bundle, decode_result_projection, digest_canonical_artifact,
+        encode_canonical_cbor, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
+        CanonicalValue, LawpackAdapterOperationProfile, LawpackArtifactKind,
+        LawpackAuthoringDefinition, LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind,
+        ProviderArtifactRef, ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat,
+        ResourceRef, ResultProjectionArtifact, TargetIrArtifact, TargetLoweringReport,
+        TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI,
+        TARGET_PROVIDER_MANIFEST_API_VERSION,
     };
 
     use super::{
@@ -3364,6 +3365,22 @@ mod tests {
     }
 
     #[test]
+    fn public_application_selects_configuration_from_compiled_core_profiles() {
+        let root = temp_tree("public-selected-core-profile");
+        let config_path = write_external_action_application(&root);
+        install_two_profile_workspace_lawpack(&root);
+
+        test_ok(
+            build_application(&config_path),
+            "build with a differently configured unused operation profile",
+        );
+
+        assert!(root.join(".build/application/core.cbor").is_file());
+        assert!(root.join(".build/application/target-ir.cbor").is_file());
+        test_ok(fs::remove_dir_all(root), "remove two-profile build tree");
+    }
+
+    #[test]
     fn compiler_result_projection_is_bound_into_the_provider_closure() {
         let projection = result_projection_artifact();
         let bytes = projection.canonical_bytes().to_vec();
@@ -3587,6 +3604,175 @@ mod tests {
             .to_review_string(),
         })
         .collect()
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the test lawpack keeps both profile configurations reviewable"
+    )]
+    fn install_two_profile_workspace_lawpack(root: &std::path::Path) {
+        let definition = test_ok(
+            serde_json::from_value::<LawpackAuthoringDefinition>(serde_json::json!({
+                "schema": "edict.lawpack-authoring/v1",
+                "id": "workspace.snapshot",
+                "version": "1",
+                "acceptedCoreAbi": ["edict.core/v1"],
+                "dependencies": [],
+                "exportsCoordinate": "workspace.snapshot.exports/v1",
+                "exports": {
+                    "types": [],
+                    "constants": [],
+                    "pureFunctions": [],
+                    "effects": [],
+                    "obstructions": [],
+                    "operationProfiles": {
+                        "workspace.snapshot@1.observeRequest": {
+                            "opticTemplate": {
+                                "opticKind": "revelation",
+                                "boundaryKind": "projection",
+                                "supportPolicy": "workspace.snapshot@1.requestOnly",
+                                "lossDisposition": "workspace.snapshot@1.lossless",
+                                "basisTemplate": null,
+                                "apertureRequirement": {
+                                    "kind": "abstractFootprintObligation",
+                                    "reference": "workspace.snapshot@1.authorityScope"
+                                }
+                            },
+                            "effectPredicate": "workspace.snapshot@1.externalObservation"
+                        },
+                        "workspace.snapshot@1.unusedRequest": {
+                            "opticTemplate": {
+                                "opticKind": "revelation",
+                                "boundaryKind": "projection",
+                                "supportPolicy": "workspace.snapshot@1.requestOnly",
+                                "lossDisposition": "workspace.snapshot@1.lossless",
+                                "basisTemplate": null,
+                                "apertureRequirement": {
+                                    "kind": "abstractFootprintObligation",
+                                    "reference": "workspace.snapshot@1.authorityScope"
+                                }
+                            },
+                            "effectPredicate": "workspace.snapshot@1.externalObservation"
+                        }
+                    }
+                },
+                "targetAdapters": [{
+                    "coordinate": "workspace.snapshot.echo-adapter/v1",
+                    "output": "adapter.cbor",
+                    "acceptedTargetProfile": {
+                        "id": "echo.dpo@1",
+                        "digest": "sha256:2e2494121aecf5e6a2d920f5fb85408825d394765fad41484c416397c920fb04"
+                    },
+                    "acceptedTargetIr": {
+                        "id": "echo.span-ir/v1",
+                        "digest": "sha256:0057167e68f50c99dcce087b3e1cd677d17c5d1dc238bdb52d89469e1472fc2f"
+                    },
+                    "operationProfiles": {
+                        "workspace.snapshot@1.observeRequest": {
+                            "core": "continuum.profile.read-only/v1",
+                            "semanticEffects": [],
+                            "budgetObligation": "workspace.snapshot@1.tinyObservationBudget",
+                            "targetConfiguration": {"local": "selected-configuration"}
+                        },
+                        "workspace.snapshot@1.unusedRequest": {
+                            "core": "continuum.profile.unused/v1",
+                            "semanticEffects": [],
+                            "budgetObligation": "workspace.snapshot@1.tinyObservationBudget",
+                            "targetConfiguration": {"local": "unused-configuration"}
+                        }
+                    },
+                    "effectImplementations": {},
+                    "budgets": {
+                        "workspace.snapshot@1.tinyObservationBudget": {
+                            "maxSteps": 512,
+                            "maxAllocatedBytes": 262_144,
+                            "maxOutputBytes": 131_072
+                        }
+                    }
+                }],
+                "helperComponent": null,
+                "verifier": {
+                    "class": "declarative",
+                    "ruleset": {
+                        "id": "workspace.snapshot.verifier-rules/v1",
+                        "digest": format!("sha256:{}", "84".repeat(32))
+                    }
+                },
+                "compatibility": {
+                    "id": "workspace.snapshot.compatibility/v1",
+                    "digest": format!("sha256:{}", "85".repeat(32))
+                },
+                "conformanceFixtureCorpus": {
+                    "id": "workspace.snapshot.fixtures/v1",
+                    "digest": format!("sha256:{}", "86".repeat(32))
+                },
+                "localResources": [{
+                    "name": "selected-configuration",
+                    "coordinate": "workspace.snapshot.request-profile/v1",
+                    "output": "request-profile-configuration.cbor",
+                    "value": {
+                        "operation": "workspace.snapshot.observe@1",
+                        "apiVersion": "workspace.snapshot.request-profile/v1",
+                        "basisClass": "workspace-root",
+                        "authorityClass": "scoped"
+                    }
+                }, {
+                    "name": "unused-configuration",
+                    "coordinate": "workspace.snapshot.unused-profile/v1",
+                    "output": "unused-profile-configuration.cbor",
+                    "value": {
+                        "apiVersion": "workspace.snapshot.unused-profile/v1",
+                        "sentinel": "must-not-select"
+                    }
+                }]
+            })),
+            "decode two-profile lawpack definition",
+        );
+        let artifacts = test_ok(
+            author_lawpack(&definition, &[]),
+            "author two-profile lawpack",
+        );
+        let lawpack_directory = root.join("vendor/workspace-snapshot");
+        for artifact in artifacts.artifacts() {
+            let path = lawpack_directory.join(artifact.path());
+            if let Some(parent) = path.parent() {
+                test_ok(
+                    fs::create_dir_all(parent),
+                    "create authored artifact parent",
+                );
+            }
+            test_ok(
+                fs::write(path, artifact.bytes()),
+                "write authored lawpack artifact",
+            );
+        }
+
+        let manifest = test_ok(
+            artifacts
+                .artifact(LawpackArtifactKind::Manifest)
+                .ok_or("authored lawpack has no manifest"),
+            "locate authored lawpack manifest",
+        );
+        let source_path = root.join("src/observe-workspace.edict");
+        let source = test_ok(fs::read_to_string(&source_path), "read workspace source");
+        let original_digest =
+            include_str!("../../../fixtures/lawpack/workspace-snapshot/manifest.sha256").trim();
+        let repinned = source.replace(original_digest, manifest.digest());
+        assert_ne!(repinned, source, "source lawpack digest must move");
+        test_ok(fs::write(source_path, repinned), "repin workspace source");
+
+        let selected = test_ok(
+            fs::read(lawpack_directory.join("request-profile-configuration.cbor")),
+            "read selected configuration",
+        );
+        let unused = test_ok(
+            fs::read(lawpack_directory.join("unused-profile-configuration.cbor")),
+            "read unused configuration",
+        );
+        assert_ne!(
+            selected, unused,
+            "the unused configuration is materially distinct"
+        );
     }
 
     #[allow(
