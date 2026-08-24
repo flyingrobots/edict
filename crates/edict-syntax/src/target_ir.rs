@@ -545,7 +545,7 @@ fn validate_pure_binding_graphs(core: &CoreModule) -> Vec<TargetLoweringFailure>
                 .body
                 .nodes
                 .iter()
-                .any(|node| matches!(node, CoreNode::For { .. } | CoreNode::Branch { .. }))
+                .any(|node| matches!(node, CoreNode::For { .. }))
         })
         .filter_map(|(intent_name, intent)| validate_pure_binding_graph(core, intent_name, intent))
         .collect()
@@ -820,8 +820,9 @@ fn core_value_fits_declared_type(core: &CoreModule, value: &CoreValue, expected:
             },
             CoreType::Int { width },
         ) => actual_width == &width && crate::core_ir::parse_core_integer(&width, value).is_some(),
-        (CoreValue::String(value), CoreType::String { max, .. }) => {
-            u64::try_from(value.chars().count()).is_ok_and(|length| length <= max)
+        (CoreValue::String(value), CoreType::String { max, canonical }) => {
+            canonical == "raw-utf8"
+                && u64::try_from(value.chars().count()).is_ok_and(|length| length <= max)
         }
         (CoreValue::Bytes(value), CoreType::Bytes { min, max }) => u64::try_from(value.len())
             .is_ok_and(|length| length >= min.unwrap_or(0) && length <= max),

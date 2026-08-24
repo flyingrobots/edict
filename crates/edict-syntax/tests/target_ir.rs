@@ -1245,10 +1245,12 @@ fn dangling_pure_result_rejects_before_target_artifact() {
 
     assert_eq!(report.status, TargetLoweringStatus::Unsupported);
     assert!(report.artifact.is_none());
-    assert_eq!(
-        failure_kinds(&report),
-        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
-    );
+    let [failure] = report.failures.as_slice() else {
+        panic!("a dangling result rejects with exactly one failure");
+    };
+    assert_eq!(failure.kind, TargetLoweringFailureKind::InvalidCoreIdentity);
+    assert_eq!(failure.intent.as_deref(), Some("sayHello"));
+    assert_eq!(failure.node_index, None);
 }
 
 #[test]
@@ -1264,10 +1266,35 @@ fn type_incompatible_pure_binding_rejects_before_target_artifact() {
 
     assert_eq!(report.status, TargetLoweringStatus::Unsupported);
     assert!(report.artifact.is_none());
-    assert_eq!(
-        failure_kinds(&report),
-        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
-    );
+    let [failure] = report.failures.as_slice() else {
+        panic!("an incompatible binding rejects with exactly one failure");
+    };
+    assert_eq!(failure.kind, TargetLoweringFailureKind::InvalidCoreIdentity);
+    assert_eq!(failure.intent.as_deref(), Some("sayHello"));
+    assert_eq!(failure.node_index, Some(0));
+}
+
+#[test]
+fn non_raw_string_constant_rejects_before_target_artifact() {
+    let mut core = pure_core();
+    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+    let CoreNode::Let { binding, value } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    binding.ty = "String<max=263,canonical=unicode-scalar-nfc>".to_owned();
+    intent.body.locals[1].ty.clone_from(&binding.ty);
+    *value = CoreExpr::Const(CoreValue::String("already normalized".to_owned()));
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    let [failure] = report.failures.as_slice() else {
+        panic!("a raw string constant under a non-raw contract rejects once");
+    };
+    assert_eq!(failure.kind, TargetLoweringFailureKind::InvalidCoreIdentity);
+    assert_eq!(failure.intent.as_deref(), Some("sayHello"));
+    assert_eq!(failure.node_index, Some(0));
 }
 
 #[test]
