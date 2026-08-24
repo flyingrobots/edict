@@ -13,9 +13,12 @@ versions still track specification maturity rather than a released product.
 - Lowered bounded source-ordered pure Core bindings into generic Target IR with
   exact compiler-local identities, expressions, helper and conditional
   dependencies, semantic closure, canonical identity, and independently
-  verifiable result-projection sources. Malformed binding graphs, substituted or
-  reordered target bindings, duplicate identities, and closure stripping now
-  fail before provider invocation. Effect-free adapters now supply their
+  verifiable result-projection sources. Malformed binding graphs, dangling
+  results, type-incompatible binding values, cross-class local-identity
+  collisions, substituted or reordered target bindings, duplicate identities,
+  and closure stripping now fail before provider invocation. The public
+  application boundary proves that only operation profiles required by compiled
+  Core contribute a target configuration. Effect-free adapters now supply their
   operation-profile target configuration to application provider inputs instead
   of requiring a synthetic runtime effect, and configurations owned only by
   adapter profiles whose Core mapping is not required by the compiled

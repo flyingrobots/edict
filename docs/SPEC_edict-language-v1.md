@@ -1392,7 +1392,7 @@ type-ref        = qual-ident , type-args?
                   "max" , "=" , bound-ref , ">" ;
 string-refine   = "<" , "max" , "=" , bound-ref ,
                   ( "," , "canonical" , "=" , ident )? , ">" ;
-bytes-refine    = "<" , "max" , "=" , bound-ref , ">" ;
+bytes-refine    = "<" , ( "max" | "exact" ) , "=" , bound-ref , ">" ;
 type-args       = "<" , type-ref , { "," , type-ref } , ">" ;
 
 fn-decl         = "fn" , ident , "(" , param-list? , ")" ,
