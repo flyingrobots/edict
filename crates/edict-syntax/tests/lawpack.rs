@@ -1693,6 +1693,68 @@ fn edict_pure_helper_constants_obey_scalar_map_and_variant_types() {
 }
 
 #[test]
+fn edict_pure_helper_byte_constants_obey_complete_intervals() {
+    fn validation_outcome(definition: &str, byte_len: usize) -> &'static str {
+        let mut exports = hello_echo_exports();
+        array_mut(field_mut(&mut exports, "types")).push(map([
+            ("coordinate", text("hello.echo@1.ByteInterval")),
+            ("definition", text(definition)),
+        ]));
+        array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+            "hello.echo@1.byteInterval",
+            &[],
+            "hello.echo@1.ByteInterval",
+            "edict",
+            (
+                "body",
+                pure_body(
+                    Vec::new(),
+                    map([
+                        ("kind", text("const")),
+                        (
+                            "value",
+                            map([
+                                ("kind", text("bytes")),
+                                ("value", CanonicalValue::Bytes(vec![0; byte_len])),
+                            ]),
+                        ),
+                    ]),
+                ),
+            ),
+        ));
+        let exports_bytes = encode_canonical_cbor(&exports).expect("encode byte exports");
+        let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+        let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode byte manifest");
+
+        match decode_lawpack_bundle(&manifest_bytes, &exports_bytes) {
+            Ok(_) => "accepted",
+            Err(failures)
+                if failure_kinds(&failures)
+                    == vec![LawpackValidationFailureKind::InvalidPureFunctionBody] =>
+            {
+                "invalid-pure-body"
+            }
+            Err(_) => "other-failure",
+        }
+    }
+
+    assert_eq!(
+        [
+            validation_outcome("Bytes<exact=4>", 1),
+            validation_outcome("Bytes<min=2,max=4>", 1),
+            validation_outcome("Bytes<min=2,max=4>", 3),
+            validation_outcome("Bytes<min=2,max=4>", 5),
+        ],
+        [
+            "invalid-pure-body",
+            "invalid-pure-body",
+            "accepted",
+            "invalid-pure-body",
+        ]
+    );
+}
+
+#[test]
 fn edict_pure_helper_call_graph_depth_is_bounded() {
     for count in [128, 129] {
         let mut exports = hello_echo_exports();
