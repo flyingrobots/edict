@@ -55,9 +55,9 @@ Out of scope:
 | TIR-REQ-016 | implemented | A validated direct lawpack adapter derives the exact target profile, Target IR domain, operation-profile support, effect intrinsic, and named-failure support used for Target IR lowering; callers do not hand-assemble `TargetIrLoweringFacts`. | issue #169, docs/abi/edict-lawpack-adapter.cddl |
 | TIR-REQ-017 | implemented | Target IR preserves typed external-action requests in a separate non-callable collection and binds each exact request operation in the semantic capability closure. | issue #172, docs/abi/edict-target-ir.cddl |
 | TIR-REQ-018 | implemented | Target IR preserves source-ordered pure Core bindings as generic executable data, including exact local identities, expressions, helper calls, and conditional dependencies, without evaluating or duplicating them in the compiler; malformed binding graphs and closure-free pure artifacts fail before provider invocation. | issue #200 |
-| TIR-REQ-019 | implemented | Target lowering recognizes every fixed-width integer in the Core ABI and validates constants against the declared scalar domain without requiring redundant built-in entries in `core.types`. | PR #201 review |
-| TIR-REQ-020 | implemented | Target lowering independently validates caller-supplied pure Core conditional predicates and rejects incompatible operand types or constants outside their declared scalar domains before producing an artifact. | PR #201 review |
-| TIR-REQ-021 | implemented | Canonical Target IR permits only one producer for each local identity across pure bindings, target steps, and external-action requests. | PR #201 review |
+| TIR-REQ-019 | implemented | Target lowering recognizes every fixed-width integer in the Core ABI and validates constants against the declared scalar domain without requiring redundant built-in entries in `core.types`. | issue #201 |
+| TIR-REQ-020 | implemented | Target lowering independently validates caller-supplied pure Core conditional predicates and rejects incompatible operand types or constants outside their declared scalar domains before producing an artifact. | issue #201 |
+| TIR-REQ-021 | implemented | Canonical Target IR permits only one producer for each local identity across pure bindings, target steps, and external-action requests. | issue #201 |
 
 ## Fixtures
 
