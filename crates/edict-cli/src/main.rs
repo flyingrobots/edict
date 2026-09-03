@@ -1176,6 +1176,7 @@ fn project_target_facts(target: &ProjectionTargetSettings) -> TargetIrLoweringFa
                 failure_mappings: std::collections::BTreeMap::new(),
             })
             .collect(),
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }

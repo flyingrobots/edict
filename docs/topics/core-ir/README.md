@@ -45,7 +45,11 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   carry an explicit maximum and may carry a minimum; equal bounds represent an
   exact byte length, while max-only values omit the minimum from canonical Core.
   Every compiler-emitted byte coordinate resolves back to that same interval,
-  including distinct minimum and maximum bounds. [COREIR-REQ-002]
+  including distinct minimum and maximum bounds. Shared downstream type
+  resolution gives published built-in coordinates precedence over colliding
+  module table keys and reconstructs compiler-emitted bounded
+  `List<item,max=N>` coordinates without losing nested item structure.
+  [COREIR-REQ-002]
   [COREIR-REQ-019] [COREIR-REQ-020] [COREIR-REQ-022] [COREIR-REQ-023]
 - Structural type compatibility and imported compiler type resolution share one
   finite depth ceiling of 128. A compiler-accepted type chain at that boundary

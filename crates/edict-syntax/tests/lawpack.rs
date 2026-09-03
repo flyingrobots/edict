@@ -46,6 +46,18 @@ fn hello_echo_lawpack_bundle_loads_from_exact_canonical_resources() {
 
     assert_eq!(bundle.manifest().id, "hello.echo");
     assert_eq!(bundle.manifest().version, "1");
+    assert_eq!(
+        bundle
+            .exports()
+            .types
+            .iter()
+            .map(|exported| exported.coordinate.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "hello.echo@1.CreateGreetingInput",
+            "hello.echo@1.GreetingReceipt",
+        ]
+    );
     assert_eq!(bundle.exports().effects.len(), 1);
     assert_eq!(
         bundle.exports().effects[0].coordinate,
@@ -70,6 +82,105 @@ fn hello_echo_lawpack_bundle_loads_from_exact_canonical_resources() {
     assert_eq!(
         bundle.manifest_digest_review_string(),
         MANIFEST_DIGEST.trim()
+    );
+}
+
+#[test]
+fn lawpack_effect_signatures_reject_source_type_substitution() {
+    let bundle =
+        decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
+
+    let wrong_input_source =
+        CREATE_GREETING_SOURCE.replace("hello.createGreeting(input)", "hello.createGreeting(true)");
+    assert_ne!(wrong_input_source, CREATE_GREETING_SOURCE);
+    let wrong_output_source = CREATE_GREETING_SOURCE.replace(
+        "GreetingReceipt = hello.createGreeting",
+        "CreateGreetingInput = hello.createGreeting",
+    );
+    assert_ne!(wrong_output_source, CREATE_GREETING_SOURCE);
+
+    for (case, source) in [
+        ("input", wrong_input_source),
+        ("output", wrong_output_source),
+    ] {
+        let module = parse_module(&source).expect("substituted effect source parses");
+        let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+            .expect("derive exact lawpack facts");
+        let errors = compile_to_core(&module, preparation.compiler_context())
+            .expect_err("effect signature substitution must reject before Core");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.kind == CompilerErrorKind::TypeMismatch),
+            "{case}: {errors:?}"
+        );
+    }
+}
+
+#[test]
+fn direct_bounded_effect_signature_types_enter_source_compilation() {
+    let mut exports = hello_echo_exports();
+    let effect = first_array_item_mut(field_mut(&mut exports, "effects"));
+    let bounded_string = "String<max=64,canonical=raw-utf8>";
+    replace_field(effect, "inputType", text(bounded_string));
+    replace_field(effect, "outputType", text(bounded_string));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode scalar effect exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode scalar effect manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load scalar-signature lawpack");
+    let source = CREATE_GREETING_SOURCE
+        .replace(
+            MANIFEST_DIGEST.trim(),
+            &bundle.manifest_digest_review_string(),
+        )
+        .replace(
+            "hello.GreetingReceipt = hello.createGreeting(input)",
+            "String<max=64> = hello.createGreeting(input.key)",
+        )
+        .replace("key: receipt.key", "key: receipt");
+    assert_ne!(source, CREATE_GREETING_SOURCE);
+    let module = parse_module(&source).expect("bounded scalar effect source parses");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive bounded scalar effect facts");
+
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("direct bounded signature coordinates compile to Core");
+    let report = lower_to_target_ir(&core, preparation.target_ir_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+}
+
+#[test]
+fn lawpack_effect_signature_requires_exported_type_closure() {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "types")).clear();
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode typeless exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode typeless manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("shape-valid bundle retains its unresolved signature metadata");
+    let source = CREATE_GREETING_SOURCE.replace(
+        MANIFEST_DIGEST.trim(),
+        &bundle.manifest_digest_review_string(),
+    );
+    assert_ne!(source, CREATE_GREETING_SOURCE);
+    let module = parse_module(&source).expect("typeless signature source parses");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
+
+    let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect_err("an unresolved effect signature must not become compiler or Target facts");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::InvalidShape]
     );
 }
 

@@ -29,9 +29,11 @@ intent sayHello(input: HelloInput)
 }
 "#;
 
+// The import contributes semantic-closure identity; the projection settings
+// independently inject `target.replace` as a synthetic native effect.
 const ECHO_SOURCE: &str = r#"package demo.echo@1;
 
-use lawpack demo.write@1 digest "sha256:2222222222222222222222222222222222222222222222222222222222222222" as target;
+use lawpack demo.write@1 digest "sha256:2222222222222222222222222222222222222222222222222222222222222222" as semantics;
 
 type Input = { id: String<max=16>, basis: String<max=128>, };
 type Receipt = { id: String<max=16>, };
@@ -1656,6 +1658,7 @@ fn projection_target_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }

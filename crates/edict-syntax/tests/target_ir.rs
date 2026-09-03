@@ -10,14 +10,14 @@ use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
     CompareOp, CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr,
-    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, CoreType,
-    CoreValue, GuardKind, InputConstraint, InputConstraintSource, LocalRef, LowerabilityStatus,
-    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
-    TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest, TargetIrLoweringFacts,
-    TargetIrRequireFailure, TargetIrStep, TargetLoweringFailureKind, TargetLoweringStatus,
-    TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
-    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreModule, CoreNode, CorePredicate,
+    CoreType, CoreValue, GuardKind, InputConstraint, InputConstraintSource, LocalRef,
+    LowerabilityStatus, LoweringRequirements, NativeEffectSupport, ResourceRef,
+    SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
+    TargetIrExternalActionRequest, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrStep,
+    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, WriteClass,
+    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
+    GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -246,6 +246,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
             failure_mappings: BTreeMap::new(),
         }],
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }
@@ -264,6 +265,7 @@ fn gitwarp_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
             failure_mappings: BTreeMap::new(),
         }],
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }
@@ -380,6 +382,39 @@ fn gitwarp_requirements() -> LoweringRequirements {
 
 fn failure_kinds(report: &edict_syntax::TargetLoweringReport) -> Vec<TargetLoweringFailureKind> {
     report.failures.iter().map(|failure| failure.kind).collect()
+}
+
+fn assert_invalid_core_identity(report: &edict_syntax::TargetLoweringReport, case: &str) {
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported, "{case}");
+    assert!(report.artifact.is_none(), "{case}");
+    assert_eq!(
+        failure_kinds(report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity],
+        "{case}"
+    );
+}
+
+fn replace_first_let_binding_type(core: &mut CoreModule, from: &str, to: &str) {
+    let intent = core.intents.get_mut("t").expect("intent t");
+    let binding_id = {
+        let CoreNode::Let { binding, .. } = &mut intent.body.nodes[0] else {
+            panic!("bounded-list fixture starts with a let");
+        };
+        let replacement = binding.ty.replace(from, to);
+        assert_ne!(replacement, binding.ty);
+        binding.ty = replacement;
+        binding.id.clone()
+    };
+    let local = intent
+        .body
+        .locals
+        .iter_mut()
+        .find(|local| local.id == binding_id)
+        .expect("list binding remains in the Core local table");
+    local.ty = match &intent.body.nodes[0] {
+        CoreNode::Let { binding, .. } => binding.ty.clone(),
+        _ => unreachable!("bounded-list fixture starts with a let"),
+    };
 }
 
 #[test]
@@ -1710,6 +1745,210 @@ fn compiler_produced_conditional_record_comparisons_preserve_structural_compatib
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::InvalidCoreIdentity]
     );
+}
+
+#[test]
+fn target_comparisons_require_one_record_compatibility_direction() {
+    let mut core = pure_core();
+    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+    let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    let valid_branch = value.clone();
+    let record = |a: usize, b: usize| CoreExpr::Record {
+        fields: BTreeMap::from([
+            (
+                "a".to_owned(),
+                CoreExpr::Const(CoreValue::String("a".repeat(a))),
+            ),
+            (
+                "b".to_owned(),
+                CoreExpr::Const(CoreValue::String("b".repeat(b))),
+            ),
+        ]),
+    };
+    *value = CoreExpr::If {
+        predicate: Box::new(CorePredicate::Compare {
+            op: CompareOp::Eq,
+            left: record(1, 3),
+            right: record(3, 1),
+        }),
+        then_value: Box::new(valid_branch.clone()),
+        else_value: Box::new(valid_branch),
+    };
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+}
+
+#[test]
+fn lawpack_effect_signatures_reject_mismatched_core_values() {
+    let manifest = include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+    let exports = include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+    let adapter = include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+    let source = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+    let bundle =
+        edict_syntax::decode_lawpack_bundle(manifest, exports).expect("load Hello Echo lawpack");
+    let adapter = edict_syntax::decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter)
+        .expect("load Hello Echo adapter");
+    let module = edict_syntax::parse_module(source).expect("parse Hello Echo source");
+    let preparation = edict_syntax::prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("prepare Hello Echo compilation");
+    let core =
+        compile_to_core(&module, preparation.compiler_context()).expect("compile Hello Echo Core");
+    let facts = preparation.target_ir_facts();
+
+    let control = lower_to_target_ir(&core, facts);
+    assert_eq!(control.status, TargetLoweringStatus::Lowered);
+    assert!(control.failures.is_empty());
+    assert!(control.artifact.is_some());
+
+    let mut input_mismatch = core.clone();
+    let CoreNode::Effect { input, .. } = &mut input_mismatch
+        .intents
+        .get_mut("createGreeting")
+        .expect("createGreeting intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("Hello Echo starts with its effect");
+    };
+    *input = CoreExpr::Const(CoreValue::Bool(true));
+
+    let mut output_mismatch = core.clone();
+    let intent = output_mismatch
+        .intents
+        .get_mut("createGreeting")
+        .expect("createGreeting intent");
+    let wrong_output = intent.input.clone();
+    let binding_id = {
+        let CoreNode::Effect { binding, .. } = &mut intent.body.nodes[0] else {
+            panic!("Hello Echo starts with its effect");
+        };
+        binding.ty.clone_from(&wrong_output);
+        binding.id.clone()
+    };
+    let Some(local) = intent
+        .body
+        .locals
+        .iter_mut()
+        .find(|local| local.id == binding_id)
+    else {
+        panic!("effect result remains in the Core local table");
+    };
+    local.ty = wrong_output;
+    let CoreExpr::Record { fields } = &mut intent.body.result else {
+        panic!("Hello Echo returns a record");
+    };
+    let CoreExpr::Field { base, .. } = fields.get_mut("key").expect("result key field") else {
+        panic!("result key reads the effect receipt");
+    };
+    let CoreExpr::Local { reference } = base.as_mut() else {
+        panic!("receipt field base is the effect result local");
+    };
+    assert_eq!(reference.id, binding_id);
+    reference.ty.clone_from(&local.ty);
+
+    let mut type_definition_mismatch = core.clone();
+    let prior = type_definition_mismatch.types.insert(
+        "hello.echo@1.CreateGreetingInput".to_owned(),
+        CoreType::Bool,
+    );
+    assert!(matches!(prior, Some(CoreType::Record { .. })));
+
+    let mut missing_facts = facts.clone();
+    missing_facts.effect_signatures.clear();
+    let missing_report = lower_to_target_ir(&core, &missing_facts);
+    assert_invalid_core_identity(&missing_report, "missing signature fact");
+
+    let mut duplicate_facts = facts.clone();
+    duplicate_facts
+        .effect_signatures
+        .push(duplicate_facts.effect_signatures[0].clone());
+    let duplicate_report = lower_to_target_ir(&core, &duplicate_facts);
+    assert_invalid_core_identity(&duplicate_report, "duplicate signature fact");
+
+    let reports = [
+        ("input", lower_to_target_ir(&input_mismatch, facts)),
+        ("output", lower_to_target_ir(&output_mismatch, facts)),
+        (
+            "type definition",
+            lower_to_target_ir(&type_definition_mismatch, facts),
+        ),
+    ];
+    for (case, report) in reports {
+        assert_invalid_core_identity(&report, case);
+    }
+}
+
+#[test]
+fn compiler_builtins_cannot_be_shadowed_by_core_type_entries() {
+    let source = "package a.b@1;\n\
+        type Bool = { shadow: U64, };\n\
+        type Input = { value: String<max=32>, };\n\
+        type Output = { value: String<max=32>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile hello.readOnly\n\
+          basis none\n\
+          budget <= hello.tinyBudget {\n\
+          let value = if true == false then input.value else input.value;\n\
+          return { value };\n\
+        }";
+    let module = edict_syntax::parse_module(source).expect("built-in shadow source parses");
+    let core = compile_to_core(&module, &pure_context())
+        .expect("otherwise unused Bool declaration compiles to Core");
+    assert!(matches!(
+        core.types.get("Bool"),
+        Some(CoreType::Record { .. })
+    ));
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+}
+
+#[test]
+fn compiler_produced_bounded_lists_lower_through_target_ir() {
+    let source = "package a.b@1;\n\
+        type Input = { items: List<String<max=8>, max=4>, };\n\
+        type Output = { items: List<String<max=8>, max=4>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile hello.readOnly\n\
+          basis none\n\
+          budget <= hello.tinyBudget {\n\
+          let copy: List<String<max=8>, max=4> = input.items;\n\
+          return { items: copy };\n\
+        }";
+    let module = edict_syntax::parse_module(source).expect("bounded-list source parses");
+    let core = compile_to_core(&module, &pure_context()).expect("bounded-list source compiles");
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+
+    let mut max_mismatch = core.clone();
+    replace_first_let_binding_type(&mut max_mismatch, ",max=4>", ",max=3>");
+    let mut item_mismatch = core;
+    replace_first_let_binding_type(
+        &mut item_mismatch,
+        "String<max=8,canonical=raw-utf8>",
+        "Bool",
+    );
+
+    for (case, incompatible) in [("maximum", max_mismatch), ("item", item_mismatch)] {
+        let report = lower_to_target_ir(&incompatible, &pure_target_facts());
+        assert_invalid_core_identity(&report, case);
+    }
 }
 
 #[test]

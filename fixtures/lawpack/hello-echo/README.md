@@ -6,7 +6,8 @@ a fake transport, or a handwritten Echo executable package.
 
 - `manifest.cbor` is the canonical lawpack manifest.
 - `manifest.sha256` is its `edict.lawpack/v1` domain-framed identity.
-- `exports.cbor` is the canonical export surface.
+- `exports.cbor` is the canonical export surface, including authenticated
+  bounded record definitions for `CreateGreetingInput` and `GreetingReceipt`.
 - `exports.sha256` is its `hello.echo.exports/v1` domain-framed identity.
 - `adapter.cbor` is the canonical direct declarative Echo target adapter.
 - `adapter.sha256` is its manifest-bound domain-framed identity.
@@ -15,8 +16,9 @@ a fake transport, or a handwritten Echo executable package.
   may interpret.
 - `echo-operation-configuration.sha256` is its
   `hello.echo.echo-operation-configuration/v1` domain-framed identity.
-- `create-greeting.edict` imports the exact manifest digest and declares the
-  bounded `createGreeting` action with typed `AlreadyExists` mapping.
+- `create-greeting.edict` imports the exact manifest digest and consumes those
+  lawpack-owned input/receipt types in the bounded `createGreeting` action with
+  typed `AlreadyExists` mapping.
 - `create-greeting.core.cbor` is the canonical Core module compiled from that
   exact source and lawpack closure.
 - `create-greeting.core.sha256` is its `edict.core.module/v1`

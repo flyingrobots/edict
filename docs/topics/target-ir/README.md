@@ -25,7 +25,7 @@ The current target IR implementation is deliberately narrow:
 
 The `edict_syntax` crate exposes `lower_to_target_ir`,
 `TargetIrLoweringFacts`, `TargetLoweringReport`, `TargetIrArtifact`,
-`TargetIrSemanticClosure`, `TargetIrPureBinding`,
+`TargetIrSemanticClosure`, `TargetEffectSignatureFact`, `TargetIrPureBinding`,
 `TargetIrExternalActionRequest`,
 `encode_target_ir_artifact`, `digest_target_ir_artifact`, and stable
 `TargetLoweringFailureKind` values. The lowerer consumes an already-built
@@ -86,7 +86,10 @@ Each supported Core external-action request instead becomes one
 `externalActionRequests` entry. It preserves the operation, input and settlement
 types, schemas, input, scope, basis, budgets, reconciliation law, compiler-owned
 binding, deterministic request id, and fixed awaiting-settlement posture. It
-does not emit a target step or target intrinsic.
+does not emit a target step or target intrinsic. Before copying the request, the
+lowerer resolves its settlement metadata and requires the binding to be an
+`ExternalActionRequest` with a structurally equivalent settlement type in both
+directions. [TIR-REQ-031]
 
 For the supported Echo slice, each supported Core `require` node before any
 target step becomes a deterministic Target IR requirement that records:
@@ -126,8 +129,15 @@ strings preserve the wider compatible maximum, while byte intervals join their
 lower and upper bounds component-wise even when neither interval contains the
 other. When anonymous records have no named type coordinate, conditional
 comparison validation recursively preserves their field structure instead of
-inventing a nominal type. Structural Core compatibility shares the compiler's
-finite 128-level type-depth boundary. [TIR-REQ-027]
+inventing a nominal type. A comparison then requires either the complete left
+record to fit the right or the complete right record to fit the left; it cannot
+choose a different compatibility direction for each field. Scalar byte
+intervals retain their component-wise common comparison type without weakening
+that record rule. Structural Core compatibility shares the compiler's finite
+128-level type-depth boundary. Published built-in coordinates resolve before
+module-local type entries, and compiler-emitted nested `List<item,max=N>`
+coordinates are reconstructed by the same recursive resolver. [TIR-REQ-027]
+[TIR-REQ-029] [TIR-REQ-032] [TIR-REQ-033]
 Each non-intrinsic pure call must also match exactly one helper fact projected
 from a validated lawpack export. Those facts expose read-only identity and
 signature accessors but cannot be constructed or mutated by an external caller.
@@ -154,6 +164,18 @@ computation, guard dispositions, and success-output semantics without resolving
 a runtime basis, executing Echo, or admitting a bundle. [TIR-REQ-018]
 [TIR-REQ-019] [TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022] [TIR-REQ-023]
 [TIR-REQ-024] [TIR-REQ-026] [TIR-REQ-028]
+
+Lawpack-aliased effects have an additional typed authority gate. Validated
+lawpack preparation is the only constructor for an effect-signature fact; the
+fact binds the source alias to the canonical export, exact manifest digest,
+non-generic input/output signature, and resolved exported-type closure. The
+compiler checks source calls against that signature for early diagnostics, and
+Target validation independently requires exactly one matching fact, exact Core
+type definitions for every named type in the closure, an input that fits the
+exported input, and an exported output that fits the result binding. Missing,
+duplicate, value-substituted, or type-definition-substituted evidence rejects
+before a Target artifact exists. Native lowerability facts remain a separate
+non-lawpack path. [TIR-REQ-030]
 
 When any intent has an explicit basis or pure binding, the Core module imports a
 lawpack, or the Core module imports a requestable capability, the artifact carries a

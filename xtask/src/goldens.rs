@@ -403,6 +403,7 @@ fn target_ir_echo_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }
@@ -421,6 +422,7 @@ fn target_ir_gitwarp_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }
@@ -435,6 +437,7 @@ fn target_ir_external_request_facts() -> TargetIrLoweringFacts {
         operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
         obstruction_coordinates: Vec::new(),
         effect_lowerings: Vec::new(),
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }

@@ -1,28 +1,18 @@
 package examples.hello_echo@1;
 
-use lawpack hello.echo@1 digest "sha256:21f3643c75764f8179ab725b8a8335178a52efddea50a628e09ee03aba565f41" as hello;
-
-type CreateGreetingInput = {
-  basis: String<max=128>,
-  key: String<max=64>,
-  message: String<max=256>,
-};
-
-type GreetingReceipt = {
-  key: String<max=64>,
-};
+use lawpack hello.echo@1 digest "sha256:8c3af3f4a256bca06badb78804db0862b024368648891b72f7b735f97157354d" as hello;
 
 type GreetingCreated = {
   key: String<max=64>,
   message: String<max=256>,
 };
 
-intent createGreeting(input: CreateGreetingInput) returns GreetingCreated
+intent createGreeting(input: hello.CreateGreetingInput) returns GreetingCreated
   profile hello.createGreeting
   basis input.basis
   budget <= hello.smallCreateBudget
 {
-  let receipt: GreetingReceipt = hello.createGreeting(input)
+  let receipt: hello.GreetingReceipt = hello.createGreeting(input)
     else { alreadyExists(existing) => hello.AlreadyExists };
   return {
     key: receipt.key,

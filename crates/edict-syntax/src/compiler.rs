@@ -64,6 +64,16 @@ pub struct PureFunctionFact {
     pub cost_template: String,
 }
 
+/// Authenticated signature for one semantic effect imported from a lawpack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EffectSignatureFact {
+    pub(crate) lawpack: ResourceRef,
+    pub(crate) coordinate: String,
+    pub(crate) type_parameters: Vec<String>,
+    pub(crate) input_type: String,
+    pub(crate) output_type: String,
+}
+
 /// Canonical identity and Core definition for one imported lawpack type.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeShapeFact {
@@ -107,6 +117,7 @@ pub struct CompilerContext {
     operation_profile_write_classes: BTreeMap<String, BTreeSet<WriteClass>>,
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
+    effect_signatures: BTreeMap<String, EffectSignatureFact>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
     pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -170,6 +181,17 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub(crate) fn with_effect_signature(
+        mut self,
+        source_effect_coordinate: impl Into<String>,
+        fact: EffectSignatureFact,
+    ) -> Self {
+        self.effect_signatures
+            .insert(source_effect_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_pure_function(
         mut self,
         source_coordinate: impl Into<String>,
@@ -215,6 +237,7 @@ pub struct ResolvedModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
+    pub(crate) effect_signatures: BTreeMap<String, EffectSignatureFact>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
     pub pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     pub type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -329,6 +352,7 @@ pub fn resolve_module(
             coordinate,
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
+            effect_signatures: context.effect_signatures.clone(),
             pure_functions: context.pure_functions.clone(),
             pure_helper_costs: context.pure_helper_costs.clone(),
             type_shapes: context.type_shapes.clone(),
@@ -953,8 +977,10 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
         if let Some(shape) = self.shape_from_imported_type(&fact) {
-            self.core_types
-                .insert(shape.coord.clone(), shape.core_type());
+            self.core_types.extend(imported_type_shape_closure(
+                &shape,
+                &self.resolved.type_shapes,
+            ));
             Some(shape)
         } else {
             self.errors.push(error(
@@ -2841,7 +2867,9 @@ impl<'a> TypeChecker<'a> {
         let Some(binding_shape) = self.effect_binding_shape(stmt.ty, stmt.span) else {
             return;
         };
-        let Some((effect, input)) = self.check_effect_call(stmt.value, env, stmt.span) else {
+        let Some((effect, input)) =
+            self.check_effect_call(stmt.value, env, &binding_shape, stmt.span)
+        else {
             return;
         };
         let local = next_local(&mut state.local_index, binding_shape.coord.clone());
@@ -2948,6 +2976,7 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         call: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        binding_shape: &TypeShape,
         span: Span,
     ) -> Option<(String, CoreExpr)> {
         let effect = effect_coordinate(call)?;
@@ -2977,6 +3006,58 @@ impl<'a> TypeChecker<'a> {
             return None;
         };
         let input = self.check_expr(arg, env)?;
+        let signature = self.resolved.effect_signatures.get(&effect).cloned();
+        if let Some(signature) = signature {
+            if !self.fact_matches_source_import(&effect, &signature.coordinate, &signature.lawpack)
+                || !signature.type_parameters.is_empty()
+            {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::MissingContextFact,
+                    format!("effect `{effect}` has no exact non-generic lawpack signature"),
+                    span,
+                ));
+                return None;
+            }
+            let Some(expected_input) =
+                self.shape_for_helper_coordinate(&signature.input_type, &signature.lawpack)
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "effect `{effect}` input type `{}` is outside its exact exported type closure",
+                        signature.input_type
+                    ),
+                    span,
+                ));
+                return None;
+            };
+            let Some(effect_output) =
+                self.shape_for_helper_coordinate(&signature.output_type, &signature.lawpack)
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "effect `{effect}` output type `{}` is outside its exact exported type closure",
+                        signature.output_type
+                    ),
+                    span,
+                ));
+                return None;
+            };
+            if !compatible(&expected_input, &input.ty) || !compatible(binding_shape, &effect_output)
+            {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    format!("effect `{effect}` call does not match its exported signature"),
+                    span,
+                ));
+                return None;
+            }
+        }
         Some((effect, input.expr))
     }
 
@@ -3623,31 +3704,12 @@ impl<'a> TypeChecker<'a> {
         Some((source_coordinate, fact))
     }
 
-    fn shape_for_coordinate(&self, coordinate: &str) -> Option<TypeShape> {
-        if coordinate == "Bool" {
-            return Some(TypeShape {
-                coord: "Bool".to_owned(),
-                kind: TypeKind::Bool,
-            });
-        }
-        if let Some(width) = builtin_integer_width(coordinate) {
-            return Some(integer_shape(width));
-        }
-        self.named_types
-            .values()
-            .find(|shape| shape.coord == coordinate)
-            .cloned()
-    }
-
     fn shape_for_helper_coordinate(
         &mut self,
         coordinate: &str,
         lawpack: &ResourceRef,
     ) -> Option<TypeShape> {
-        if coordinate == "Bool" || builtin_integer_width(coordinate).is_some() {
-            return self.shape_for_coordinate(coordinate);
-        }
-        let fact = self
+        let shape = if let Some(fact) = self
             .resolved
             .type_shapes
             .get(coordinate)
@@ -3655,10 +3717,23 @@ impl<'a> TypeChecker<'a> {
                 &fact.lawpack == lawpack
                     && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
             })
-            .cloned()?;
-        let shape = self.shape_from_imported_type(&fact)?;
-        self.core_types
-            .insert(shape.coord.clone(), shape.core_type());
+            .cloned()
+        {
+            self.shape_from_imported_type(&fact)?
+        } else {
+            imported_type_definition_shape(
+                coordinate,
+                &self.resolved.type_shapes,
+                lawpack,
+                &mut BTreeSet::new(),
+                None,
+                1,
+            )?
+        };
+        self.core_types.extend(imported_type_shape_closure(
+            &shape,
+            &self.resolved.type_shapes,
+        ));
         Some(shape)
     }
 
@@ -4241,25 +4316,23 @@ fn imported_type_definition_shape(
     if definition.starts_with("Bytes<") {
         return imported_bytes_type_definition(definition);
     }
-    let inner = definition
-        .strip_prefix("List<")
-        .and_then(|value| value.strip_suffix('>'));
-    if let Some(inner) = inner {
-        let (item, max) = inner.rsplit_once(",max=")?;
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::List {
-                item: Box::new(imported_type_definition_shape(
-                    item,
-                    type_shapes,
-                    lawpack,
-                    resolving,
-                    None,
-                    depth + 1,
-                )?),
-                max: max.parse().ok()?,
-            },
-        });
+    if definition.starts_with("Record<") {
+        return imported_record_type_definition_shape(
+            definition,
+            type_shapes,
+            lawpack,
+            resolving,
+            depth,
+        );
+    }
+    if definition.starts_with("List<") {
+        return imported_list_type_definition_shape(
+            definition,
+            type_shapes,
+            lawpack,
+            resolving,
+            depth,
+        );
     }
     let fact = type_shapes.get(definition).filter(|fact| {
         &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
@@ -4278,6 +4351,176 @@ fn imported_type_definition_shape(
     resolving.remove(definition);
     shape.coord.clone_from(&fact.coordinate);
     Some(shape)
+}
+
+fn imported_record_type_definition_shape(
+    definition: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+    resolving: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<TypeShape> {
+    let inner = definition.strip_prefix("Record<")?.strip_suffix('>')?;
+    let mut fields = BTreeMap::new();
+    for (field, definition) in imported_record_fields(inner)? {
+        if fields
+            .insert(
+                field.to_owned(),
+                imported_type_definition_shape(
+                    definition,
+                    type_shapes,
+                    lawpack,
+                    resolving,
+                    None,
+                    depth + 1,
+                )?,
+            )
+            .is_some()
+        {
+            return None;
+        }
+    }
+    Some(TypeShape {
+        coord: definition.to_owned(),
+        kind: TypeKind::Record(fields),
+    })
+}
+
+fn imported_list_type_definition_shape(
+    definition: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+    resolving: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<TypeShape> {
+    let inner = definition.strip_prefix("List<")?.strip_suffix('>')?;
+    let (item, max) = inner.rsplit_once(",max=")?;
+    Some(TypeShape {
+        coord: definition.to_owned(),
+        kind: TypeKind::List {
+            item: Box::new(imported_type_definition_shape(
+                item,
+                type_shapes,
+                lawpack,
+                resolving,
+                None,
+                depth + 1,
+            )?),
+            max: max.parse().ok()?,
+        },
+    })
+}
+
+fn imported_record_fields(definition: &str) -> Option<Vec<(&str, &str)>> {
+    if definition.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut depth = 0_usize;
+    let mut start = 0_usize;
+    let mut fields = Vec::new();
+    for (index, character) in definition.char_indices() {
+        match character {
+            '<' => depth = depth.checked_add(1)?,
+            '>' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => {
+                fields.push(imported_record_field(&definition[start..index])?);
+                start = index + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    if depth != 0 {
+        return None;
+    }
+    fields.push(imported_record_field(&definition[start..])?);
+    Some(fields)
+}
+
+fn imported_record_field(field: &str) -> Option<(&str, &str)> {
+    let (name, definition) = field.split_once(':')?;
+    let mut characters = name.chars();
+    let first = characters.next()?;
+    if !(first.is_ascii_alphabetic() || first == '_')
+        || !characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+        || definition.is_empty()
+    {
+        return None;
+    }
+    Some((name, definition))
+}
+
+fn imported_type_shape_closure(
+    shape: &TypeShape,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+) -> BTreeMap<String, CoreType> {
+    let mut closure = BTreeMap::new();
+    collect_imported_type_shape_closure(shape, type_shapes, &mut closure);
+    closure
+}
+
+fn collect_imported_type_shape_closure(
+    shape: &TypeShape,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    closure: &mut BTreeMap<String, CoreType>,
+) {
+    if type_shapes.contains_key(&shape.coord) {
+        closure.insert(shape.coord.clone(), shape.core_type());
+    }
+    match &shape.kind {
+        TypeKind::Record(fields) => {
+            for field in fields.values() {
+                collect_imported_type_shape_closure(field, type_shapes, closure);
+            }
+        }
+        TypeKind::Nominal { representation, .. }
+        | TypeKind::List {
+            item: representation,
+            ..
+        }
+        | TypeKind::ExternalActionRequest {
+            settlement: representation,
+        } => collect_imported_type_shape_closure(representation, type_shapes, closure),
+        TypeKind::Bool
+        | TypeKind::Int { .. }
+        | TypeKind::String { .. }
+        | TypeKind::Bytes { .. } => {}
+    }
+}
+
+pub(crate) fn imported_type_core_closure(
+    coordinates: &[String],
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+) -> Option<BTreeMap<String, CoreType>> {
+    let mut closure = BTreeMap::new();
+    for coordinate in coordinates {
+        let shape = if let Some(fact) = type_shapes.get(coordinate).filter(|fact| {
+            &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
+        }) {
+            let mut resolving = BTreeSet::from([fact.coordinate.clone()]);
+            let mut shape = imported_type_definition_shape(
+                &fact.definition,
+                type_shapes,
+                lawpack,
+                &mut resolving,
+                Some(&fact.coordinate),
+                1,
+            )?;
+            shape.coord.clone_from(&fact.coordinate);
+            shape
+        } else {
+            imported_type_definition_shape(
+                coordinate,
+                type_shapes,
+                lawpack,
+                &mut BTreeSet::new(),
+                None,
+                1,
+            )?
+        };
+        closure.extend(imported_type_shape_closure(&shape, type_shapes));
+    }
+    Some(closure)
 }
 
 fn imported_bytes_type_definition(definition: &str) -> Option<TypeShape> {

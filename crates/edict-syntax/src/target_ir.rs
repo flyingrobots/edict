@@ -11,6 +11,7 @@ use crate::core_ir::{
     CoreExternalActionBudget, CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm,
     CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, CoreValue,
     InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
+    MAX_CORE_TYPE_DEPTH,
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
@@ -133,6 +134,45 @@ impl TargetPureFunctionFact {
     }
 }
 
+/// Canonical non-generic effect signature owned by one exact imported lawpack.
+///
+/// The private fields and constructor prevent caller-authored Target facts from
+/// manufacturing lawpack effect authority. Validated lawpack preparation binds
+/// the source alias, canonical export, signature, and exact resolved type
+/// closure together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetEffectSignatureFact {
+    lawpack: ResourceRef,
+    source_coordinate: String,
+    coordinate: String,
+    type_parameters: Vec<String>,
+    input_type: String,
+    output_type: String,
+    type_closure: BTreeMap<String, CoreType>,
+}
+
+impl TargetEffectSignatureFact {
+    pub(crate) fn from_validated_lawpack_export(
+        lawpack: ResourceRef,
+        source_coordinate: String,
+        coordinate: String,
+        type_parameters: Vec<String>,
+        input_type: String,
+        output_type: String,
+        type_closure: BTreeMap<String, CoreType>,
+    ) -> Self {
+        Self {
+            lawpack,
+            source_coordinate,
+            coordinate,
+            type_parameters,
+            input_type,
+            output_type,
+            type_closure,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetIrLoweringFacts {
     pub target_profile: ResourceRef,
@@ -140,6 +180,7 @@ pub struct TargetIrLoweringFacts {
     pub operation_profiles: Vec<String>,
     pub obstruction_coordinates: Vec<String>,
     pub effect_lowerings: Vec<TargetEffectLowering>,
+    pub effect_signatures: Vec<TargetEffectSignatureFact>,
     pub pure_functions: Vec<TargetPureFunctionFact>,
 }
 
@@ -191,6 +232,7 @@ impl TargetIrLoweringFacts {
             operation_profiles: vec![report.operation_profile.clone()],
             obstruction_coordinates: report.obstruction_coordinates.clone(),
             effect_lowerings: selected_native_effect_lowerings(report),
+            effect_signatures: Vec::new(),
             pure_functions: Vec::new(),
         })
     }
@@ -362,7 +404,7 @@ pub fn lower_to_target_ir(
         Ok(target_selection) => target_selection,
         Err(failures) => return unsupported(failures),
     };
-    let core_failures = validate_core_module(core, &facts.pure_functions);
+    let core_failures = validate_core_module(core, &facts.pure_functions, &facts.effect_signatures);
     if !core_failures.is_empty() {
         return unsupported(core_failures);
     }
@@ -569,6 +611,7 @@ fn validate_target_selection(
 fn validate_core_module(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
+    effect_signatures: &[TargetEffectSignatureFact],
 ) -> Vec<TargetLoweringFailure> {
     if core.api_version != CORE_API_VERSION {
         return vec![TargetLoweringFailure {
@@ -621,12 +664,13 @@ fn validate_core_module(
     if !capability_failures.is_empty() {
         return capability_failures;
     }
-    validate_pure_binding_graphs(core, pure_functions)
+    validate_pure_binding_graphs(core, pure_functions, effect_signatures)
 }
 
 fn validate_pure_binding_graphs(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
+    effect_signatures: &[TargetEffectSignatureFact],
 ) -> Vec<TargetLoweringFailure> {
     core.intents
         .iter()
@@ -638,7 +682,13 @@ fn validate_pure_binding_graphs(
                 .any(|node| matches!(node, CoreNode::For { .. }))
         })
         .filter_map(|(intent_name, intent)| {
-            validate_pure_binding_graph(core, pure_functions, intent_name, intent)
+            validate_pure_binding_graph(
+                core,
+                pure_functions,
+                effect_signatures,
+                intent_name,
+                intent,
+            )
         })
         .collect()
 }
@@ -646,6 +696,7 @@ fn validate_pure_binding_graphs(
 fn validate_pure_binding_graph(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
+    effect_signatures: &[TargetEffectSignatureFact],
     intent_name: &str,
     intent: &CoreIntent,
 ) -> Option<TargetLoweringFailure> {
@@ -690,8 +741,14 @@ fn validate_pure_binding_graph(
         ));
     }
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
-        if !node_expressions_have_closed_authority(core, pure_functions, node, &locals, &available)
-        {
+        if !node_expressions_have_closed_authority(
+            core,
+            pure_functions,
+            effect_signatures,
+            node,
+            &locals,
+            &available,
+        ) {
             return Some(invalid_pure_binding(
                 intent_name,
                 Some(node_index),
@@ -748,6 +805,7 @@ fn validate_pure_binding_graph(
 fn node_expressions_have_closed_authority(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
+    effect_signatures: &[TargetEffectSignatureFact],
     node: &CoreNode,
     locals: &BTreeMap<&str, &LocalRef>,
     available: &BTreeMap<&str, &LocalRef>,
@@ -767,31 +825,51 @@ fn node_expressions_have_closed_authority(
         }
         CoreNode::Effect {
             effect,
+            binding,
             input,
             obstruction_map,
             ..
         } => {
-            expression_has_closed_authority(core, pure_functions, input, available)
-                && obstruction_map.iter().all(|(failure, arm)| {
-                    locals.get(arm.binder.id.as_str()).copied() == Some(&arm.binder)
-                        && arm.binder.ty == format!("{effect}.{failure}")
-                        && obstruction_value_has_closed_authority(
-                            core,
-                            pure_functions,
-                            &arm.value,
-                            available,
-                        )
-                })
+            effect_signature_matches_core(
+                core,
+                pure_functions,
+                effect_signatures,
+                effect,
+                binding,
+                input,
+                available,
+            ) && obstruction_map.iter().all(|(failure, arm)| {
+                locals.get(arm.binder.id.as_str()).copied() == Some(&arm.binder)
+                    && arm.binder.ty == format!("{effect}.{failure}")
+                    && obstruction_value_has_closed_authority(
+                        core,
+                        pure_functions,
+                        &arm.value,
+                        available,
+                    )
+            })
         }
         CoreNode::ExternalActionRequest {
+            binding,
             input_type,
             input,
+            settlement_type,
             authority_scope,
             basis,
             budget,
             ..
         } => {
-            expression_fits_declared_type(core, pure_functions, input, input_type, available)
+            let settlement_matches_binding =
+                resolved_core_type(core, &binding.ty).is_some_and(|binding_type| {
+                    let CoreType::ExternalActionRequest { settlement } = binding_type else {
+                        return false;
+                    };
+                    resolved_core_type(core, settlement_type).is_some()
+                        && core_type_fits(core, settlement_type, &settlement)
+                        && core_type_fits(core, &settlement, settlement_type)
+                });
+            settlement_matches_binding
+                && expression_fits_declared_type(core, pure_functions, input, input_type, available)
                 && expression_has_closed_authority(core, pure_functions, authority_scope, available)
                 && expression_has_closed_authority(core, pure_functions, basis, available)
                 && expression_fits_declared_type(
@@ -811,6 +889,83 @@ fn node_expressions_have_closed_authority(
         }
         CoreNode::For { .. } | CoreNode::Branch { .. } => true,
     }
+}
+
+fn effect_signature_matches_core(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+    effect_signatures: &[TargetEffectSignatureFact],
+    effect: &str,
+    binding: &LocalRef,
+    input: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    if lawpack_import_for_source_coordinate(core, effect).is_none() {
+        return expression_has_closed_authority(core, pure_functions, input, available);
+    }
+    let Some(signature) = validated_effect_signature_fact(core, effect_signatures, effect) else {
+        return false;
+    };
+    expression_fits_declared_type(
+        core,
+        pure_functions,
+        input,
+        &signature.input_type,
+        available,
+    ) && core_type_fits(core, &signature.output_type, &binding.ty)
+}
+
+fn validated_effect_signature_fact<'a>(
+    core: &CoreModule,
+    effect_signatures: &'a [TargetEffectSignatureFact],
+    effect: &str,
+) -> Option<&'a TargetEffectSignatureFact> {
+    let mut matches = effect_signatures
+        .iter()
+        .filter(|signature| signature.source_coordinate == effect);
+    let signature = matches.next()?;
+    if matches.next().is_some()
+        || !signature.lawpack.is_digest_locked()
+        || !coordinate_is_below_lawpack(&signature.coordinate, &signature.lawpack)
+        || !signature.type_parameters.is_empty()
+        || signature.input_type.is_empty()
+        || signature.output_type.is_empty()
+    {
+        return None;
+    }
+    let import = lawpack_import_for_source_coordinate(core, effect)?;
+    let suffix = signature
+        .coordinate
+        .strip_prefix(&signature.lawpack.coordinate)
+        .and_then(|suffix| suffix.strip_prefix('.'))?;
+    if import.resource != signature.lawpack
+        || import
+            .alias
+            .as_deref()
+            .is_none_or(|alias| format!("{alias}.{suffix}") != signature.source_coordinate)
+        || !signature.type_closure.iter().all(|(coordinate, expected)| {
+            coordinate_is_below_lawpack(coordinate, &signature.lawpack)
+                && core.types.get(coordinate) == Some(expected)
+        })
+        || resolved_core_type(core, &signature.input_type).is_none()
+        || resolved_core_type(core, &signature.output_type).is_none()
+    {
+        return None;
+    }
+    Some(signature)
+}
+
+fn lawpack_import_for_source_coordinate<'a>(
+    core: &'a CoreModule,
+    source_coordinate: &str,
+) -> Option<&'a crate::core_ir::CoreImport> {
+    let (alias, suffix) = source_coordinate.split_once('.')?;
+    if alias.is_empty() || suffix.is_empty() {
+        return None;
+    }
+    core.imports.iter().find(|import| {
+        import.kind == CoreImportKind::Lawpack && import.alias.as_deref() == Some(alias)
+    })
 }
 
 fn obstruction_value_has_closed_authority(
@@ -1336,75 +1491,183 @@ fn comparison_operands_fit(
     right: &CoreExpr,
     available: &BTreeMap<&str, &LocalRef>,
 ) -> bool {
-    let left_type = expression_type_coordinate(core, pure_functions, left, available);
-    let right_type = expression_type_coordinate(core, pure_functions, right, available);
-    match (left_type.as_deref(), right_type.as_deref()) {
-        (Some(left_type), Some(right_type)) => {
-            expression_fits_declared_type(core, pure_functions, left, left_type, available)
-                && expression_fits_declared_type(core, pure_functions, right, right_type, available)
-                && compatible_core_type_coordinate(core, left_type, right_type).is_some()
+    let Some(left) = comparison_operand_shape(core, pure_functions, left, available) else {
+        return false;
+    };
+    let Some(right) = comparison_operand_shape(core, pure_functions, right, available) else {
+        return false;
+    };
+    comparison_shape_fits(core, &left, &right, 0)
+        || comparison_shape_fits(core, &right, &left, 0)
+        || scalar_comparison_shapes_have_common_type(core, &left, &right)
+}
+
+fn scalar_comparison_shapes_have_common_type(
+    core: &CoreModule,
+    left: &ComparisonOperandShape,
+    right: &ComparisonOperandShape,
+) -> bool {
+    if comparison_record_fields(core, left).is_some()
+        || comparison_record_fields(core, right).is_some()
+    {
+        return false;
+    }
+    let (ComparisonOperandShape::Coordinate(left), ComparisonOperandShape::Coordinate(right)) =
+        (left, right)
+    else {
+        return false;
+    };
+    compatible_core_type_coordinate(core, left, right).is_some()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ComparisonOperandShape {
+    Coordinate(String),
+    Record(BTreeMap<String, ComparisonOperandShape>),
+}
+
+fn comparison_operand_shape(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+    expression: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> Option<ComparisonOperandShape> {
+    match expression {
+        CoreExpr::Record { fields } => fields
+            .iter()
+            .map(|(field, value)| {
+                Some((
+                    field.clone(),
+                    comparison_operand_shape(core, pure_functions, value, available)?,
+                ))
+            })
+            .collect::<Option<BTreeMap<_, _>>>()
+            .map(ComparisonOperandShape::Record),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            if !predicate_fits_core_types(core, pure_functions, predicate, available) {
+                return None;
+            }
+            let then_shape = comparison_operand_shape(core, pure_functions, then_value, available)?;
+            let else_shape = comparison_operand_shape(core, pure_functions, else_value, available)?;
+            join_comparison_shapes(core, &then_shape, &else_shape, 0)
         }
-        (Some(left_type), None) => {
-            expression_fits_declared_type(core, pure_functions, left, left_type, available)
-                && expression_fits_declared_type(core, pure_functions, right, left_type, available)
-        }
-        (None, Some(right_type)) => {
-            expression_fits_declared_type(core, pure_functions, left, right_type, available)
-                && expression_fits_declared_type(core, pure_functions, right, right_type, available)
-        }
-        (None, None) => {
-            untyped_comparison_operands_fit(core, pure_functions, left, right, available)
+        _ => {
+            let coordinate =
+                expression_type_coordinate(core, pure_functions, expression, available)?;
+            expression_fits_declared_type(core, pure_functions, expression, &coordinate, available)
+                .then_some(ComparisonOperandShape::Coordinate(coordinate))
         }
     }
 }
 
-fn untyped_comparison_operands_fit(
+fn join_comparison_shapes(
     core: &CoreModule,
-    pure_functions: &[TargetPureFunctionFact],
-    left: &CoreExpr,
-    right: &CoreExpr,
-    available: &BTreeMap<&str, &LocalRef>,
+    left: &ComparisonOperandShape,
+    right: &ComparisonOperandShape,
+    depth: usize,
+) -> Option<ComparisonOperandShape> {
+    if depth > MAX_CORE_TYPE_DEPTH {
+        return None;
+    }
+    match (
+        comparison_record_fields(core, left),
+        comparison_record_fields(core, right),
+    ) {
+        (Some(left), Some(right)) => {
+            if !left.keys().eq(right.keys()) {
+                return None;
+            }
+            left.iter()
+                .map(|(field, left)| {
+                    Some((
+                        field.clone(),
+                        join_comparison_shapes(
+                            core,
+                            left,
+                            right.get(field).expect("equal record field keys"),
+                            depth + 1,
+                        )?,
+                    ))
+                })
+                .collect::<Option<BTreeMap<_, _>>>()
+                .map(ComparisonOperandShape::Record)
+        }
+        (None, None) => {
+            let (
+                ComparisonOperandShape::Coordinate(left),
+                ComparisonOperandShape::Coordinate(right),
+            ) = (left, right)
+            else {
+                return None;
+            };
+            compatible_core_type_coordinate(core, left, right)
+                .map(ComparisonOperandShape::Coordinate)
+        }
+        (Some(_), None) | (None, Some(_)) => None,
+    }
+}
+
+fn comparison_shape_fits(
+    core: &CoreModule,
+    source: &ComparisonOperandShape,
+    target: &ComparisonOperandShape,
+    depth: usize,
 ) -> bool {
-    match (left, right) {
-        (
-            CoreExpr::If {
-                predicate,
-                then_value,
-                else_value,
-            },
-            right,
-        ) => {
-            predicate_fits_core_types(core, pure_functions, predicate, available)
-                && comparison_operands_fit(core, pure_functions, then_value, right, available)
-                && comparison_operands_fit(core, pure_functions, else_value, right, available)
-        }
-        (
-            left,
-            CoreExpr::If {
-                predicate,
-                then_value,
-                else_value,
-            },
-        ) => {
-            predicate_fits_core_types(core, pure_functions, predicate, available)
-                && comparison_operands_fit(core, pure_functions, left, then_value, available)
-                && comparison_operands_fit(core, pure_functions, left, else_value, available)
-        }
-        (CoreExpr::Const(CoreValue::String(_)), CoreExpr::Const(CoreValue::String(_)))
-        | (CoreExpr::Const(CoreValue::Bytes(_)), CoreExpr::Const(CoreValue::Bytes(_))) => true,
-        (CoreExpr::Record { fields: left }, CoreExpr::Record { fields: right }) => {
-            left.keys().eq(right.keys())
-                && left.iter().all(|(field, left)| {
-                    comparison_operands_fit(
+    if depth > MAX_CORE_TYPE_DEPTH {
+        return false;
+    }
+    match (
+        comparison_record_fields(core, source),
+        comparison_record_fields(core, target),
+    ) {
+        (Some(source), Some(target)) => {
+            source.keys().eq(target.keys())
+                && source.iter().all(|(field, source)| {
+                    comparison_shape_fits(
                         core,
-                        pure_functions,
-                        left,
-                        right.get(field).expect("equal record field keys"),
-                        available,
+                        source,
+                        target.get(field).expect("equal record field keys"),
+                        depth + 1,
                     )
                 })
         }
-        _ => false,
+        (None, None) => {
+            let (
+                ComparisonOperandShape::Coordinate(source),
+                ComparisonOperandShape::Coordinate(target),
+            ) = (source, target)
+            else {
+                return false;
+            };
+            core_type_fits(core, source, target)
+        }
+        (Some(_), None) | (None, Some(_)) => false,
+    }
+}
+
+fn comparison_record_fields(
+    core: &CoreModule,
+    shape: &ComparisonOperandShape,
+) -> Option<BTreeMap<String, ComparisonOperandShape>> {
+    match shape {
+        ComparisonOperandShape::Record(fields) => Some(fields.clone()),
+        ComparisonOperandShape::Coordinate(coordinate) => {
+            let CoreType::Record { fields } = resolved_core_type(core, coordinate)? else {
+                return None;
+            };
+            Some(
+                fields
+                    .into_iter()
+                    .map(|(field, coordinate)| {
+                        (field, ComparisonOperandShape::Coordinate(coordinate))
+                    })
+                    .collect(),
+            )
+        }
     }
 }
 

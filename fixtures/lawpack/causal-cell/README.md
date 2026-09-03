@@ -13,7 +13,9 @@ create-if-absent capability and its typed `AlreadyExists` obstruction.
 
 - `manifest.cbor` and `manifest.sha256` bind the canonical
   `edict.lawpack/v1` manifest.
-- `exports.cbor` and `exports.sha256` bind the portable capability surface.
+- `exports.cbor` and `exports.sha256` bind the portable capability surface,
+  including bounded `CreateInput` and `CreateReceipt` record definitions used
+  by the effect signature.
 - `adapter.cbor` and `adapter.sha256` bind the direct declarative Echo adapter.
 - `echo-operation-configuration.cbor` and its digest sidecar bind the generic
   Echo operation-lowering configuration.
@@ -32,6 +34,7 @@ cargo xtask lawpack-goldens --check
 
 Before emitting these artifacts, the generator validates the lawpack bundle and
 adapter, constructs an Edict source witness that imports the exact manifest
-digest, compiles it to Core, and requires successful Target IR lowering. The
+digest and consumes those imported record types, compiles it to Core, and
+requires successful Target IR lowering. The
 source witness is deliberately not published as fixture authority; it proves
 the generated portable closure remains usable by a real Edict application.

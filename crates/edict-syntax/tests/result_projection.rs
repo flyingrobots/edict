@@ -87,6 +87,7 @@ fn pure_lowering() -> (CoreModule, TargetLoweringReport) {
         operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
         obstruction_coordinates: Vec::new(),
         effect_lowerings: Vec::new(),
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     };
     let report = lower_to_target_ir(&core, &facts);
@@ -635,6 +636,7 @@ fn exact_byte_projection_refuses_a_max_only_source() {
         operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
         obstruction_coordinates: Vec::new(),
         effect_lowerings: Vec::new(),
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     };
     let mut target = lower_to_target_ir(&core, &facts)

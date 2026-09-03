@@ -1012,7 +1012,27 @@ fn causal_cell_target_configuration() -> CanonicalValue {
 
 fn causal_cell_exports() -> CanonicalValue {
     map([
-        ("types", CanonicalValue::Array(Vec::new())),
+        (
+            "types",
+            CanonicalValue::Array(vec![
+                map([
+                    ("coordinate", text("causal.cell@1.CreateInput")),
+                    (
+                        "definition",
+                        text(
+                            "Record<basis:String<max=128,canonical=raw-utf8>,key:String<max=64,canonical=raw-utf8>,value:String<max=256,canonical=raw-utf8>>",
+                        ),
+                    ),
+                ]),
+                map([
+                    ("coordinate", text("causal.cell@1.CreateReceipt")),
+                    (
+                        "definition",
+                        text("Record<key:String<max=64,canonical=raw-utf8>>"),
+                    ),
+                ]),
+            ]),
+        ),
         ("constants", CanonicalValue::Array(Vec::new())),
         ("pureFunctions", CanonicalValue::Array(Vec::new())),
         (
@@ -1087,27 +1107,17 @@ fn causal_cell_application_source(manifest_digest: &str) -> String {
 
 use lawpack causal.cell@1 digest "{manifest_digest}" as cell;
 
-type CreateGreetingInput = {{
-  basis: String<max=128>,
-  key: String<max=64>,
-  value: String<max=256>,
-}};
-
-type CellCreateReceipt = {{
-  key: String<max=64>,
-}};
-
 type GreetingCreated = {{
   key: String<max=64>,
   message: String<max=256>,
 }};
 
-intent createGreeting(input: CreateGreetingInput) returns GreetingCreated
+intent createGreeting(input: cell.CreateInput) returns GreetingCreated
   profile cell.createIfAbsent
   basis input.basis
   budget <= cell.smallCreateBudget
 {{
-  let receipt: CellCreateReceipt = cell.createIfAbsent(input)
+  let receipt: cell.CreateReceipt = cell.createIfAbsent(input)
     else {{ alreadyExists(existing) => cell.AlreadyExists }};
   return {{
     key: receipt.key,
@@ -1368,7 +1378,27 @@ fn hello_echo_target_configuration() -> CanonicalValue {
 
 fn hello_echo_exports() -> CanonicalValue {
     map([
-        ("types", CanonicalValue::Array(Vec::new())),
+        (
+            "types",
+            CanonicalValue::Array(vec![
+                map([
+                    ("coordinate", text("hello.echo@1.CreateGreetingInput")),
+                    (
+                        "definition",
+                        text(
+                            "Record<basis:String<max=128,canonical=raw-utf8>,key:String<max=64,canonical=raw-utf8>,message:String<max=256,canonical=raw-utf8>>",
+                        ),
+                    ),
+                ]),
+                map([
+                    ("coordinate", text("hello.echo@1.GreetingReceipt")),
+                    (
+                        "definition",
+                        text("Record<key:String<max=64,canonical=raw-utf8>>"),
+                    ),
+                ]),
+            ]),
+        ),
         ("constants", CanonicalValue::Array(Vec::new())),
         ("pureFunctions", CanonicalValue::Array(Vec::new())),
         (

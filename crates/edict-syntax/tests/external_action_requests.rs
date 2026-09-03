@@ -47,6 +47,7 @@ fn target_facts() -> TargetIrLoweringFacts {
         operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
         obstruction_coordinates: Vec::new(),
         effect_lowerings: Vec::new(),
+        effect_signatures: Vec::new(),
         pure_functions: Vec::new(),
     }
 }
@@ -235,6 +236,38 @@ fn external_request_expressions_require_closed_helper_authority() {
             "{field}"
         );
     }
+}
+
+#[test]
+fn external_request_settlement_type_must_match_binding() {
+    let mut core = compile_source(&baseline_source());
+    let request = core
+        .intents
+        .get_mut("observe")
+        .expect("observe intent")
+        .body
+        .nodes
+        .first_mut()
+        .expect("request node");
+    let CoreNode::ExternalActionRequest {
+        binding,
+        settlement_type,
+        ..
+    } = request
+    else {
+        panic!("first node is an external-action request");
+    };
+    assert_ne!(binding.ty, "ExternalActionRequest<U64>");
+    *settlement_type = "U64".to_owned();
+
+    let report = lower_to_target_ir(&core, &target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    let [failure] = report.failures.as_slice() else {
+        panic!("settlement mismatch must reject with one structured failure");
+    };
+    assert_eq!(failure.kind, TargetLoweringFailureKind::InvalidCoreIdentity);
 }
 
 fn map_field<'a>(value: &'a CanonicalValue, field: &str) -> &'a CanonicalValue {

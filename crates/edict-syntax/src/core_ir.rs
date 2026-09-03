@@ -255,16 +255,17 @@ fn core_type_fits_at_depth(core: &CoreModule, source: &str, target: &str, depth:
 }
 
 pub(crate) fn resolved_core_type(core: &CoreModule, coordinate: &str) -> Option<CoreType> {
-    core.types
-        .get(coordinate)
-        .or_else(|| {
-            coordinate
-                .strip_prefix(core.coordinate.as_str())
-                .and_then(|relative| relative.strip_prefix('.'))
-                .and_then(|relative| core.types.get(relative))
-        })
-        .cloned()
-        .or_else(|| builtin_core_type(coordinate))
+    builtin_core_type(coordinate).or_else(|| {
+        core.types
+            .get(coordinate)
+            .or_else(|| {
+                coordinate
+                    .strip_prefix(core.coordinate.as_str())
+                    .and_then(|relative| relative.strip_prefix('.'))
+                    .and_then(|relative| core.types.get(relative))
+            })
+            .cloned()
+    })
 }
 
 fn builtin_core_type(coordinate: &str) -> Option<CoreType> {
@@ -277,6 +278,19 @@ fn builtin_core_type(coordinate: &str) -> Option<CoreType> {
     ) {
         return Some(CoreType::Int {
             width: coordinate.to_owned(),
+        });
+    }
+    if let Some(inner) = coordinate
+        .strip_prefix("List<")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let (item, max) = inner.rsplit_once(",max=")?;
+        if item.is_empty() {
+            return None;
+        }
+        return Some(CoreType::List {
+            item: item.to_owned(),
+            max: max.parse().ok()?,
         });
     }
     if let Some(item) = coordinate
