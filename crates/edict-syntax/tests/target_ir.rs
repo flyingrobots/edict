@@ -2058,33 +2058,652 @@ fn compiler_produced_bounded_lists_lower_through_target_ir() {
 }
 
 #[test]
-fn conditional_byte_interval_comparisons_use_component_wise_join() {
-    let mut core = pure_core();
-    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+fn caller_authored_byte_comparisons_require_directional_compatibility() {
+    let byte = |length: usize| CoreExpr::Const(CoreValue::Bytes(vec![0x11; length]));
+    let mut incomparable = pure_core();
+    let intent = incomparable
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent");
     let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
         panic!("pure fixture starts with a let");
     };
     let valid_branch = value.clone();
-    let byte_interval = |first: usize, second: usize| CoreExpr::If {
-        predicate: Box::new(CorePredicate::True),
-        then_value: Box::new(CoreExpr::Const(CoreValue::Bytes(vec![0x11; first]))),
-        else_value: Box::new(CoreExpr::Const(CoreValue::Bytes(vec![0x22; second]))),
-    };
     *value = CoreExpr::If {
         predicate: Box::new(CorePredicate::Compare {
             op: CompareOp::Eq,
-            left: byte_interval(1, 3),
-            right: byte_interval(2, 4),
+            left: byte(1),
+            right: byte(2),
         }),
         then_value: Box::new(valid_branch.clone()),
         else_value: Box::new(valid_branch),
     };
+
+    let report = lower_to_target_ir(&incomparable, &pure_target_facts());
+    assert_invalid_core_identity(&report, "disjoint exact-byte comparison");
+
+    let mut conditional_join = pure_core();
+    let intent = conditional_join
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent");
+    let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    let valid_branch = value.clone();
+    let interval = |predicate| CoreExpr::If {
+        predicate: Box::new(predicate),
+        then_value: Box::new(byte(1)),
+        else_value: Box::new(byte(2)),
+    };
+    *value = CoreExpr::If {
+        predicate: Box::new(CorePredicate::Compare {
+            op: CompareOp::Eq,
+            left: interval(CorePredicate::True),
+            right: interval(CorePredicate::False),
+        }),
+        then_value: Box::new(valid_branch.clone()),
+        else_value: Box::new(valid_branch),
+    };
+
+    let report = lower_to_target_ir(&conditional_join, &pure_target_facts());
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+}
+
+#[derive(Clone, Copy)]
+struct SemanticParityCase {
+    name: &'static str,
+    left_definition: &'static str,
+    right_definition: &'static str,
+    directly_comparable: bool,
+}
+
+fn semantic_parity_cases() -> [SemanticParityCase; 10] {
+    [
+        SemanticParityCase {
+            name: "Bool",
+            left_definition: "Bool",
+            right_definition: "Bool",
+            directly_comparable: true,
+        },
+        SemanticParityCase {
+            name: "U64",
+            left_definition: "U64",
+            right_definition: "U64",
+            directly_comparable: true,
+        },
+        SemanticParityCase {
+            name: "bounded strings",
+            left_definition: "String<max=1,canonical=raw-utf8>",
+            right_definition: "String<max=3,canonical=raw-utf8>",
+            directly_comparable: true,
+        },
+        SemanticParityCase {
+            name: "disjoint exact bytes",
+            left_definition: "Bytes<exact=1>",
+            right_definition: "Bytes<exact=2>",
+            directly_comparable: false,
+        },
+        SemanticParityCase {
+            name: "contained byte interval",
+            left_definition: "Bytes<exact=1>",
+            right_definition: "Bytes<min=1,max=3>",
+            directly_comparable: true,
+        },
+        SemanticParityCase {
+            name: "crossed list bounds",
+            left_definition: "List<String<max=1,canonical=raw-utf8>,max=3>",
+            right_definition: "List<String<max=3,canonical=raw-utf8>,max=1>",
+            directly_comparable: false,
+        },
+        SemanticParityCase {
+            name: "one-field records",
+            left_definition: "Record<value:String<max=1,canonical=raw-utf8>>",
+            right_definition: "Record<value:String<max=3,canonical=raw-utf8>>",
+            directly_comparable: true,
+        },
+        SemanticParityCase {
+            name: "two-field crossed records",
+            left_definition: "Record<left:String<max=1,canonical=raw-utf8>,right:String<max=3,canonical=raw-utf8>>",
+            right_definition: "Record<left:String<max=3,canonical=raw-utf8>,right:String<max=1,canonical=raw-utf8>>",
+            directly_comparable: false,
+        },
+        SemanticParityCase {
+            name: "nested crossed records",
+            left_definition: "Record<inner:Record<value:String<max=1,canonical=raw-utf8>>,tail:String<max=3,canonical=raw-utf8>>",
+            right_definition: "Record<inner:Record<value:String<max=3,canonical=raw-utf8>>,tail:String<max=1,canonical=raw-utf8>>",
+            directly_comparable: false,
+        },
+        SemanticParityCase {
+            name: "records inside crossed lists",
+            left_definition: "List<Record<value:String<max=1,canonical=raw-utf8>>,max=3>",
+            right_definition: "List<Record<value:String<max=3,canonical=raw-utf8>>,max=1>",
+            directly_comparable: false,
+        },
+    ]
+}
+
+fn semantic_parity_lawpack() -> ResourceRef {
+    ResourceRef {
+        coordinate: "parity.types@1".to_owned(),
+        digest: Some(format!("sha256:{}", "7".repeat(64))),
+    }
+}
+
+fn semantic_parity_context(case: SemanticParityCase) -> CompilerContext {
+    let lawpack = semantic_parity_lawpack();
+    pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "parity.types@1.Left".to_owned(),
+            definition: case.left_definition.to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack,
+            coordinate: "parity.types@1.Right".to_owned(),
+            definition: case.right_definition.to_owned(),
+        })
+}
+
+fn semantic_parity_source(predicate: &str) -> String {
+    format!(
+        "package parity.application@1;\n\
+         use lawpack parity.types@1 digest \"sha256:{}\" as shapes;\n\
+         type Input = {{ left: shapes.Left, right: shapes.Right, value: String<max=8>, }};\n\
+         type Output = {{ value: String<max=8>, }};\n\
+         intent compare(input: Input) returns Output\n\
+           profile hello.readOnly\n\
+           basis none\n\
+           budget <= hello.tinyBudget {{\n\
+           let value = if {predicate} then input.value else input.value;\n\
+           return {{ value }};\n\
+         }}",
+        "7".repeat(64)
+    )
+}
+
+fn compile_semantic_parity_case(case: SemanticParityCase, predicate: &str) -> CoreModule {
+    let source = semantic_parity_source(predicate);
+    let module = edict_syntax::parse_module(&source)
+        .unwrap_or_else(|errors| panic!("{} source parses: {errors:?}", case.name));
+    compile_to_core(&module, &semantic_parity_context(case))
+        .unwrap_or_else(|errors| panic!("{} source compiles: {errors:?}", case.name))
+}
+
+fn input_field(reference: &LocalRef, field: &str) -> CoreExpr {
+    CoreExpr::Field {
+        base: Box::new(CoreExpr::Local {
+            reference: reference.clone(),
+        }),
+        field: field.to_owned(),
+    }
+}
+
+#[test]
+fn compiler_produced_crossed_list_conditionals_lower_through_target_ir() {
+    let case = semantic_parity_cases()
+        .into_iter()
+        .find(|case| case.name == "crossed list bounds")
+        .expect("list parity case");
+    let core = compile_semantic_parity_case(
+        case,
+        "(if true then input.left else input.right) == (if false then input.right else input.left)",
+    );
 
     let report = lower_to_target_ir(&core, &pure_target_facts());
 
     assert_eq!(report.status, TargetLoweringStatus::Lowered);
     assert!(report.failures.is_empty());
     assert!(report.artifact.is_some());
+}
+
+#[test]
+fn compiler_emitted_core_type_closure_is_transitive_for_inline_records() {
+    for (case, definition) in [
+        ("nested record", "Record<inner:Record<value:U64>>"),
+        ("record inside list", "List<Record<value:U64>,max=2>"),
+    ] {
+        let lawpack = semantic_parity_lawpack();
+        let context = pure_context().with_type_shape(TypeShapeFact {
+            lawpack,
+            coordinate: "parity.types@1.Value".to_owned(),
+            definition: definition.to_owned(),
+        });
+        let source = format!(
+            "package parity.application@1;\n\
+             use lawpack parity.types@1 digest \"sha256:{}\" as shapes;\n\
+             type Input = {{ value: shapes.Value, }};\n\
+             type Output = {{ value: shapes.Value, }};\n\
+             intent copy(input: Input) returns Output\n\
+               profile hello.readOnly\n\
+               basis none\n\
+               budget <= hello.tinyBudget {{\n\
+               let value: shapes.Value = input.value;\n\
+               return {{ value }};\n\
+             }}",
+            "7".repeat(64)
+        );
+        let module = edict_syntax::parse_module(&source)
+            .unwrap_or_else(|errors| panic!("{case} source parses: {errors:?}"));
+        let core = compile_to_core(&module, &context)
+            .unwrap_or_else(|errors| panic!("{case} source compiles: {errors:?}"));
+
+        assert_eq!(
+            core.types.get("Record<value:U64>"),
+            Some(&CoreType::Record {
+                fields: BTreeMap::from([("value".to_owned(), "U64".to_owned())]),
+            }),
+            "{case} retains its non-reconstructible structural record"
+        );
+
+        let report = lower_to_target_ir(&core, &pure_target_facts());
+        assert_eq!(report.status, TargetLoweringStatus::Lowered, "{case}");
+        assert!(report.failures.is_empty(), "{case}: {:?}", report.failures);
+        assert!(report.artifact.is_some(), "{case}");
+    }
+}
+
+#[test]
+fn compiler_target_semantic_parity_matrix() {
+    for case in semantic_parity_cases() {
+        let direct_source = semantic_parity_source("input.left == input.right");
+        let direct_module = edict_syntax::parse_module(&direct_source)
+            .unwrap_or_else(|errors| panic!("{} direct source parses: {errors:?}", case.name));
+        let compiler_accepts =
+            compile_to_core(&direct_module, &semantic_parity_context(case)).is_ok();
+        assert_eq!(
+            compiler_accepts, case.directly_comparable,
+            "{} compiler comparison oracle",
+            case.name
+        );
+
+        let mut caller_core = compile_semantic_parity_case(case, "true");
+        let intent = caller_core
+            .intents
+            .get_mut("compare")
+            .expect("parity intent");
+        let input = intent
+            .body
+            .locals
+            .iter()
+            .find(|local| local.id == "arg.0")
+            .expect("compiler-owned input")
+            .clone();
+        let CoreNode::Let {
+            value: CoreExpr::If { predicate, .. },
+            ..
+        } = &mut intent.body.nodes[0]
+        else {
+            panic!("parity source starts with a conditional binding");
+        };
+        **predicate = CorePredicate::Compare {
+            op: CompareOp::Eq,
+            left: input_field(&input, "left"),
+            right: input_field(&input, "right"),
+        };
+        let report = lower_to_target_ir(&caller_core, &pure_target_facts());
+        assert_eq!(
+            report.status == TargetLoweringStatus::Lowered,
+            compiler_accepts,
+            "{} Target comparison parity: {:?}",
+            case.name,
+            report.failures
+        );
+        assert_eq!(report.artifact.is_some(), compiler_accepts, "{}", case.name);
+
+        let compiler_core = compile_semantic_parity_case(
+            case,
+            "(if true then input.left else input.right) == (if false then input.right else input.left)",
+        );
+        let report = lower_to_target_ir(&compiler_core, &pure_target_facts());
+        assert_eq!(
+            report.status,
+            TargetLoweringStatus::Lowered,
+            "{} compiler-produced conditional: {:?}",
+            case.name,
+            report.failures
+        );
+        assert!(report.artifact.is_some(), "{}", case.name);
+    }
+}
+
+#[test]
+fn empty_aggregate_predicates_reject_on_every_target_surface() {
+    for (aggregate, predicate) in [
+        ("all", CorePredicate::All(Vec::new())),
+        ("any", CorePredicate::Any(Vec::new())),
+    ] {
+        let mut constraint = pure_core();
+        constraint
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .input_constraints[0]
+            .predicate = predicate.clone();
+
+        let mut conditional = pure_core();
+        let intent = conditional
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent");
+        let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+            panic!("pure fixture starts with a let");
+        };
+        let valid_branch = value.clone();
+        *value = CoreExpr::If {
+            predicate: Box::new(predicate.clone()),
+            then_value: Box::new(valid_branch.clone()),
+            else_value: Box::new(valid_branch),
+        };
+
+        let module =
+            edict_syntax::parse_module(ECHO_TERMINAL_REQUIRE).expect("require source parses");
+        let mut requirement = compile_to_core(&module, &effectful_context())
+            .expect("require source compiles to Core");
+        let CoreNode::Require {
+            predicate: requirement_predicate,
+            ..
+        } = &mut requirement
+            .intents
+            .get_mut("t")
+            .expect("require intent")
+            .body
+            .nodes[0]
+        else {
+            panic!("require source starts with a requirement");
+        };
+        *requirement_predicate = predicate.clone();
+
+        let mut copied_expression = effectful_core();
+        let CoreNode::Effect {
+            obstruction_map, ..
+        } = &mut copied_expression
+            .intents
+            .get_mut("t")
+            .expect("effect intent")
+            .body
+            .nodes[0]
+        else {
+            panic!("effect source starts with an effect");
+        };
+        obstruction_map
+            .values_mut()
+            .next()
+            .expect("effect obstruction arm")
+            .value = CoreExpr::If {
+            predicate: Box::new(predicate),
+            then_value: Box::new(CoreExpr::Const(CoreValue::Null)),
+            else_value: Box::new(CoreExpr::Const(CoreValue::Null)),
+        };
+
+        for (surface, report) in [
+            (
+                "input constraint",
+                lower_to_target_ir(&constraint, &pure_target_facts()),
+            ),
+            (
+                "pure conditional",
+                lower_to_target_ir(&conditional, &pure_target_facts()),
+            ),
+            (
+                "requirement",
+                lower_to_target_ir(&requirement, &echo_facts()),
+            ),
+            (
+                "copied obstruction expression",
+                lower_to_target_ir(&copied_expression, &echo_facts()),
+            ),
+        ] {
+            assert_invalid_core_identity(&report, &format!("empty {aggregate} in {surface}"));
+        }
+    }
+}
+
+fn workspace_request_core() -> CoreModule {
+    let source = include_str!("../../../fixtures/lang/external-actions/workspace-snapshot.edict");
+    let module = edict_syntax::parse_module(source).expect("workspace request source parses");
+    let context = pure_context()
+        .with_operation_profile("workspace.read", "continuum.profile.read-only/v1")
+        .with_budget(
+            "workspace.tiny",
+            CoreBudget {
+                max_steps: 512,
+                max_allocated_bytes: 256 * 1024,
+                max_output_bytes: 128 * 1024,
+            },
+        );
+    compile_to_core(&module, &context).expect("workspace request source compiles")
+}
+
+fn empty_matching_local(locals: &mut [LocalRef], id: &str) {
+    locals
+        .iter_mut()
+        .find(|local| local.id == id)
+        .unwrap_or_else(|| panic!("producer {id:?} exists in the local table"))
+        .id
+        .clear();
+}
+
+fn empty_result_reference(expression: &mut CoreExpr, id: &str) {
+    let reference = match expression {
+        CoreExpr::Local { reference } => reference,
+        CoreExpr::Record { fields } => fields
+            .values_mut()
+            .find_map(|value| match value {
+                CoreExpr::Local { reference } if reference.id == id => Some(reference),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("result references producer {id:?}")),
+        _ => panic!("fixture result is a local or one-field local record"),
+    };
+    assert_eq!(reference.id, id);
+    reference.id.clear();
+}
+
+fn core_with_empty_unused_local() -> CoreModule {
+    let mut unused_local = pure_core();
+    unused_local
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .locals
+        .push(LocalRef {
+            id: String::new(),
+            alpha_name: "$unused".to_owned(),
+            ty: "Bool".to_owned(),
+        });
+    unused_local
+}
+
+fn core_with_empty_implicit_input() -> CoreModule {
+    let mut implicit_input = pure_core();
+    implicit_input
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .locals
+        .iter_mut()
+        .find(|local| local.id == "arg.0")
+        .expect("implicit input local")
+        .id
+        .clear();
+    implicit_input
+}
+
+fn core_with_empty_pure_binding() -> CoreModule {
+    let mut pure_binding = pure_core();
+    let intent = pure_binding
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent");
+    let CoreNode::Let { binding, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    let id = binding.id.clone();
+    binding.id.clear();
+    empty_matching_local(&mut intent.body.locals, &id);
+    empty_result_reference(&mut intent.body.result, &id);
+    pure_binding
+}
+
+fn core_with_empty_effect_result() -> CoreModule {
+    let mut effect_result = effectful_core();
+    let intent = effect_result.intents.get_mut("t").expect("effect intent");
+    let CoreNode::Effect { binding, .. } = &mut intent.body.nodes[0] else {
+        panic!("effect fixture starts with an effect");
+    };
+    let id = binding.id.clone();
+    binding.id.clear();
+    empty_matching_local(&mut intent.body.locals, &id);
+    effect_result
+}
+
+fn core_with_empty_obstruction_binder() -> CoreModule {
+    let mut obstruction_binder = effectful_core();
+    let intent = obstruction_binder
+        .intents
+        .get_mut("t")
+        .expect("effect intent");
+    let CoreNode::Effect {
+        obstruction_map, ..
+    } = &mut intent.body.nodes[0]
+    else {
+        panic!("effect fixture starts with an effect");
+    };
+    let binder = &mut obstruction_map
+        .values_mut()
+        .next()
+        .expect("effect obstruction arm")
+        .binder;
+    let id = binder.id.clone();
+    binder.id.clear();
+    empty_matching_local(&mut intent.body.locals, &id);
+    obstruction_binder
+}
+
+fn core_with_empty_external_request() -> CoreModule {
+    let mut external_request = workspace_request_core();
+    let intent = external_request
+        .intents
+        .get_mut("observe")
+        .expect("request intent");
+    let CoreNode::ExternalActionRequest { binding, .. } = &mut intent.body.nodes[0] else {
+        panic!("request fixture starts with a request");
+    };
+    let id = binding.id.clone();
+    binding.id.clear();
+    empty_matching_local(&mut intent.body.locals, &id);
+    empty_result_reference(&mut intent.body.result, &id);
+    external_request
+}
+
+fn core_with_empty_branch_result() -> CoreModule {
+    let branch_source = "package identity.branch@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent choose(input: Input) returns Output\n\
+          profile hello.readOnly\n\
+          basis none\n\
+          budget <= hello.tinyBudget {\n\
+          let value = if true { yield input.value; } else { yield input.value; };\n\
+          return { value };\n\
+        }";
+    let module = edict_syntax::parse_module(branch_source).expect("branch source parses");
+    let mut branch_result =
+        compile_to_core(&module, &pure_context()).expect("branch source compiles");
+    let intent = branch_result
+        .intents
+        .get_mut("choose")
+        .expect("branch intent");
+    let CoreNode::Branch {
+        binding: Some(binding),
+        ..
+    } = &mut intent.body.nodes[0]
+    else {
+        panic!("branch-yield source starts with a bound branch");
+    };
+    let id = binding.id.clone();
+    binding.id.clear();
+    empty_matching_local(&mut intent.body.locals, &id);
+    empty_result_reference(&mut intent.body.result, &id);
+    branch_result
+}
+
+fn core_with_empty_loop_binder() -> CoreModule {
+    let mut loop_binder = pure_core();
+    loop_binder
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .nodes = vec![CoreNode::For {
+        binder: LocalRef {
+            id: String::new(),
+            alpha_name: "$item".to_owned(),
+            ty: "U64".to_owned(),
+        },
+        iter: CoreExpr::Const(CoreValue::Null),
+        bound: CoreBound::Literal(1),
+        body: CoreBlock {
+            locals: Vec::new(),
+            nodes: Vec::new(),
+            result: CoreExpr::Const(CoreValue::Null),
+        },
+    }];
+    loop_binder
+}
+
+#[test]
+fn empty_local_identities_reject_across_all_producer_classes() {
+    let unused_local = core_with_empty_unused_local();
+    let implicit_input = core_with_empty_implicit_input();
+    let pure_binding = core_with_empty_pure_binding();
+    let effect_result = core_with_empty_effect_result();
+    let obstruction_binder = core_with_empty_obstruction_binder();
+    let external_request = core_with_empty_external_request();
+    let branch_result = core_with_empty_branch_result();
+    let loop_binder = core_with_empty_loop_binder();
+
+    for (case, report) in [
+        (
+            "complete local table",
+            lower_to_target_ir(&unused_local, &pure_target_facts()),
+        ),
+        (
+            "implicit input",
+            lower_to_target_ir(&implicit_input, &pure_target_facts()),
+        ),
+        (
+            "pure binding",
+            lower_to_target_ir(&pure_binding, &pure_target_facts()),
+        ),
+        (
+            "effect result",
+            lower_to_target_ir(&effect_result, &echo_facts()),
+        ),
+        (
+            "obstruction binder",
+            lower_to_target_ir(&obstruction_binder, &echo_facts()),
+        ),
+        (
+            "external request",
+            lower_to_target_ir(&external_request, &pure_target_facts()),
+        ),
+        (
+            "branch result",
+            lower_to_target_ir(&branch_result, &pure_target_facts()),
+        ),
+        (
+            "loop binder",
+            lower_to_target_ir(&loop_binder, &pure_target_facts()),
+        ),
+    ] {
+        assert_invalid_core_identity(&report, case);
+    }
 }
 
 #[test]

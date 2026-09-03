@@ -678,14 +678,22 @@ fn validate_pure_binding_graphs(
 ) -> Vec<TargetLoweringFailure> {
     core.intents
         .iter()
-        .filter(|(_, intent)| {
-            !intent
+        .filter_map(|(intent_name, intent)| {
+            if !block_local_identities_are_valid(&intent.body, 0) {
+                return Some(invalid_pure_binding(
+                    intent_name,
+                    None,
+                    "Core local table or producer contains an empty or duplicate identity",
+                ));
+            }
+            if intent
                 .body
                 .nodes
                 .iter()
                 .any(|node| matches!(node, CoreNode::For { .. }))
-        })
-        .filter_map(|(intent_name, intent)| {
+            {
+                return None;
+            }
             validate_pure_binding_graph(
                 core,
                 pure_functions,
@@ -803,6 +811,51 @@ fn validate_pure_binding_graph(
                 intent.output
             ),
         )
+    })
+}
+
+fn block_local_identities_are_valid(block: &crate::core_ir::CoreBlock, depth: usize) -> bool {
+    if depth > MAX_CORE_TYPE_DEPTH {
+        return false;
+    }
+    let mut local_ids = BTreeSet::new();
+    if !block
+        .locals
+        .iter()
+        .all(|local| !local.id.is_empty() && local_ids.insert(local.id.as_str()))
+    {
+        return false;
+    }
+    block.nodes.iter().all(|node| match node {
+        CoreNode::Let { binding, .. } | CoreNode::ExternalActionRequest { binding, .. } => {
+            !binding.id.is_empty()
+        }
+        CoreNode::Effect {
+            binding,
+            obstruction_map,
+            ..
+        } => {
+            !binding.id.is_empty()
+                && obstruction_map
+                    .values()
+                    .all(|arm| !arm.binder.id.is_empty())
+        }
+        CoreNode::For { binder, body, .. } => {
+            !binder.id.is_empty() && block_local_identities_are_valid(body, depth + 1)
+        }
+        CoreNode::Branch {
+            binding,
+            then_block,
+            else_block,
+            ..
+        } => {
+            binding
+                .as_ref()
+                .is_none_or(|binding| !binding.id.is_empty())
+                && block_local_identities_are_valid(then_block, depth + 1)
+                && block_local_identities_are_valid(else_block, depth + 1)
+        }
+        CoreNode::Require { .. } => true,
     })
 }
 
@@ -1312,11 +1365,9 @@ fn expression_type_coordinate(
             if !predicate_fits_core_types(core, pure_functions, predicate, available) {
                 return None;
             }
-            let then_type =
-                expression_type_coordinate(core, pure_functions, then_value, available)?;
-            let else_type =
-                expression_type_coordinate(core, pure_functions, else_value, available)?;
-            compatible_core_type_coordinate(core, &then_type, &else_type)
+            let then_shape = comparison_operand_shape(core, pure_functions, then_value, available)?;
+            let else_shape = comparison_operand_shape(core, pure_functions, else_value, available)?;
+            join_conditional_shapes(core, &then_shape, &else_shape, 0)?.type_coordinate()
         }
         CoreExpr::Local { .. }
         | CoreExpr::Const(CoreValue::Null)
@@ -1325,7 +1376,7 @@ fn expression_type_coordinate(
     }
 }
 
-fn compatible_core_type_coordinate(
+fn join_conditional_coordinates(
     core: &CoreModule,
     left_coordinate: &str,
     right_coordinate: &str,
@@ -1432,30 +1483,12 @@ fn expression_references_are_available(
             .iter()
             .all(|argument| expression_references_are_available(argument, available)),
         CoreExpr::If {
-            predicate,
             then_value,
             else_value,
+            ..
         } => {
-            predicate_references_are_available(predicate, available)
-                && expression_references_are_available(then_value, available)
+            expression_references_are_available(then_value, available)
                 && expression_references_are_available(else_value, available)
-        }
-    }
-}
-
-fn predicate_references_are_available(
-    predicate: &CorePredicate,
-    available: &BTreeMap<&str, &LocalRef>,
-) -> bool {
-    match predicate {
-        CorePredicate::True | CorePredicate::False => true,
-        CorePredicate::Not(value) => predicate_references_are_available(value, available),
-        CorePredicate::All(values) | CorePredicate::Any(values) => values
-            .iter()
-            .all(|value| predicate_references_are_available(value, available)),
-        CorePredicate::Compare { left, right, .. } => {
-            expression_references_are_available(left, available)
-                && expression_references_are_available(right, available)
         }
     }
 }
@@ -1466,24 +1499,24 @@ fn predicate_fits_core_types(
     predicate: &CorePredicate,
     available: &BTreeMap<&str, &LocalRef>,
 ) -> bool {
-    if !predicate_references_are_available(predicate, available) {
-        return false;
-    }
     match predicate {
         CorePredicate::True | CorePredicate::False => true,
         CorePredicate::Not(value) => {
             predicate_fits_core_types(core, pure_functions, value, available)
         }
-        CorePredicate::All(values) | CorePredicate::Any(values) => values
-            .iter()
-            .all(|value| predicate_fits_core_types(core, pure_functions, value, available)),
+        CorePredicate::All(values) | CorePredicate::Any(values) => {
+            !values.is_empty()
+                && values
+                    .iter()
+                    .all(|value| predicate_fits_core_types(core, pure_functions, value, available))
+        }
         CorePredicate::Compare { left, right, .. } => {
-            comparison_operands_fit(core, pure_functions, left, right, available)
+            predicate_operands_are_comparable(core, pure_functions, left, right, available)
         }
     }
 }
 
-fn comparison_operands_fit(
+fn predicate_operands_are_comparable(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
     left: &CoreExpr,
@@ -1496,33 +1529,29 @@ fn comparison_operands_fit(
     let Some(right) = comparison_operand_shape(core, pure_functions, right, available) else {
         return false;
     };
-    comparison_shape_fits(core, &left, &right, 0)
-        || comparison_shape_fits(core, &right, &left, 0)
-        || scalar_comparison_shapes_have_common_type(core, &left, &right)
-}
-
-fn scalar_comparison_shapes_have_common_type(
-    core: &CoreModule,
-    left: &ComparisonOperandShape,
-    right: &ComparisonOperandShape,
-) -> bool {
-    if comparison_record_fields(core, left).is_some()
-        || comparison_record_fields(core, right).is_some()
-    {
-        return false;
-    }
-    let (ComparisonOperandShape::Coordinate(left), ComparisonOperandShape::Coordinate(right)) =
-        (left, right)
-    else {
-        return false;
-    };
-    compatible_core_type_coordinate(core, left, right).is_some()
+    comparison_shape_fits(core, &left, &right, 0) || comparison_shape_fits(core, &right, &left, 0)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum ComparisonOperandShape {
     Coordinate(String),
     Record(BTreeMap<String, ComparisonOperandShape>),
+    List {
+        item: Box<ComparisonOperandShape>,
+        max: u64,
+    },
+}
+
+impl ComparisonOperandShape {
+    fn type_coordinate(&self) -> Option<String> {
+        match self {
+            Self::Coordinate(coordinate) => Some(coordinate.clone()),
+            Self::List { item, max } => {
+                Some(format!("List<{},max={max}>", item.type_coordinate()?))
+            }
+            Self::Record(_) => None,
+        }
+    }
 }
 
 fn field_expression_shape(
@@ -1566,7 +1595,7 @@ fn comparison_operand_shape(
             }
             let then_shape = comparison_operand_shape(core, pure_functions, then_value, available)?;
             let else_shape = comparison_operand_shape(core, pure_functions, else_value, available)?;
-            join_comparison_shapes(core, &then_shape, &else_shape, 0)
+            join_conditional_shapes(core, &then_shape, &else_shape, 0)
         }
         _ => {
             let coordinate =
@@ -1577,7 +1606,7 @@ fn comparison_operand_shape(
     }
 }
 
-fn join_comparison_shapes(
+fn join_conditional_shapes(
     core: &CoreModule,
     left: &ComparisonOperandShape,
     right: &ComparisonOperandShape,
@@ -1594,11 +1623,12 @@ fn join_comparison_shapes(
             if !left.keys().eq(right.keys()) {
                 return None;
             }
-            left.iter()
+            return left
+                .iter()
                 .map(|(field, left)| {
                     Some((
                         field.clone(),
-                        join_comparison_shapes(
+                        join_conditional_shapes(
                             core,
                             left,
                             right.get(field).expect("equal record field keys"),
@@ -1607,21 +1637,37 @@ fn join_comparison_shapes(
                     ))
                 })
                 .collect::<Option<BTreeMap<_, _>>>()
-                .map(ComparisonOperandShape::Record)
+                .map(ComparisonOperandShape::Record);
         }
-        (None, None) => {
-            let (
-                ComparisonOperandShape::Coordinate(left),
-                ComparisonOperandShape::Coordinate(right),
-            ) = (left, right)
-            else {
-                return None;
-            };
-            compatible_core_type_coordinate(core, left, right)
-                .map(ComparisonOperandShape::Coordinate)
-        }
-        (Some(_), None) | (None, Some(_)) => None,
+        (Some(_), None) | (None, Some(_)) => return None,
+        (None, None) => {}
     }
+
+    match (
+        comparison_list_shape(core, left),
+        comparison_list_shape(core, right),
+    ) {
+        (Some((left_item, left_max)), Some((right_item, right_max))) => {
+            return Some(ComparisonOperandShape::List {
+                item: Box::new(join_conditional_shapes(
+                    core,
+                    &left_item,
+                    &right_item,
+                    depth + 1,
+                )?),
+                max: left_max.max(right_max),
+            });
+        }
+        (Some(_), None) | (None, Some(_)) => return None,
+        (None, None) => {}
+    }
+
+    let (ComparisonOperandShape::Coordinate(left), ComparisonOperandShape::Coordinate(right)) =
+        (left, right)
+    else {
+        return None;
+    };
+    join_conditional_coordinates(core, left, right).map(ComparisonOperandShape::Coordinate)
 }
 
 fn comparison_shape_fits(
@@ -1638,7 +1684,7 @@ fn comparison_shape_fits(
         comparison_record_fields(core, target),
     ) {
         (Some(source), Some(target)) => {
-            source.keys().eq(target.keys())
+            return source.keys().eq(target.keys())
                 && source.iter().all(|(field, source)| {
                     comparison_shape_fits(
                         core,
@@ -1646,20 +1692,30 @@ fn comparison_shape_fits(
                         target.get(field).expect("equal record field keys"),
                         depth + 1,
                     )
-                })
+                });
         }
-        (None, None) => {
-            let (
-                ComparisonOperandShape::Coordinate(source),
-                ComparisonOperandShape::Coordinate(target),
-            ) = (source, target)
-            else {
-                return false;
-            };
-            core_type_fits(core, source, target)
-        }
-        (Some(_), None) | (None, Some(_)) => false,
+        (Some(_), None) | (None, Some(_)) => return false,
+        (None, None) => {}
     }
+
+    match (
+        comparison_list_shape(core, source),
+        comparison_list_shape(core, target),
+    ) {
+        (Some((source_item, source_max)), Some((target_item, target_max))) => {
+            return source_max <= target_max
+                && comparison_shape_fits(core, &source_item, &target_item, depth + 1);
+        }
+        (Some(_), None) | (None, Some(_)) => return false,
+        (None, None) => {}
+    }
+
+    let (ComparisonOperandShape::Coordinate(source), ComparisonOperandShape::Coordinate(target)) =
+        (source, target)
+    else {
+        return false;
+    };
+    core_type_fits(core, source, target)
 }
 
 fn comparison_record_fields(
@@ -1668,6 +1724,7 @@ fn comparison_record_fields(
 ) -> Option<BTreeMap<String, ComparisonOperandShape>> {
     match shape {
         ComparisonOperandShape::Record(fields) => Some(fields.clone()),
+        ComparisonOperandShape::List { .. } => None,
         ComparisonOperandShape::Coordinate(coordinate) => {
             let CoreType::Record { fields } = resolved_core_type(core, coordinate)? else {
                 return None;
@@ -1680,6 +1737,22 @@ fn comparison_record_fields(
                     })
                     .collect(),
             )
+        }
+    }
+}
+
+fn comparison_list_shape(
+    core: &CoreModule,
+    shape: &ComparisonOperandShape,
+) -> Option<(ComparisonOperandShape, u64)> {
+    match shape {
+        ComparisonOperandShape::List { item, max } => Some((item.as_ref().clone(), *max)),
+        ComparisonOperandShape::Record(_) => None,
+        ComparisonOperandShape::Coordinate(coordinate) => {
+            let CoreType::List { item, max } = resolved_core_type(core, coordinate)? else {
+                return None;
+            };
+            Some((ComparisonOperandShape::Coordinate(item), max))
         }
     }
 }

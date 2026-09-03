@@ -126,21 +126,21 @@ including `core.string.concat`, contribute their bounded result type to operand
 comparison instead of falling through to literal-only inference. String
 concatenation accepts valid raw or NFC bounded operands, including mixed
 canonicalizations, and derives the compiler-defined raw UTF-8 result with the
-checked sum of their maxima. [TIR-REQ-035] Conditional
-operands also validate their nested predicate and join compatible branch bounds:
-strings preserve the wider compatible maximum, while byte intervals join their
-lower and upper bounds component-wise even when neither interval contains the
-other. When anonymous records have no named type coordinate, conditional
-comparison validation recursively preserves their field structure instead of
-inventing a nominal type. A comparison then requires either the complete left
-record to fit the right or the complete right record to fit the left; it cannot
-choose a different compatibility direction for each field. Scalar byte
-intervals retain their component-wise common comparison type without weakening
-that record rule. Structural Core compatibility shares the compiler's finite
-128-level type-depth boundary. Published built-in coordinates resolve before
-module-local type entries, and compiler-emitted nested `List<item,max=N>`
-coordinates are reconstructed by the same recursive resolver. [TIR-REQ-027]
-[TIR-REQ-029] [TIR-REQ-032] [TIR-REQ-033]
+checked sum of their maxima. [TIR-REQ-035] Conditional operands also validate
+their nested predicate and compute a bounded least-upper-bound for their branch
+results. Directionally compatible scalar branches retain the containing type;
+otherwise byte intervals join their lower and upper bounds component-wise.
+Lists recursively join their item shapes and take the wider collection maximum,
+while equal-key anonymous records recursively join each field. This `join`
+judgment is distinct from predicate `comparable`: a direct comparison is lawful
+only when the complete left shape fits the right or the complete right shape
+fits the left. It cannot synthesize a byte union or choose a different
+compatibility direction for each record field. Structural Core judgments share
+the compiler's finite 128-level type-depth boundary. Published built-in
+coordinates resolve before module-local type entries, and compiler-emitted
+nested `List<item,max=N>` coordinates are reconstructed by the same recursive
+resolver. [TIR-REQ-027] [TIR-REQ-029] [TIR-REQ-032] [TIR-REQ-033]
+[TIR-REQ-037] [TIR-REQ-038]
 Field projection uses that structural record inference too. A direct anonymous
 record or a record-valued conditional can therefore supply a field without
 inventing a named coordinate for its base; predicates, branches, and the
@@ -162,9 +162,14 @@ types must remain valid, and every executable call must pass the same exact
 lawpack-helper check. The current Core obstruction arm's nonempty,
 zero-argument call-shaped constructor remains an opaque application value in
 that specific position; adding arguments makes it executable and subjects it to
-helper authority. Effect-failure binder types are checked structurally against
-their enclosing effect and failure coordinates. None of these checks recognize
-application nouns or verbs. [TIR-REQ-025] The canonical encoder also
+helper authority. Empty `All` and `Any` aggregates reject through this same
+predicate judgment on every copied surface, matching the Core wire schema's
+one-or-more cardinality. Effect-failure binder types are checked structurally
+against their enclosing effect and failure coordinates. None of these checks
+recognize application nouns or verbs. [TIR-REQ-025] [TIR-REQ-039] Before the
+supported graph judgment runs, one recursive identity preflight rejects empty
+identities in every local table and producer class, including obstruction and
+loop binders and nested branch blocks. The canonical encoder also
 rejects any local identity produced by more than one pure binding, target step,
 or external-action request, and reserves the implicit application-input identity
 from those explicit producers, so every downstream result reference remains
@@ -172,7 +177,7 @@ unambiguous. This records authored basis, preconditions, evaluation limits, pure
 computation, guard dispositions, and success-output semantics without resolving
 a runtime basis, executing Echo, or admitting a bundle. [TIR-REQ-018]
 [TIR-REQ-019] [TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022] [TIR-REQ-023]
-[TIR-REQ-024] [TIR-REQ-026] [TIR-REQ-028] [TIR-REQ-034]
+[TIR-REQ-024] [TIR-REQ-026] [TIR-REQ-028] [TIR-REQ-034] [TIR-REQ-040]
 
 Lawpack-aliased effects have an additional typed authority gate. Validated
 lawpack preparation is the only constructor for an effect-signature fact; the

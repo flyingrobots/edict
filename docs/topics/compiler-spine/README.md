@@ -136,10 +136,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   operation step budget. Imported type-alias traversal rejects beyond a
   deterministic depth of 128 rather than risking unbounded recursion. Every
   resolved non-primitive helper parameter and return type enters the emitted
-  Core type closure even when no application declaration names it. The imported
-  lawpack digest remains the helper implementation, cost, and type-closure identity.
+  Core type closure even when no application declaration names it. That closure
+  is transitive over referenced non-intrinsic structure: authenticated inline
+  records are interned even when nested inside another record or bounded list,
+  so downstream consumers never need to infer missing record authority from a
+  structural coordinate string. The imported lawpack digest remains the helper
+  implementation, cost, and type-closure identity.
   [CSPINE-REQ-024]
-  [CSPINE-REQ-029] [CSPINE-REQ-031] [CSPINE-REQ-034]
+  [CSPINE-REQ-029] [CSPINE-REQ-031] [CSPINE-REQ-034] [CSPINE-REQ-036]
 - Coordinate loop bounds resolve only from explicit compiler facts. Exact
   lawpack preparation projects exported `U32` and `U64` constants through the
   source alias, uses their numeric values for static soundness and budget

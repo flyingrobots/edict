@@ -4463,7 +4463,7 @@ fn collect_imported_type_shape_closure(
     type_shapes: &BTreeMap<String, TypeShapeFact>,
     closure: &mut BTreeMap<String, CoreType>,
 ) {
-    if type_shapes.contains_key(&shape.coord) {
+    if type_shapes.contains_key(&shape.coord) || matches!(shape.kind, TypeKind::Record(_)) {
         closure.insert(shape.coord.clone(), shape.core_type());
     }
     match &shape.kind {
