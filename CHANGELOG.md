@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Updated the capability-denied provider host from Wasmtime 46.0.2 to 46.0.3
+  after RUSTSEC-2026-0268 and RUSTSEC-2026-0269 made the prior exact pin fail
+  the mandatory supply-chain gate. The direct feature and single-owner
+  dependency boundary remain unchanged.
 - Lowered bounded source-ordered pure Core bindings into generic Target IR with
   exact compiler-local identities, expressions, helper and conditional
   dependencies, semantic closure, canonical identity, and independently
