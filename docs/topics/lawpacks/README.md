@@ -92,11 +92,14 @@ The current executable Rust surfaces touching lawpacks are:
   semantic effects may govern a pure executable program or a request-only
   program and must carry its own exact budget obligation and target
   configuration. Application provider inputs select that profile-owned
-  configuration even when the adapter has no effects. Compilation preserves the
-  profile-to-budget association and rejects source that selects another
-  profile's budget. The exact adapter budget set also covers every exported
-  pure helper's cost template. Edict preserves those references but does not
-  interpret their target-owned semantics.
+  configuration even when the adapter has no effects. For an effectful profile,
+  application configuration selection includes only effect coordinates present
+  in compiled Core, so another advertised effect cannot introduce an unused
+  target configuration. Compilation preserves the profile-to-budget association
+  and rejects source that selects another profile's budget. The exact adapter
+  budget set also covers every exported pure helper's cost template. Edict
+  preserves those references but does not interpret their target-owned
+  semantics.
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
   [LAWPACKS-REQ-008]
