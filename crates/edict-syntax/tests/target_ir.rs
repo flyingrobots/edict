@@ -1615,6 +1615,78 @@ fn pure_conditional_comparison_accepts_supported_call_operands() {
 }
 
 #[test]
+fn compiler_produced_conditional_comparisons_infer_compatible_branch_types() {
+    let source = "package a.b@1;\n\
+        type Input = { value: String<max=32>, };\n\
+        type Output = { value: String<max=32>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile hello.readOnly\n\
+          basis none\n\
+          budget <= hello.tinyBudget {\n\
+          let value = if (if true then \"a\" else \"bb\")\n\
+            == (if false then \"ccc\" else \"dddd\")\n\
+            then input.value else input.value;\n\
+          return { value };\n\
+        }";
+    let module = edict_syntax::parse_module(source).expect("conditional comparison parses");
+    let core = compile_to_core(&module, &pure_context())
+        .expect("compatible conditional comparison compiles to Core");
+    let CoreNode::Let {
+        value:
+            CoreExpr::If {
+                predicate,
+                then_value: _,
+                else_value: _,
+            },
+        ..
+    } = &core.intents.get("t").expect("intent t").body.nodes[0]
+    else {
+        panic!("compiler preserves the outer conditional expression");
+    };
+    let CorePredicate::Compare { left, right, .. } = predicate.as_ref() else {
+        panic!("compiler preserves the comparison predicate");
+    };
+    assert!(matches!(left, CoreExpr::If { .. }));
+    assert!(matches!(right, CoreExpr::If { .. }));
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+}
+
+#[test]
+fn conditional_byte_interval_comparisons_use_component_wise_join() {
+    let mut core = pure_core();
+    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+    let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    let valid_branch = value.clone();
+    let byte_interval = |first: usize, second: usize| CoreExpr::If {
+        predicate: Box::new(CorePredicate::True),
+        then_value: Box::new(CoreExpr::Const(CoreValue::Bytes(vec![0x11; first]))),
+        else_value: Box::new(CoreExpr::Const(CoreValue::Bytes(vec![0x22; second]))),
+    };
+    *value = CoreExpr::If {
+        predicate: Box::new(CorePredicate::Compare {
+            op: CompareOp::Eq,
+            left: byte_interval(1, 3),
+            right: byte_interval(2, 4),
+        }),
+        then_value: Box::new(valid_branch.clone()),
+        else_value: Box::new(valid_branch),
+    };
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+}
+
+#[test]
 fn target_lowering_accepts_compiler_type_depth_boundary() {
     const TYPE_DEPTH: usize = 128;
 

@@ -99,13 +99,16 @@ The current executable Rust surfaces touching lawpacks are:
   profile invokes none, its full advertised effect set must instead converge on
   one exact target configuration; an ambiguous set rejects. Compilation
   preserves the profile-to-budget association and rejects source that selects
-  another profile's budget. The exact adapter
-  budget set also covers every exported pure helper's cost template. Edict
+  another profile's budget. Direct-adapter closure also requires every authored
+  profile to map to a distinct Core profile, preventing source-profile
+  configuration authority from collapsing after compilation erases the source
+  coordinate. The exact adapter budget set also covers every exported pure
+  helper's cost template. Edict
   preserves those references but does not interpret their target-owned
   semantics.
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
-  [LAWPACKS-REQ-008] [LAWPACKS-REQ-017]
+  [LAWPACKS-REQ-008] [LAWPACKS-REQ-017] [LAWPACKS-REQ-018]
 - The same preparation boundary projects each exported pure-helper signature
   through the source alias. Source calls type-check against that signature and
   lower under the canonical exported coordinate, while the exact imported

@@ -274,6 +274,47 @@ fn lawpack_adapter_requires_complete_exported_effect_coverage() {
 }
 
 #[test]
+fn lawpack_adapter_rejects_profiles_that_collapse_to_one_core_coordinate() {
+    let (mut exports, mut adapter) =
+        request_only_adapter(Some("hello.echo@1.smallCreateBudget"), true);
+    let exported_profiles = map_mut(field_mut(&mut exports, "operationProfiles"));
+    let second_exported_profile = exported_profiles
+        .first()
+        .map(|(_coordinate, profile)| profile.clone())
+        .expect("exported operation profile");
+    exported_profiles.push((
+        text("hello.echo@1.observeGreeting"),
+        second_exported_profile,
+    ));
+
+    let adapter_profiles = map_mut(field_mut(&mut adapter, "operationProfiles"));
+    let mut second_adapter_profile = adapter_profiles
+        .first()
+        .map(|(_coordinate, profile)| profile.clone())
+        .expect("adapter operation profile");
+    replace_field(
+        field_mut(&mut second_adapter_profile, "targetConfiguration"),
+        "digest",
+        CanonicalValue::Array(vec![text("sha256"), CanonicalValue::Bytes(vec![0x42; 32])]),
+    );
+    adapter_profiles.push((text("hello.echo@1.observeGreeting"), second_adapter_profile));
+
+    let bundle = bundle_with_exports_and_adapter(&exports, &adapter);
+    let adapter_bytes = encode_canonical_cbor(&adapter).expect("encode ambiguous adapter");
+    let failures = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
+        .expect_err("source profiles must not collapse to one Core profile");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::DuplicateReference]
+    );
+    assert_eq!(
+        failures[0].path,
+        "adapter.operationProfiles.hello.echo@1.observeGreeting.core"
+    );
+}
+
+#[test]
 fn request_only_profile_supplies_budget_without_callable_effect_authority() {
     let (exports, adapter) = request_only_adapter(Some("hello.echo@1.smallCreateBudget"), true);
     let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
@@ -357,6 +398,11 @@ fn request_only_profile_rejects_another_profiles_budget() {
         .map(|(_coordinate, profile)| profile)
         .expect("adapter operation profile");
     let mut second_profile = first_profile.clone();
+    replace_field(
+        &mut second_profile,
+        "core",
+        text("continuum.profile.observe/v1"),
+    );
     replace_field(
         &mut second_profile,
         "budgetObligation",

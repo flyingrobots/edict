@@ -588,6 +588,7 @@ fn validate_adapter_closure(
         required_budgets.insert(effect.cost_obligation.as_str());
     }
 
+    let mut core_profile_owners = BTreeMap::new();
     for (coordinate, profile) in operation_profiles {
         if let Some(budget) = &profile.budget_obligation {
             required_budgets.insert(budget);
@@ -621,6 +622,13 @@ fn validate_adapter_closure(
                     effect,
                 )));
             }
+        }
+        if let Some(first_owner) = core_profile_owners.insert(&profile.core, coordinate) {
+            return Err(one(failure(
+                LawpackAdapterFailureKind::DuplicateReference,
+                format!("adapter.operationProfiles.{coordinate}.core"),
+                format!("unique Core profile mapping; first mapped by `{first_owner}`"),
+            )));
         }
     }
     exact_keys(

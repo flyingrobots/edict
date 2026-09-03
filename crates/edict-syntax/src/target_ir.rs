@@ -1123,6 +1123,13 @@ fn expression_type_coordinate(
         }
         CoreExpr::Const(CoreValue::Bool(_)) => Some("Bool".to_owned()),
         CoreExpr::Const(CoreValue::Int { width, .. }) => Some(width.clone()),
+        CoreExpr::Const(CoreValue::String(value)) => Some(format!(
+            "String<max={},canonical=raw-utf8>",
+            u64::try_from(value.chars().count()).ok()?
+        )),
+        CoreExpr::Const(CoreValue::Bytes(value)) => {
+            Some(format!("Bytes<exact={}>", u64::try_from(value.len()).ok()?))
+        }
         CoreExpr::Field { base, field } => {
             expression_type_coordinate(core, pure_functions, base, available)
                 .and_then(|base_type| resolved_core_type(core, &base_type))
@@ -1144,20 +1151,64 @@ fn expression_type_coordinate(
                 .map(|fact| fact.return_type.clone())
         }
         CoreExpr::If {
+            predicate,
             then_value,
             else_value,
-            ..
         } => {
+            if !predicate_fits_core_types(core, pure_functions, predicate, available) {
+                return None;
+            }
             let then_type =
                 expression_type_coordinate(core, pure_functions, then_value, available)?;
-            (expression_type_coordinate(core, pure_functions, else_value, available)? == then_type)
-                .then_some(then_type)
+            let else_type =
+                expression_type_coordinate(core, pure_functions, else_value, available)?;
+            compatible_core_type_coordinate(core, &then_type, &else_type)
         }
         CoreExpr::Local { .. }
-        | CoreExpr::Const(CoreValue::Null | CoreValue::String(_) | CoreValue::Bytes(_))
+        | CoreExpr::Const(CoreValue::Null)
         | CoreExpr::Record { .. }
         | CoreExpr::Call { .. } => None,
     }
+}
+
+fn compatible_core_type_coordinate(
+    core: &CoreModule,
+    left_coordinate: &str,
+    right_coordinate: &str,
+) -> Option<String> {
+    if core_type_fits(core, left_coordinate, right_coordinate) {
+        return Some(right_coordinate.to_owned());
+    }
+    if core_type_fits(core, right_coordinate, left_coordinate) {
+        return Some(left_coordinate.to_owned());
+    }
+
+    let (
+        Some(CoreType::Bytes {
+            min: left_min,
+            max: left_max,
+        }),
+        Some(CoreType::Bytes {
+            min: right_min,
+            max: right_max,
+        }),
+    ) = (
+        resolved_core_type(core, left_coordinate),
+        resolved_core_type(core, right_coordinate),
+    )
+    else {
+        return None;
+    };
+    let min = match (left_min, right_min) {
+        (Some(left), Some(right)) => Some(left.min(right)),
+        (None, _) | (_, None) => None,
+    };
+    let max = left_max.max(right_max);
+    Some(match min {
+        Some(min) if min == max => format!("Bytes<exact={max}>"),
+        Some(min) => format!("Bytes<min={min},max={max}>"),
+        None => format!("Bytes<max={max}>"),
+    })
 }
 
 fn core_value_fits_declared_type(core: &CoreModule, value: &CoreValue, expected: &str) -> bool {
@@ -1291,8 +1342,7 @@ fn comparison_operands_fit(
         (Some(left_type), Some(right_type)) => {
             expression_fits_declared_type(core, pure_functions, left, left_type, available)
                 && expression_fits_declared_type(core, pure_functions, right, right_type, available)
-                && (core_type_fits(core, left_type, right_type)
-                    || core_type_fits(core, right_type, left_type))
+                && compatible_core_type_coordinate(core, left_type, right_type).is_some()
         }
         (Some(left_type), None) => {
             expression_fits_declared_type(core, pure_functions, left, left_type, available)
