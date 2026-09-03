@@ -10,14 +10,14 @@ use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
     CompareOp, CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr,
-    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, CoreValue,
-    GuardKind, InputConstraint, InputConstraintSource, LocalRef, LowerabilityStatus,
-    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
-    TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest, TargetIrLoweringFacts,
-    TargetIrRequireFailure, TargetIrStep, TargetLoweringFailureKind, TargetLoweringStatus,
-    TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
-    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
-    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, CoreType,
+    CoreValue, GuardKind, InputConstraint, InputConstraintSource, LocalRef, LowerabilityStatus,
+    LoweringRequirements, NativeEffectSupport, PureFunctionFact, PureHelperCostFact, ResourceRef,
+    SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
+    TargetIrExternalActionRequest, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrStep,
+    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, TypeShapeFact, WriteClass,
+    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
+    GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -1120,6 +1120,80 @@ fn pure_core_bindings_lower_as_generic_target_program() {
         "projection failures: {:?}",
         report.result_projection_failures
     );
+}
+
+#[test]
+fn helper_only_return_type_enters_core_closure_and_target_lowering() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let ignored = helpers.label(input.value);\n\
+          return { value: input.value };\n\
+        }";
+    let lawpack = ResourceRef {
+        coordinate: "example.bounds@1".to_owned(),
+        digest: Some(
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
+        ),
+    };
+    let context = CompilerContext::new()
+        .with_operation_profile("p.read", "continuum.profile.read-only/v1")
+        .with_budget(
+            "p.tiny",
+            CoreBudget {
+                max_steps: 8,
+                max_allocated_bytes: 1024,
+                max_output_bytes: 256,
+            },
+        )
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.Label".to_owned(),
+            definition: "String<max=16,canonical=raw-utf8>".to_owned(),
+        })
+        .with_pure_function(
+            "helpers.label",
+            PureFunctionFact {
+                lawpack: lawpack.clone(),
+                coordinate: "example.bounds@1.label".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "example.bounds@1.Label".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        )
+        .with_pure_helper_cost(
+            "helpers.tiny",
+            PureHelperCostFact {
+                lawpack,
+                coordinate: "example.bounds@1.tiny".to_owned(),
+                budget: CoreBudget {
+                    max_steps: 1,
+                    max_allocated_bytes: 16,
+                    max_output_bytes: 16,
+                },
+            },
+        );
+    let module = edict_syntax::parse_module(source).expect("helper-only type source parses");
+    let core = compile_to_core(&module, &context).expect("helper-only type source compiles");
+
+    assert_eq!(
+        core.types.get("example.bounds@1.Label"),
+        Some(&CoreType::String {
+            max: 16,
+            canonical: "raw-utf8".to_owned(),
+        })
+    );
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
 }
 
 #[test]

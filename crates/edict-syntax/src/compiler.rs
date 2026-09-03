@@ -3640,21 +3640,26 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn shape_for_helper_coordinate(
-        &self,
+        &mut self,
         coordinate: &str,
         lawpack: &ResourceRef,
     ) -> Option<TypeShape> {
         if coordinate == "Bool" || builtin_integer_width(coordinate).is_some() {
             return self.shape_for_coordinate(coordinate);
         }
-        self.resolved
+        let fact = self
+            .resolved
             .type_shapes
             .get(coordinate)
             .filter(|fact| {
                 &fact.lawpack == lawpack
                     && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
             })
-            .and_then(|fact| self.shape_from_imported_type(fact))
+            .cloned()?;
+        let shape = self.shape_from_imported_type(&fact)?;
+        self.core_types
+            .insert(shape.coord.clone(), shape.core_type());
+        Some(shape)
     }
 
     fn shape_from_imported_type(&self, fact: &TypeShapeFact) -> Option<TypeShape> {
