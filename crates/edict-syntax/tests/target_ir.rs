@@ -1275,6 +1275,68 @@ fn type_incompatible_pure_binding_rejects_before_target_artifact() {
 }
 
 #[test]
+fn narrow_core_integer_widths_lower_as_builtin_types() {
+    for (index, (width, value)) in [
+        ("I8", "-128"),
+        ("I16", "-32768"),
+        ("U8", "255"),
+        ("U16", "65535"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut core = pure_core();
+        assert!(
+            !core.types.contains_key(width),
+            "built-in widths must not require redundant Core type entries"
+        );
+        let intent = core.intents.get_mut("sayHello").expect("pure intent");
+        let binding = LocalRef {
+            id: format!("local.narrow.{index}"),
+            alpha_name: format!("$narrow{index}"),
+            ty: width.to_owned(),
+        };
+        intent.body.locals.push(binding.clone());
+        intent.body.nodes.insert(
+            0,
+            CoreNode::Let {
+                binding: binding.clone(),
+                value: CoreExpr::Const(CoreValue::Int {
+                    width: width.to_owned(),
+                    value: value.to_owned(),
+                }),
+            },
+        );
+
+        let report = lower_to_target_ir(&core, &pure_target_facts());
+
+        assert_eq!(
+            report.status,
+            TargetLoweringStatus::Lowered,
+            "{width} should lower without a redundant type entry: {:?}",
+            report.failures
+        );
+        let artifact = report.artifact.expect("narrow integer Target IR");
+        let lowered = artifact
+            .intents
+            .get("sayHello")
+            .expect("pure intent")
+            .pure_bindings
+            .iter()
+            .find(|candidate| candidate.binding.id == binding.id)
+            .expect("narrow integer binding");
+        assert_eq!(lowered.binding.ty, width);
+        assert_eq!(
+            lowered.value,
+            CoreExpr::Const(CoreValue::Int {
+                width: width.to_owned(),
+                value: value.to_owned(),
+            })
+        );
+    }
+}
+
+#[test]
 fn non_raw_string_constant_rejects_before_target_artifact() {
     let mut core = pure_core();
     let intent = core.intents.get_mut("sayHello").expect("pure intent");

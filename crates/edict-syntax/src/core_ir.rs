@@ -270,7 +270,10 @@ fn builtin_core_type(coordinate: &str) -> Option<CoreType> {
     if coordinate == "Bool" {
         return Some(CoreType::Bool);
     }
-    if matches!(coordinate, "I32" | "I64" | "U32" | "U64") {
+    if matches!(
+        coordinate,
+        "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64"
+    ) {
         return Some(CoreType::Int {
             width: coordinate.to_owned(),
         });
