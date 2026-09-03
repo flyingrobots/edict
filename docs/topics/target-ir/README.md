@@ -118,18 +118,24 @@ conditionals. Malformed Core with a dangling, conflicting, forward, self, or
 duplicate pure binding fails with `InvalidCoreIdentity` before Target IR exists.
 Pure conditional predicates independently prove reference closure, compatible
 operand types, and fixed-width integer domains at this boundary, including when
-a conditional is nested inside string-shape derivation. Each non-intrinsic pure
-call must also match exactly one helper fact projected from a validated lawpack
-export. Target lowering checks its canonical coordinate, complete non-generic
-signature, and exact digest-locked owning lawpack against the Core import
-closure before any provider is invoked. Missing, duplicate, or substituted
-helper evidence rejects as `InvalidCoreIdentity`. The canonical encoder also
+a conditional is nested inside string-shape derivation. Supported pure calls,
+including `core.string.concat`, contribute their bounded result type to operand
+comparison instead of falling through to literal-only inference. Structural
+Core compatibility shares the compiler's finite 128-level type-depth boundary.
+Each non-intrinsic pure call must also match exactly one helper fact projected
+from a validated lawpack export. Those facts expose read-only identity and
+signature accessors but cannot be constructed or mutated by an external caller.
+Target lowering checks the canonical coordinate, complete non-generic signature,
+and exact digest-locked owning lawpack against the Core import closure before
+any provider is invoked. Missing or duplicate helper evidence rejects as
+`InvalidCoreIdentity`; fabricated or substituted evidence is unrepresentable at
+the public API. The canonical encoder also
 rejects any local identity produced by more than one pure binding, target step,
 or external-action request, so downstream result references remain unambiguous.
 This records authored basis, preconditions, evaluation limits, pure computation,
 guard dispositions, and success-output semantics without resolving a runtime
 basis, executing Echo, or admitting a bundle. [TIR-REQ-018] [TIR-REQ-019]
-[TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022]
+[TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022] [TIR-REQ-023] [TIR-REQ-024]
 
 When any intent has an explicit basis or pure binding, the Core module imports a
 lawpack, or the Core module imports a requestable capability, the artifact carries a

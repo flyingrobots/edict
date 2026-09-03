@@ -14,6 +14,9 @@ pub const CORE_API_VERSION: &str = "edict.core/v1";
 /// Compiler-owned local identity for the single application intent input.
 pub(crate) const CORE_APPLICATION_INPUT_LOCAL_ID: &str = "arg.0";
 
+/// Shared recursion ceiling for compiler type resolution and Core compatibility.
+pub(crate) const MAX_CORE_TYPE_DEPTH: usize = 128;
+
 /// A lowered in-memory Core module.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CoreModule {
@@ -159,14 +162,12 @@ pub enum CoreType {
     },
 }
 
-const MAX_CORE_TYPE_COMPATIBILITY_DEPTH: usize = 64;
-
 pub(crate) fn core_type_fits(core: &CoreModule, source: &str, target: &str) -> bool {
     core_type_fits_at_depth(core, source, target, 0)
 }
 
 fn core_type_fits_at_depth(core: &CoreModule, source: &str, target: &str, depth: usize) -> bool {
-    if depth > MAX_CORE_TYPE_COMPATIBILITY_DEPTH {
+    if depth > MAX_CORE_TYPE_DEPTH {
         return false;
     }
     let (Some(left), Some(right)) = (

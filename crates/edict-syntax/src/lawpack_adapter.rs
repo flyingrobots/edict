@@ -310,13 +310,13 @@ fn project_pure_functions(
     let mut target_facts = Vec::new();
     for function in &bundle.exports().pure_functions {
         let local_function = local_coordinate(alias, prefix, &function.coordinate)?;
-        target_facts.push(TargetPureFunctionFact {
-            lawpack: lawpack.clone(),
-            coordinate: function.coordinate.clone(),
-            type_parameters: function.type_parameters.clone(),
-            parameter_types: function.parameter_types.clone(),
-            return_type: function.return_type.clone(),
-        });
+        target_facts.push(TargetPureFunctionFact::from_validated_lawpack_export(
+            lawpack.clone(),
+            function.coordinate.clone(),
+            function.type_parameters.clone(),
+            function.parameter_types.clone(),
+            function.return_type.clone(),
+        ));
         context = context.with_pure_function(
             local_function,
             PureFunctionFact {

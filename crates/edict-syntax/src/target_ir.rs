@@ -58,13 +58,79 @@ fn target_selection_for_profile(target_profile: &str) -> Option<TargetSelection>
 /// Validated lawpack preparation projects this fact alongside the compiler
 /// fact. The lawpack digest binds the exported helper implementation without
 /// embedding application vocabulary in a target runtime.
+///
+/// Callers cannot fabricate helper authority from an arbitrary coordinate and
+/// signature:
+///
+/// ```compile_fail
+/// use edict_syntax::{ResourceRef, TargetPureFunctionFact};
+///
+/// let _forged = TargetPureFunctionFact {
+///     lawpack: ResourceRef {
+///         coordinate: "hello.echo@1".to_owned(),
+///         digest: Some(format!("sha256:{}", "1".repeat(64))),
+///     },
+///     coordinate: "hello.echo@1.notExported".to_owned(),
+///     type_parameters: Vec::new(),
+///     parameter_types: vec!["U64".to_owned()],
+///     return_type: "U64".to_owned(),
+/// };
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetPureFunctionFact {
-    pub lawpack: ResourceRef,
-    pub coordinate: String,
-    pub type_parameters: Vec<String>,
-    pub parameter_types: Vec<String>,
-    pub return_type: String,
+    lawpack: ResourceRef,
+    coordinate: String,
+    type_parameters: Vec<String>,
+    parameter_types: Vec<String>,
+    return_type: String,
+}
+
+impl TargetPureFunctionFact {
+    pub(crate) fn from_validated_lawpack_export(
+        lawpack: ResourceRef,
+        coordinate: String,
+        type_parameters: Vec<String>,
+        parameter_types: Vec<String>,
+        return_type: String,
+    ) -> Self {
+        Self {
+            lawpack,
+            coordinate,
+            type_parameters,
+            parameter_types,
+            return_type,
+        }
+    }
+
+    /// Exact digest-locked lawpack that exported this helper.
+    #[must_use]
+    pub fn lawpack(&self) -> &ResourceRef {
+        &self.lawpack
+    }
+
+    /// Canonical exported helper coordinate.
+    #[must_use]
+    pub fn coordinate(&self) -> &str {
+        &self.coordinate
+    }
+
+    /// Declared generic parameters; v1 lowering requires this to be empty.
+    #[must_use]
+    pub fn type_parameters(&self) -> &[String] {
+        &self.type_parameters
+    }
+
+    /// Complete ordered parameter type coordinates.
+    #[must_use]
+    pub fn parameter_types(&self) -> &[String] {
+        &self.parameter_types
+    }
+
+    /// Declared return type coordinate.
+    #[must_use]
+    pub fn return_type(&self) -> &str {
+        &self.return_type
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -924,6 +990,10 @@ fn expression_type_coordinate(
                     CoreType::Record { fields } => fields.get(field).cloned(),
                     _ => None,
                 })
+        }
+        CoreExpr::Call { callee, .. } if callee == "core.string.concat" => {
+            expression_string_shape(core, pure_functions, expression, available)
+                .map(|(max, canonical)| format!("String<max={max},canonical={canonical}>"))
         }
         CoreExpr::Call {
             callee,

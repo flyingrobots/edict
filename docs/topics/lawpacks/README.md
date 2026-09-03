@@ -94,19 +94,24 @@ The current executable Rust surfaces touching lawpacks are:
   configuration. Application provider inputs select that profile-owned
   configuration even when the adapter has no effects. For an effectful profile,
   application configuration selection includes only effect coordinates present
-  in compiled Core, so another advertised effect cannot introduce an unused
-  target configuration. Compilation preserves the profile-to-budget association
-  and rejects source that selects another profile's budget. The exact adapter
+  in compiled Core whenever at least one is invoked, so another advertised effect
+  cannot introduce an unused target configuration. If the selected effectful
+  profile invokes none, its full advertised effect set must instead converge on
+  one exact target configuration; an ambiguous set rejects. Compilation
+  preserves the profile-to-budget association and rejects source that selects
+  another profile's budget. The exact adapter
   budget set also covers every exported pure helper's cost template. Edict
   preserves those references but does not interpret their target-owned
   semantics.
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
-  [LAWPACKS-REQ-008]
+  [LAWPACKS-REQ-008] [LAWPACKS-REQ-017]
 - The same preparation boundary projects each exported pure-helper signature
   through the source alias. Source calls type-check against that signature and
   lower under the canonical exported coordinate, while the exact imported
-  manifest digest continues to bind the helper implementation.
+  manifest digest continues to bind the helper implementation. The corresponding
+  Target fact is externally immutable, so application callers can inspect or
+  select validated helper evidence but cannot fabricate an undeclared export.
   [LAWPACKS-REQ-012]
 - The preparation boundary also projects exported `U32` and `U64` constants
   through the source alias as numeric bound facts. Static loop checks consume

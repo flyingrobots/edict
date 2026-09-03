@@ -872,6 +872,12 @@ fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
     assert!(control.failures.is_empty());
     assert!(control.artifact.is_some());
     assert_eq!(facts.pure_functions.len(), 1);
+    let helper_fact = &facts.pure_functions[0];
+    assert_eq!(helper_fact.coordinate(), "hello.echo@1.identityU64");
+    assert_eq!(helper_fact.parameter_types(), ["U64"]);
+    assert_eq!(helper_fact.return_type(), "U64");
+    assert!(helper_fact.type_parameters().is_empty());
+    assert_eq!(helper_fact.lawpack(), &core.imports[0].resource);
 
     let assert_rejects = |case: &str,
                           core: &edict_syntax::CoreModule,
@@ -899,12 +905,10 @@ fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
 
     let mut foreign_coordinate = core.clone();
     *pure_helper_call_mut(&mut foreign_coordinate).0 = "foreign.echo@1.identityU64".to_owned();
-    let mut foreign_coordinate_facts = facts.clone();
-    foreign_coordinate_facts.pure_functions[0].coordinate = "foreign.echo@1.identityU64".to_owned();
     assert_rejects(
         "coordinate outside owning lawpack",
         &foreign_coordinate,
-        &foreign_coordinate_facts,
+        &facts,
     );
 
     let mut type_arguments = core.clone();
@@ -912,12 +916,6 @@ fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
         .1
         .push("U64".to_owned());
     assert_rejects("unexpected type arguments", &type_arguments, &facts);
-
-    let mut generic_facts = facts.clone();
-    generic_facts.pure_functions[0]
-        .type_parameters
-        .push("T".to_owned());
-    assert_rejects("generic helper fact", &core, &generic_facts);
 
     let mut wrong_arity = core.clone();
     pure_helper_call_mut(&mut wrong_arity).2.clear();
@@ -927,23 +925,6 @@ fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
     pure_helper_call_mut(&mut wrong_argument).2[0] =
         CoreExpr::Const(edict_syntax::CoreValue::Bool(true));
     assert_rejects("wrong argument type", &wrong_argument, &facts);
-
-    let mut wrong_parameter_facts = facts.clone();
-    wrong_parameter_facts.pure_functions[0].parameter_types[0] = "Bool".to_owned();
-    assert_rejects("substituted parameter type", &core, &wrong_parameter_facts);
-
-    let mut wrong_return_facts = facts.clone();
-    wrong_return_facts.pure_functions[0].return_type = "Bool".to_owned();
-    assert_rejects("substituted return type", &core, &wrong_return_facts);
-
-    let mut substituted_lawpack_facts = facts.clone();
-    substituted_lawpack_facts.pure_functions[0].lawpack.digest =
-        Some(format!("sha256:{}", "f".repeat(64)));
-    assert_rejects(
-        "substituted owning lawpack",
-        &core,
-        &substituted_lawpack_facts,
-    );
 
     let mut duplicate_facts = facts.clone();
     duplicate_facts
@@ -971,8 +952,20 @@ fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
     let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
         .expect("derive typed helper compiler facts");
 
-    compile_to_core(&module, preparation.compiler_context())
+    let core = compile_to_core(&module, preparation.compiler_context())
         .expect("compile helper over an exact exported bounded type");
+    assert_eq!(
+        core.types.get("hello.echo@1.GreetingKey"),
+        Some(&edict_syntax::CoreType::String {
+            max: 32,
+            canonical: "raw-utf8".to_owned(),
+        }),
+        "a helper-only exported return type enters the Core closure"
+    );
+    let target = lower_to_target_ir(&core, preparation.target_ir_facts());
+    assert_eq!(target.status, TargetLoweringStatus::Lowered);
+    assert!(target.failures.is_empty());
+    assert!(target.artifact.is_some());
 
     let missing_type_exports = typed_helper_exports(false);
     let missing_type_exports_bytes = encode_canonical_cbor(&missing_type_exports)

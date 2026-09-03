@@ -16,7 +16,7 @@ use crate::core_ir::{
     CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent,
     CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
     CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
+    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -4167,8 +4167,7 @@ fn imported_type_definition_shape(
     definition_coordinate: Option<&str>,
     depth: usize,
 ) -> Option<TypeShape> {
-    const MAX_IMPORTED_TYPE_DEPTH: usize = 128;
-    if depth > MAX_IMPORTED_TYPE_DEPTH {
+    if depth > MAX_CORE_TYPE_DEPTH {
         return None;
     }
     if definition.starts_with("Nominal<") {

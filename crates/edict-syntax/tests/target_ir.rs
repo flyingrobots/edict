@@ -12,11 +12,10 @@ use edict_syntax::{
     CompareOp, CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr,
     CoreExternalActionBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, CoreType,
     CoreValue, GuardKind, InputConstraint, InputConstraintSource, LocalRef, LowerabilityStatus,
-    LoweringRequirements, NativeEffectSupport, PureFunctionFact, PureHelperCostFact, ResourceRef,
-    SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
-    TargetIrExternalActionRequest, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrStep,
-    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, TargetPureFunctionFact,
-    TypeShapeFact, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
+    TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest, TargetIrLoweringFacts,
+    TargetIrRequireFailure, TargetIrStep, TargetLoweringFailureKind, TargetLoweringStatus,
+    TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
     GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
@@ -1126,88 +1125,6 @@ fn pure_core_bindings_lower_as_generic_target_program() {
 }
 
 #[test]
-fn helper_only_return_type_enters_core_closure_and_target_lowering() {
-    let source = "package a.b@1;\n\
-        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
-        type Input = { value: U64, };\n\
-        type Output = { value: U64, };\n\
-        intent t(input: Input) returns Output\n\
-          profile p.read\n\
-          basis none\n\
-          budget <= p.tiny {\n\
-          let ignored = helpers.label(input.value);\n\
-          return { value: input.value };\n\
-        }";
-    let lawpack = ResourceRef {
-        coordinate: "example.bounds@1".to_owned(),
-        digest: Some(
-            "sha256:1111111111111111111111111111111111111111111111111111111111111111".to_owned(),
-        ),
-    };
-    let context = CompilerContext::new()
-        .with_operation_profile("p.read", "continuum.profile.read-only/v1")
-        .with_budget(
-            "p.tiny",
-            CoreBudget {
-                max_steps: 8,
-                max_allocated_bytes: 1024,
-                max_output_bytes: 256,
-            },
-        )
-        .with_type_shape(TypeShapeFact {
-            lawpack: lawpack.clone(),
-            coordinate: "example.bounds@1.Label".to_owned(),
-            definition: "String<max=16,canonical=raw-utf8>".to_owned(),
-        })
-        .with_pure_function(
-            "helpers.label",
-            PureFunctionFact {
-                lawpack: lawpack.clone(),
-                coordinate: "example.bounds@1.label".to_owned(),
-                type_parameters: Vec::new(),
-                parameter_types: vec!["U64".to_owned()],
-                return_type: "example.bounds@1.Label".to_owned(),
-                cost_template: "example.bounds@1.tiny".to_owned(),
-            },
-        )
-        .with_pure_helper_cost(
-            "helpers.tiny",
-            PureHelperCostFact {
-                lawpack: lawpack.clone(),
-                coordinate: "example.bounds@1.tiny".to_owned(),
-                budget: CoreBudget {
-                    max_steps: 1,
-                    max_allocated_bytes: 16,
-                    max_output_bytes: 16,
-                },
-            },
-        );
-    let module = edict_syntax::parse_module(source).expect("helper-only type source parses");
-    let core = compile_to_core(&module, &context).expect("helper-only type source compiles");
-
-    assert_eq!(
-        core.types.get("example.bounds@1.Label"),
-        Some(&CoreType::String {
-            max: 16,
-            canonical: "raw-utf8".to_owned(),
-        })
-    );
-
-    let mut facts = pure_target_facts();
-    facts.pure_functions.push(TargetPureFunctionFact {
-        lawpack,
-        coordinate: "example.bounds@1.label".to_owned(),
-        type_parameters: Vec::new(),
-        parameter_types: vec!["U64".to_owned()],
-        return_type: "example.bounds@1.Label".to_owned(),
-    });
-    let report = lower_to_target_ir(&core, &facts);
-    assert_eq!(report.status, TargetLoweringStatus::Lowered);
-    assert!(report.failures.is_empty());
-    assert!(report.artifact.is_some());
-}
-
-#[test]
 fn unsupported_core_nodes_reject_without_artifact() {
     let mut core = pure_core();
     core.intents
@@ -1534,6 +1451,85 @@ fn pure_conditional_predicates_require_compatible_bounded_operands() {
         assert_eq!(failure.intent.as_deref(), Some("sayHello"));
         assert_eq!(failure.node_index, Some(0));
     }
+}
+
+#[test]
+fn pure_conditional_comparison_accepts_supported_call_operands() {
+    let mut core = pure_core();
+    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+    let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    let valid_call = value.clone();
+    *value = CoreExpr::If {
+        predicate: Box::new(CorePredicate::Compare {
+            op: CompareOp::Eq,
+            left: valid_call.clone(),
+            right: valid_call.clone(),
+        }),
+        then_value: Box::new(valid_call.clone()),
+        else_value: Box::new(valid_call),
+    };
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+}
+
+#[test]
+fn target_lowering_accepts_compiler_type_depth_boundary() {
+    const TYPE_DEPTH: usize = 128;
+
+    let mut core = pure_core();
+    let root_type = format!("{}.Deep0", core.coordinate);
+    for index in 0..TYPE_DEPTH {
+        let coordinate = format!("{}.Deep{index}", core.coordinate);
+        let next = if index + 1 == TYPE_DEPTH {
+            "U64".to_owned()
+        } else {
+            format!("{}.Deep{}", core.coordinate, index + 1)
+        };
+        core.types.insert(
+            coordinate,
+            CoreType::Record {
+                fields: BTreeMap::from([("next".to_owned(), next)]),
+            },
+        );
+    }
+
+    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+    intent.input.clone_from(&root_type);
+    intent.output.clone_from(&root_type);
+    let input = intent
+        .body
+        .locals
+        .iter()
+        .find(|local| local.id == "arg.0")
+        .expect("compiler-owned input local")
+        .clone();
+    let input = LocalRef {
+        ty: root_type.clone(),
+        ..input
+    };
+    let binding = LocalRef {
+        id: "local.deep".to_owned(),
+        alpha_name: "$deep".to_owned(),
+        ty: root_type,
+    };
+    intent.body.locals = vec![input.clone(), binding.clone()];
+    intent.body.nodes = vec![CoreNode::Let {
+        binding: binding.clone(),
+        value: CoreExpr::Local { reference: input },
+    }];
+    intent.body.result = CoreExpr::Local { reference: binding };
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
 }
 
 #[test]

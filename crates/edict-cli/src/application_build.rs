@@ -1713,11 +1713,17 @@ fn single_configuration_for_required_core_profiles<'a>(
                 })?;
                 configurations.push(configuration);
             } else {
-                for effect_coordinate in profile
+                let invoked_effects = profile
                     .semantic_effects
                     .iter()
                     .filter(|effect| required_semantic_effects.contains(effect.as_str()))
-                {
+                    .collect::<Vec<_>>();
+                let configuration_effects = if invoked_effects.is_empty() {
+                    profile.semantic_effects.iter().collect::<Vec<_>>()
+                } else {
+                    invoked_effects
+                };
+                for effect_coordinate in configuration_effects {
                     let effect = effects.get(effect_coordinate).ok_or_else(|| {
                         failure(
                             "InvalidLawpackAdapter",
@@ -3489,6 +3495,67 @@ mod tests {
         );
 
         assert_eq!(actual, &selected_configuration);
+    }
+
+    #[test]
+    fn selected_effectful_profile_without_invocations_uses_unique_advertised_configuration() {
+        let manifest =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+        let exports =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+        let adapter_bytes =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+        let bundle = test_ok(
+            decode_lawpack_bundle(manifest, exports),
+            "decode Hello Echo lawpack",
+        );
+        let adapter = test_ok(
+            decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter_bytes),
+            "decode Hello Echo adapter",
+        );
+        let mut operation_profiles = adapter.operation_profiles().clone();
+        let mut effects = adapter.effects().clone();
+        let Some((advertised_coordinate, advertised_effect)) = effects
+            .first_key_value()
+            .map(|(coordinate, effect)| (coordinate.clone(), effect.clone()))
+        else {
+            panic!("Hello Echo advertises one semantic effect");
+        };
+        let duplicate_coordinate = "hello.echo@1.sameConfiguration".to_owned();
+        effects.insert(duplicate_coordinate.clone(), advertised_effect.clone());
+        let Some(profile) = operation_profiles.values_mut().next() else {
+            panic!("Hello Echo advertises one operation profile");
+        };
+        profile.semantic_effects = vec![advertised_coordinate, duplicate_coordinate.clone()];
+        let required_core_profile = profile.core.clone();
+        let required_core_profiles = BTreeSet::from([required_core_profile.as_str()]);
+
+        let selected = test_ok(
+            single_configuration_for_required_core_profiles(
+                &operation_profiles,
+                &effects,
+                &required_core_profiles,
+                &BTreeSet::new(),
+            ),
+            "unique configuration advertised by an uninvoked effectful profile",
+        );
+        assert_eq!(selected, &advertised_effect.target_configuration);
+
+        let Some(duplicate_effect) = effects.get_mut(&duplicate_coordinate) else {
+            panic!("duplicate advertised effect");
+        };
+        duplicate_effect.target_configuration =
+            lawpack_ref("target.ambiguous-configuration@1", 0x48);
+        let failure = test_err(
+            single_configuration_for_required_core_profiles(
+                &operation_profiles,
+                &effects,
+                &required_core_profiles,
+                &BTreeSet::new(),
+            ),
+            "ambiguous advertised configurations must reject",
+        );
+        assert_eq!(failure.kind, "InvalidLawpackAdapter");
     }
 
     #[test]

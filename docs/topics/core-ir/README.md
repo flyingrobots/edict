@@ -47,6 +47,11 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   Every compiler-emitted byte coordinate resolves back to that same interval,
   including distinct minimum and maximum bounds. [COREIR-REQ-002]
   [COREIR-REQ-019] [COREIR-REQ-020] [COREIR-REQ-022] [COREIR-REQ-023]
+- Structural type compatibility and imported compiler type resolution share one
+  finite depth ceiling of 128. A compiler-accepted type chain at that boundary
+  remains compatible downstream instead of encountering an earlier Target IR
+  cutoff; deeper or cyclic caller-built shapes still fail closed.
+  [COREIR-REQ-024]
 - Core expressions and predicates are separate schema families. Expressions
   compute values; predicates express boolean obligations and input constraints.
   [COREIR-REQ-003]
