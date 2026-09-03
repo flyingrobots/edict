@@ -1467,6 +1467,64 @@ fn pure_conditional_predicates_require_compatible_bounded_operands() {
 }
 
 #[test]
+fn nested_string_conditional_predicates_require_compatible_bounded_operands() {
+    let cases = [
+        (
+            "incompatible operand types",
+            CoreExpr::Const(CoreValue::Bool(true)),
+            CoreExpr::Const(CoreValue::Int {
+                width: "U64".to_owned(),
+                value: "1".to_owned(),
+            }),
+        ),
+        (
+            "constant outside its declared width",
+            CoreExpr::Const(CoreValue::Int {
+                width: "U8".to_owned(),
+                value: "0".to_owned(),
+            }),
+            CoreExpr::Const(CoreValue::Int {
+                width: "U8".to_owned(),
+                value: "256".to_owned(),
+            }),
+        ),
+    ];
+
+    for (case, left, right) in cases {
+        let mut core = pure_core();
+        let intent = core.intents.get_mut("sayHello").expect("pure intent");
+        let CoreNode::Let {
+            value: CoreExpr::Call { callee, args, .. },
+            ..
+        } = &mut intent.body.nodes[0]
+        else {
+            panic!("pure fixture starts with a string concatenation binding");
+        };
+        assert_eq!(callee, "core.string.concat");
+        args[0] = CoreExpr::If {
+            predicate: Box::new(CorePredicate::Compare {
+                op: CompareOp::Eq,
+                left,
+                right,
+            }),
+            then_value: Box::new(CoreExpr::Const(CoreValue::String("hello".to_owned()))),
+            else_value: Box::new(CoreExpr::Const(CoreValue::String("hi".to_owned()))),
+        };
+
+        let report = lower_to_target_ir(&core, &pure_target_facts());
+
+        assert_eq!(report.status, TargetLoweringStatus::Unsupported, "{case}");
+        assert!(report.artifact.is_none(), "{case}");
+        let [failure] = report.failures.as_slice() else {
+            panic!("{case} must reject with exactly one structured failure");
+        };
+        assert_eq!(failure.kind, TargetLoweringFailureKind::InvalidCoreIdentity);
+        assert_eq!(failure.intent.as_deref(), Some("sayHello"));
+        assert_eq!(failure.node_index, Some(0));
+    }
+}
+
+#[test]
 fn non_raw_string_constant_rejects_before_target_artifact() {
     let mut core = pure_core();
     let intent = core.intents.get_mut("sayHello").expect("pure intent");

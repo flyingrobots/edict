@@ -756,10 +756,13 @@ fn expression_string_shape(
             Some((max, canonical.unwrap_or_else(|| "raw-utf8".to_owned())))
         }
         CoreExpr::If {
+            predicate,
             then_value,
             else_value,
-            ..
         } => {
+            if !predicate_fits_core_types(core, predicate, available) {
+                return None;
+            }
             let (then_max, then_canonical) = expression_string_shape(core, then_value, available)?;
             let (else_max, else_canonical) = expression_string_shape(core, else_value, available)?;
             (then_canonical == else_canonical).then_some((then_max.max(else_max), then_canonical))

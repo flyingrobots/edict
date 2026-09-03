@@ -117,9 +117,10 @@ identity. The lowerer neither evaluates nor duplicates helper calls and
 conditionals. Malformed Core with a dangling, conflicting, forward, self, or
 duplicate pure binding fails with `InvalidCoreIdentity` before Target IR exists.
 Pure conditional predicates independently prove reference closure, compatible
-operand types, and fixed-width integer domains at this boundary. The canonical
-encoder also rejects any local identity produced by more than one pure binding,
-target step, or external-action request, so downstream result references remain
+operand types, and fixed-width integer domains at this boundary, including when
+a conditional is nested inside string-shape derivation. The canonical encoder
+also rejects any local identity produced by more than one pure binding, target
+step, or external-action request, so downstream result references remain
 unambiguous.
 This records authored basis, preconditions, evaluation limits, pure computation,
 guard dispositions, and success-output semantics without resolving a runtime
