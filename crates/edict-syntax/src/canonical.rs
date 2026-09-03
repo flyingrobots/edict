@@ -651,7 +651,6 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
 
 fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
     let mut binding_ids = BTreeSet::new();
-    let mut local_ids = BTreeSet::new();
     for binding in &intent.pure_bindings {
         if binding.id.is_empty() || !binding_ids.insert(binding.id.as_str()) {
             return Err(CanonicalError::new(
@@ -662,12 +661,31 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
                 ),
             ));
         }
-        if binding.binding.id.is_empty() || !local_ids.insert(binding.binding.id.as_str()) {
+    }
+    let mut local_ids = BTreeSet::new();
+    for (producer, binding) in intent
+        .pure_bindings
+        .iter()
+        .map(|binding| ("pure binding", &binding.binding))
+        .chain(
+            intent
+                .steps
+                .iter()
+                .map(|step| ("target step", &step.binding)),
+        )
+        .chain(
+            intent
+                .external_action_requests
+                .iter()
+                .map(|request| ("external-action request", &request.binding)),
+        )
+    {
+        if binding.id.is_empty() || !local_ids.insert(binding.id.as_str()) {
             return Err(CanonicalError::new(
                 CanonicalErrorKind::UnsupportedValue,
                 format!(
-                    "Target IR pure binding local id `{}` is empty or duplicated",
-                    binding.binding.id
+                    "Target IR {producer} local id `{}` is empty or duplicated across producers",
+                    binding.id
                 ),
             ));
         }

@@ -116,9 +116,15 @@ retains its exact compiler local, Core expression, and deterministic intent-loca
 identity. The lowerer neither evaluates nor duplicates helper calls and
 conditionals. Malformed Core with a dangling, conflicting, forward, self, or
 duplicate pure binding fails with `InvalidCoreIdentity` before Target IR exists.
+Pure conditional predicates independently prove reference closure, compatible
+operand types, and fixed-width integer domains at this boundary. The canonical
+encoder also rejects any local identity produced by more than one pure binding,
+target step, or external-action request, so downstream result references remain
+unambiguous.
 This records authored basis, preconditions, evaluation limits, pure computation,
 guard dispositions, and success-output semantics without resolving a runtime
-basis, executing Echo, or admitting a bundle. [TIR-REQ-018]
+basis, executing Echo, or admitting a bundle. [TIR-REQ-018] [TIR-REQ-019]
+[TIR-REQ-020] [TIR-REQ-021]
 
 When any intent has an explicit basis or pure binding, the Core module imports a
 lawpack, or the Core module imports a requestable capability, the artifact carries a

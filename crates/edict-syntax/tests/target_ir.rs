@@ -9,11 +9,12 @@ use std::collections::BTreeMap;
 use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
-    CompareOp, CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreImport,
-    CoreImportKind, CoreNode, CorePredicate, CoreValue, GuardKind, InputConstraint,
-    InputConstraintSource, LocalRef, LowerabilityStatus, LoweringRequirements, NativeEffectSupport,
-    ResourceRef, SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
-    TargetIrLoweringFacts, TargetIrRequireFailure, TargetLoweringFailureKind, TargetLoweringStatus,
+    CompareOp, CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr,
+    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, CoreValue,
+    GuardKind, InputConstraint, InputConstraintSource, LocalRef, LowerabilityStatus,
+    LoweringRequirements, NativeEffectSupport, ResourceRef, SemanticEffectRequirement,
+    TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest, TargetIrLoweringFacts,
+    TargetIrRequireFailure, TargetIrStep, TargetLoweringFailureKind, TargetLoweringStatus,
     TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
     GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
@@ -1755,6 +1756,98 @@ fn pure_binding_encoder_rejects_duplicate_identity_or_missing_closure() {
     assert_eq!(
         encode_target_ir_artifact(&unclosed)
             .expect_err("pure binding without semantic closure must reject")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+}
+
+#[test]
+fn target_ir_encoder_rejects_local_identity_shared_across_producer_classes() {
+    let baseline = pure_artifact();
+    let shared_binding = baseline
+        .intents
+        .get("sayHello")
+        .expect("pure intent")
+        .pure_bindings[0]
+        .binding
+        .clone();
+
+    let mut step_collision = baseline.clone();
+    step_collision
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .steps
+        .push(TargetIrStep {
+            id: "sayHello.step.0".to_owned(),
+            binding: shared_binding.clone(),
+            effect: "example.effect".to_owned(),
+            target_intrinsic: "echo.dpo@1.example".to_owned(),
+            input: CoreExpr::Const(CoreValue::Null),
+            obstruction_failures: Vec::new(),
+            obstruction_arms: BTreeMap::new(),
+        });
+    assert_eq!(
+        encode_target_ir_artifact(&step_collision)
+            .expect_err("a target step cannot reproduce a pure-binding local")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+
+    let operation = ResourceRef {
+        coordinate: "example.observe@1".to_owned(),
+        digest: Some(digest_text('4')),
+    };
+    let mut request_collision = baseline;
+    request_collision
+        .semantic_closure
+        .as_mut()
+        .expect("pure artifact closure")
+        .capabilities
+        .push(operation.clone());
+    request_collision
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .external_action_requests
+        .push(TargetIrExternalActionRequest {
+            id: "sayHello.request.0".to_owned(),
+            binding: shared_binding,
+            operation,
+            input_type: "U64".to_owned(),
+            settlement_type: "U64".to_owned(),
+            input_schema: ResourceRef {
+                coordinate: "example.input-schema@1".to_owned(),
+                digest: Some(digest_text('5')),
+            },
+            settlement_schema: ResourceRef {
+                coordinate: "example.settlement-schema@1".to_owned(),
+                digest: Some(digest_text('6')),
+            },
+            input: CoreExpr::Const(CoreValue::Int {
+                width: "U64".to_owned(),
+                value: "0".to_owned(),
+            }),
+            authority_scope: CoreExpr::Const(CoreValue::Null),
+            basis: CoreExpr::Const(CoreValue::Null),
+            budget: CoreExternalActionBudget {
+                max_settlement_bytes: CoreExpr::Const(CoreValue::Int {
+                    width: "U64".to_owned(),
+                    value: "64".to_owned(),
+                }),
+                max_attempts: CoreExpr::Const(CoreValue::Int {
+                    width: "U64".to_owned(),
+                    value: "1".to_owned(),
+                }),
+            },
+            reconciliation_law: ResourceRef {
+                coordinate: "example.reconciliation@1".to_owned(),
+                digest: Some(digest_text('7')),
+            },
+        });
+    assert_eq!(
+        encode_target_ir_artifact(&request_collision)
+            .expect_err("an external request cannot reproduce a pure-binding local")
             .kind(),
         CanonicalErrorKind::UnsupportedValue
     );

@@ -57,7 +57,7 @@ Out of scope:
 | TIR-REQ-018 | implemented | Target IR preserves source-ordered pure Core bindings as generic executable data, including exact local identities, expressions, helper calls, and conditional dependencies, without evaluating or duplicating them in the compiler; malformed binding graphs and closure-free pure artifacts fail before provider invocation. | issue #200 |
 | TIR-REQ-019 | implemented | Target lowering recognizes every fixed-width integer in the Core ABI and validates constants against the declared scalar domain without requiring redundant built-in entries in `core.types`. | PR #201 review |
 | TIR-REQ-020 | implemented | Target lowering independently validates caller-supplied pure Core conditional predicates and rejects incompatible operand types or constants outside their declared scalar domains before producing an artifact. | PR #201 review |
-| TIR-REQ-021 | planned | Canonical Target IR permits only one producer for each local identity across pure bindings, target steps, and external-action requests. | PR #201 review |
+| TIR-REQ-021 | implemented | Canonical Target IR permits only one producer for each local identity across pure bindings, target steps, and external-action requests. | PR #201 review |
 
 ## Fixtures
 
@@ -118,7 +118,7 @@ Out of scope:
 | TIR-TP-038 | implemented | Schema fidelity | TIR-REQ-014, TIR-REQ-018 | Encoder output carrying a pure binding satisfies the published `target-ir-artifact` root; the same artifact rejects through the closure-free legacy root, and an empty pure binding id rejects. | `target_ir_root_accepts_only_closed_nonempty_pure_bindings` | docs/abi/edict-target-ir.cddl, crates/edict-provider-schema/tests/provider_contract_pack.rs | The published root, not prose, owns the closed-versus-legacy separation for pure bindings. |
 | TIR-TP-039 | implemented | Compatibility | TIR-REQ-018, TIR-REQ-019 | Valid constants in each published narrow Core integer width lower as pure bindings without requiring redundant entries in `core.types`. | `narrow_core_integer_widths_lower_as_builtin_types` | crates/edict-syntax/tests/target_ir.rs | The Core ABI, rather than the source-language subset, owns the accepted Target IR input widths. |
 | TIR-TP-040 | implemented | Boundary guard | TIR-REQ-018, TIR-REQ-020 | A pure conditional with incompatible comparison operands or a constant outside its declared integer width returns one structured `InvalidCoreIdentity` failure before a Target IR artifact exists. | `pure_conditional_predicates_require_compatible_bounded_operands` | crates/edict-syntax/tests/target_ir.rs | Caller-built Core cannot bypass source type checking. |
-| TIR-TP-041 | planned | Canonical validation | TIR-REQ-008, TIR-REQ-021 | Canonical Target IR encoding rejects a local identity produced by both a pure binding and either a target step or external-action request. | `target_ir_encoder_rejects_local_identity_shared_across_producer_classes` | crates/edict-syntax/tests/target_ir.rs | Result references retain one unambiguous producer. |
+| TIR-TP-041 | implemented | Canonical validation | TIR-REQ-008, TIR-REQ-021 | Canonical Target IR encoding rejects a local identity produced by both a pure binding and either a target step or external-action request. | `target_ir_encoder_rejects_local_identity_shared_across_producer_classes` | crates/edict-syntax/tests/target_ir.rs | Result references retain one unambiguous producer. |
 
 ## Determinism Obligations
 
