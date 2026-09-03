@@ -1413,6 +1413,65 @@ fn narrow_core_integer_widths_lower_as_builtin_types() {
 }
 
 #[test]
+fn ranged_core_byte_coordinates_lower_as_builtin_types() {
+    let mut core = pure_core();
+    core.types.insert(
+        "HelloReading.message".to_owned(),
+        CoreType::Bytes {
+            min: Some(2),
+            max: 4,
+        },
+    );
+    let intent = core.intents.get_mut("sayHello").expect("pure intent");
+    let CoreNode::Let { binding, value } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    let binding_id = binding.id.clone();
+    binding.ty = "Bytes<min=2,max=4>".to_owned();
+    *value = CoreExpr::Const(CoreValue::Bytes(vec![0x01, 0x02, 0x03]));
+    let local = intent
+        .body
+        .locals
+        .iter_mut()
+        .find(|local| local.id == binding_id)
+        .expect("pure binding local");
+    local.ty.clone_from(&binding.ty);
+    let CoreExpr::Record { fields } = &mut intent.body.result else {
+        panic!("pure fixture returns a record");
+    };
+    let Some(CoreExpr::Local { reference }) = fields.get_mut("message") else {
+        panic!("pure fixture returns the binding as message");
+    };
+    reference.ty.clone_from(&binding.ty);
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+
+    let CoreNode::Let { value, .. } = &mut core
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("pure fixture starts with a let");
+    };
+    *value = CoreExpr::Const(CoreValue::Bytes(vec![0x01]));
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+}
+
+#[test]
 fn pure_conditional_predicates_require_compatible_bounded_operands() {
     let cases = [
         (

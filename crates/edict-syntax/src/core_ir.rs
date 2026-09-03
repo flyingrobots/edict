@@ -316,6 +316,21 @@ fn builtin_core_type(coordinate: &str) -> Option<CoreType> {
             canonical: canonical.to_owned(),
         });
     }
+    if let Some(inner) = coordinate
+        .strip_prefix("Bytes<min=")
+        .and_then(|value| value.strip_suffix('>'))
+    {
+        let (min, max) = inner.split_once(",max=")?;
+        let min = min.parse().ok()?;
+        let max = max.parse().ok()?;
+        if min > max {
+            return None;
+        }
+        return Some(CoreType::Bytes {
+            min: Some(min),
+            max,
+        });
+    }
     if let Some(max) = coordinate
         .strip_prefix("Bytes<max=")
         .and_then(|value| value.strip_suffix('>'))
