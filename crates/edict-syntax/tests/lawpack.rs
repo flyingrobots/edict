@@ -769,8 +769,10 @@ fn all_hash_bound_helper_and_verifier_variants_load() {
     ));
 }
 
-#[test]
-fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
+fn exact_u64_pure_helper_application() -> (
+    edict_syntax::CoreModule,
+    edict_syntax::TargetIrLoweringFacts,
+) {
     let identity_body = map([
         (
             "params",
@@ -825,6 +827,30 @@ fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
         .expect("derive pure-helper compiler fact");
     let core = compile_to_core(&module, preparation.compiler_context())
         .expect("compile exact lawpack helper call");
+    (core, preparation.target_ir_facts().clone())
+}
+
+fn pure_helper_call_mut(
+    core: &mut edict_syntax::CoreModule,
+) -> (&mut String, &mut Vec<String>, &mut Vec<CoreExpr>) {
+    let intent = core.intents.get_mut("apply").expect("lowered apply intent");
+    let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure helper is a Core let");
+    };
+    let CoreExpr::Call {
+        callee,
+        type_args,
+        args,
+    } = value
+    else {
+        panic!("pure helper binding is a call");
+    };
+    (callee, type_args, args)
+}
+
+#[test]
+fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
+    let (core, _) = exact_u64_pure_helper_application();
     let intent = core.intents.get("apply").expect("lowered apply intent");
     let CoreNode::Let { value, .. } = &intent.body.nodes[0] else {
         panic!("pure helper is a Core let");
@@ -835,6 +861,99 @@ fn exact_lawpack_pure_helper_signature_enters_source_compilation() {
         CoreExpr::Call { callee, args, .. }
             if callee == "hello.echo@1.identityU64" && args.len() == 1
     ));
+}
+
+#[test]
+fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
+    let (core, facts) = exact_u64_pure_helper_application();
+    let control = lower_to_target_ir(&core, &facts);
+
+    assert_eq!(control.status, TargetLoweringStatus::Lowered);
+    assert!(control.failures.is_empty());
+    assert!(control.artifact.is_some());
+    assert_eq!(facts.pure_functions.len(), 1);
+
+    let assert_rejects = |case: &str,
+                          core: &edict_syntax::CoreModule,
+                          facts: &edict_syntax::TargetIrLoweringFacts| {
+        let report = lower_to_target_ir(core, facts);
+
+        assert_eq!(
+            report.status,
+            TargetLoweringStatus::Unsupported,
+            "{case}: {:?}",
+            report.failures
+        );
+        assert!(report.artifact.is_none(), "{case}");
+        assert_eq!(report.failures.len(), 1, "{case}");
+        assert_eq!(
+            report.failures[0].kind,
+            edict_syntax::TargetLoweringFailureKind::InvalidCoreIdentity,
+            "{case}"
+        );
+    };
+
+    let mut unknown_callee = core.clone();
+    *pure_helper_call_mut(&mut unknown_callee).0 = "hello.echo@1.unboundIdentityU64".to_owned();
+    assert_rejects("unknown callee", &unknown_callee, &facts);
+
+    let mut foreign_coordinate = core.clone();
+    *pure_helper_call_mut(&mut foreign_coordinate).0 = "foreign.echo@1.identityU64".to_owned();
+    let mut foreign_coordinate_facts = facts.clone();
+    foreign_coordinate_facts.pure_functions[0].coordinate = "foreign.echo@1.identityU64".to_owned();
+    assert_rejects(
+        "coordinate outside owning lawpack",
+        &foreign_coordinate,
+        &foreign_coordinate_facts,
+    );
+
+    let mut type_arguments = core.clone();
+    pure_helper_call_mut(&mut type_arguments)
+        .1
+        .push("U64".to_owned());
+    assert_rejects("unexpected type arguments", &type_arguments, &facts);
+
+    let mut generic_facts = facts.clone();
+    generic_facts.pure_functions[0]
+        .type_parameters
+        .push("T".to_owned());
+    assert_rejects("generic helper fact", &core, &generic_facts);
+
+    let mut wrong_arity = core.clone();
+    pure_helper_call_mut(&mut wrong_arity).2.clear();
+    assert_rejects("wrong argument count", &wrong_arity, &facts);
+
+    let mut wrong_argument = core.clone();
+    pure_helper_call_mut(&mut wrong_argument).2[0] =
+        CoreExpr::Const(edict_syntax::CoreValue::Bool(true));
+    assert_rejects("wrong argument type", &wrong_argument, &facts);
+
+    let mut wrong_parameter_facts = facts.clone();
+    wrong_parameter_facts.pure_functions[0].parameter_types[0] = "Bool".to_owned();
+    assert_rejects("substituted parameter type", &core, &wrong_parameter_facts);
+
+    let mut wrong_return_facts = facts.clone();
+    wrong_return_facts.pure_functions[0].return_type = "Bool".to_owned();
+    assert_rejects("substituted return type", &core, &wrong_return_facts);
+
+    let mut substituted_lawpack_facts = facts.clone();
+    substituted_lawpack_facts.pure_functions[0].lawpack.digest =
+        Some(format!("sha256:{}", "f".repeat(64)));
+    assert_rejects(
+        "substituted owning lawpack",
+        &core,
+        &substituted_lawpack_facts,
+    );
+
+    let mut duplicate_facts = facts.clone();
+    duplicate_facts
+        .pure_functions
+        .push(duplicate_facts.pure_functions[0].clone());
+    assert_rejects("duplicate helper fact", &core, &duplicate_facts);
+
+    let mut missing_facts = facts.clone();
+    missing_facts.pure_functions.clear();
+    assert_rejects("missing helper fact", &core, &missing_facts);
 }
 
 #[test]

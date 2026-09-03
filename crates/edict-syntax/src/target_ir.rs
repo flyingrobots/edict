@@ -53,6 +53,20 @@ fn target_selection_for_profile(target_profile: &str) -> Option<TargetSelection>
     }
 }
 
+/// Canonical non-generic helper signature owned by one exact imported lawpack.
+///
+/// Validated lawpack preparation projects this fact alongside the compiler
+/// fact. The lawpack digest binds the exported helper implementation without
+/// embedding application vocabulary in a target runtime.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TargetPureFunctionFact {
+    pub lawpack: ResourceRef,
+    pub coordinate: String,
+    pub type_parameters: Vec<String>,
+    pub parameter_types: Vec<String>,
+    pub return_type: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetIrLoweringFacts {
     pub target_profile: ResourceRef,
@@ -60,6 +74,7 @@ pub struct TargetIrLoweringFacts {
     pub operation_profiles: Vec<String>,
     pub obstruction_coordinates: Vec<String>,
     pub effect_lowerings: Vec<TargetEffectLowering>,
+    pub pure_functions: Vec<TargetPureFunctionFact>,
 }
 
 impl TargetIrLoweringFacts {
@@ -69,7 +84,9 @@ impl TargetIrLoweringFacts {
     ///
     /// Returns `UnsupportedLowerabilityReport` when the lowerability report did
     /// not select native support. The v0.9 Target IR bridge does not
-    /// derive target facts from unsupported or adapter-backed reports.
+    /// derive target facts from unsupported or adapter-backed reports. It also
+    /// cannot derive lawpack helper authority; helper-bearing Core must use
+    /// validated lawpack preparation.
     pub fn from_lowerability_report(
         target_profile: ResourceRef,
         target_ir_domain: impl Into<String>,
@@ -108,6 +125,7 @@ impl TargetIrLoweringFacts {
             operation_profiles: vec![report.operation_profile.clone()],
             obstruction_coordinates: report.obstruction_coordinates.clone(),
             effect_lowerings: selected_native_effect_lowerings(report),
+            pure_functions: Vec::new(),
         })
     }
 }
@@ -278,7 +296,7 @@ pub fn lower_to_target_ir(
         Ok(target_selection) => target_selection,
         Err(failures) => return unsupported(failures),
     };
-    let core_failures = validate_core_module(core);
+    let core_failures = validate_core_module(core, &facts.pure_functions);
     if !core_failures.is_empty() {
         return unsupported(core_failures);
     }
@@ -482,7 +500,10 @@ fn validate_target_selection(
     Ok(target_selection)
 }
 
-fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
+fn validate_core_module(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+) -> Vec<TargetLoweringFailure> {
     if core.api_version != CORE_API_VERSION {
         return vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedCoreAbi,
@@ -534,10 +555,13 @@ fn validate_core_module(core: &CoreModule) -> Vec<TargetLoweringFailure> {
     if !capability_failures.is_empty() {
         return capability_failures;
     }
-    validate_pure_binding_graphs(core)
+    validate_pure_binding_graphs(core, pure_functions)
 }
 
-fn validate_pure_binding_graphs(core: &CoreModule) -> Vec<TargetLoweringFailure> {
+fn validate_pure_binding_graphs(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+) -> Vec<TargetLoweringFailure> {
     core.intents
         .iter()
         .filter(|(_, intent)| {
@@ -547,12 +571,15 @@ fn validate_pure_binding_graphs(core: &CoreModule) -> Vec<TargetLoweringFailure>
                 .iter()
                 .any(|node| matches!(node, CoreNode::For { .. }))
         })
-        .filter_map(|(intent_name, intent)| validate_pure_binding_graph(core, intent_name, intent))
+        .filter_map(|(intent_name, intent)| {
+            validate_pure_binding_graph(core, pure_functions, intent_name, intent)
+        })
         .collect()
 }
 
 fn validate_pure_binding_graph(
     core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
     intent_name: &str,
     intent: &CoreIntent,
 ) -> Option<TargetLoweringFailure> {
@@ -595,7 +622,13 @@ fn validate_pure_binding_graph(
                         "pure binding references an undeclared, conflicting, or later local",
                     ));
                 }
-                if !expression_fits_declared_type(core, value, &binding.ty, &available) {
+                if !expression_fits_declared_type(
+                    core,
+                    pure_functions,
+                    value,
+                    &binding.ty,
+                    &available,
+                ) {
                     return Some(invalid_pure_binding(
                         intent_name,
                         Some(node_index),
@@ -630,22 +663,28 @@ fn validate_pure_binding_graph(
             "result references an undeclared or conflicting local",
         ));
     }
-    (!expression_fits_declared_type(core, &intent.body.result, &intent.output, &available)).then(
-        || {
-            invalid_pure_binding(
-                intent_name,
-                None,
-                &format!(
-                    "result expression does not match declared output type `{}`",
-                    intent.output
-                ),
-            )
-        },
-    )
+    (!expression_fits_declared_type(
+        core,
+        pure_functions,
+        &intent.body.result,
+        &intent.output,
+        &available,
+    ))
+    .then(|| {
+        invalid_pure_binding(
+            intent_name,
+            None,
+            &format!(
+                "result expression does not match declared output type `{}`",
+                intent.output
+            ),
+        )
+    })
 }
 
 fn expression_fits_declared_type(
     core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
     expression: &CoreExpr,
     expected: &str,
     available: &BTreeMap<&str, &LocalRef>,
@@ -667,20 +706,27 @@ fn expression_fits_declared_type(
                 && fields.iter().all(|(field, value)| {
                     expression_fits_declared_type(
                         core,
+                        pure_functions,
                         value,
                         expected_fields.get(field).expect("equal record field keys"),
                         available,
                     )
                 })
         }
-        CoreExpr::Field { base, field } => expression_type_coordinate(core, base, available)
-            .and_then(|base_type| resolved_core_type(core, &base_type))
-            .and_then(|base_type| match base_type {
-                CoreType::Record { fields } => fields.get(field).cloned(),
-                _ => None,
-            })
-            .is_some_and(|field_type| core_type_fits(core, &field_type, expected)),
-        CoreExpr::Call { callee, args, .. } if callee == "core.string.concat" => {
+        CoreExpr::Field { base, field } => {
+            expression_type_coordinate(core, pure_functions, base, available)
+                .and_then(|base_type| resolved_core_type(core, &base_type))
+                .and_then(|base_type| match base_type {
+                    CoreType::Record { fields } => fields.get(field).cloned(),
+                    _ => None,
+                })
+                .is_some_and(|field_type| core_type_fits(core, &field_type, expected))
+        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if callee == "core.string.concat" => {
             let Some(CoreType::String {
                 max: expected_max,
                 canonical: expected_canonical,
@@ -689,40 +735,94 @@ fn expression_fits_declared_type(
                 return false;
             };
             let mut actual_max = 0_u64;
-            args.iter().all(|argument| {
-                let Some((max, canonical)) = expression_string_shape(core, argument, available)
-                else {
-                    return false;
-                };
-                let Some(next_max) = actual_max.checked_add(max) else {
-                    return false;
-                };
-                actual_max = next_max;
-                canonical == expected_canonical
-            }) && actual_max <= expected_max
+            type_args.is_empty()
+                && args.iter().all(|argument| {
+                    let Some((max, canonical)) =
+                        expression_string_shape(core, pure_functions, argument, available)
+                    else {
+                        return false;
+                    };
+                    let Some(next_max) = actual_max.checked_add(max) else {
+                        return false;
+                    };
+                    actual_max = next_max;
+                    canonical == expected_canonical
+                })
+                && actual_max <= expected_max
         }
-        CoreExpr::Call { .. } => {
-            // Imported pure-call signatures are verified while constructing the
-            // compiler-owned Core. The initial Core ABI does not duplicate the
-            // return signature on each call, so this boundary can validate only
-            // reference closure until that ABI carries a self-describing call.
-            expression_references_are_available(expression, available)
-                && resolved_core_type(core, expected).is_some()
-        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } => validated_pure_function_fact(core, pure_functions, callee, type_args, args, available)
+            .is_some_and(|fact| core_type_fits(core, &fact.return_type, expected)),
         CoreExpr::If {
             predicate,
             then_value,
             else_value,
         } => {
-            predicate_fits_core_types(core, predicate, available)
-                && expression_fits_declared_type(core, then_value, expected, available)
-                && expression_fits_declared_type(core, else_value, expected, available)
+            predicate_fits_core_types(core, pure_functions, predicate, available)
+                && expression_fits_declared_type(
+                    core,
+                    pure_functions,
+                    then_value,
+                    expected,
+                    available,
+                )
+                && expression_fits_declared_type(
+                    core,
+                    pure_functions,
+                    else_value,
+                    expected,
+                    available,
+                )
         }
     }
 }
 
+fn validated_pure_function_fact<'a>(
+    core: &CoreModule,
+    pure_functions: &'a [TargetPureFunctionFact],
+    callee: &str,
+    type_args: &[String],
+    args: &[CoreExpr],
+    available: &BTreeMap<&str, &LocalRef>,
+) -> Option<&'a TargetPureFunctionFact> {
+    let mut matches = pure_functions
+        .iter()
+        .filter(|fact| fact.coordinate == callee);
+    let fact = matches.next()?;
+    if matches.next().is_some()
+        || !fact.lawpack.is_digest_locked()
+        || !coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
+        || !fact.type_parameters.is_empty()
+        || !type_args.is_empty()
+        || args.len() != fact.parameter_types.len()
+        || !core
+            .imports
+            .iter()
+            .any(|import| import.kind == CoreImportKind::Lawpack && import.resource == fact.lawpack)
+    {
+        return None;
+    }
+    args.iter()
+        .zip(&fact.parameter_types)
+        .all(|(argument, parameter_type)| {
+            expression_fits_declared_type(core, pure_functions, argument, parameter_type, available)
+        })
+        .then_some(fact)
+}
+
+fn coordinate_is_below_lawpack(coordinate: &str, lawpack: &ResourceRef) -> bool {
+    coordinate
+        .strip_prefix(&lawpack.coordinate)
+        .and_then(|suffix| suffix.strip_prefix('.'))
+        .is_some_and(|suffix| !suffix.is_empty())
+}
+
 fn expression_string_shape(
     core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
     expression: &CoreExpr,
     available: &BTreeMap<&str, &LocalRef>,
 ) -> Option<(u64, String)> {
@@ -732,18 +832,26 @@ fn expression_string_shape(
             "raw-utf8".to_owned(),
         )),
         CoreExpr::Local { .. } | CoreExpr::Field { .. } => {
-            let coordinate = expression_type_coordinate(core, expression, available)?;
+            let coordinate =
+                expression_type_coordinate(core, pure_functions, expression, available)?;
             let CoreType::String { max, canonical } = resolved_core_type(core, &coordinate)? else {
                 return None;
             };
             Some((max, canonical))
         }
-        CoreExpr::Call { callee, args, .. } if callee == "core.string.concat" => {
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if callee == "core.string.concat" => {
+            if !type_args.is_empty() {
+                return None;
+            }
             let mut max = 0_u64;
             let mut canonical = None;
             for argument in args {
                 let (argument_max, argument_canonical) =
-                    expression_string_shape(core, argument, available)?;
+                    expression_string_shape(core, pure_functions, argument, available)?;
                 if canonical
                     .as_ref()
                     .is_some_and(|canonical| canonical != &argument_canonical)
@@ -755,28 +863,49 @@ fn expression_string_shape(
             }
             Some((max, canonical.unwrap_or_else(|| "raw-utf8".to_owned())))
         }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } => {
+            let fact = validated_pure_function_fact(
+                core,
+                pure_functions,
+                callee,
+                type_args,
+                args,
+                available,
+            )?;
+            let CoreType::String { max, canonical } = resolved_core_type(core, &fact.return_type)?
+            else {
+                return None;
+            };
+            Some((max, canonical))
+        }
         CoreExpr::If {
             predicate,
             then_value,
             else_value,
         } => {
-            if !predicate_fits_core_types(core, predicate, available) {
+            if !predicate_fits_core_types(core, pure_functions, predicate, available) {
                 return None;
             }
-            let (then_max, then_canonical) = expression_string_shape(core, then_value, available)?;
-            let (else_max, else_canonical) = expression_string_shape(core, else_value, available)?;
+            let (then_max, then_canonical) =
+                expression_string_shape(core, pure_functions, then_value, available)?;
+            let (else_max, else_canonical) =
+                expression_string_shape(core, pure_functions, else_value, available)?;
             (then_canonical == else_canonical).then_some((then_max.max(else_max), then_canonical))
         }
         CoreExpr::Const(
             CoreValue::Null | CoreValue::Bool(_) | CoreValue::Int { .. } | CoreValue::Bytes(_),
         )
-        | CoreExpr::Record { .. }
-        | CoreExpr::Call { .. } => None,
+        | CoreExpr::Record { .. } => None,
     }
 }
 
 fn expression_type_coordinate(
     core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
     expression: &CoreExpr,
     available: &BTreeMap<&str, &LocalRef>,
 ) -> Option<String> {
@@ -788,19 +917,30 @@ fn expression_type_coordinate(
         }
         CoreExpr::Const(CoreValue::Bool(_)) => Some("Bool".to_owned()),
         CoreExpr::Const(CoreValue::Int { width, .. }) => Some(width.clone()),
-        CoreExpr::Field { base, field } => expression_type_coordinate(core, base, available)
-            .and_then(|base_type| resolved_core_type(core, &base_type))
-            .and_then(|base_type| match base_type {
-                CoreType::Record { fields } => fields.get(field).cloned(),
-                _ => None,
-            }),
+        CoreExpr::Field { base, field } => {
+            expression_type_coordinate(core, pure_functions, base, available)
+                .and_then(|base_type| resolved_core_type(core, &base_type))
+                .and_then(|base_type| match base_type {
+                    CoreType::Record { fields } => fields.get(field).cloned(),
+                    _ => None,
+                })
+        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if callee != "core.string.concat" => {
+            validated_pure_function_fact(core, pure_functions, callee, type_args, args, available)
+                .map(|fact| fact.return_type.clone())
+        }
         CoreExpr::If {
             then_value,
             else_value,
             ..
         } => {
-            let then_type = expression_type_coordinate(core, then_value, available)?;
-            (expression_type_coordinate(core, else_value, available)? == then_type)
+            let then_type =
+                expression_type_coordinate(core, pure_functions, then_value, available)?;
+            (expression_type_coordinate(core, pure_functions, else_value, available)? == then_type)
                 .then_some(then_type)
         }
         CoreExpr::Local { .. }
@@ -907,6 +1047,7 @@ fn predicate_references_are_available(
 
 fn predicate_fits_core_types(
     core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
     predicate: &CorePredicate,
     available: &BTreeMap<&str, &LocalRef>,
 ) -> bool {
@@ -915,45 +1056,51 @@ fn predicate_fits_core_types(
     }
     match predicate {
         CorePredicate::True | CorePredicate::False => true,
-        CorePredicate::Not(value) => predicate_fits_core_types(core, value, available),
+        CorePredicate::Not(value) => {
+            predicate_fits_core_types(core, pure_functions, value, available)
+        }
         CorePredicate::All(values) | CorePredicate::Any(values) => values
             .iter()
-            .all(|value| predicate_fits_core_types(core, value, available)),
+            .all(|value| predicate_fits_core_types(core, pure_functions, value, available)),
         CorePredicate::Compare { left, right, .. } => {
-            comparison_operands_fit(core, left, right, available)
+            comparison_operands_fit(core, pure_functions, left, right, available)
         }
     }
 }
 
 fn comparison_operands_fit(
     core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
     left: &CoreExpr,
     right: &CoreExpr,
     available: &BTreeMap<&str, &LocalRef>,
 ) -> bool {
-    let left_type = expression_type_coordinate(core, left, available);
-    let right_type = expression_type_coordinate(core, right, available);
+    let left_type = expression_type_coordinate(core, pure_functions, left, available);
+    let right_type = expression_type_coordinate(core, pure_functions, right, available);
     match (left_type.as_deref(), right_type.as_deref()) {
         (Some(left_type), Some(right_type)) => {
-            expression_fits_declared_type(core, left, left_type, available)
-                && expression_fits_declared_type(core, right, right_type, available)
+            expression_fits_declared_type(core, pure_functions, left, left_type, available)
+                && expression_fits_declared_type(core, pure_functions, right, right_type, available)
                 && (core_type_fits(core, left_type, right_type)
                     || core_type_fits(core, right_type, left_type))
         }
         (Some(left_type), None) => {
-            expression_fits_declared_type(core, left, left_type, available)
-                && expression_fits_declared_type(core, right, left_type, available)
+            expression_fits_declared_type(core, pure_functions, left, left_type, available)
+                && expression_fits_declared_type(core, pure_functions, right, left_type, available)
         }
         (None, Some(right_type)) => {
-            expression_fits_declared_type(core, left, right_type, available)
-                && expression_fits_declared_type(core, right, right_type, available)
+            expression_fits_declared_type(core, pure_functions, left, right_type, available)
+                && expression_fits_declared_type(core, pure_functions, right, right_type, available)
         }
-        (None, None) => untyped_comparison_operands_fit(core, left, right, available),
+        (None, None) => {
+            untyped_comparison_operands_fit(core, pure_functions, left, right, available)
+        }
     }
 }
 
 fn untyped_comparison_operands_fit(
     core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
     left: &CoreExpr,
     right: &CoreExpr,
     available: &BTreeMap<&str, &LocalRef>,
@@ -966,6 +1113,7 @@ fn untyped_comparison_operands_fit(
                 && left.iter().all(|(field, left)| {
                     comparison_operands_fit(
                         core,
+                        pure_functions,
                         left,
                         right.get(field).expect("equal record field keys"),
                         available,

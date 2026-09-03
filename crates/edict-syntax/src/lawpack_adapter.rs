@@ -20,7 +20,7 @@ use crate::lawpack::{
     ValidatedLawpackBundle,
 };
 use crate::lowerability::WriteClass;
-use crate::target_ir::{TargetEffectLowering, TargetIrLoweringFacts};
+use crate::target_ir::{TargetEffectLowering, TargetIrLoweringFacts, TargetPureFunctionFact};
 
 /// Canonical direct lawpack-adapter ABI supported by this crate.
 pub const LAWPACK_ADAPTER_API_VERSION: &str = "edict.lawpack-adapter/v1";
@@ -254,20 +254,9 @@ pub fn prepare_lawpack_compilation(
         });
     }
 
-    for function in &bundle.exports().pure_functions {
-        let local_function = local_coordinate(&alias, &prefix, &function.coordinate)?;
-        compiler_context = compiler_context.with_pure_function(
-            local_function,
-            PureFunctionFact {
-                lawpack: lawpack.clone(),
-                coordinate: function.coordinate.clone(),
-                type_parameters: function.type_parameters.clone(),
-                parameter_types: function.parameter_types.clone(),
-                return_type: function.return_type.clone(),
-                cost_template: function.cost_template.clone(),
-            },
-        );
-    }
+    let (projected_context, pure_functions) =
+        project_pure_functions(compiler_context, bundle, &lawpack, &alias, &prefix)?;
+    compiler_context = projected_context;
 
     for exported_type in &bundle.exports().types {
         local_coordinate(&alias, &prefix, &exported_type.coordinate)?;
@@ -306,8 +295,41 @@ pub fn prepare_lawpack_compilation(
             operation_profiles: operation_profiles.into_iter().collect(),
             obstruction_coordinates: obstruction_coordinates.into_iter().collect(),
             effect_lowerings,
+            pure_functions,
         },
     })
+}
+
+fn project_pure_functions(
+    mut context: CompilerContext,
+    bundle: &ValidatedLawpackBundle,
+    lawpack: &ResourceRef,
+    alias: &str,
+    prefix: &str,
+) -> Result<(CompilerContext, Vec<TargetPureFunctionFact>), Vec<LawpackAdapterFailure>> {
+    let mut target_facts = Vec::new();
+    for function in &bundle.exports().pure_functions {
+        let local_function = local_coordinate(alias, prefix, &function.coordinate)?;
+        target_facts.push(TargetPureFunctionFact {
+            lawpack: lawpack.clone(),
+            coordinate: function.coordinate.clone(),
+            type_parameters: function.type_parameters.clone(),
+            parameter_types: function.parameter_types.clone(),
+            return_type: function.return_type.clone(),
+        });
+        context = context.with_pure_function(
+            local_function,
+            PureFunctionFact {
+                lawpack: lawpack.clone(),
+                coordinate: function.coordinate.clone(),
+                type_parameters: function.type_parameters.clone(),
+                parameter_types: function.parameter_types.clone(),
+                return_type: function.return_type.clone(),
+                cost_template: function.cost_template.clone(),
+            },
+        );
+    }
+    Ok((context, target_facts))
 }
 
 fn project_bound_constants(

@@ -87,6 +87,7 @@ fn pure_lowering() -> (CoreModule, TargetLoweringReport) {
         operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
         obstruction_coordinates: Vec::new(),
         effect_lowerings: Vec::new(),
+        pure_functions: Vec::new(),
     };
     let report = lower_to_target_ir(&core, &facts);
     (core, report)
@@ -376,12 +377,10 @@ fn assert_pure_target_authority_rejected(
 #[test]
 fn target_lowering_exposes_an_unsupported_result_projection_without_claiming_one() {
     let (mut core, facts) = hello_echo_core_and_facts();
-    core.intents
-        .get_mut("createGreeting")
-        .expect("Core intent")
-        .body
-        .result = CoreExpr::Call {
-        callee: "examples.hidden@1.callback".to_owned(),
+    let intent = core.intents.get_mut("createGreeting").expect("Core intent");
+    intent.output = "String<max=0,canonical=raw-utf8>".to_owned();
+    intent.body.result = CoreExpr::Call {
+        callee: "core.string.concat".to_owned(),
         type_args: Vec::new(),
         args: Vec::new(),
     };
@@ -636,6 +635,7 @@ fn exact_byte_projection_refuses_a_max_only_source() {
         operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
         obstruction_coordinates: Vec::new(),
         effect_lowerings: Vec::new(),
+        pure_functions: Vec::new(),
     };
     let mut target = lower_to_target_ir(&core, &facts)
         .artifact

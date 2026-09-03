@@ -47,6 +47,7 @@ fn target_facts() -> TargetIrLoweringFacts {
         operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
         obstruction_coordinates: Vec::new(),
         effect_lowerings: Vec::new(),
+        pure_functions: Vec::new(),
     }
 }
 

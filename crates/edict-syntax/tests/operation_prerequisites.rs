@@ -51,6 +51,7 @@ fn target_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.splice".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        pure_functions: Vec::new(),
     }
 }
 

@@ -1656,6 +1656,7 @@ fn projection_target_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        pure_functions: Vec::new(),
     }
 }
 

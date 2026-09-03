@@ -58,6 +58,7 @@ Out of scope:
 | TIR-REQ-019 | implemented | Target lowering recognizes every fixed-width integer in the Core ABI and validates constants against the declared scalar domain without requiring redundant built-in entries in `core.types`. | issue #201 |
 | TIR-REQ-020 | implemented | Target lowering independently validates caller-supplied pure Core conditional predicates and rejects incompatible operand types or constants outside their declared scalar domains before producing an artifact. | issue #201 |
 | TIR-REQ-021 | implemented | Canonical Target IR permits only one producer for each local identity across pure bindings, target steps, and external-action requests. | issue #201 |
+| TIR-REQ-022 | implemented | Target lowering accepts each non-intrinsic pure call only when its canonical coordinate and complete non-generic signature are proven by the exact digest-locked lawpack in the Core import closure. | issue #200, issue #201 |
 
 ## Fixtures
 
@@ -120,6 +121,7 @@ Out of scope:
 | TIR-TP-040 | implemented | Boundary guard | TIR-REQ-018, TIR-REQ-020 | A pure conditional with incompatible comparison operands or a constant outside its declared integer width returns one structured `InvalidCoreIdentity` failure before a Target IR artifact exists. | `pure_conditional_predicates_require_compatible_bounded_operands` | crates/edict-syntax/tests/target_ir.rs | Caller-built Core cannot bypass source type checking. |
 | TIR-TP-041 | implemented | Canonical validation | TIR-REQ-008, TIR-REQ-021 | Canonical Target IR encoding rejects a local identity produced by both a pure binding and either a target step or external-action request. | `target_ir_encoder_rejects_local_identity_shared_across_producer_classes` | crates/edict-syntax/tests/target_ir.rs | Result references retain one unambiguous producer. |
 | TIR-TP-042 | implemented | Nested boundary guard | TIR-REQ-018, TIR-REQ-020 | A malformed pure conditional predicate nested inside string-shape derivation returns one structured `InvalidCoreIdentity` failure before a Target IR artifact exists. | `nested_string_conditional_predicates_require_compatible_bounded_operands` | crates/edict-syntax/tests/target_ir.rs | Caller-built Core cannot bypass predicate validation through expression nesting. |
+| TIR-TP-043 | implemented | Helper authority guard | TIR-REQ-018, TIR-REQ-022 | A compiler-produced pure helper call lowers only with the exact validated lawpack export fact; an unknown or substituted coordinate, signature, type arguments, argument list, return type, owning lawpack, duplicate fact, or missing fact returns one structured `InvalidCoreIdentity` failure before a Target IR artifact exists. | `target_lowering_requires_exact_lawpack_pure_helper_authority`, `helper_only_return_type_enters_core_closure_and_target_lowering` | crates/edict-syntax/tests/lawpack.rs, crates/edict-syntax/tests/target_ir.rs | Target facts preserve application-layer lawpack authority; Echo remains unaware of helper vocabulary. |
 
 ## Determinism Obligations
 

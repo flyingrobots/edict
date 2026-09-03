@@ -97,6 +97,7 @@ fn echo_fixture() -> LoweringFixture {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        pure_functions: Vec::new(),
     };
 
     LoweringFixture {
@@ -136,6 +137,7 @@ fn gitwarp_fixture() -> LoweringFixture {
             target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        pure_functions: Vec::new(),
     };
 
     LoweringFixture {

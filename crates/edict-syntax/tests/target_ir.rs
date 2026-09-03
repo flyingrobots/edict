@@ -15,9 +15,10 @@ use edict_syntax::{
     LoweringRequirements, NativeEffectSupport, PureFunctionFact, PureHelperCostFact, ResourceRef,
     SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
     TargetIrExternalActionRequest, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrStep,
-    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, TypeShapeFact, WriteClass,
-    ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
-    GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, TargetPureFunctionFact,
+    TypeShapeFact, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -246,6 +247,7 @@ fn echo_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
             failure_mappings: BTreeMap::new(),
         }],
+        pure_functions: Vec::new(),
     }
 }
 
@@ -263,6 +265,7 @@ fn gitwarp_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "gitwarp.ref_crdt@1.appendEvent".to_owned(),
             failure_mappings: BTreeMap::new(),
         }],
+        pure_functions: Vec::new(),
     }
 }
 
@@ -1170,7 +1173,7 @@ fn helper_only_return_type_enters_core_closure_and_target_lowering() {
         .with_pure_helper_cost(
             "helpers.tiny",
             PureHelperCostFact {
-                lawpack,
+                lawpack: lawpack.clone(),
                 coordinate: "example.bounds@1.tiny".to_owned(),
                 budget: CoreBudget {
                     max_steps: 1,
@@ -1190,7 +1193,15 @@ fn helper_only_return_type_enters_core_closure_and_target_lowering() {
         })
     );
 
-    let report = lower_to_target_ir(&core, &pure_target_facts());
+    let mut facts = pure_target_facts();
+    facts.pure_functions.push(TargetPureFunctionFact {
+        lawpack,
+        coordinate: "example.bounds@1.label".to_owned(),
+        type_parameters: Vec::new(),
+        parameter_types: vec!["U64".to_owned()],
+        return_type: "example.bounds@1.Label".to_owned(),
+    });
+    let report = lower_to_target_ir(&core, &facts);
     assert_eq!(report.status, TargetLoweringStatus::Lowered);
     assert!(report.failures.is_empty());
     assert!(report.artifact.is_some());
