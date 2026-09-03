@@ -9,13 +9,14 @@ use std::collections::BTreeMap;
 use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
     encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
-    CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreImport, CoreImportKind,
-    CoreNode, CorePredicate, CoreValue, GuardKind, InputConstraint, InputConstraintSource,
-    LocalRef, LowerabilityStatus, LoweringRequirements, NativeEffectSupport, ResourceRef,
-    SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact, TargetIrLoweringFacts,
-    TargetIrRequireFailure, TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts,
-    WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
-    GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
+    CompareOp, CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreImport,
+    CoreImportKind, CoreNode, CorePredicate, CoreValue, GuardKind, InputConstraint,
+    InputConstraintSource, LocalRef, LowerabilityStatus, LoweringRequirements, NativeEffectSupport,
+    ResourceRef, SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
+    TargetIrLoweringFacts, TargetIrRequireFailure, TargetLoweringFailureKind, TargetLoweringStatus,
+    TargetProfileFacts, WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
+    TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 
 const EFFECTFUL_REPLACE: &str = "package a.b@1;\n\
@@ -1333,6 +1334,60 @@ fn narrow_core_integer_widths_lower_as_builtin_types() {
                 value: value.to_owned(),
             })
         );
+    }
+}
+
+#[test]
+fn pure_conditional_predicates_require_compatible_bounded_operands() {
+    let cases = [
+        (
+            "incompatible operand types",
+            CoreExpr::Const(CoreValue::Bool(true)),
+            CoreExpr::Const(CoreValue::Int {
+                width: "U64".to_owned(),
+                value: "1".to_owned(),
+            }),
+        ),
+        (
+            "constant outside its declared width",
+            CoreExpr::Const(CoreValue::Int {
+                width: "U8".to_owned(),
+                value: "0".to_owned(),
+            }),
+            CoreExpr::Const(CoreValue::Int {
+                width: "U8".to_owned(),
+                value: "256".to_owned(),
+            }),
+        ),
+    ];
+
+    for (case, left, right) in cases {
+        let mut core = pure_core();
+        let intent = core.intents.get_mut("sayHello").expect("pure intent");
+        let CoreNode::Let { value, .. } = &mut intent.body.nodes[0] else {
+            panic!("pure fixture starts with a let");
+        };
+        let valid_branch = value.clone();
+        *value = CoreExpr::If {
+            predicate: Box::new(CorePredicate::Compare {
+                op: CompareOp::Eq,
+                left,
+                right,
+            }),
+            then_value: Box::new(valid_branch.clone()),
+            else_value: Box::new(valid_branch),
+        };
+
+        let report = lower_to_target_ir(&core, &pure_target_facts());
+
+        assert_eq!(report.status, TargetLoweringStatus::Unsupported, "{case}");
+        assert!(report.artifact.is_none(), "{case}");
+        let [failure] = report.failures.as_slice() else {
+            panic!("{case} must reject with exactly one structured failure");
+        };
+        assert_eq!(failure.kind, TargetLoweringFailureKind::InvalidCoreIdentity);
+        assert_eq!(failure.intent.as_deref(), Some("sayHello"));
+        assert_eq!(failure.node_index, Some(0));
     }
 }
 

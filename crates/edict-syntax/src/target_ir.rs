@@ -714,7 +714,7 @@ fn expression_fits_declared_type(
             then_value,
             else_value,
         } => {
-            predicate_references_are_available(predicate, available)
+            predicate_fits_core_types(core, predicate, available)
                 && expression_fits_declared_type(core, then_value, expected, available)
                 && expression_fits_declared_type(core, else_value, expected, available)
         }
@@ -899,6 +899,77 @@ fn predicate_references_are_available(
             expression_references_are_available(left, available)
                 && expression_references_are_available(right, available)
         }
+    }
+}
+
+fn predicate_fits_core_types(
+    core: &CoreModule,
+    predicate: &CorePredicate,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    if !predicate_references_are_available(predicate, available) {
+        return false;
+    }
+    match predicate {
+        CorePredicate::True | CorePredicate::False => true,
+        CorePredicate::Not(value) => predicate_fits_core_types(core, value, available),
+        CorePredicate::All(values) | CorePredicate::Any(values) => values
+            .iter()
+            .all(|value| predicate_fits_core_types(core, value, available)),
+        CorePredicate::Compare { left, right, .. } => {
+            comparison_operands_fit(core, left, right, available)
+        }
+    }
+}
+
+fn comparison_operands_fit(
+    core: &CoreModule,
+    left: &CoreExpr,
+    right: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    let left_type = expression_type_coordinate(core, left, available);
+    let right_type = expression_type_coordinate(core, right, available);
+    match (left_type.as_deref(), right_type.as_deref()) {
+        (Some(left_type), Some(right_type)) => {
+            expression_fits_declared_type(core, left, left_type, available)
+                && expression_fits_declared_type(core, right, right_type, available)
+                && (core_type_fits(core, left_type, right_type)
+                    || core_type_fits(core, right_type, left_type))
+        }
+        (Some(left_type), None) => {
+            expression_fits_declared_type(core, left, left_type, available)
+                && expression_fits_declared_type(core, right, left_type, available)
+        }
+        (None, Some(right_type)) => {
+            expression_fits_declared_type(core, left, right_type, available)
+                && expression_fits_declared_type(core, right, right_type, available)
+        }
+        (None, None) => untyped_comparison_operands_fit(core, left, right, available),
+    }
+}
+
+fn untyped_comparison_operands_fit(
+    core: &CoreModule,
+    left: &CoreExpr,
+    right: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    match (left, right) {
+        (CoreExpr::Const(CoreValue::String(_)), CoreExpr::Const(CoreValue::String(_)))
+        | (CoreExpr::Const(CoreValue::Bytes(_)), CoreExpr::Const(CoreValue::Bytes(_))) => true,
+        (CoreExpr::Record { fields: left }, CoreExpr::Record { fields: right }) => {
+            left.keys().eq(right.keys())
+                && left.iter().all(|(field, left)| {
+                    comparison_operands_fit(
+                        core,
+                        left,
+                        right.get(field).expect("equal record field keys"),
+                        available,
+                    )
+                })
+        }
+        _ => false,
     }
 }
 
