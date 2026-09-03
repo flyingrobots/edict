@@ -1140,24 +1140,54 @@ fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
     let missing_type_adapter =
         decode_lawpack_adapter(&missing_type_bundle, "echo.dpo@1", ADAPTER_BYTES)
             .expect("load missing-type adapter");
-    let missing_type_preparation = prepare_lawpack_compilation(
+    let failures = prepare_lawpack_compilation(
         &missing_type_module,
         &missing_type_bundle,
         &missing_type_adapter,
     )
-    .expect("derive helper facts without the exported type");
+    .expect_err("helper without its exported type closure rejects during preparation");
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::InvalidShape]
+    );
+}
 
-    let errors = compile_to_core(
-        &missing_type_module,
-        missing_type_preparation.compiler_context(),
-    )
-    .expect_err("helper without its exported type closure rejects before Core");
-    assert!(errors
-        .iter()
-        .all(|error| error.stage == CompilerStage::TypeCheck));
-    assert!(errors
-        .iter()
-        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+#[test]
+fn lawpack_pure_helper_signature_rejects_type_definition_substitution() {
+    let exports = typed_helper_exports(true);
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode typed helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode typed helper manifest");
+    let bundle =
+        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load typed helper lawpack");
+    let source = typed_helper_source(&bundle);
+    let module = parse_module(&source).expect("parse typed helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive typed helper compiler facts");
+    let mut core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile helper over an exact exported bounded type");
+
+    for coordinate in ["hello.echo@1.GreetingKey", "Input.value", "Output.value"] {
+        let prior = core
+            .types
+            .insert(coordinate.to_owned(), edict_syntax::CoreType::Bool);
+        assert!(
+            matches!(prior, Some(edict_syntax::CoreType::String { .. })),
+            "{coordinate} starts as the authenticated bounded string"
+        );
+    }
+
+    let target = lower_to_target_ir(&core, preparation.target_ir_facts());
+
+    assert_eq!(target.status, TargetLoweringStatus::Unsupported);
+    assert!(target.artifact.is_none());
+    assert_eq!(target.failures.len(), 1);
+    assert_eq!(
+        target.failures[0].kind,
+        edict_syntax::TargetLoweringFailureKind::InvalidCoreIdentity
+    );
 }
 
 #[test]
@@ -1214,24 +1244,16 @@ fn nested_exported_type_closure_enters_pure_helper_compilation() {
     let missing_nested_adapter =
         decode_lawpack_adapter(&missing_nested_bundle, "echo.dpo@1", ADAPTER_BYTES)
             .expect("load missing nested type adapter");
-    let missing_nested_preparation = prepare_lawpack_compilation(
+    let failures = prepare_lawpack_compilation(
         &missing_nested_module,
         &missing_nested_bundle,
         &missing_nested_adapter,
     )
-    .expect("derive helper facts without nested type dependency");
-
-    let errors = compile_to_core(
-        &missing_nested_module,
-        missing_nested_preparation.compiler_context(),
-    )
-    .expect_err("missing nested exported type rejects before Core");
-    assert!(errors
-        .iter()
-        .all(|error| error.stage == CompilerStage::TypeCheck));
-    assert!(errors
-        .iter()
-        .any(|error| error.kind == CompilerErrorKind::UnresolvedType));
+    .expect_err("missing nested exported type rejects during preparation");
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::InvalidShape]
+    );
 }
 
 #[test]

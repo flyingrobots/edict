@@ -57,8 +57,9 @@ fn target_selection_for_profile(target_profile: &str) -> Option<TargetSelection>
 /// Canonical non-generic helper signature owned by one exact imported lawpack.
 ///
 /// Validated lawpack preparation projects this fact alongside the compiler
-/// fact. The lawpack digest binds the exported helper implementation without
-/// embedding application vocabulary in a target runtime.
+/// fact. The lawpack digest binds the exported helper implementation and its
+/// resolved named-type closure without embedding application vocabulary in a
+/// target runtime.
 ///
 /// Callers cannot fabricate helper authority from an arbitrary coordinate and
 /// signature:
@@ -84,6 +85,7 @@ pub struct TargetPureFunctionFact {
     type_parameters: Vec<String>,
     parameter_types: Vec<String>,
     return_type: String,
+    type_closure: BTreeMap<String, CoreType>,
 }
 
 impl TargetPureFunctionFact {
@@ -93,6 +95,7 @@ impl TargetPureFunctionFact {
         type_parameters: Vec<String>,
         parameter_types: Vec<String>,
         return_type: String,
+        type_closure: BTreeMap<String, CoreType>,
     ) -> Self {
         Self {
             lawpack,
@@ -100,6 +103,7 @@ impl TargetPureFunctionFact {
             type_parameters,
             parameter_types,
             return_type,
+            type_closure,
         }
     }
 
@@ -1075,13 +1079,17 @@ fn expression_fits_declared_type(
                 })
         }
         CoreExpr::Field { base, field } => {
-            expression_type_coordinate(core, pure_functions, base, available)
-                .and_then(|base_type| resolved_core_type(core, &base_type))
-                .and_then(|base_type| match base_type {
-                    CoreType::Record { fields } => fields.get(field).cloned(),
-                    _ => None,
-                })
-                .is_some_and(|field_type| core_type_fits(core, &field_type, expected))
+            let Some(field_shape) =
+                field_expression_shape(core, pure_functions, base, field, available)
+            else {
+                return false;
+            };
+            comparison_shape_fits(
+                core,
+                &field_shape,
+                &ComparisonOperandShape::Coordinate(expected.to_owned()),
+                0,
+            )
         }
         CoreExpr::Call {
             callee,
@@ -1095,21 +1103,16 @@ fn expression_fits_declared_type(
             else {
                 return false;
             };
-            let mut actual_max = 0_u64;
-            type_args.is_empty()
-                && args.iter().all(|argument| {
-                    let Some((max, canonical)) =
-                        expression_string_shape(core, pure_functions, argument, available)
-                    else {
-                        return false;
-                    };
-                    let Some(next_max) = actual_max.checked_add(max) else {
-                        return false;
-                    };
-                    actual_max = next_max;
-                    canonical == expected_canonical
+            if expected_canonical != "raw-utf8" || !type_args.is_empty() {
+                return false;
+            }
+            args.iter()
+                .try_fold(0_u64, |actual_max, argument| {
+                    let (max, _) =
+                        expression_string_shape(core, pure_functions, argument, available)?;
+                    actual_max.checked_add(max)
                 })
-                && actual_max <= expected_max
+                .is_some_and(|actual_max| actual_max <= expected_max)
         }
         CoreExpr::Call {
             callee,
@@ -1163,6 +1166,10 @@ fn validated_pure_function_fact<'a>(
             .imports
             .iter()
             .any(|import| import.kind == CoreImportKind::Lawpack && import.resource == fact.lawpack)
+        || !fact.type_closure.iter().all(|(coordinate, expected)| {
+            coordinate_is_below_lawpack(coordinate, &fact.lawpack)
+                && core.types.get(coordinate) == Some(expected)
+        })
     {
         return None;
     }
@@ -1209,20 +1216,12 @@ fn expression_string_shape(
                 return None;
             }
             let mut max = 0_u64;
-            let mut canonical = None;
             for argument in args {
-                let (argument_max, argument_canonical) =
+                let (argument_max, _) =
                     expression_string_shape(core, pure_functions, argument, available)?;
-                if canonical
-                    .as_ref()
-                    .is_some_and(|canonical| canonical != &argument_canonical)
-                {
-                    return None;
-                }
-                canonical = Some(argument_canonical);
                 max = max.checked_add(argument_max)?;
             }
-            Some((max, canonical.unwrap_or_else(|| "raw-utf8".to_owned())))
+            Some((max, "raw-utf8".to_owned()))
         }
         CoreExpr::Call {
             callee,
@@ -1286,12 +1285,12 @@ fn expression_type_coordinate(
             Some(format!("Bytes<exact={}>", u64::try_from(value.len()).ok()?))
         }
         CoreExpr::Field { base, field } => {
-            expression_type_coordinate(core, pure_functions, base, available)
-                .and_then(|base_type| resolved_core_type(core, &base_type))
-                .and_then(|base_type| match base_type {
-                    CoreType::Record { fields } => fields.get(field).cloned(),
-                    _ => None,
-                })
+            let ComparisonOperandShape::Coordinate(coordinate) =
+                field_expression_shape(core, pure_functions, base, field, available)?
+            else {
+                return None;
+            };
+            Some(coordinate)
         }
         CoreExpr::Call { callee, .. } if callee == "core.string.concat" => {
             expression_string_shape(core, pure_functions, expression, available)
@@ -1526,6 +1525,17 @@ enum ComparisonOperandShape {
     Record(BTreeMap<String, ComparisonOperandShape>),
 }
 
+fn field_expression_shape(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+    base: &CoreExpr,
+    field: &str,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> Option<ComparisonOperandShape> {
+    let base_shape = comparison_operand_shape(core, pure_functions, base, available)?;
+    comparison_record_fields(core, &base_shape)?.remove(field)
+}
+
 fn comparison_operand_shape(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
@@ -1543,6 +1553,9 @@ fn comparison_operand_shape(
             })
             .collect::<Option<BTreeMap<_, _>>>()
             .map(ComparisonOperandShape::Record),
+        CoreExpr::Field { base, field } => {
+            field_expression_shape(core, pure_functions, base, field, available)
+        }
         CoreExpr::If {
             predicate,
             then_value,

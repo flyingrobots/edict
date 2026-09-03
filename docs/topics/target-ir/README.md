@@ -123,7 +123,10 @@ Pure conditional predicates independently prove reference closure, compatible
 operand types, and fixed-width integer domains at this boundary, including when
 a conditional is nested inside string-shape derivation. Supported pure calls,
 including `core.string.concat`, contribute their bounded result type to operand
-comparison instead of falling through to literal-only inference. Conditional
+comparison instead of falling through to literal-only inference. String
+concatenation accepts valid raw or NFC bounded operands, including mixed
+canonicalizations, and derives the compiler-defined raw UTF-8 result with the
+checked sum of their maxima. [TIR-REQ-035] Conditional
 operands also validate their nested predicate and join compatible branch bounds:
 strings preserve the wider compatible maximum, while byte intervals join their
 lower and upper bounds component-wise even when neither interval contains the
@@ -138,14 +141,20 @@ that record rule. Structural Core compatibility shares the compiler's finite
 module-local type entries, and compiler-emitted nested `List<item,max=N>`
 coordinates are reconstructed by the same recursive resolver. [TIR-REQ-027]
 [TIR-REQ-029] [TIR-REQ-032] [TIR-REQ-033]
+Field projection uses that structural record inference too. A direct anonymous
+record or a record-valued conditional can therefore supply a field without
+inventing a named coordinate for its base; predicates, branches, and the
+selected field still pass the same recursive type checks. [TIR-REQ-036]
 Each non-intrinsic pure call must also match exactly one helper fact projected
 from a validated lawpack export. Those facts expose read-only identity and
 signature accessors but cannot be constructed or mutated by an external caller.
 Target lowering checks the canonical coordinate, complete non-generic signature,
-and exact digest-locked owning lawpack against the Core import closure before
-any provider is invoked. Missing or duplicate helper evidence rejects as
-`InvalidCoreIdentity`; fabricated or substituted evidence is unrepresentable at
-the public API. Before copying any expression-bearing Core surface, the lowerer
+exact digest-locked owning lawpack, and resolved named-type closure against the
+Core import closure before any provider is invoked. The exact definition of
+every named parameter or return type must remain present in caller-supplied
+Core. Missing, duplicate, or type-definition-substituted helper evidence rejects
+as `InvalidCoreIdentity`; fabricated facts are unrepresentable at the public
+API. [TIR-REQ-034] Before copying any expression-bearing Core surface, the lowerer
 also traverses intent basis and constraints, requirement predicates and reason
 payloads, effect inputs and obstruction values, and every external-request
 value. Local references must be available in source order, scalar and declared
@@ -163,7 +172,7 @@ unambiguous. This records authored basis, preconditions, evaluation limits, pure
 computation, guard dispositions, and success-output semantics without resolving
 a runtime basis, executing Echo, or admitting a bundle. [TIR-REQ-018]
 [TIR-REQ-019] [TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022] [TIR-REQ-023]
-[TIR-REQ-024] [TIR-REQ-026] [TIR-REQ-028]
+[TIR-REQ-024] [TIR-REQ-026] [TIR-REQ-028] [TIR-REQ-034]
 
 Lawpack-aliased effects have an additional typed authority gate. Validated
 lawpack preparation is the only constructor for an effect-signature fact; the

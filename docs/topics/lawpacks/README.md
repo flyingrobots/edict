@@ -126,9 +126,12 @@ The current executable Rust surfaces touching lawpacks are:
   through the source alias. Source calls type-check against that signature and
   lower under the canonical exported coordinate, while the exact imported
   manifest digest continues to bind the helper implementation. The corresponding
-  Target fact is externally immutable, so application callers can inspect or
-  select validated helper evidence but cannot fabricate an undeclared export.
-  [LAWPACKS-REQ-012]
+  Target fact is externally immutable and privately carries the resolved named
+  parameter/return type map. Missing direct or nested definitions refuse during
+  preparation; later caller-owned Core must retain each exact definition, so a
+  coherent type substitution cannot reuse the trusted helper identity. An empty
+  closure remains valid for signatures built only from bounded scalar forms.
+  [LAWPACKS-REQ-012] [LAWPACKS-REQ-021]
 - The preparation boundary also projects exported `U32` and `U64` constants
   through the source alias as numeric bound facts. Static loop checks consume
   the value, while Core preserves the canonical exported coordinate.

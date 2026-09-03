@@ -15,7 +15,7 @@ use edict_syntax::{
     LowerabilityStatus, LoweringRequirements, NativeEffectSupport, ResourceRef,
     SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
     TargetIrExternalActionRequest, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrStep,
-    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, WriteClass,
+    TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, TypeShapeFact, WriteClass,
     ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
     GITWARP_REF_CRDT_TARGET_PROFILE, TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
@@ -1745,6 +1745,112 @@ fn compiler_produced_conditional_record_comparisons_preserve_structural_compatib
         failure_kinds(&report),
         vec![TargetLoweringFailureKind::InvalidCoreIdentity]
     );
+}
+
+#[test]
+fn compiler_produced_anonymous_record_fields_preserve_structural_types() {
+    let cases = [
+        ("record", "({ value: input.value }).value"),
+        (
+            "conditional record",
+            "(if true then { value: input.value } else { value: input.value }).value",
+        ),
+    ];
+
+    for (case, value) in cases {
+        let source = format!(
+            "package a.b@1;\n\
+             type Input = {{ value: U64, }};\n\
+             type Output = {{ value: U64, }};\n\
+             intent t(input: Input) returns Output\n\
+               profile hello.readOnly\n\
+               basis none\n\
+               budget <= hello.tinyBudget {{\n\
+               let value: U64 = {value};\n\
+               return {{ value }};\n\
+             }}"
+        );
+        let module = edict_syntax::parse_module(&source)
+            .unwrap_or_else(|errors| panic!("{case} field source parses: {errors:?}"));
+        let core = compile_to_core(&module, &pure_context())
+            .unwrap_or_else(|errors| panic!("{case} field compiles to Core: {errors:?}"));
+        let CoreNode::Let {
+            value: CoreExpr::Field { base, .. },
+            ..
+        } = &core.intents.get("t").expect("intent t").body.nodes[0]
+        else {
+            panic!("{case} remains a field projection in Core");
+        };
+        assert!(
+            matches!(
+                (case, base.as_ref()),
+                ("record", CoreExpr::Record { .. }) | ("conditional record", CoreExpr::If { .. })
+            ),
+            "{case} keeps its structural record base"
+        );
+
+        let report = lower_to_target_ir(&core, &pure_target_facts());
+
+        assert_eq!(report.status, TargetLoweringStatus::Lowered, "{case}");
+        assert!(report.failures.is_empty(), "{case}: {:?}", report.failures);
+        assert!(report.artifact.is_some(), "{case}");
+    }
+}
+
+#[test]
+fn compiler_produced_string_concat_uses_raw_result_canonicalization() {
+    let lawpack = ResourceRef {
+        coordinate: "text.rules@1".to_owned(),
+        digest: Some(format!("sha256:{}", "3".repeat(64))),
+    };
+    let context = pure_context().with_type_shape(TypeShapeFact {
+        lawpack,
+        coordinate: "text.rules@1.Nfc".to_owned(),
+        definition: "String<max=8,canonical=unicode-scalar-nfc>".to_owned(),
+    });
+
+    for (case, tail_type) in [
+        ("all NFC operands", "text.Nfc"),
+        ("mixed NFC and raw operands", "String<max=8>"),
+    ] {
+        let source = format!(
+            "package a.b@1;\n\
+             use lawpack text.rules@1 digest \"sha256:{}\" as text;\n\
+             type Input = {{ left: text.Nfc, right: text.Nfc, tail: {tail_type}, }};\n\
+             type Output = {{ value: String<max=24>, }};\n\
+             intent t(input: Input) returns Output\n\
+               profile hello.readOnly\n\
+               basis none\n\
+               budget <= hello.tinyBudget {{\n\
+               let value = input.left + input.right + input.tail;\n\
+               return {{ value }};\n\
+             }}",
+            "3".repeat(64)
+        );
+        let module = edict_syntax::parse_module(&source)
+            .unwrap_or_else(|errors| panic!("{case} source parses: {errors:?}"));
+        let core = compile_to_core(&module, &context)
+            .unwrap_or_else(|errors| panic!("{case} source compiles: {errors:?}"));
+        let CoreNode::Let { binding, value } =
+            &core.intents.get("t").expect("intent t").body.nodes[0]
+        else {
+            panic!("{case} starts with a pure let");
+        };
+        assert_eq!(
+            binding.ty, "String<max=24,canonical=raw-utf8>",
+            "the compiler defines concat result canonicalization"
+        );
+        assert!(matches!(
+            value,
+            CoreExpr::Call { callee, .. } if callee == "core.string.concat"
+        ));
+
+        let report = lower_to_target_ir(&core, &pure_target_facts());
+
+        assert_eq!(report.status, TargetLoweringStatus::Lowered, "{case}");
+        assert!(report.failures.is_empty(), "{case}: {:?}", report.failures);
+        assert!(report.artifact.is_some(), "{case}");
+    }
 }
 
 #[test]

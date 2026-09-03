@@ -225,21 +225,7 @@ pub fn prepare_lawpack_compilation(
     };
     let mut compiler_context = CompilerContext::new();
     let mut operation_profiles = BTreeSet::new();
-    let type_shapes = bundle
-        .exports()
-        .types
-        .iter()
-        .map(|exported_type| {
-            (
-                exported_type.coordinate.clone(),
-                TypeShapeFact {
-                    lawpack: lawpack.clone(),
-                    coordinate: exported_type.coordinate.clone(),
-                    definition: exported_type.definition.clone(),
-                },
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
+    let type_shapes = exported_type_shapes(bundle, &lawpack);
 
     for type_shape in type_shapes.values() {
         local_coordinate(&alias, &prefix, &type_shape.coordinate)?;
@@ -286,8 +272,14 @@ pub fn prepare_lawpack_compilation(
     )?;
     compiler_context = projected_context;
 
-    let (projected_context, pure_functions) =
-        project_pure_functions(compiler_context, bundle, &lawpack, &alias, &prefix)?;
+    let (projected_context, pure_functions) = project_pure_functions(
+        compiler_context,
+        bundle,
+        &lawpack,
+        &alias,
+        &prefix,
+        &type_shapes,
+    )?;
     compiler_context = projected_context;
 
     compiler_context =
@@ -322,6 +314,27 @@ pub fn prepare_lawpack_compilation(
             pure_functions,
         },
     })
+}
+
+fn exported_type_shapes(
+    bundle: &ValidatedLawpackBundle,
+    lawpack: &ResourceRef,
+) -> BTreeMap<String, TypeShapeFact> {
+    bundle
+        .exports()
+        .types
+        .iter()
+        .map(|exported_type| {
+            (
+                exported_type.coordinate.clone(),
+                TypeShapeFact {
+                    lawpack: lawpack.clone(),
+                    coordinate: exported_type.coordinate.clone(),
+                    definition: exported_type.definition.clone(),
+                },
+            )
+        })
+        .collect()
 }
 
 fn project_effects(
@@ -402,16 +415,28 @@ fn project_pure_functions(
     lawpack: &ResourceRef,
     alias: &str,
     prefix: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
 ) -> Result<(CompilerContext, Vec<TargetPureFunctionFact>), Vec<LawpackAdapterFailure>> {
     let mut target_facts = Vec::new();
     for function in &bundle.exports().pure_functions {
         let local_function = local_coordinate(alias, prefix, &function.coordinate)?;
+        let mut signature_types = function.parameter_types.clone();
+        signature_types.push(function.return_type.clone());
+        let type_closure = imported_type_core_closure(&signature_types, type_shapes, lawpack)
+            .ok_or_else(|| {
+                one(failure(
+                    LawpackAdapterFailureKind::InvalidShape,
+                    format!("exports.pureFunctions.{}", function.coordinate),
+                    "parameter and return types in the exact exported bounded type closure",
+                ))
+            })?;
         target_facts.push(TargetPureFunctionFact::from_validated_lawpack_export(
             lawpack.clone(),
             function.coordinate.clone(),
             function.type_parameters.clone(),
             function.parameter_types.clone(),
             function.return_type.clone(),
+            type_closure,
         ));
         context = context.with_pure_function(
             local_function,
