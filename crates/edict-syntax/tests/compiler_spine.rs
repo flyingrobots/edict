@@ -321,9 +321,9 @@ fn bounded_hello_compiles_to_initial_core() {
         &CoreType::Record {
             fields: [(
                 "name".to_owned(),
-                "examples.hello@1.HelloInput.name".to_owned()
+                "String<max=256,canonical=raw-utf8>".to_owned(),
             )]
-            .into()
+            .into(),
         }
     );
 
@@ -1794,7 +1794,10 @@ fn effectful_branch_yield_lowers_to_bound_core_branch() {
         panic!("branch-yield let lowers to one bound Core branch");
     };
 
-    assert_eq!(binding.ty, "a.b@1.Input.id");
+    assert_eq!(
+        binding.ty, "String<max=16,canonical=raw-utf8>",
+        "a join across distinct branch identities is structural"
+    );
     assert!(matches!(
         then_block.nodes.as_slice(),
         [CoreNode::Effect { .. }]
@@ -2179,7 +2182,10 @@ fn branch_yield_bounded_strings_choose_the_wider_type_in_either_order() {
             panic!("branch-yield lowers with one binding");
         };
 
-        assert_eq!(binding.ty, "example.bounds@1.Long");
+        assert_eq!(
+            binding.ty, "String<max=8,canonical=raw-utf8>",
+            "a join across distinct aliases has one branch-order-independent identity"
+        );
     }
 }
 

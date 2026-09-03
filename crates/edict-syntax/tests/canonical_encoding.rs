@@ -128,6 +128,29 @@ fn invalid_byte_interval_rejects_before_core_identity() {
 }
 
 #[test]
+fn core_type_table_rejects_self_describing_reference_keys() {
+    for (case, coordinate) in [
+        ("intrinsic bool", "Bool"),
+        ("intrinsic unit", "Unit"),
+        (
+            "structural",
+            "Record<inner:Record<value:U64>,values:List<U64,max=2>>",
+        ),
+    ] {
+        let mut core = bounded_hello_core();
+        core.types.insert(coordinate.to_owned(), CoreType::Bool);
+
+        let failure = encode_core_module(&core)
+            .expect_err("self-describing key must reject before canonical identity");
+        assert_eq!(
+            failure.kind(),
+            CanonicalErrorKind::UnsupportedValue,
+            "{case}"
+        );
+    }
+}
+
+#[test]
 fn statement_branch_omits_binding_and_preserves_exact_canonical_identity() {
     let module = parse_module(STATEMENT_BRANCH).expect("statement branch parses");
     let core = compile_to_core(&module, &statement_branch_context())

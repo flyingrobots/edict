@@ -44,13 +44,18 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   type and value identity retains exact width and signedness. Byte payloads
   carry an explicit maximum and may carry a minimum; equal bounds represent an
   exact byte length, while max-only values omit the minimum from canonical Core.
-  Every compiler-emitted byte coordinate resolves back to that same interval,
-  including distinct minimum and maximum bounds. Shared downstream type
-  resolution gives published built-in coordinates precedence over colliding
-  module table keys and reconstructs compiler-emitted bounded
-  `List<item,max=N>` coordinates without losing nested item structure.
+  Every Core type reference classifies without module state as fixed intrinsic,
+  canonical self-describing structure, or a name. One shared parser and renderer
+  owns bounded strings and bytes, records, options, lists, maps, capability
+  references, and external-action requests. Structural record fields are sorted
+  identifiers whose child references recurse under the same 128-level bound;
+  parse/render round trips are byte-exact. Intrinsic and structural references
+  resolve from themselves and may not occur as `core.types` keys. Only names
+  enter that table, so `Unit`, `Bool`, numeric intrinsics, and structural syntax
+  cannot be shadowed or redefined before canonical identity.
   [COREIR-REQ-002]
   [COREIR-REQ-019] [COREIR-REQ-020] [COREIR-REQ-022] [COREIR-REQ-023]
+  [COREIR-REQ-025] [COREIR-REQ-026]
 - Structural type compatibility and imported compiler type resolution share one
   finite depth ceiling of 128. A compiler-accepted type chain at that boundary
   remains compatible downstream instead of encountering an earlier Target IR

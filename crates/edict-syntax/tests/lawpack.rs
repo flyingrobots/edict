@@ -1257,6 +1257,117 @@ fn nested_exported_type_closure_enters_pure_helper_compilation() {
 }
 
 #[test]
+fn inline_structural_record_pure_helper_signature_lowers() {
+    let (core, facts) = structural_pure_helper_application();
+    let target = lower_to_target_ir(&core, &facts);
+
+    assert_eq!(
+        target.status,
+        TargetLoweringStatus::Lowered,
+        "{:?}",
+        target.failures
+    );
+    assert!(target.failures.is_empty());
+    assert!(target.artifact.is_some());
+    assert!(
+        !core
+            .types
+            .keys()
+            .any(|coordinate| coordinate.starts_with("Record<")),
+        "structural syntax must not become named Core authority"
+    );
+}
+
+#[test]
+fn inline_structural_record_effect_signature_lowers() {
+    let (core, facts) = structural_effect_application();
+    let target = lower_to_target_ir(&core, &facts);
+
+    assert_eq!(
+        target.status,
+        TargetLoweringStatus::Lowered,
+        "{:?}",
+        target.failures
+    );
+    assert!(target.failures.is_empty());
+    assert!(target.artifact.is_some());
+    assert!(
+        !core
+            .types
+            .keys()
+            .any(|coordinate| coordinate.starts_with("Record<")),
+        "structural syntax must not become named Core authority"
+    );
+}
+
+#[test]
+fn named_signature_closure_rejects_parent_and_leaf_tampering() {
+    let applications = [
+        (
+            "pure helper",
+            structural_pure_helper_application(),
+            "hello.echo@1.StructuralEnvelope",
+        ),
+        (
+            "effect",
+            structural_effect_application(),
+            "hello.echo@1.CreateGreetingInput",
+        ),
+    ];
+
+    for (producer, (core, facts), parent) in applications {
+        let control = lower_to_target_ir(&core, &facts);
+        assert_eq!(
+            control.status,
+            TargetLoweringStatus::Lowered,
+            "{producer}: {:?}",
+            control.failures
+        );
+        assert!(control.artifact.is_some(), "{producer}");
+
+        for (case, coordinate, replacement) in [
+            ("missing parent", parent, None),
+            (
+                "substituted parent",
+                parent,
+                Some(edict_syntax::CoreType::Bool),
+            ),
+            ("missing leaf", "hello.echo@1.StructuralLeaf", None),
+            (
+                "substituted leaf",
+                "hello.echo@1.StructuralLeaf",
+                Some(edict_syntax::CoreType::Bool),
+            ),
+        ] {
+            let mut tampered = core.clone();
+            match replacement {
+                Some(replacement) => {
+                    tampered.types.insert(coordinate.to_owned(), replacement);
+                }
+                None => {
+                    tampered.types.remove(coordinate);
+                }
+            }
+
+            let target = lower_to_target_ir(&tampered, &facts);
+            assert_eq!(
+                target.status,
+                TargetLoweringStatus::Unsupported,
+                "{producer} {case}: {:?}",
+                target.failures
+            );
+            assert!(target.artifact.is_none(), "{producer} {case}");
+            assert_eq!(target.failures.len(), 1, "{producer} {case}");
+            assert_eq!(
+                target.failures[0].kind,
+                edict_syntax::TargetLoweringFailureKind::InvalidCoreIdentity,
+                "{producer} {case}"
+            );
+        }
+    }
+}
+
+#[test]
 fn exported_type_outside_lawpack_namespace_rejects_before_compiler_facts() {
     let mut exports = typed_helper_exports(true);
     let exported_type = array_mut(field_mut(&mut exports, "types"))
@@ -2471,6 +2582,129 @@ fn typed_helper_exports(include_type: bool) -> CanonicalValue {
         ("body", identity_body),
     ));
     exports
+}
+
+fn structural_signature_types(exports: &mut CanonicalValue) {
+    let types = array_mut(field_mut(exports, "types"));
+    types.push(map([
+        (
+            "coordinate",
+            text("hello.echo@1.StructuralEnvelope"),
+        ),
+        (
+            "definition",
+            text(
+                "Record<metadata:Record<value:hello.echo@1.StructuralLeaf>,payload:List<hello.echo@1.StructuralLeaf,max=2>>",
+            ),
+        ),
+    ]));
+    types.push(map([
+        ("coordinate", text("hello.echo@1.StructuralLeaf")),
+        ("definition", text("U64")),
+    ]));
+}
+
+fn structural_pure_helper_application() -> (
+    edict_syntax::CoreModule,
+    edict_syntax::TargetIrLoweringFacts,
+) {
+    let root = "hello.echo@1.StructuralEnvelope";
+    let identity_body = pure_body(
+        vec![local_ref("arg:0", "value", root)],
+        map([
+            ("kind", text("local")),
+            ("ref", local_ref("arg:0", "value", root)),
+        ]),
+    );
+    let mut exports = hello_echo_exports();
+    structural_signature_types(&mut exports);
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+        "hello.echo@1.identityStructural",
+        &[root],
+        root,
+        "edict",
+        ("body", identity_body),
+    ));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode structural helper exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes =
+        encode_canonical_cbor(&manifest).expect("encode structural helper manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load structural helper lawpack");
+    let source = format!(
+        "package examples.structural_helper@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Input = {{ value: hello.StructuralEnvelope, }};\n\
+         type Output = {{ value: hello.StructuralEnvelope, }};\n\
+         intent apply(input: Input) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let value = hello.identityStructural(input.value);\n\
+           return {{ value }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse structural helper application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive structural helper facts");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile structural helper application");
+    (core, preparation.target_ir_facts().clone())
+}
+
+fn structural_effect_application() -> (
+    edict_syntax::CoreModule,
+    edict_syntax::TargetIrLoweringFacts,
+) {
+    let mut exports = hello_echo_exports();
+    let types = array_mut(field_mut(&mut exports, "types"));
+    replace_field(
+        &mut types[0],
+        "definition",
+        text(
+            "Record<metadata:Record<value:hello.echo@1.StructuralLeaf>,payload:List<hello.echo@1.StructuralLeaf,max=2>>",
+        ),
+    );
+    replace_field(
+        &mut types[1],
+        "definition",
+        text("Record<metadata:Record<value:hello.echo@1.StructuralLeaf>>"),
+    );
+    types.push(map([
+        ("coordinate", text("hello.echo@1.StructuralLeaf")),
+        ("definition", text("U64")),
+    ]));
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode structural effect exports");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes =
+        encode_canonical_cbor(&manifest).expect("encode structural effect manifest");
+    let bundle = decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .expect("load structural effect lawpack");
+    let source = format!(
+        "package examples.structural_effect@1;\n\
+         use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         type Output = {{ value: hello.GreetingReceipt, }};\n\
+         intent apply(input: hello.CreateGreetingInput) returns Output\n\
+           profile hello.createGreeting\n\
+           basis none\n\
+           budget <= hello.smallCreateBudget {{\n\
+           let value: hello.GreetingReceipt = hello.createGreeting(input)\n\
+             else {{ alreadyExists(existing) => hello.AlreadyExists }};\n\
+           return {{ value }};\n\
+         }}",
+        bundle.manifest_digest_review_string()
+    );
+    let module = parse_module(&source).expect("parse structural effect application");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("derive structural effect facts");
+    let core = compile_to_core(&module, preparation.compiler_context())
+        .expect("compile structural effect application");
+    (core, preparation.target_ir_facts().clone())
 }
 
 fn typed_helper_source(bundle: &ValidatedLawpackBundle) -> String {

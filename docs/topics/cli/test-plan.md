@@ -119,6 +119,8 @@ Out of scope:
 
 | CLI-TP-037 | implemented | Lawpack target support | CLI-REQ-017 | Windows lawpack write and check-only requests return stable mode-specific failures before document or namespace I/O and preserve a pre-existing sentinel tree. | windows_lawpack_build_fails_closed_before_document_io, lawpack_target_support_keeps_check_only_available | crates/edict-cli/src/lawpack_build_windows.rs, crates/edict-cli/src/lawpack_build.rs, .github/workflows/ci.yml | The targeted `windows-latest` runtime gate proves fail-closed containment only; it does not claim a Windows lawpack-build backend. |
 
+| CLI-TP-038 | implemented | Projection completeness | CLI-REQ-013 | Core review projection handles every normative Core type variant, including the intrinsic `Unit` type, without an incomplete match or omitted review shape. | core_type_review_is_total_for_unit | crates/edict-cli/src/main.rs | Keeps the display-only projection exhaustive when the normative Core type algebra grows. |
+
 ## Determinism Obligations
 
 - Directory and glob expansion must be sorted before checking files.

@@ -43,7 +43,9 @@ The short documentation rule is reader-task first:
 2. Keep that primary job intact instead of making one page serve every reader.
 3. Use runnable, illustrative, or abridged examples honestly and label the
    difference when it matters.
-4. Update affected docs with behavior changes, or state `docs-impact: none` with
+4. Keep `docs/SPEC_edict-language-v1.md`, its coupled CDDL, and owning evidence
+   current with source-language or Core semantic changes.
+5. Update other affected docs with behavior changes, or state `docs-impact: none` with
    a concise rationale.
 
 Pull request bodies for issue work must include GitHub auto-close text such as

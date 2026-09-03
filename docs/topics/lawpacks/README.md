@@ -118,7 +118,9 @@ The current executable Rust surfaces touching lawpacks are:
   may use bounded scalars, lists, aliases, nominals, and records such as
   `Record<key:String<max=64,canonical=raw-utf8>>`. Source compilation checks the
   argument and result annotation for early diagnostics. A private Target fact
-  separately carries the canonical effect export and resolved named-type map,
+  separately carries the canonical effect export and exact reachable named-type
+  map. Inline structural constructors are parsed and traversed but never enter
+  that map or claim lawpack ownership,
   so caller-authored Core cannot substitute a value, binding type, or type
   definition while retaining a trusted coordinate. Missing or unresolvable
   signature types refuse during preparation. [LAWPACKS-REQ-020]
@@ -126,12 +128,12 @@ The current executable Rust surfaces touching lawpacks are:
   through the source alias. Source calls type-check against that signature and
   lower under the canonical exported coordinate, while the exact imported
   manifest digest continues to bind the helper implementation. The corresponding
-  Target fact is externally immutable and privately carries the resolved named
-  parameter/return type map. Missing direct or nested definitions refuse during
-  preparation; later caller-owned Core must retain each exact definition, so a
-  coherent type substitution cannot reuse the trusted helper identity. An empty
-  closure remains valid for signatures built only from bounded scalar forms.
-  [LAWPACKS-REQ-012] [LAWPACKS-REQ-021]
+  Target fact is externally immutable and privately carries the exact named
+  closure reachable from every parameter and the return. Target reconstructs
+  that closure through the same structural-transparent judgment used for effect
+  signatures. Missing, extra, foreign, or substituted named definitions refuse;
+  an empty closure remains valid for signatures built only from intrinsic and
+  structural forms. [LAWPACKS-REQ-012] [LAWPACKS-REQ-021] [LAWPACKS-REQ-022]
 - The preparation boundary also projects exported `U32` and `U64` constants
   through the source alias as numeric bound facts. Static loop checks consume
   the value, while Core preserves the canonical exported coordinate.

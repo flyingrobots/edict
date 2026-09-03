@@ -128,31 +128,33 @@ concatenation accepts valid raw or NFC bounded operands, including mixed
 canonicalizations, and derives the compiler-defined raw UTF-8 result with the
 checked sum of their maxima. [TIR-REQ-035] Conditional operands also validate
 their nested predicate and compute a bounded least-upper-bound for their branch
-results. Directionally compatible scalar branches retain the containing type;
-otherwise byte intervals join their lower and upper bounds component-wise.
-Lists recursively join their item shapes and take the wider collection maximum,
-while equal-key anonymous records recursively join each field. This `join`
+results. An exact shared named reference is retained; otherwise the result uses
+the canonical structural meaning rather than choosing a branch's provenance.
+Byte intervals join their lower and upper bounds component-wise. Lists
+recursively join their item shapes and take the wider collection maximum, while
+equal-key structural records recursively join each field. This `join`
 judgment is distinct from predicate `comparable`: a direct comparison is lawful
 only when the complete left shape fits the right or the complete right shape
 fits the left. It cannot synthesize a byte union or choose a different
 compatibility direction for each record field. Structural Core judgments share
-the compiler's finite 128-level type-depth boundary. Published built-in
-coordinates resolve before module-local type entries, and compiler-emitted
-nested `List<item,max=N>` coordinates are reconstructed by the same recursive
-resolver. [TIR-REQ-027] [TIR-REQ-029] [TIR-REQ-032] [TIR-REQ-033]
-[TIR-REQ-037] [TIR-REQ-038]
-Field projection uses that structural record inference too. A direct anonymous
-record or a record-valued conditional can therefore supply a field without
-inventing a named coordinate for its base; predicates, branches, and the
-selected field still pass the same recursive type checks. [TIR-REQ-036]
+the compiler's finite 128-level type-depth boundary and one Core parser/renderer.
+Intrinsics and canonical structural records, lists, options, maps, capability
+references, and external requests resolve from syntax; any such `core.types` key
+rejects as an identity redefinition before artifact construction. [TIR-REQ-027]
+[TIR-REQ-029] [TIR-REQ-032] [TIR-REQ-033] [TIR-REQ-037] [TIR-REQ-038]
+[TIR-REQ-042] Field projection uses the same structural record inference. A
+direct record or record-valued conditional can therefore supply a field without
+inventing a name for its base; predicates, branches, and the selected field
+still pass the same recursive type checks. [TIR-REQ-036]
 Each non-intrinsic pure call must also match exactly one helper fact projected
 from a validated lawpack export. Those facts expose read-only identity and
 signature accessors but cannot be constructed or mutated by an external caller.
 Target lowering checks the canonical coordinate, complete non-generic signature,
-exact digest-locked owning lawpack, and resolved named-type closure against the
-Core import closure before any provider is invoked. The exact definition of
-every named parameter or return type must remain present in caller-supplied
-Core. Missing, duplicate, or type-definition-substituted helper evidence rejects
+exact digest-locked owning lawpack, and independently reconstructs the exact
+reachable named-type closure from the signature roots. Structural constructors
+are traversed transparently and never need fictitious lawpack ownership. Every
+named parent or leaf must remain below the exact lawpack and match caller Core;
+missing, extra, foreign, or type-definition-substituted helper evidence rejects
 as `InvalidCoreIdentity`; fabricated facts are unrepresentable at the public
 API. [TIR-REQ-034] Before copying any expression-bearing Core surface, the lowerer
 also traverses intent basis and constraints, requirement predicates and reason
@@ -184,12 +186,13 @@ lawpack preparation is the only constructor for an effect-signature fact; the
 fact binds the source alias to the canonical export, exact manifest digest,
 non-generic input/output signature, and resolved exported-type closure. The
 compiler checks source calls against that signature for early diagnostics, and
-Target validation independently requires exactly one matching fact, exact Core
-type definitions for every named type in the closure, an input that fits the
-exported input, and an exported output that fits the result binding. Missing,
-duplicate, value-substituted, or type-definition-substituted evidence rejects
-before a Target artifact exists. Native lowerability facts remain a separate
-non-lawpack path. [TIR-REQ-030]
+Target validation independently requires exactly one matching fact, reconstructs
+the same exact reachable named closure used for helpers, and checks an input that
+fits the exported input plus an exported output that fits the result binding.
+Missing, extra, duplicate, foreign, value-substituted, or type-definition-
+substituted evidence rejects before a Target artifact exists. Native
+lowerability facts remain a separate non-lawpack path. [TIR-REQ-030]
+[TIR-REQ-043]
 
 When any intent has an explicit basis or pure binding, the Core module imports a
 lawpack, or the Core module imports a requestable capability, the artifact carries a

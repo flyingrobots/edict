@@ -8,12 +8,12 @@ use std::collections::BTreeMap;
 
 use edict_syntax::{
     check_lowerability, compile_to_core, decode_canonical_cbor, digest_target_ir_artifact,
-    encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement, CanonicalErrorKind,
-    CompareOp, CompilerContext, CoreBlock, CoreBound, CoreBudget, CoreExpr,
-    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreModule, CoreNode, CorePredicate,
-    CoreType, CoreValue, GuardKind, InputConstraint, InputConstraintSource, LocalRef,
-    LowerabilityStatus, LoweringRequirements, NativeEffectSupport, ResourceRef,
-    SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
+    encode_core_module, encode_target_ir_artifact, lower_to_target_ir, AtomicityRequirement,
+    CanonicalErrorKind, CanonicalValue, CompareOp, CompilerContext, CoreBlock, CoreBound,
+    CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreModule,
+    CoreNode, CorePredicate, CoreType, CoreValue, GuardKind, InputConstraint,
+    InputConstraintSource, LocalRef, LowerabilityStatus, LoweringRequirements, NativeEffectSupport,
+    ResourceRef, SemanticEffectRequirement, TargetEffectLowering, TargetIrArtifact,
     TargetIrExternalActionRequest, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrStep,
     TargetLoweringFailureKind, TargetLoweringStatus, TargetProfileFacts, TypeShapeFact, WriteClass,
     ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, GITWARP_COMMIT_REDUCER_IR_DOMAIN,
@@ -1514,13 +1514,11 @@ fn narrow_core_integer_widths_lower_as_builtin_types() {
 #[test]
 fn ranged_core_byte_coordinates_lower_as_builtin_types() {
     let mut core = pure_core();
-    core.types.insert(
-        "HelloReading.message".to_owned(),
-        CoreType::Bytes {
-            min: Some(2),
-            max: 4,
-        },
-    );
+    core.types.remove("HelloReading.message");
+    let Some(CoreType::Record { fields }) = core.types.get_mut("HelloReading") else {
+        panic!("pure fixture has a named result record");
+    };
+    fields.insert("message".to_owned(), "Bytes<min=2,max=4>".to_owned());
     let intent = core.intents.get_mut("sayHello").expect("pure intent");
     let CoreNode::Let { binding, value } = &mut intent.body.nodes[0] else {
         panic!("pure fixture starts with a let");
@@ -1994,31 +1992,22 @@ fn lawpack_effect_signatures_reject_mismatched_core_values() {
 }
 
 #[test]
-fn compiler_builtins_cannot_be_shadowed_by_core_type_entries() {
-    let source = "package a.b@1;\n\
-        type Bool = { shadow: U64, };\n\
-        type Input = { value: String<max=32>, };\n\
-        type Output = { value: String<max=32>, };\n\
-        intent t(input: Input) returns Output\n\
-          profile hello.readOnly\n\
-          basis none\n\
-          budget <= hello.tinyBudget {\n\
-          let value = if true == false then input.value else input.value;\n\
-          return { value };\n\
-        }";
-    let module = edict_syntax::parse_module(source).expect("built-in shadow source parses");
-    let core = compile_to_core(&module, &pure_context())
-        .expect("otherwise unused Bool declaration compiles to Core");
-    assert!(matches!(
-        core.types.get("Bool"),
-        Some(CoreType::Record { .. })
-    ));
+fn core_type_table_rejects_self_describing_reference_keys() {
+    for (case, coordinate) in [
+        ("intrinsic bool", "Bool"),
+        ("intrinsic unit", "Unit"),
+        (
+            "structural",
+            "Record<inner:Record<value:U64>,values:List<U64,max=2>>",
+        ),
+    ] {
+        let mut core = pure_core();
+        core.types.insert(coordinate.to_owned(), CoreType::Bool);
 
-    let report = lower_to_target_ir(&core, &pure_target_facts());
+        let report = lower_to_target_ir(&core, &pure_target_facts());
 
-    assert_eq!(report.status, TargetLoweringStatus::Lowered);
-    assert!(report.failures.is_empty());
-    assert!(report.artifact.is_some());
+        assert_invalid_core_identity(&report, case);
+    }
 }
 
 #[test]
@@ -2178,8 +2167,8 @@ fn semantic_parity_cases() -> [SemanticParityCase; 10] {
         },
         SemanticParityCase {
             name: "records inside crossed lists",
-            left_definition: "List<Record<value:String<max=1,canonical=raw-utf8>>,max=3>",
-            right_definition: "List<Record<value:String<max=3,canonical=raw-utf8>>,max=1>",
+            left_definition: "List<Record<left:String<max=1,canonical=raw-utf8>,right:String<max=3,canonical=raw-utf8>>,max=3>",
+            right_definition: "List<Record<left:String<max=3,canonical=raw-utf8>,right:String<max=1,canonical=raw-utf8>>,max=1>",
             directly_comparable: false,
         },
     ]
@@ -2232,6 +2221,93 @@ fn compile_semantic_parity_case(case: SemanticParityCase, predicate: &str) -> Co
         .unwrap_or_else(|errors| panic!("{} source compiles: {errors:?}", case.name))
 }
 
+fn semantic_parity_bound_source(then_field: &str, else_field: &str) -> String {
+    format!(
+        "package parity.application@1;\n\
+         use lawpack parity.types@1 digest \"sha256:{}\" as shapes;\n\
+         type Input = {{ left: shapes.Left, right: shapes.Right, value: String<max=8>, }};\n\
+         type Output = {{ value: String<max=8>, }};\n\
+         intent compare(input: Input) returns Output\n\
+           profile hello.readOnly\n\
+           basis none\n\
+           budget <= hello.tinyBudget {{\n\
+           let joined = if true then input.{then_field} else input.{else_field};\n\
+           return {{ value: input.value }};\n\
+         }}",
+        "7".repeat(64)
+    )
+}
+
+fn compile_semantic_parity_bound_case(
+    case: SemanticParityCase,
+    then_field: &str,
+    else_field: &str,
+) -> CoreModule {
+    let source = semantic_parity_bound_source(then_field, else_field);
+    let module = edict_syntax::parse_module(&source)
+        .unwrap_or_else(|errors| panic!("{} bound source parses: {errors:?}", case.name));
+    compile_to_core(&module, &semantic_parity_context(case))
+        .unwrap_or_else(|errors| panic!("{} bound source compiles: {errors:?}", case.name))
+}
+
+fn first_bound_type(core: &CoreModule) -> &str {
+    let intent = core.intents.get("compare").expect("parity intent");
+    let CoreNode::Let { binding, .. } = &intent.body.nodes[0] else {
+        panic!("parity source starts with a bound conditional");
+    };
+    &binding.ty
+}
+
+fn canonical_value_contains_text(value: &CanonicalValue, needle: &str) -> bool {
+    match value {
+        CanonicalValue::Text(text) => text.contains(needle),
+        CanonicalValue::Array(values) => values
+            .iter()
+            .any(|value| canonical_value_contains_text(value, needle)),
+        CanonicalValue::Map(entries) => entries.iter().any(|(key, value)| {
+            canonical_value_contains_text(key, needle)
+                || canonical_value_contains_text(value, needle)
+        }),
+        CanonicalValue::Null
+        | CanonicalValue::Bool(_)
+        | CanonicalValue::Integer(_)
+        | CanonicalValue::Bytes(_) => false,
+    }
+}
+
+fn assert_compiler_core_has_named_type_entries_only(case: &str, core: &CoreModule) {
+    let structural_prefixes = [
+        "String<",
+        "Bytes<",
+        "Record<",
+        "List<",
+        "Option<",
+        "Map<",
+        "CapabilityRef<",
+        "ExternalActionRequest<",
+        "edict.external-action.request/v1<",
+    ];
+    assert!(
+        core.types.keys().all(|coordinate| {
+            !matches!(
+                coordinate.as_str(),
+                "Unit" | "Bool" | "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64"
+            ) && !structural_prefixes
+                .iter()
+                .any(|prefix| coordinate.starts_with(prefix))
+        }),
+        "{case} emitted a self-describing core.types key: {:?}",
+        core.types.keys().collect::<Vec<_>>()
+    );
+    let bytes = encode_core_module(core).unwrap_or_else(|error| panic!("{case} encodes: {error}"));
+    let canonical = decode_canonical_cbor(&bytes)
+        .unwrap_or_else(|error| panic!("{case} canonical Core decodes: {error}"));
+    assert!(
+        !canonical_value_contains_text(&canonical, "anonymous.record"),
+        "{case} leaked a scratch type coordinate"
+    );
+}
+
 fn input_field(reference: &LocalRef, field: &str) -> CoreExpr {
     CoreExpr::Field {
         base: Box::new(CoreExpr::Local {
@@ -2260,7 +2336,54 @@ fn compiler_produced_crossed_list_conditionals_lower_through_target_ir() {
 }
 
 #[test]
-fn compiler_emitted_core_type_closure_is_transitive_for_inline_records() {
+fn compiler_bound_record_joins_use_canonical_structural_identity() {
+    let case = semantic_parity_cases()
+        .into_iter()
+        .find(|case| case.name == "two-field crossed records")
+        .expect("record parity case");
+    let forward = compile_semantic_parity_bound_case(case, "left", "right");
+    let reverse = compile_semantic_parity_bound_case(case, "right", "left");
+    let expected =
+        "Record<left:String<max=3,canonical=raw-utf8>,right:String<max=3,canonical=raw-utf8>>";
+
+    assert_eq!(first_bound_type(&forward), expected);
+    assert_eq!(first_bound_type(&reverse), expected);
+    assert_compiler_core_has_named_type_entries_only(case.name, &forward);
+    assert_compiler_core_has_named_type_entries_only(case.name, &reverse);
+
+    for core in [&forward, &reverse] {
+        let report = lower_to_target_ir(core, &pure_target_facts());
+        assert_eq!(report.status, TargetLoweringStatus::Lowered);
+        assert!(report.failures.is_empty());
+        assert!(report.artifact.is_some());
+    }
+}
+
+#[test]
+fn compiler_bound_list_record_joins_use_canonical_structural_identity() {
+    let case = semantic_parity_cases()
+        .into_iter()
+        .find(|case| case.name == "records inside crossed lists")
+        .expect("record-list parity case");
+    let forward = compile_semantic_parity_bound_case(case, "left", "right");
+    let reverse = compile_semantic_parity_bound_case(case, "right", "left");
+    let expected = "List<Record<left:String<max=3,canonical=raw-utf8>,right:String<max=3,canonical=raw-utf8>>,max=3>";
+
+    assert_eq!(first_bound_type(&forward), expected);
+    assert_eq!(first_bound_type(&reverse), expected);
+    assert_compiler_core_has_named_type_entries_only(case.name, &forward);
+    assert_compiler_core_has_named_type_entries_only(case.name, &reverse);
+
+    for core in [&forward, &reverse] {
+        let report = lower_to_target_ir(core, &pure_target_facts());
+        assert_eq!(report.status, TargetLoweringStatus::Lowered);
+        assert!(report.failures.is_empty());
+        assert!(report.artifact.is_some());
+    }
+}
+
+#[test]
+fn compiler_emitted_core_type_closure_uses_named_entries_only() {
     for (case, definition) in [
         ("nested record", "Record<inner:Record<value:U64>>"),
         ("record inside list", "List<Record<value:U64>,max=2>"),
@@ -2290,13 +2413,15 @@ fn compiler_emitted_core_type_closure_is_transitive_for_inline_records() {
         let core = compile_to_core(&module, &context)
             .unwrap_or_else(|errors| panic!("{case} source compiles: {errors:?}"));
 
-        assert_eq!(
-            core.types.get("Record<value:U64>"),
-            Some(&CoreType::Record {
-                fields: BTreeMap::from([("value".to_owned(), "U64".to_owned())]),
-            }),
-            "{case} retains its non-reconstructible structural record"
+        assert!(
+            core.types.contains_key("parity.types@1.Value"),
+            "{case} retains its named lawpack root"
         );
+        assert!(
+            !core.types.contains_key("Record<value:U64>"),
+            "{case} must not intern structural syntax as named authority"
+        );
+        assert_compiler_core_has_named_type_entries_only(case, &core);
 
         let report = lower_to_target_ir(&core, &pure_target_facts());
         assert_eq!(report.status, TargetLoweringStatus::Lowered, "{case}");
@@ -2366,6 +2491,28 @@ fn compiler_target_semantic_parity_matrix() {
             report.failures
         );
         assert!(report.artifact.is_some(), "{}", case.name);
+
+        let forward = compile_semantic_parity_bound_case(case, "left", "right");
+        let reverse = compile_semantic_parity_bound_case(case, "right", "left");
+        assert_eq!(
+            first_bound_type(&forward),
+            first_bound_type(&reverse),
+            "{} conditional join is branch-order independent",
+            case.name
+        );
+        assert_compiler_core_has_named_type_entries_only(case.name, &forward);
+        assert_compiler_core_has_named_type_entries_only(case.name, &reverse);
+        for (order, core) in [("forward", forward), ("reverse", reverse)] {
+            let report = lower_to_target_ir(&core, &pure_target_facts());
+            assert_eq!(
+                report.status,
+                TargetLoweringStatus::Lowered,
+                "{} {order} bound conditional: {:?}",
+                case.name,
+                report.failures
+            );
+            assert!(report.artifact.is_some(), "{} {order}", case.name);
+        }
     }
 }
 

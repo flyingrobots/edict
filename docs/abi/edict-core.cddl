@@ -9,7 +9,7 @@ core-module = {
   apiVersion: "edict.core/v1",
   coordinate: tstr,
   imports: [* core-import],
-  types: { * tstr => core-type },
+  types: { * core-named-type-ref => core-type },
   intents: { + tstr => core-intent },
   requiredCoreCapabilities: [* tstr],
 }
@@ -346,5 +346,5 @@ core-bound = literal-bound / coordinate-bound
 literal-bound = { kind: "literal", value: uint }
 coordinate-bound = { kind: "coordinate", ref: tstr }
 
-; Shared resource-ref, sha256-digest, failure-ident, aperture-requirement, and
-; core-type-ref are defined once in edict-common.cddl.
+; Shared resource-ref, sha256-digest, failure-ident, aperture-requirement,
+; core-type-ref, and core-named-type-ref are defined once in edict-common.cddl.

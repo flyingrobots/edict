@@ -135,13 +135,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   branch maxima are selected, preserving branch correlation under the shared
   operation step budget. Imported type-alias traversal rejects beyond a
   deterministic depth of 128 rather than risking unbounded recursion. Every
-  resolved non-primitive helper parameter and return type enters the emitted
-  Core type closure even when no application declaration names it. That closure
-  is transitive over referenced non-intrinsic structure: authenticated inline
-  records are interned even when nested inside another record or bounded list,
-  so downstream consumers never need to infer missing record authority from a
-  structural coordinate string. The imported lawpack digest remains the helper
-  implementation, cost, and type-closure identity.
+  resolved named helper parameter, return type, or reachable named child enters
+  the emitted Core type closure even when no application declaration names it.
+  Inline records and other structural constructors use Core's shared canonical
+  renderer and are traversed without being interned as names. Synthesized record
+  literals and conditional joins therefore expose deterministic, branch-order-
+  independent structural references; no `anonymous.record` scratch coordinate
+  crosses into Core. The imported lawpack digest remains the helper
+  implementation, cost, and named-closure identity.
   [CSPINE-REQ-024]
   [CSPINE-REQ-029] [CSPINE-REQ-031] [CSPINE-REQ-034] [CSPINE-REQ-036]
 - Coordinate loop bounds resolve only from explicit compiler facts. Exact

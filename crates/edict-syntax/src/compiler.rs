@@ -12,11 +12,12 @@ use crate::ast::{
     TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBound,
-    CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent,
-    CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
+    classify_core_type_reference, is_lowercase_sha256_review_digest, parse_core_integer,
+    render_self_describing_core_type, CompareOp, CoreBlock, CoreBound, CoreBudget, CoreExpr,
+    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule, CoreNode,
+    CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType,
+    CoreTypeReference, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
+    CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -525,6 +526,7 @@ fn missing_context_fact(message: String, span: Span) -> CompilerError {
 struct TypeShape {
     coord: String,
     kind: TypeKind,
+    preserve_named_identity: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -584,25 +586,32 @@ impl TypeShape {
             TypeKind::Record(fields) => CoreType::Record {
                 fields: fields
                     .iter()
-                    .map(|(name, shape)| (name.clone(), shape.coord.clone()))
+                    .map(|(name, shape)| (name.clone(), shape.value_type_coord()))
                     .collect(),
             },
             TypeKind::ExternalActionRequest { settlement } => CoreType::ExternalActionRequest {
-                settlement: settlement.coord.clone(),
+                settlement: settlement.value_type_coord(),
             },
         }
     }
 
     fn value_type_coord(&self) -> String {
-        match &self.kind {
-            TypeKind::Bool => "Bool".to_owned(),
-            TypeKind::Int { width } => width.clone(),
-            TypeKind::String { max, canonical } => string_type_coord(*max, canonical),
-            TypeKind::Bytes { min, max } => bytes_type_coord(*min, *max),
-            TypeKind::Nominal { contract, .. } => contract.clone(),
-            TypeKind::List { item, max } => list_type_coord(&item.value_type_coord(), *max),
-            TypeKind::Record(_) | TypeKind::ExternalActionRequest { .. } => self.coord.clone(),
+        if self.preserve_named_identity {
+            self.coord.clone()
+        } else {
+            render_self_describing_core_type(&self.core_type())
+                .unwrap_or_else(|| self.coord.clone())
         }
+    }
+
+    fn canonical_structural(kind: TypeKind) -> Option<Self> {
+        let mut shape = Self {
+            coord: String::new(),
+            kind,
+            preserve_named_identity: false,
+        };
+        shape.coord = render_self_describing_core_type(&shape.core_type())?;
+        Some(shape)
     }
 }
 
@@ -777,6 +786,7 @@ impl<'a> TypeChecker<'a> {
             Some(TypeShape {
                 coord: coord.to_owned(),
                 kind: TypeKind::Record(out),
+                preserve_named_identity: true,
             })
         } else {
             self.errors.push(error(
@@ -819,11 +829,8 @@ impl<'a> TypeChecker<'a> {
                 if path.as_slice() == ["ExternalActionRequest"] && args.len() == 1 =>
             {
                 let settlement = self.type_ref_shape(&args[0], span, None)?;
-                Some(TypeShape {
-                    coord: format!("edict.external-action.request/v1<{}>", settlement.coord),
-                    kind: TypeKind::ExternalActionRequest {
-                        settlement: Box::new(settlement),
-                    },
+                TypeShape::canonical_structural(TypeKind::ExternalActionRequest {
+                    settlement: Box::new(settlement),
                 })
             }
             TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span, coord_hint),
@@ -839,14 +846,18 @@ impl<'a> TypeChecker<'a> {
                     return None;
                 };
                 let item = self.type_ref_shape(elem, span, None)?;
-                Some(TypeShape {
-                    coord: coord_hint
-                        .unwrap_or_else(|| list_type_coord(&item.value_type_coord(), *value)),
-                    kind: TypeKind::List {
-                        item: Box::new(item),
-                        max: *value,
-                    },
-                })
+                let kind = TypeKind::List {
+                    item: Box::new(item),
+                    max: *value,
+                };
+                match coord_hint {
+                    Some(coord) => Some(TypeShape {
+                        coord,
+                        kind,
+                        preserve_named_identity: false,
+                    }),
+                    None => TypeShape::canonical_structural(kind),
+                }
             }
             TypeRef::BytesTy(None)
             | TypeRef::Option(_)
@@ -884,13 +895,18 @@ impl<'a> TypeChecker<'a> {
             .canonical
             .clone()
             .unwrap_or_else(|| "raw-utf8".to_owned());
-        Some(TypeShape {
-            coord: coord_hint.unwrap_or_else(|| string_type_coord(value, &canonical)),
-            kind: TypeKind::String {
-                max: value,
-                canonical,
-            },
-        })
+        let kind = TypeKind::String {
+            max: value,
+            canonical,
+        };
+        match coord_hint {
+            Some(coord) => Some(TypeShape {
+                coord,
+                kind,
+                preserve_named_identity: false,
+            }),
+            None => TypeShape::canonical_structural(kind),
+        }
     }
 
     fn bytes_shape(
@@ -930,10 +946,15 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
-        Some(TypeShape {
-            coord: coord_hint.unwrap_or_else(|| bytes_type_coord(min, *max)),
-            kind: TypeKind::Bytes { min, max: *max },
-        })
+        let kind = TypeKind::Bytes { min, max: *max };
+        match coord_hint {
+            Some(coord) => Some(TypeShape {
+                coord,
+                kind,
+                preserve_named_identity: false,
+            }),
+            None => TypeShape::canonical_structural(kind),
+        }
     }
 
     fn imported_source_type_shape(&mut self, path: &[String], span: Span) -> Option<TypeShape> {
@@ -2699,10 +2720,7 @@ impl<'a> TypeChecker<'a> {
                     .infer_joint_record_field_shape(then_entry, then_env, else_entry, else_env)?;
                 fields.insert(name.to_owned(), shape);
             }
-            return Some(TypeShape {
-                coord: "anonymous.record".to_owned(),
-                kind: TypeKind::Record(fields),
-            });
+            return TypeShape::canonical_structural(TypeKind::Record(fields));
         }
         if contains_contextual_bare_integer(then_expr)
             && !contains_contextual_bare_integer(else_expr)
@@ -3462,12 +3480,13 @@ impl<'a> TypeChecker<'a> {
     ) -> Option<TypedValue> {
         match expr {
             Expr::Ident { name, span } => self.check_ident(name, *span, env),
-            Expr::Str { value, .. } => Some(string_value(value)),
+            Expr::Str { value, .. } => string_value(value),
             Expr::Bool { value, .. } => Some(TypedValue {
                 expr: CoreExpr::Const(CoreValue::Bool(*value)),
                 ty: TypeShape {
                     coord: "Bool".to_owned(),
                     kind: TypeKind::Bool,
+                    preserve_named_identity: false,
                 },
             }),
             Expr::Int {
@@ -3748,6 +3767,7 @@ impl<'a> TypeChecker<'a> {
             1,
         )?;
         shape.coord.clone_from(&fact.coordinate);
+        shape.preserve_named_identity = true;
         Some(shape)
     }
 
@@ -3928,16 +3948,14 @@ impl<'a> TypeChecker<'a> {
         };
         let max = lmax + rmax;
         let canonical = "raw-utf8".to_owned();
+        let ty = TypeShape::canonical_structural(TypeKind::String { max, canonical })?;
         Some(TypedValue {
             expr: CoreExpr::Call {
                 callee: "core.string.concat".to_owned(),
                 type_args: Vec::new(),
                 args: vec![left.expr, right.expr],
             },
-            ty: TypeShape {
-                coord: string_type_coord(max, &canonical),
-                kind: TypeKind::String { max, canonical },
-            },
+            ty,
         })
     }
 
@@ -3990,12 +4008,10 @@ impl<'a> TypeChecker<'a> {
                 }
             }
         }
+        let ty = TypeShape::canonical_structural(TypeKind::Record(field_types))?;
         Some(TypedValue {
             expr: CoreExpr::Record { fields },
-            ty: TypeShape {
-                coord: "anonymous.record".to_owned(),
-                kind: TypeKind::Record(field_types),
-            },
+            ty,
         })
     }
 }
@@ -4076,17 +4092,7 @@ fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
             min: joined_min,
             max: joined_max,
         };
-        let coord = if joined_kind == left.kind {
-            left.coord.clone()
-        } else if joined_kind == right.kind {
-            right.coord.clone()
-        } else {
-            bytes_type_coord(joined_min, joined_max)
-        };
-        return Some(TypeShape {
-            coord,
-            kind: joined_kind,
-        });
+        return joined_shape(left, right, joined_kind);
     }
     if let (
         TypeKind::List {
@@ -4101,20 +4107,14 @@ fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
     {
         let joined_item = compatible_shape(left_item, right_item)?;
         let joined_max = (*left_max).max(*right_max);
-        let coord = if joined_item == **left_item && joined_max == *left_max {
-            left.coord.clone()
-        } else if joined_item == **right_item && joined_max == *right_max {
-            right.coord.clone()
-        } else {
-            list_type_coord(&joined_item.value_type_coord(), joined_max)
-        };
-        return Some(TypeShape {
-            coord,
-            kind: TypeKind::List {
+        return joined_shape(
+            left,
+            right,
+            TypeKind::List {
                 item: Box::new(joined_item),
                 max: joined_max,
             },
-        });
+        );
     }
     if let (TypeKind::Record(left_fields), TypeKind::Record(right_fields)) =
         (&left.kind, &right.kind)
@@ -4127,37 +4127,42 @@ fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
             let right_field = right_fields.get(name)?;
             joined_fields.insert(name.clone(), compatible_shape(left_field, right_field)?);
         }
-        let coord = if &joined_fields == left_fields {
-            left.coord.clone()
-        } else if &joined_fields == right_fields {
-            right.coord.clone()
-        } else {
-            "anonymous.record".to_owned()
-        };
-        return Some(TypeShape {
-            coord,
-            kind: TypeKind::Record(joined_fields),
-        });
+        return joined_shape(left, right, TypeKind::Record(joined_fields));
     }
-    if compatible(left, right) {
-        Some(left.clone())
+    let selected = if compatible(left, right) {
+        left
     } else if compatible(right, left) {
-        Some(right.clone())
+        right
     } else {
-        None
+        return None;
+    };
+    if left.coord == right.coord {
+        Some(selected.clone())
+    } else {
+        TypeShape::canonical_structural(selected.kind.clone())
     }
 }
 
-fn string_value(value: &str) -> TypedValue {
+fn joined_shape(left: &TypeShape, right: &TypeShape, kind: TypeKind) -> Option<TypeShape> {
+    if left.coord == right.coord && left.kind == kind && right.kind == kind {
+        Some(TypeShape {
+            coord: left.coord.clone(),
+            kind,
+            preserve_named_identity: left.preserve_named_identity && right.preserve_named_identity,
+        })
+    } else {
+        TypeShape::canonical_structural(kind)
+    }
+}
+
+fn string_value(value: &str) -> Option<TypedValue> {
     let max = value.len() as u64;
     let canonical = "raw-utf8".to_owned();
-    TypedValue {
+    let kind = TypeKind::String { max, canonical };
+    Some(TypedValue {
         expr: CoreExpr::Const(CoreValue::String(value.to_owned())),
-        ty: TypeShape {
-            coord: string_type_coord(max, &canonical),
-            kind: TypeKind::String { max, canonical },
-        },
-    }
+        ty: TypeShape::canonical_structural(kind)?,
+    })
 }
 
 fn next_local(index: &mut usize, ty: String) -> LocalRef {
@@ -4262,10 +4267,6 @@ fn compare_op(op: BinOp) -> Option<CompareOp> {
     }
 }
 
-fn string_type_coord(max: u64, canonical: &str) -> String {
-    format!("String<max={max},canonical={canonical}>")
-}
-
 fn imported_type_definition_shape(
     definition: &str,
     type_shapes: &BTreeMap<String, TypeShapeFact>,
@@ -4287,166 +4288,104 @@ fn imported_type_definition_shape(
             depth,
         );
     }
-    if definition == "Bool" {
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::Bool,
-        });
-    }
-    if let Some(width) = builtin_integer_width(definition) {
-        return Some(integer_shape(width));
-    }
-    if let Some(inner) = definition
-        .strip_prefix("String<max=")
-        .and_then(|value| value.strip_suffix('>'))
-    {
-        let (max, canonical) = inner.split_once(",canonical=")?;
-        if !matches!(canonical, "raw-utf8" | "unicode-scalar-nfc") {
-            return None;
-        }
-        let max = max.parse().ok()?;
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::String {
-                max,
-                canonical: canonical.to_owned(),
-            },
-        });
-    }
-    if definition.starts_with("Bytes<") {
-        return imported_bytes_type_definition(definition);
-    }
-    if definition.starts_with("Record<") {
-        return imported_record_type_definition_shape(
-            definition,
-            type_shapes,
-            lawpack,
-            resolving,
-            depth,
-        );
-    }
-    if definition.starts_with("List<") {
-        return imported_list_type_definition_shape(
-            definition,
-            type_shapes,
-            lawpack,
-            resolving,
-            depth,
-        );
-    }
-    let fact = type_shapes.get(definition).filter(|fact| {
-        &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
-    })?;
-    if !resolving.insert(definition.to_owned()) {
-        return None;
-    }
-    let mut shape = imported_type_definition_shape(
-        &fact.definition,
-        type_shapes,
-        lawpack,
-        resolving,
-        Some(&fact.coordinate),
-        depth + 1,
-    )?;
-    resolving.remove(definition);
-    shape.coord.clone_from(&fact.coordinate);
-    Some(shape)
-}
-
-fn imported_record_type_definition_shape(
-    definition: &str,
-    type_shapes: &BTreeMap<String, TypeShapeFact>,
-    lawpack: &ResourceRef,
-    resolving: &mut BTreeSet<String>,
-    depth: usize,
-) -> Option<TypeShape> {
-    let inner = definition.strip_prefix("Record<")?.strip_suffix('>')?;
-    let mut fields = BTreeMap::new();
-    for (field, definition) in imported_record_fields(inner)? {
-        if fields
-            .insert(
-                field.to_owned(),
-                imported_type_definition_shape(
-                    definition,
-                    type_shapes,
-                    lawpack,
-                    resolving,
-                    None,
-                    depth + 1,
-                )?,
+    match classify_core_type_reference(definition)? {
+        CoreTypeReference::Intrinsic(core_type) | CoreTypeReference::Structural(core_type) => {
+            imported_core_type_shape(
+                definition,
+                core_type,
+                type_shapes,
+                lawpack,
+                resolving,
+                depth,
             )
-            .is_some()
-        {
-            return None;
+        }
+        CoreTypeReference::Named => {
+            let fact = type_shapes.get(definition).filter(|fact| {
+                &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
+            })?;
+            if !resolving.insert(definition.to_owned()) {
+                return None;
+            }
+            let mut shape = imported_type_definition_shape(
+                &fact.definition,
+                type_shapes,
+                lawpack,
+                resolving,
+                Some(&fact.coordinate),
+                depth + 1,
+            )?;
+            resolving.remove(definition);
+            shape.coord.clone_from(&fact.coordinate);
+            shape.preserve_named_identity = true;
+            Some(shape)
         }
     }
-    Some(TypeShape {
-        coord: definition.to_owned(),
-        kind: TypeKind::Record(fields),
-    })
 }
 
-fn imported_list_type_definition_shape(
+fn imported_core_type_shape(
     definition: &str,
+    core_type: CoreType,
     type_shapes: &BTreeMap<String, TypeShapeFact>,
     lawpack: &ResourceRef,
     resolving: &mut BTreeSet<String>,
     depth: usize,
 ) -> Option<TypeShape> {
-    let inner = definition.strip_prefix("List<")?.strip_suffix('>')?;
-    let (item, max) = inner.rsplit_once(",max=")?;
-    Some(TypeShape {
-        coord: definition.to_owned(),
-        kind: TypeKind::List {
+    let kind = match core_type {
+        CoreType::Bool => TypeKind::Bool,
+        CoreType::Int { width } => TypeKind::Int { width },
+        CoreType::String { max, canonical } => TypeKind::String { max, canonical },
+        CoreType::Bytes { min, max } => TypeKind::Bytes { min, max },
+        CoreType::Record { fields } => TypeKind::Record(
+            fields
+                .into_iter()
+                .map(|(name, definition)| {
+                    Some((
+                        name,
+                        imported_type_definition_shape(
+                            &definition,
+                            type_shapes,
+                            lawpack,
+                            resolving,
+                            None,
+                            depth + 1,
+                        )?,
+                    ))
+                })
+                .collect::<Option<BTreeMap<_, _>>>()?,
+        ),
+        CoreType::List { item, max } => TypeKind::List {
             item: Box::new(imported_type_definition_shape(
-                item,
+                &item,
                 type_shapes,
                 lawpack,
                 resolving,
                 None,
                 depth + 1,
             )?),
-            max: max.parse().ok()?,
+            max,
         },
+        CoreType::ExternalActionRequest { settlement } => TypeKind::ExternalActionRequest {
+            settlement: Box::new(imported_type_definition_shape(
+                &settlement,
+                type_shapes,
+                lawpack,
+                resolving,
+                None,
+                depth + 1,
+            )?),
+        },
+        CoreType::Unit
+        | CoreType::Nominal { .. }
+        | CoreType::Variant { .. }
+        | CoreType::Option { .. }
+        | CoreType::Map { .. }
+        | CoreType::CapabilityRef { .. } => return None,
+    };
+    Some(TypeShape {
+        coord: definition.to_owned(),
+        kind,
+        preserve_named_identity: false,
     })
-}
-
-fn imported_record_fields(definition: &str) -> Option<Vec<(&str, &str)>> {
-    if definition.is_empty() {
-        return Some(Vec::new());
-    }
-    let mut depth = 0_usize;
-    let mut start = 0_usize;
-    let mut fields = Vec::new();
-    for (index, character) in definition.char_indices() {
-        match character {
-            '<' => depth = depth.checked_add(1)?,
-            '>' => depth = depth.checked_sub(1)?,
-            ',' if depth == 0 => {
-                fields.push(imported_record_field(&definition[start..index])?);
-                start = index + character.len_utf8();
-            }
-            _ => {}
-        }
-    }
-    if depth != 0 {
-        return None;
-    }
-    fields.push(imported_record_field(&definition[start..])?);
-    Some(fields)
-}
-
-fn imported_record_field(field: &str) -> Option<(&str, &str)> {
-    let (name, definition) = field.split_once(':')?;
-    let mut characters = name.chars();
-    let first = characters.next()?;
-    if !(first.is_ascii_alphabetic() || first == '_')
-        || !characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
-        || definition.is_empty()
-    {
-        return None;
-    }
-    Some((name, definition))
 }
 
 fn imported_type_shape_closure(
@@ -4463,7 +4402,7 @@ fn collect_imported_type_shape_closure(
     type_shapes: &BTreeMap<String, TypeShapeFact>,
     closure: &mut BTreeMap<String, CoreType>,
 ) {
-    if type_shapes.contains_key(&shape.coord) || matches!(shape.kind, TypeKind::Record(_)) {
+    if type_shapes.contains_key(&shape.coord) {
         closure.insert(shape.coord.clone(), shape.core_type());
     }
     match &shape.kind {
@@ -4507,6 +4446,7 @@ pub(crate) fn imported_type_core_closure(
                 1,
             )?;
             shape.coord.clone_from(&fact.coordinate);
+            shape.preserve_named_identity = true;
             shape
         } else {
             imported_type_definition_shape(
@@ -4521,35 +4461,6 @@ pub(crate) fn imported_type_core_closure(
         closure.extend(imported_type_shape_closure(&shape, type_shapes));
     }
     Some(closure)
-}
-
-fn imported_bytes_type_definition(definition: &str) -> Option<TypeShape> {
-    let (min, max) = if let Some(inner) = definition
-        .strip_prefix("Bytes<min=")
-        .and_then(|value| value.strip_suffix('>'))
-    {
-        let (min, max) = inner.split_once(",max=")?;
-        (Some(min.parse().ok()?), max.parse().ok()?)
-    } else if let Some(exact) = definition
-        .strip_prefix("Bytes<exact=")
-        .and_then(|value| value.strip_suffix('>'))
-        .and_then(|value| value.parse().ok())
-    {
-        (Some(exact), exact)
-    } else {
-        let max = definition
-            .strip_prefix("Bytes<max=")
-            .and_then(|value| value.strip_suffix('>'))
-            .and_then(|value| value.parse().ok())?;
-        (None, max)
-    };
-    if min.is_some_and(|min| min > max) {
-        return None;
-    }
-    Some(TypeShape {
-        coord: definition.to_owned(),
-        kind: TypeKind::Bytes { min, max },
-    })
 }
 
 fn imported_nominal_type_definition_shape(
@@ -4569,19 +4480,8 @@ fn imported_nominal_type_definition_shape(
             contract: contract.to_owned(),
             representation: Box::new(representation),
         },
+        preserve_named_identity: true,
     })
-}
-
-fn bytes_type_coord(min: Option<u64>, max: u64) -> String {
-    match min {
-        Some(min) if min == max => format!("Bytes<exact={max}>"),
-        Some(min) => format!("Bytes<min={min},max={max}>"),
-        None => format!("Bytes<max={max}>"),
-    }
-}
-
-fn list_type_coord(item: &str, max: u64) -> String {
-    format!("List<{item},max={max}>")
 }
 
 fn empty_core_block() -> CoreBlock {
@@ -4617,6 +4517,7 @@ fn integer_shape(width: &str) -> TypeShape {
         kind: TypeKind::Int {
             width: width.to_owned(),
         },
+        preserve_named_identity: false,
     }
 }
 

@@ -7,11 +7,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    core_type_fits, is_lowercase_sha256_review_digest, resolved_core_type, CoreBudget, CoreExpr,
-    CoreExternalActionBudget, CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm,
-    CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType, CoreValue,
-    InputConstraint, LocalRef, ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
-    MAX_CORE_TYPE_DEPTH,
+    core_type_fits, core_type_table_key_is_named, is_lowercase_sha256_review_digest,
+    named_core_type_closure, resolved_core_type, CoreBudget, CoreExpr, CoreExternalActionBudget,
+    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
+    CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, LocalRef,
+    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
 use crate::digest_core_module;
 use crate::lowerability::{LowerabilityEffectStatus, LowerabilityReport, LowerabilityStatus};
@@ -633,6 +633,18 @@ fn validate_core_module(
             detail: "source Core coordinate is empty".to_owned(),
         }];
     }
+    if let Some(reference) = core
+        .types
+        .keys()
+        .find(|reference| !core_type_table_key_is_named(reference))
+    {
+        return vec![TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+            intent: None,
+            node_index: None,
+            detail: format!("Core type table key `{reference}` is not a named type reference"),
+        }];
+    }
     if core.intents.is_empty() {
         return vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::NoTargetSteps,
@@ -1000,12 +1012,15 @@ fn validated_effect_signature_fact<'a>(
             .alias
             .as_deref()
             .is_none_or(|alias| format!("{alias}.{suffix}") != signature.source_coordinate)
-        || !signature.type_closure.iter().all(|(coordinate, expected)| {
-            coordinate_is_below_lawpack(coordinate, &signature.lawpack)
-                && core.types.get(coordinate) == Some(expected)
-        })
-        || resolved_core_type(core, &signature.input_type).is_none()
-        || resolved_core_type(core, &signature.output_type).is_none()
+        || !authenticated_named_type_closure_matches(
+            core,
+            &signature.lawpack,
+            [
+                signature.input_type.as_str(),
+                signature.output_type.as_str(),
+            ],
+            &signature.type_closure,
+        )
     {
         return None;
     }
@@ -1219,10 +1234,15 @@ fn validated_pure_function_fact<'a>(
             .imports
             .iter()
             .any(|import| import.kind == CoreImportKind::Lawpack && import.resource == fact.lawpack)
-        || !fact.type_closure.iter().all(|(coordinate, expected)| {
-            coordinate_is_below_lawpack(coordinate, &fact.lawpack)
-                && core.types.get(coordinate) == Some(expected)
-        })
+        || !authenticated_named_type_closure_matches(
+            core,
+            &fact.lawpack,
+            fact.parameter_types
+                .iter()
+                .map(String::as_str)
+                .chain(std::iter::once(fact.return_type.as_str())),
+            &fact.type_closure,
+        )
     {
         return None;
     }
@@ -1239,6 +1259,18 @@ fn coordinate_is_below_lawpack(coordinate: &str, lawpack: &ResourceRef) -> bool 
         .strip_prefix(&lawpack.coordinate)
         .and_then(|suffix| suffix.strip_prefix('.'))
         .is_some_and(|suffix| !suffix.is_empty())
+}
+
+fn authenticated_named_type_closure_matches<'a>(
+    core: &CoreModule,
+    lawpack: &ResourceRef,
+    roots: impl IntoIterator<Item = &'a str>,
+    expected: &BTreeMap<String, CoreType>,
+) -> bool {
+    named_core_type_closure(core, roots, |coordinate| {
+        coordinate_is_below_lawpack(coordinate, lawpack)
+    })
+    .is_some_and(|actual| actual.eq(expected))
 }
 
 fn expression_string_shape(
@@ -1421,7 +1453,8 @@ fn core_value_fits_declared_type(core: &CoreModule, value: &CoreValue, expected:
         return false;
     };
     match (value, expected) {
-        (CoreValue::Null, CoreType::Option { .. }) | (CoreValue::Bool(_), CoreType::Bool) => true,
+        (CoreValue::Null, CoreType::Unit | CoreType::Option { .. })
+        | (CoreValue::Bool(_), CoreType::Bool) => true,
         (
             CoreValue::Int {
                 width: actual_width,
@@ -1446,6 +1479,7 @@ fn core_value_fits_declared_type(core: &CoreModule, value: &CoreValue, expected:
             | CoreType::ExternalActionRequest { .. }
             | CoreType::Option { .. }
             | CoreType::Bool
+            | CoreType::Unit
             | CoreType::Int { .. }
             | CoreType::String { .. }
             | CoreType::Bytes { .. },
@@ -2145,5 +2179,60 @@ fn unsupported(failures: Vec<TargetLoweringFailure>) -> TargetLoweringReport {
         result_projections: BTreeMap::new(),
         result_projection_failures: BTreeMap::new(),
         failures,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::authenticated_named_type_closure_matches;
+    use crate::core_ir::{CoreModule, CoreType, ResourceRef, CORE_API_VERSION};
+
+    #[test]
+    fn authenticated_named_type_closure_rejects_unrelated_extra_entry() {
+        let lawpack = ResourceRef {
+            coordinate: "hello.echo@1".to_owned(),
+            digest: Some(format!("sha256:{}", "1".repeat(64))),
+        };
+        let parent = "hello.echo@1.Envelope".to_owned();
+        let leaf = "hello.echo@1.Leaf".to_owned();
+        let unrelated = "hello.echo@1.Unrelated".to_owned();
+        let parent_definition = CoreType::Record {
+            fields: BTreeMap::from([("payload".to_owned(), format!("Record<value:{leaf}>"))]),
+        };
+        let leaf_definition = CoreType::Int {
+            width: "U64".to_owned(),
+        };
+        let unrelated_definition = CoreType::Bool;
+        let core = CoreModule {
+            api_version: CORE_API_VERSION.to_owned(),
+            coordinate: "examples.closure@1".to_owned(),
+            imports: Vec::new(),
+            types: BTreeMap::from([
+                (parent.clone(), parent_definition.clone()),
+                (leaf.clone(), leaf_definition.clone()),
+                (unrelated.clone(), unrelated_definition.clone()),
+            ]),
+            intents: BTreeMap::new(),
+            required_core_capabilities: Vec::new(),
+        };
+        let exact = BTreeMap::from([(parent.clone(), parent_definition), (leaf, leaf_definition)]);
+
+        assert!(authenticated_named_type_closure_matches(
+            &core,
+            &lawpack,
+            [parent.as_str()],
+            &exact,
+        ));
+
+        let mut with_unrelated = exact;
+        with_unrelated.insert(unrelated, unrelated_definition);
+        assert!(!authenticated_named_type_closure_matches(
+            &core,
+            &lawpack,
+            [parent.as_str()],
+            &with_unrelated,
+        ));
     }
 }

@@ -12,10 +12,10 @@ use std::str;
 use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBudget,
-    CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef,
+    core_type_table_key_is_named, is_lowercase_sha256_review_digest, parse_core_integer, CompareOp,
+    CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind,
+    CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue,
+    InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
 };
 use crate::target_ir::{
     TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrPureBinding,
@@ -844,6 +844,16 @@ fn target_ir_step_value(step: &TargetIrStep) -> Result<CanonicalValue, Canonical
 }
 
 fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalError> {
+    if let Some(reference) = module
+        .types
+        .keys()
+        .find(|reference| !core_type_table_key_is_named(reference))
+    {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            format!("Core type table key `{reference}` is not a named type reference"),
+        ));
+    }
     let capability_imports = module
         .imports
         .iter()
@@ -993,6 +1003,7 @@ fn hex_value(byte: u8) -> Result<u8, CanonicalError> {
 fn core_type_value(ty: &CoreType) -> Result<CanonicalValue, CanonicalError> {
     let value = match ty {
         CoreType::Bool => map([("kind", text("Bool"))]),
+        CoreType::Unit => map([("kind", text("Unit"))]),
         CoreType::Int { width } => map([("kind", text(width))]),
         CoreType::String { max, canonical } => map([
             ("kind", text("String")),

@@ -1460,6 +1460,7 @@ fn resource_ref_review(resource: &ResourceRef) -> Value {
 
 fn core_type_review(ty: &CoreType) -> Value {
     match ty {
+        CoreType::Unit => json!({ "kind": "unit" }),
         CoreType::Bool => json!({ "kind": "bool" }),
         CoreType::Int { width } => json!({ "kind": "int", "width": width }),
         CoreType::String { max, canonical } => {
@@ -2285,4 +2286,17 @@ fn write_record(writer: &mut dyn Write, record: &Value) {
 
 fn default_directory_extensions() -> Vec<String> {
     vec![".edict".to_owned()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{core_type_review, CoreType};
+
+    #[test]
+    fn core_type_review_is_total_for_unit() {
+        assert_eq!(
+            core_type_review(&CoreType::Unit),
+            serde_json::json!({ "kind": "unit" })
+        );
+    }
 }
