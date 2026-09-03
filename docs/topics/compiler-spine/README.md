@@ -57,11 +57,15 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   bare literals inherit an unambiguous expected width from supported comparison,
   annotation, and record-return contexts. Unconstrained bare literals, overflow,
   negative unsigned values, and cross-width assignments reject in type checking;
-  signed minima are accepted through unary-negative literal folding. Statically
-  bounded `Bytes<max=N>` lowers with its maximum, while `Bytes<exact=N>` lowers
-  as the closed `min=N,max=N` byte interval. Digest-bound imported lawpack type
-  aliases preserve their nominal coordinate while supplying that structural
-  shape.
+  signed minima are accepted through unary-negative literal folding. Byte
+  forms lower while preserving these bounds and identities:
+
+  | Source form | Lowered byte bounds | Preserved Core identity |
+  | --- | --- | --- |
+  | `Bytes<max=N>` | `max=N`, with no minimum | Structural byte type |
+  | `Bytes<exact=N>` | Closed interval `min=N,max=N` | Structural byte type |
+  | Digest-bound imported lawpack alias | Bounds supplied by the exported definition | Nominal exported coordinate |
+
   [CSPINE-REQ-019] [CSPINE-REQ-021] [CSPINE-REQ-033]
 - An explicit basis expression is checked in the pure pre-body environment
   containing the intent parameter, before body locals exist. The typed

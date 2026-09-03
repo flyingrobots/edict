@@ -117,8 +117,12 @@ The current executable Rust surfaces touching lawpacks are:
   deeper than 128 calls, checked without recursive graph traversal.
   [LAWPACKS-REQ-014]
 - Byte constants preserve the complete exported interval during that check:
-  `Bytes<exact=N>` requires exactly `N` bytes, while
-  `Bytes<min=M,max=N>` accepts only lengths from `M` through `N` inclusive.
+
+  | Exported byte form | Accepted length |
+  | --- | --- |
+  | `Bytes<exact=N>` | Exactly `N` bytes |
+  | `Bytes<min=M,max=N>` | From `M` through `N`, inclusive |
+
   [LAWPACKS-REQ-016]
 - The Hello Echo golden generator compiles the exact source and lawpack closure,
   lowers the resulting Core module, and pins canonical Core and Target IR bytes
