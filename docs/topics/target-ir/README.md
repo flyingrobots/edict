@@ -129,7 +129,17 @@ Target lowering checks the canonical coordinate, complete non-generic signature,
 and exact digest-locked owning lawpack against the Core import closure before
 any provider is invoked. Missing or duplicate helper evidence rejects as
 `InvalidCoreIdentity`; fabricated or substituted evidence is unrepresentable at
-the public API. The canonical encoder also
+the public API. Before copying any expression-bearing Core surface, the lowerer
+also traverses intent basis and constraints, requirement predicates and reason
+payloads, effect inputs and obstruction values, and every external-request
+value. Local references must be available in source order, scalar and declared
+types must remain valid, and every executable call must pass the same exact
+lawpack-helper check. The current Core obstruction arm's nonempty,
+zero-argument call-shaped constructor remains an opaque application value in
+that specific position; adding arguments makes it executable and subjects it to
+helper authority. Effect-failure binder types are checked structurally against
+their enclosing effect and failure coordinates. None of these checks recognize
+application nouns or verbs. [TIR-REQ-025] The canonical encoder also
 rejects any local identity produced by more than one pure binding, target step,
 or external-action request, so downstream result references remain unambiguous.
 This records authored basis, preconditions, evaluation limits, pure computation,

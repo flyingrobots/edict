@@ -3982,6 +3982,38 @@ fn record_entries_by_name(entries: &[RecordEntry]) -> Option<BTreeMap<&str, &Rec
 
 fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
     if let (
+        TypeKind::Bytes {
+            min: left_min,
+            max: left_max,
+        },
+        TypeKind::Bytes {
+            min: right_min,
+            max: right_max,
+        },
+    ) = (&left.kind, &right.kind)
+    {
+        let joined_min = match (left_min, right_min) {
+            (Some(left), Some(right)) => Some((*left).min(*right)),
+            (None, _) | (_, None) => None,
+        };
+        let joined_max = (*left_max).max(*right_max);
+        let joined_kind = TypeKind::Bytes {
+            min: joined_min,
+            max: joined_max,
+        };
+        let coord = if joined_kind == left.kind {
+            left.coord.clone()
+        } else if joined_kind == right.kind {
+            right.coord.clone()
+        } else {
+            bytes_type_coord(joined_min, joined_max)
+        };
+        return Some(TypeShape {
+            coord,
+            kind: joined_kind,
+        });
+    }
+    if let (
         TypeKind::List {
             item: left_item,
             max: left_max,

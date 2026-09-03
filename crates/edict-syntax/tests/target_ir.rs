@@ -1032,21 +1032,157 @@ fn unsupported_obstruction_key_rejects_without_artifact() {
 }
 
 #[test]
-fn colliding_target_obstruction_mappings_reject_without_artifact() {
-    let mut core = effectful_core();
+fn every_copied_target_expression_requires_closed_helper_authority() {
+    let unbound_call = || CoreExpr::Call {
+        callee: "hello.echo@1.notExported".to_owned(),
+        type_args: Vec::new(),
+        args: Vec::new(),
+    };
+    let require_core = || {
+        let module = edict_syntax::parse_module(ECHO_CONTINUE_OBSTRUCTED_REQUIRE)
+            .expect("require source parses");
+        compile_to_core(&module, &effectful_context()).expect("require source compiles")
+    };
+
+    let mut basis = require_core();
+    basis.intents.get_mut("t").expect("intent t").basis = Some(unbound_call());
+
+    let mut input_constraint = require_core();
+    input_constraint
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .input_constraints
+        .push(InputConstraint {
+            coordinate: "review.constraint".to_owned(),
+            source: InputConstraintSource::Compiler,
+            predicate: CorePredicate::Compare {
+                op: CompareOp::Eq,
+                left: unbound_call(),
+                right: CoreExpr::Const(CoreValue::Bool(true)),
+            },
+        });
+
+    let mut require_predicate = require_core();
+    let CoreNode::Require { predicate, .. } = &mut require_predicate
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .body
+        .nodes[0]
+    else {
+        panic!("fixture begins with a requirement");
+    };
+    *predicate = CorePredicate::Compare {
+        op: CompareOp::Eq,
+        left: unbound_call(),
+        right: CoreExpr::Const(CoreValue::Bool(true)),
+    };
+
+    let mut require_payload = require_core();
+    let CoreNode::Require { arm, .. } = &mut require_payload
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .body
+        .nodes[0]
+    else {
+        panic!("fixture begins with a requirement");
+    };
+    let reason = match arm {
+        edict_syntax::CoreRequireFailureArm::Terminal { reason }
+        | edict_syntax::CoreRequireFailureArm::ContinueObstructed { reason } => reason,
+    };
+    reason.payload.insert("forged".to_owned(), unbound_call());
+
+    let mut effect_input = effectful_core();
+    let CoreNode::Effect { input, .. } = &mut effect_input
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .body
+        .nodes[0]
+    else {
+        panic!("fixture begins with an effect");
+    };
+    *input = unbound_call();
+
+    let mut obstruction_value = effectful_core();
     let CoreNode::Effect {
         obstruction_map, ..
-    } = &mut core.intents.get_mut("t").expect("intent t").body.nodes[0]
+    } = &mut obstruction_value
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .body
+        .nodes[0]
     else {
-        panic!("fixture begins with an effect node");
+        panic!("fixture begins with an effect");
     };
-    obstruction_map.insert(
-        "alternate".to_owned(),
-        obstruction_map
+    let Some(arm) = obstruction_map.values_mut().next() else {
+        panic!("fixture carries an obstruction arm");
+    };
+    arm.value = CoreExpr::Call {
+        callee: "hello.echo@1.notExported".to_owned(),
+        type_args: Vec::new(),
+        args: vec![CoreExpr::Const(CoreValue::Bool(true))],
+    };
+
+    assert_invalid_copied_expression_cases([
+        ("intent basis", basis),
+        ("input constraint", input_constraint),
+        ("require predicate", require_predicate),
+        ("require payload", require_payload),
+        ("effect input", effect_input),
+        ("obstruction value", obstruction_value),
+    ]);
+}
+
+fn assert_invalid_copied_expression_cases(
+    cases: impl IntoIterator<Item = (&'static str, edict_syntax::CoreModule)>,
+) {
+    for (case, core) in cases {
+        let report = lower_to_target_ir(&core, &echo_facts());
+
+        assert_eq!(report.status, TargetLoweringStatus::Unsupported, "{case}");
+        assert!(report.artifact.is_none(), "{case}");
+        let [failure] = report.failures.as_slice() else {
+            panic!("{case} must reject with one structured failure");
+        };
+        assert_eq!(
+            failure.kind,
+            TargetLoweringFailureKind::InvalidCoreIdentity,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn colliding_target_obstruction_mappings_reject_without_artifact() {
+    let mut core = effectful_core();
+    let intent = core.intents.get_mut("t").expect("intent t");
+    let mut alternate_arm = match &intent.body.nodes[0] {
+        CoreNode::Effect {
+            obstruction_map, ..
+        } => obstruction_map
             .get("rejected")
             .expect("fixture declares rejected obstruction")
             .clone(),
-    );
+        _ => panic!("fixture begins with an effect node"),
+    };
+    alternate_arm.binder = LocalRef {
+        id: "obstruction.1".to_owned(),
+        alpha_name: "$obstruction1".to_owned(),
+        ty: "target.replace.alternate".to_owned(),
+    };
+    intent.body.locals.push(alternate_arm.binder.clone());
+    let CoreNode::Effect {
+        obstruction_map, ..
+    } = &mut intent.body.nodes[0]
+    else {
+        panic!("fixture begins with an effect node");
+    };
+    obstruction_map.insert("alternate".to_owned(), alternate_arm);
     let mut facts = echo_facts();
     facts.effect_lowerings[0]
         .failure_mappings
@@ -1502,6 +1638,7 @@ fn target_lowering_accepts_compiler_type_depth_boundary() {
     let intent = core.intents.get_mut("sayHello").expect("pure intent");
     intent.input.clone_from(&root_type);
     intent.output.clone_from(&root_type);
+    intent.input_constraints.clear();
     let input = intent
         .body
         .locals

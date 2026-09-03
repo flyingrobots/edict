@@ -678,31 +678,28 @@ fn validate_pure_binding_graph(
     }
 
     let mut available = BTreeMap::from([(input.id.as_str(), input)]);
+    if !intent.basis.as_ref().is_none_or(|basis| {
+        expression_has_closed_authority(core, pure_functions, basis, &available)
+    }) || !intent.input_constraints.iter().all(|constraint| {
+        predicate_fits_core_types(core, pure_functions, &constraint.predicate, &available)
+    }) {
+        return Some(invalid_pure_binding(
+            intent_name,
+            None,
+            "intent metadata contains an invalid or unauthorized expression",
+        ));
+    }
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
+        if !node_expressions_have_closed_authority(core, pure_functions, node, &locals, &available)
+        {
+            return Some(invalid_pure_binding(
+                intent_name,
+                Some(node_index),
+                "Core node contains an invalid or unauthorized expression",
+            ));
+        }
         let binding = match node {
-            CoreNode::Let { binding, value } => {
-                if !expression_references_are_available(value, &available) {
-                    return Some(invalid_pure_binding(
-                        intent_name,
-                        Some(node_index),
-                        "pure binding references an undeclared, conflicting, or later local",
-                    ));
-                }
-                if !expression_fits_declared_type(
-                    core,
-                    pure_functions,
-                    value,
-                    &binding.ty,
-                    &available,
-                ) {
-                    return Some(invalid_pure_binding(
-                        intent_name,
-                        Some(node_index),
-                        "pure binding value does not match its declared type",
-                    ));
-                }
-                Some(binding)
-            }
+            CoreNode::Let { binding, .. } => Some(binding),
             CoreNode::Effect { binding, .. } | CoreNode::ExternalActionRequest { binding, .. } => {
                 Some(binding)
             }
@@ -746,6 +743,149 @@ fn validate_pure_binding_graph(
             ),
         )
     })
+}
+
+fn node_expressions_have_closed_authority(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+    node: &CoreNode,
+    locals: &BTreeMap<&str, &LocalRef>,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    match node {
+        CoreNode::Let { binding, value } => {
+            expression_fits_declared_type(core, pure_functions, value, &binding.ty, available)
+        }
+        CoreNode::Require { predicate, arm } => {
+            predicate_fits_core_types(core, pure_functions, predicate, available)
+                && require_arm_expressions_have_closed_authority(
+                    core,
+                    pure_functions,
+                    arm,
+                    available,
+                )
+        }
+        CoreNode::Effect {
+            effect,
+            input,
+            obstruction_map,
+            ..
+        } => {
+            expression_has_closed_authority(core, pure_functions, input, available)
+                && obstruction_map.iter().all(|(failure, arm)| {
+                    locals.get(arm.binder.id.as_str()).copied() == Some(&arm.binder)
+                        && arm.binder.ty == format!("{effect}.{failure}")
+                        && obstruction_value_has_closed_authority(
+                            core,
+                            pure_functions,
+                            &arm.value,
+                            available,
+                        )
+                })
+        }
+        CoreNode::ExternalActionRequest {
+            input_type,
+            input,
+            authority_scope,
+            basis,
+            budget,
+            ..
+        } => {
+            expression_fits_declared_type(core, pure_functions, input, input_type, available)
+                && expression_has_closed_authority(core, pure_functions, authority_scope, available)
+                && expression_has_closed_authority(core, pure_functions, basis, available)
+                && expression_fits_declared_type(
+                    core,
+                    pure_functions,
+                    &budget.max_settlement_bytes,
+                    "U64",
+                    available,
+                )
+                && expression_fits_declared_type(
+                    core,
+                    pure_functions,
+                    &budget.max_attempts,
+                    "U32",
+                    available,
+                )
+        }
+        CoreNode::For { .. } | CoreNode::Branch { .. } => true,
+    }
+}
+
+fn obstruction_value_has_closed_authority(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+    value: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    match value {
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if !callee.is_empty() && type_args.is_empty() && args.is_empty() => true,
+        _ => expression_has_closed_authority(core, pure_functions, value, available),
+    }
+}
+
+fn require_arm_expressions_have_closed_authority(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+    arm: &CoreRequireFailureArm,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    match arm {
+        CoreRequireFailureArm::Terminal { reason }
+        | CoreRequireFailureArm::ContinueObstructed { reason } => reason
+            .payload
+            .values()
+            .all(|value| expression_has_closed_authority(core, pure_functions, value, available)),
+    }
+}
+
+fn expression_has_closed_authority(
+    core: &CoreModule,
+    pure_functions: &[TargetPureFunctionFact],
+    expression: &CoreExpr,
+    available: &BTreeMap<&str, &LocalRef>,
+) -> bool {
+    if !expression_references_are_available(expression, available) {
+        return false;
+    }
+    match expression {
+        CoreExpr::Local { reference } => resolved_core_type(core, &reference.ty).is_some(),
+        CoreExpr::Const(CoreValue::Int { width, value }) => {
+            crate::core_ir::parse_core_integer(width, value).is_some()
+        }
+        CoreExpr::Const(
+            CoreValue::Null | CoreValue::Bool(_) | CoreValue::String(_) | CoreValue::Bytes(_),
+        ) => true,
+        CoreExpr::Record { fields } => fields
+            .values()
+            .all(|value| expression_has_closed_authority(core, pure_functions, value, available)),
+        CoreExpr::Field { .. } => {
+            expression_type_coordinate(core, pure_functions, expression, available).is_some()
+        }
+        CoreExpr::Call { callee, .. } if callee == "core.string.concat" => {
+            expression_string_shape(core, pure_functions, expression, available).is_some()
+        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } => validated_pure_function_fact(core, pure_functions, callee, type_args, args, available)
+            .is_some(),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            predicate_fits_core_types(core, pure_functions, predicate, available)
+                && expression_has_closed_authority(core, pure_functions, then_value, available)
+                && expression_has_closed_authority(core, pure_functions, else_value, available)
+        }
+    }
 }
 
 fn expression_fits_declared_type(

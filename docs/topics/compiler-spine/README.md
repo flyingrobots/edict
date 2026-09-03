@@ -103,8 +103,13 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   calls and bare effect statements still reject with stable compiler stage and
   kind identities before Core lowering. Bare-integer width inference memoizes
   successful yield-block shapes within one compilation, so nested valid
-  branches do not cause exponential repeated checking.
-  [CSPINE-REQ-032]
+  branches do not cause exponential repeated checking. Compatible byte ranges
+  join by independently taking the minimum lower bound and maximum upper bound;
+  for example, `Bytes<min=2,max=4>` and `Bytes<min=3,max=5>` infer
+  `Bytes<min=2,max=5>` in either branch order. This least-upper-bound affects
+  unannotated branch inference only and does not weaken exact or annotated
+  assignment checks.
+  [CSPINE-REQ-032] [CSPINE-REQ-035]
   [CSPINE-REQ-012]
 - Duplicate failure keys in an obstruction map reject with
   `DuplicateObstructionFailure` before Core lowering. [CSPINE-REQ-013]

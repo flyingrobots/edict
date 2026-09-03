@@ -822,6 +822,38 @@ fn compatible_helper_conditionals_are_branch_order_independent() {
     }
 }
 
+#[test]
+fn non_nested_byte_intervals_join_independently_of_branch_order() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: Bytes<max=5>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          let value = if true then helpers.low(input.value) else helpers.high(input.value);\n\
+          return { value };\n\
+        }";
+    let mirrored = source
+        .replace("helpers.low(input.value)", "helpers.swap(input.value)")
+        .replace("helpers.high(input.value)", "helpers.low(input.value)")
+        .replace("helpers.swap(input.value)", "helpers.high(input.value)");
+    assert_ne!(mirrored, source, "mirrored helper order changes source");
+    let context = ranged_byte_helper_context();
+
+    for source in [source.to_owned(), mirrored] {
+        let module = parse_module(&source).expect("ranged byte conditional parses");
+        let core = compile_to_core(&module, &context)
+            .expect("non-nested byte intervals join in either branch order");
+        let CoreNode::Let { binding, .. } = &core.intents.get("t").expect("intent t").body.nodes[0]
+        else {
+            panic!("conditional lowers as one binding");
+        };
+        assert_eq!(binding.ty, "Bytes<min=2,max=5>");
+    }
+}
+
 fn bounded_string_helper_context() -> CompilerContext {
     let lawpack = example_bounds_lawpack();
     pure_context()
@@ -854,6 +886,51 @@ fn bounded_string_helper_context() -> CompilerContext {
                 type_parameters: Vec::new(),
                 parameter_types: vec!["U64".to_owned()],
                 return_type: "example.bounds@1.Long".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        )
+        .with_pure_helper_cost(
+            "helpers.tiny",
+            example_helper_cost(CoreBudget {
+                max_steps: 5,
+                max_allocated_bytes: 8,
+                max_output_bytes: 8,
+            }),
+        )
+}
+
+fn ranged_byte_helper_context() -> CompilerContext {
+    let lawpack = example_bounds_lawpack();
+    pure_context()
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.LowBytes".to_owned(),
+            definition: "Bytes<min=2,max=4>".to_owned(),
+        })
+        .with_type_shape(TypeShapeFact {
+            lawpack: lawpack.clone(),
+            coordinate: "example.bounds@1.HighBytes".to_owned(),
+            definition: "Bytes<min=3,max=5>".to_owned(),
+        })
+        .with_pure_function(
+            "helpers.low",
+            PureFunctionFact {
+                lawpack: lawpack.clone(),
+                coordinate: "example.bounds@1.low".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "example.bounds@1.LowBytes".to_owned(),
+                cost_template: "example.bounds@1.tiny".to_owned(),
+            },
+        )
+        .with_pure_function(
+            "helpers.high",
+            PureFunctionFact {
+                lawpack,
+                coordinate: "example.bounds@1.high".to_owned(),
+                type_parameters: Vec::new(),
+                parameter_types: vec!["U64".to_owned()],
+                return_type: "example.bounds@1.HighBytes".to_owned(),
                 cost_template: "example.bounds@1.tiny".to_owned(),
             },
         )

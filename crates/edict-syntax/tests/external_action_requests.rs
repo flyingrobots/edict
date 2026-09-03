@@ -9,8 +9,8 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_core_module,
     encode_target_ir_artifact, lower_to_target_ir, parse_module, CanonicalValue, CompilerContext,
     CompilerErrorKind, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreNode, CoreValue, LocalRef,
-    ResourceRef, TargetIrLoweringFacts, TargetLoweringStatus, WriteClass, ECHO_DPO_TARGET_PROFILE,
-    ECHO_SPAN_IR_DOMAIN, MAX_CANONICAL_NESTING_DEPTH,
+    ResourceRef, TargetIrLoweringFacts, TargetLoweringFailureKind, TargetLoweringStatus,
+    WriteClass, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN, MAX_CANONICAL_NESTING_DEPTH,
 };
 
 const OPERATION_DIGEST: char = 'a';
@@ -171,6 +171,70 @@ fn lower_source(source: &str) -> (edict_syntax::CoreModule, edict_syntax::Target
     assert_eq!(report.status, TargetLoweringStatus::Lowered);
     assert_eq!(report.failures, Vec::new());
     (core, report.artifact.expect("external-action Target IR"))
+}
+
+#[test]
+fn external_request_expressions_require_closed_helper_authority() {
+    let core = compile_source(&baseline_source());
+    let control = lower_to_target_ir(&core, &target_facts());
+    assert_eq!(control.status, TargetLoweringStatus::Lowered);
+    assert!(control.failures.is_empty());
+    assert!(control.artifact.is_some());
+
+    let unbound_call = || CoreExpr::Call {
+        callee: "workspace.snapshot@1.notExported".to_owned(),
+        type_args: Vec::new(),
+        args: Vec::new(),
+    };
+
+    for field in [
+        "input",
+        "authorityScope",
+        "basis",
+        "maxSettlementBytes",
+        "maxAttempts",
+    ] {
+        let mut changed = core.clone();
+        let request = changed
+            .intents
+            .get_mut("observe")
+            .expect("observe intent")
+            .body
+            .nodes
+            .first_mut()
+            .expect("request node");
+        let CoreNode::ExternalActionRequest {
+            input,
+            authority_scope,
+            basis,
+            budget,
+            ..
+        } = request
+        else {
+            panic!("first node is an external-action request");
+        };
+        match field {
+            "input" => *input = unbound_call(),
+            "authorityScope" => **authority_scope = unbound_call(),
+            "basis" => **basis = unbound_call(),
+            "maxSettlementBytes" => budget.max_settlement_bytes = unbound_call(),
+            "maxAttempts" => budget.max_attempts = unbound_call(),
+            _ => unreachable!("bounded request-expression corpus"),
+        }
+
+        let report = lower_to_target_ir(&changed, &target_facts());
+
+        assert_eq!(report.status, TargetLoweringStatus::Unsupported, "{field}");
+        assert!(report.artifact.is_none(), "{field}");
+        let [failure] = report.failures.as_slice() else {
+            panic!("{field} must reject with one structured failure");
+        };
+        assert_eq!(
+            failure.kind,
+            TargetLoweringFailureKind::InvalidCoreIdentity,
+            "{field}"
+        );
+    }
 }
 
 fn map_field<'a>(value: &'a CanonicalValue, field: &str) -> &'a CanonicalValue {
