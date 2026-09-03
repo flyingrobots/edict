@@ -124,8 +124,10 @@ comparison instead of falling through to literal-only inference. Conditional
 operands also validate their nested predicate and join compatible branch bounds:
 strings preserve the wider compatible maximum, while byte intervals join their
 lower and upper bounds component-wise even when neither interval contains the
-other. Structural Core compatibility shares the compiler's finite 128-level
-type-depth boundary.
+other. When anonymous records have no named type coordinate, conditional
+comparison validation recursively preserves their field structure instead of
+inventing a nominal type. Structural Core compatibility shares the compiler's
+finite 128-level type-depth boundary. [TIR-REQ-027]
 Each non-intrinsic pure call must also match exactly one helper fact projected
 from a validated lawpack export. Those facts expose read-only identity and
 signature accessors but cannot be constructed or mutated by an external caller.
@@ -145,12 +147,13 @@ helper authority. Effect-failure binder types are checked structurally against
 their enclosing effect and failure coordinates. None of these checks recognize
 application nouns or verbs. [TIR-REQ-025] The canonical encoder also
 rejects any local identity produced by more than one pure binding, target step,
-or external-action request, so downstream result references remain unambiguous.
-This records authored basis, preconditions, evaluation limits, pure computation,
-guard dispositions, and success-output semantics without resolving a runtime
-basis, executing Echo, or admitting a bundle. [TIR-REQ-018] [TIR-REQ-019]
-[TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022] [TIR-REQ-023] [TIR-REQ-024]
-[TIR-REQ-026]
+or external-action request, and reserves the implicit application-input identity
+from those explicit producers, so every downstream result reference remains
+unambiguous. This records authored basis, preconditions, evaluation limits, pure
+computation, guard dispositions, and success-output semantics without resolving
+a runtime basis, executing Echo, or admitting a bundle. [TIR-REQ-018]
+[TIR-REQ-019] [TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022] [TIR-REQ-023]
+[TIR-REQ-024] [TIR-REQ-026] [TIR-REQ-028]
 
 When any intent has an explicit basis or pure binding, the Core module imports a
 lawpack, or the Core module imports a requestable capability, the artifact carries a

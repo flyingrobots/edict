@@ -1628,6 +1628,41 @@ fn single_configuration_for_core<'a>(
     effects: &'a BTreeMap<String, edict_syntax::LawpackAdapterEffect>,
     core: &edict_syntax::CoreModule,
 ) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    for (intent_name, intent) in &core.intents {
+        let mut matching_profiles = operation_profiles
+            .iter()
+            .filter(|(_, profile)| profile.core == intent.required_operation_profile);
+        let Some((profile_coordinate, profile)) = matching_profiles.next() else {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core intent `{intent_name}` requires unknown operation profile `{}`",
+                    intent.required_operation_profile
+                ),
+            ));
+        };
+        if matching_profiles.next().is_some() {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core intent `{intent_name}` requires an ambiguous operation profile `{}`",
+                    intent.required_operation_profile
+                ),
+            ));
+        }
+        let required_effects = semantic_effects_required_by_block(core, &intent.body);
+        if let Some(unadvertised_effect) = required_effects
+            .iter()
+            .find(|effect| !profile.semantic_effects.contains(effect))
+        {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core intent `{intent_name}` invokes effect `{unadvertised_effect}` outside operation profile `{profile_coordinate}`"
+                ),
+            ));
+        }
+    }
     let required_core_profiles = core
         .intents
         .values()
@@ -1643,12 +1678,18 @@ fn single_configuration_for_core<'a>(
 }
 
 fn semantic_effects_required_by_core(core: &edict_syntax::CoreModule) -> BTreeSet<String> {
-    let mut source_effects = BTreeSet::new();
-    let mut blocks = core
-        .intents
+    core.intents
         .values()
-        .map(|intent| &intent.body)
-        .collect::<Vec<_>>();
+        .flat_map(|intent| semantic_effects_required_by_block(core, &intent.body))
+        .collect()
+}
+
+fn semantic_effects_required_by_block(
+    core: &edict_syntax::CoreModule,
+    root: &edict_syntax::CoreBlock,
+) -> BTreeSet<String> {
+    let mut source_effects = BTreeSet::new();
+    let mut blocks = vec![root];
     while let Some(block) = blocks.pop() {
         for node in &block.nodes {
             match node {
@@ -3495,6 +3536,79 @@ mod tests {
         );
 
         assert_eq!(actual, &selected_configuration);
+    }
+
+    #[test]
+    fn application_configuration_rejects_effect_outside_selected_profile() {
+        let manifest =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+        let exports =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+        let adapter_bytes =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+        let source = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+        let bundle = test_ok(
+            decode_lawpack_bundle(manifest, exports),
+            "decode Hello Echo lawpack",
+        );
+        let adapter = test_ok(
+            decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter_bytes),
+            "decode Hello Echo adapter",
+        );
+        let module = test_ok(parse_module(source), "parse Hello Echo source");
+        let preparation = test_ok(
+            prepare_lawpack_compilation(&module, &bundle, &adapter),
+            "prepare Hello Echo compilation",
+        );
+        let core = test_ok(
+            compile_to_core(&module, preparation.compiler_context()),
+            "compile Hello Echo Core",
+        );
+
+        let mut operation_profiles = adapter.operation_profiles().clone();
+        let mut effects = adapter.effects().clone();
+        let Some((invoked_coordinate, invoked_effect)) = effects
+            .first_key_value()
+            .map(|(coordinate, effect)| (coordinate.clone(), effect.clone()))
+        else {
+            panic!("Hello Echo invokes one effect");
+        };
+        assert_eq!(
+            semantic_effects_required_by_core(&core),
+            BTreeSet::from([invoked_coordinate.clone()]),
+        );
+        let selected_only_coordinate = "hello.echo@1.selectedOnly".to_owned();
+        let mut selected_only_effect = invoked_effect.clone();
+        selected_only_effect.target_configuration =
+            lawpack_ref("target.selected-profile-configuration@1", 0x49);
+        effects.insert(selected_only_coordinate.clone(), selected_only_effect);
+
+        let Some((selected_coordinate, selected_profile)) = operation_profiles
+            .first_key_value()
+            .map(|(coordinate, profile)| (coordinate.clone(), profile.clone()))
+        else {
+            panic!("Hello Echo selects one profile");
+        };
+        let Some(selected_entry) = operation_profiles.get_mut(&selected_coordinate) else {
+            panic!("selected profile remains present");
+        };
+        selected_entry.semantic_effects = vec![selected_only_coordinate];
+        operation_profiles.insert(
+            "hello.echo@1.otherProfile".to_owned(),
+            LawpackAdapterOperationProfile {
+                core: "continuum.profile.other/v1".to_owned(),
+                semantic_effects: vec![invoked_coordinate],
+                budget_obligation: selected_profile.budget_obligation,
+                target_configuration: selected_profile.target_configuration,
+            },
+        );
+
+        let failure = test_err(
+            single_configuration_for_core(&operation_profiles, &effects, &core),
+            "an invoked effect outside the selected profile must reject",
+        );
+
+        assert_eq!(failure.kind, "InvalidLawpackAdapter");
     }
 
     #[test]

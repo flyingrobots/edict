@@ -1366,6 +1366,30 @@ fn untyped_comparison_operands_fit(
     available: &BTreeMap<&str, &LocalRef>,
 ) -> bool {
     match (left, right) {
+        (
+            CoreExpr::If {
+                predicate,
+                then_value,
+                else_value,
+            },
+            right,
+        ) => {
+            predicate_fits_core_types(core, pure_functions, predicate, available)
+                && comparison_operands_fit(core, pure_functions, then_value, right, available)
+                && comparison_operands_fit(core, pure_functions, else_value, right, available)
+        }
+        (
+            left,
+            CoreExpr::If {
+                predicate,
+                then_value,
+                else_value,
+            },
+        ) => {
+            predicate_fits_core_types(core, pure_functions, predicate, available)
+                && comparison_operands_fit(core, pure_functions, left, then_value, available)
+                && comparison_operands_fit(core, pure_functions, left, else_value, available)
+        }
         (CoreExpr::Const(CoreValue::String(_)), CoreExpr::Const(CoreValue::String(_)))
         | (CoreExpr::Const(CoreValue::Bytes(_)), CoreExpr::Const(CoreValue::Bytes(_))) => true,
         (CoreExpr::Record { fields: left }, CoreExpr::Record { fields: right }) => {

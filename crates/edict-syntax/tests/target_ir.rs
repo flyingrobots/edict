@@ -1657,6 +1657,62 @@ fn compiler_produced_conditional_comparisons_infer_compatible_branch_types() {
 }
 
 #[test]
+fn compiler_produced_conditional_record_comparisons_preserve_structural_compatibility() {
+    let source = "package a.b@1;\n\
+        type Input = { value: String<max=32>, };\n\
+        type Output = { value: String<max=32>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile hello.readOnly\n\
+          basis none\n\
+          budget <= hello.tinyBudget {\n\
+          let value = if (if true then { value: \"a\" } else { value: \"bb\" })\n\
+            == { value: \"ccc\" }\n\
+            then input.value else input.value;\n\
+          return { value };\n\
+        }";
+    let module = edict_syntax::parse_module(source).expect("record comparison parses");
+    let core = compile_to_core(&module, &pure_context())
+        .expect("compatible anonymous record comparison compiles to Core");
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    assert!(report.failures.is_empty());
+    assert!(report.artifact.is_some());
+
+    let mut incompatible = core;
+    let CoreNode::Let {
+        value: CoreExpr::If { predicate, .. },
+        ..
+    } = &mut incompatible
+        .intents
+        .get_mut("t")
+        .expect("intent t")
+        .body
+        .nodes[0]
+    else {
+        panic!("compiler preserves the outer conditional expression");
+    };
+    let CorePredicate::Compare { right, .. } = predicate.as_mut() else {
+        panic!("compiler preserves the record comparison predicate");
+    };
+    let CoreExpr::Record { fields } = right else {
+        panic!("comparison keeps the right anonymous record");
+    };
+    let value = fields.remove("value").expect("record value field");
+    fields.insert("other".to_owned(), value);
+
+    let report = lower_to_target_ir(&incompatible, &pure_target_facts());
+
+    assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+    assert!(report.artifact.is_none());
+    assert_eq!(
+        failure_kinds(&report),
+        vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+    );
+}
+
+#[test]
 fn conditional_byte_interval_comparisons_use_component_wise_join() {
     let mut core = pure_core();
     let intent = core.intents.get_mut("sayHello").expect("pure intent");
@@ -2255,6 +2311,19 @@ fn target_ir_encoder_rejects_local_identity_shared_across_producer_classes() {
     assert_eq!(
         encode_target_ir_artifact(&request_collision)
             .expect_err("an external request cannot reproduce a pure-binding local")
+            .kind(),
+        CanonicalErrorKind::UnsupportedValue
+    );
+}
+
+#[test]
+fn target_ir_encoder_reserves_application_input_local_identity() {
+    let mut artifact = pure_artifact();
+    pure_binding_mut(&mut artifact).binding.id = "arg.0".to_owned();
+
+    assert_eq!(
+        encode_target_ir_artifact(&artifact)
+            .expect_err("a pure binding cannot reproduce the application input local")
             .kind(),
         CanonicalErrorKind::UnsupportedValue
     );

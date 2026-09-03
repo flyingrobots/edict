@@ -662,7 +662,7 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
             ));
         }
     }
-    let mut local_ids = BTreeSet::new();
+    let mut local_ids = BTreeSet::from(["arg.0"]);
     for (producer, binding) in intent
         .pure_bindings
         .iter()
@@ -684,7 +684,7 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
             return Err(CanonicalError::new(
                 CanonicalErrorKind::UnsupportedValue,
                 format!(
-                    "Target IR {producer} local id `{}` is empty or duplicated across producers",
+                    "Target IR {producer} local id `{}` is empty or duplicated across the application input and producers",
                     binding.id
                 ),
             ));
