@@ -73,7 +73,17 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   basis resolution or admission. [CSPINE-REQ-020]
 - Core lowering produces structured in-memory `CoreModule` values with module
   coordinate, imports, types, intents, input constraints, budgets, locals,
-  ordered nodes, and result expressions. [CSPINE-REQ-003]
+  ordered nodes, and result expressions. Public `lower_core` runs the shared
+  whole-module Core type-integrity judgment before returning, so a caller-built
+  `TypedModule` cannot bypass the source checker and publish invalid Core.
+  [CSPINE-REQ-003] [CSPINE-REQ-037]
+- A source type declaration must classify under Core's shared reference grammar
+  as a named identity. Intrinsics and reserved bare structural constructors
+  reject with `ReservedTypeIdentity` at the declaration span. Compiler-produced
+  `core.types` contains authored local named definitions and exact authenticated
+  imported named definitions only: record fields live in their parent
+  definition, and no `Type.field` or equivalent scratch entry enters Core
+  identity. [CSPINE-REQ-037]
 - Resolver/type-checker failures use stable `CompilerErrorKind` and
   `CompilerStage` values. Tests assert those structured values rather than
   diagnostic prose. [CSPINE-REQ-007]
@@ -113,6 +123,10 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   [CSPINE-REQ-012]
 - Duplicate failure keys in an obstruction map reject with
   `DuplicateObstructionFailure` before Core lowering. [CSPINE-REQ-013]
+- Each obstruction binder for an imported effect receives the exact
+  authenticated failure-payload type from the effect signature closure. The
+  compiler does not synthesize an `effect.failure` coordinate; a missing or
+  unresolved payload root rejects before Core. [CSPINE-REQ-037]
 - Lowerable `require ... else <obstruction>` statements lower to Core
   terminal require-failure arms, and
   `require ... else continue obstructed { reason: ... }` lowers to a preserved

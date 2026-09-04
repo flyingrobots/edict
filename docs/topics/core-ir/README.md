@@ -27,6 +27,13 @@ container rejects with stable `CanonicalErrorKind::NestingLimitExceeded`. The
 human walkthrough is [canonical-encoding.md](./canonical-encoding.md).
 [COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014] [COREIR-REQ-017]
 
+The crate also exposes `validate_core_module_type_integrity`. A raw
+`CoreModule` is an untrusted candidate; successful validation returns an opaque
+borrowed `ValidatedCoreModule` witness plus stable structured failure kinds and
+paths on rejection. Canonical encoding and digesting, Target lowering, and
+public result-projection emission and verification all cross this same border
+before producing or accepting an artifact. [COREIR-REQ-027]
+
 The Core module schema does not embed reviewed golden bytes, exact Core
 digests, target IR, or admission bundles. Reviewed Core artifact fixtures live
 outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
@@ -61,6 +68,14 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   remains compatible downstream instead of encountering an earlier Target IR
   cutoff; deeper or cyclic caller-built shapes still fail closed.
   [COREIR-REQ-024]
+- The whole-module type-integrity judgment eagerly validates every named
+  definition, including unused hash-significant definitions, and recursively
+  validates every type reference carried by intents, local tables, producers,
+  binders, expressions, requests, predicates, reasons, nested blocks, and
+  results. It enforces supported scalar definitions, canonical and resolvable
+  children, nominal contract equality, cycle policy, and the shared depth
+  ceiling. Malformed raw Core therefore cannot mint canonical bytes, a digest,
+  Target IR, or projection authority. [COREIR-REQ-027]
 - Core expressions and predicates are separate schema families. Expressions
   compute values; predicates express boolean obligations and input constraints.
   [COREIR-REQ-003]

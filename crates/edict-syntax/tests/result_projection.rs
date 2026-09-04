@@ -512,6 +512,49 @@ fn mutated_target_core_closure_fails_closed() {
 }
 
 #[test]
+fn malformed_raw_core_cannot_emit_or_verify_a_result_projection() {
+    let (core, facts) = hello_echo_core_and_facts();
+    let baseline = lower_to_target_ir(&core, &facts);
+    let baseline_target = baseline.artifact.expect("baseline Target IR");
+    let projection = emit_result_projection(&core, &baseline_target, "createGreeting")
+        .expect("baseline projection emits");
+
+    let mut malformed = core;
+    malformed.types.insert(
+        "UnusedInvalid".to_owned(),
+        CoreType::List {
+            item: "List<U64,max=01>".to_owned(),
+            max: 1,
+        },
+    );
+    let target = lower_to_target_ir(&malformed, &facts)
+        .artifact
+        .unwrap_or_else(|| baseline_target.clone());
+
+    let emitted = emit_result_projection(&malformed, &target, "createGreeting");
+    let verified = verify_result_projection(
+        &malformed,
+        &target,
+        "createGreeting",
+        projection.canonical_bytes(),
+        projection.digest(),
+    );
+    let (Err(emission_failure), Err(verification_failure)) = (emitted, verified) else {
+        panic!("malformed raw Core crossed a public projection boundary");
+    };
+    assert_eq!(
+        emission_failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(emission_failure.subject(), "types.UnusedInvalid.item");
+    assert_eq!(
+        verification_failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(verification_failure.subject(), "types.UnusedInvalid.item");
+}
+
+#[test]
 fn mutated_target_lawpack_closure_fails_closed() {
     let (core, mut target) = hello_echo();
     target
@@ -645,10 +688,59 @@ fn exact_byte_projection_refuses_a_max_only_source() {
     emit_result_projection(&core, &target, "greet")
         .expect("exact byte source fits exact byte output");
 
-    core.types.insert(
-        "Input.name".to_owned(),
-        CoreType::Bytes { min: None, max: 16 },
+    let Some(CoreType::Record { fields }) = core.types.get_mut("Input") else {
+        panic!("Input remains a named record");
+    };
+    assert_eq!(
+        fields.insert("name".to_owned(), "Bytes<max=16>".to_owned()),
+        Some("Bytes<exact=16>".to_owned())
     );
+    assert!(!core.types.contains_key("Input.name"));
+    let core_intent = core.intents.get_mut("greet").expect("greet Core intent");
+    let CoreNode::Let { binding, .. } = core_intent
+        .body
+        .nodes
+        .last_mut()
+        .expect("greet has a message binding")
+    else {
+        panic!("greet ends with its message binding");
+    };
+    binding.ty = "Bytes<max=16>".to_owned();
+    let binding_id = binding.id.clone();
+    core_intent
+        .body
+        .locals
+        .iter_mut()
+        .find(|local| local.id == binding_id)
+        .expect("message binding appears in the local table")
+        .ty = "Bytes<max=16>".to_owned();
+    let CoreExpr::Record { fields } = &mut core_intent.body.result else {
+        panic!("greet returns a record");
+    };
+    let CoreExpr::Local { reference } = fields.get_mut("message").expect("message result field")
+    else {
+        panic!("message result is the pure binding");
+    };
+    reference.ty = "Bytes<max=16>".to_owned();
+
+    let target_intent = target
+        .intents
+        .get_mut("greet")
+        .expect("greet Target intent");
+    target_intent
+        .pure_bindings
+        .last_mut()
+        .expect("Target greet has a message binding")
+        .binding
+        .ty = "Bytes<max=16>".to_owned();
+    let CoreExpr::Record { fields } = &mut target_intent.result else {
+        panic!("Target greet returns a record");
+    };
+    let CoreExpr::Local { reference } = fields.get_mut("message").expect("Target message field")
+    else {
+        panic!("Target message result is the pure binding");
+    };
+    reference.ty = "Bytes<max=16>".to_owned();
     repin_target_core(&core, &mut target);
     let failure = emit_result_projection(&core, &target, "greet")
         .expect_err("max-only source cannot prove exact-byte output");

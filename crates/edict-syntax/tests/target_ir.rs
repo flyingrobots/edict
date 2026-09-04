@@ -394,6 +394,46 @@ fn assert_invalid_core_identity(report: &edict_syntax::TargetLoweringReport, cas
     );
 }
 
+fn mutate_first_local_reference_type(expression: &mut CoreExpr, ty: &str) -> bool {
+    match expression {
+        CoreExpr::Local { reference } => {
+            ty.clone_into(&mut reference.ty);
+            true
+        }
+        CoreExpr::Const(_) => false,
+        CoreExpr::Record { fields } => fields
+            .values_mut()
+            .any(|value| mutate_first_local_reference_type(value, ty)),
+        CoreExpr::Field { base, .. } => mutate_first_local_reference_type(base, ty),
+        CoreExpr::Call { args, .. } => args
+            .iter_mut()
+            .any(|value| mutate_first_local_reference_type(value, ty)),
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            mutate_first_predicate_local_type(predicate, ty)
+                || mutate_first_local_reference_type(then_value, ty)
+                || mutate_first_local_reference_type(else_value, ty)
+        }
+    }
+}
+
+fn mutate_first_predicate_local_type(predicate: &mut CorePredicate, ty: &str) -> bool {
+    match predicate {
+        CorePredicate::True | CorePredicate::False => false,
+        CorePredicate::Not(value) => mutate_first_predicate_local_type(value, ty),
+        CorePredicate::All(values) | CorePredicate::Any(values) => values
+            .iter_mut()
+            .any(|value| mutate_first_predicate_local_type(value, ty)),
+        CorePredicate::Compare { left, right, .. } => {
+            mutate_first_local_reference_type(left, ty)
+                || mutate_first_local_reference_type(right, ty)
+        }
+    }
+}
+
 fn replace_first_let_binding_type(core: &mut CoreModule, from: &str, to: &str) {
     let intent = core.intents.get_mut("t").expect("intent t");
     let binding_id = {
@@ -1208,7 +1248,7 @@ fn colliding_target_obstruction_mappings_reject_without_artifact() {
     alternate_arm.binder = LocalRef {
         id: "obstruction.1".to_owned(),
         alpha_name: "$obstruction1".to_owned(),
-        ty: "target.replace.alternate".to_owned(),
+        ty: "Unit".to_owned(),
     };
     intent.body.locals.push(alternate_arm.binder.clone());
     let CoreNode::Effect {
@@ -2851,6 +2891,316 @@ fn empty_local_identities_reject_across_all_producer_classes() {
     ] {
         assert_invalid_core_identity(&report, case);
     }
+}
+
+type CoreTypeIntegrityCase = (&'static str, CoreModule, TargetIrLoweringFacts);
+
+const INVALID: &str = "List<U64,max=01>";
+
+fn set_invalid_core_type(target: &mut String) {
+    INVALID.clone_into(target);
+}
+
+fn pure_core_type_integrity_cases() -> Vec<CoreTypeIntegrityCase> {
+    let mut cases = Vec::new();
+
+    let mut unused_definition = pure_core();
+    unused_definition.types.insert(
+        "UnusedInvalid".to_owned(),
+        CoreType::List {
+            item: INVALID.to_owned(),
+            max: 1,
+        },
+    );
+    cases.push(("unused definition", unused_definition, pure_target_facts()));
+
+    let mut intent_input = pure_core();
+    set_invalid_core_type(
+        &mut intent_input
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .input,
+    );
+    cases.push(("intent input", intent_input, pure_target_facts()));
+
+    let mut intent_output = pure_core();
+    set_invalid_core_type(
+        &mut intent_output
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .output,
+    );
+    cases.push(("intent output", intent_output, pure_target_facts()));
+
+    let mut local_table = pure_core();
+    set_invalid_core_type(
+        &mut local_table
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .body
+            .locals[0]
+            .ty,
+    );
+    cases.push(("complete local table", local_table, pure_target_facts()));
+
+    let mut let_binding = pure_core();
+    let CoreNode::Let { binding, .. } = &mut let_binding
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("pure fixture begins with a let");
+    };
+    set_invalid_core_type(&mut binding.ty);
+    cases.push(("let binding", let_binding, pure_target_facts()));
+
+    let mut predicate_local = pure_core();
+    assert!(mutate_first_predicate_local_type(
+        &mut predicate_local
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .input_constraints[0]
+            .predicate,
+        INVALID,
+    ));
+    cases.push((
+        "predicate local reference",
+        predicate_local,
+        pure_target_facts(),
+    ));
+
+    let mut call_type_argument = pure_core();
+    let CoreNode::Let {
+        value: CoreExpr::Call { type_args, .. },
+        ..
+    } = &mut call_type_argument
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("pure fixture begins with a call-valued let");
+    };
+    type_args.push(INVALID.to_owned());
+    cases.push((
+        "call type argument",
+        call_type_argument,
+        pure_target_facts(),
+    ));
+
+    let mut result_local = pure_core();
+    assert!(mutate_first_local_reference_type(
+        &mut result_local
+            .intents
+            .get_mut("sayHello")
+            .expect("pure intent")
+            .body
+            .result,
+        INVALID,
+    ));
+    cases.push(("result local reference", result_local, pure_target_facts()));
+
+    cases
+}
+
+fn effect_and_request_type_integrity_cases() -> Vec<CoreTypeIntegrityCase> {
+    let mut cases = Vec::new();
+
+    let mut effect_binding = effectful_core();
+    let CoreNode::Effect { binding, .. } = &mut effect_binding
+        .intents
+        .get_mut("t")
+        .expect("effect intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("effect fixture begins with an effect");
+    };
+    set_invalid_core_type(&mut binding.ty);
+    cases.push(("effect binding", effect_binding, echo_facts()));
+
+    let mut effect_input = effectful_core();
+    let CoreNode::Effect { input, .. } = &mut effect_input
+        .intents
+        .get_mut("t")
+        .expect("effect intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("effect fixture begins with an effect");
+    };
+    assert!(mutate_first_local_reference_type(input, INVALID));
+    cases.push(("effect input local", effect_input, echo_facts()));
+
+    let mut obstruction_binder = effectful_core();
+    let CoreNode::Effect {
+        obstruction_map, ..
+    } = &mut obstruction_binder
+        .intents
+        .get_mut("t")
+        .expect("effect intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("effect fixture begins with an effect");
+    };
+    set_invalid_core_type(
+        &mut obstruction_map
+            .values_mut()
+            .next()
+            .expect("effect obstruction arm")
+            .binder
+            .ty,
+    );
+    cases.push(("obstruction binder", obstruction_binder, echo_facts()));
+
+    for surface in ["binding", "input type", "settlement type"] {
+        let mut request = workspace_request_core();
+        let CoreNode::ExternalActionRequest {
+            binding,
+            input_type,
+            settlement_type,
+            ..
+        } = &mut request
+            .intents
+            .get_mut("observe")
+            .expect("request intent")
+            .body
+            .nodes[0]
+        else {
+            panic!("request fixture begins with a request");
+        };
+        match surface {
+            "binding" => set_invalid_core_type(&mut binding.ty),
+            "input type" => set_invalid_core_type(input_type),
+            "settlement type" => set_invalid_core_type(settlement_type),
+            _ => unreachable!(),
+        }
+        cases.push((surface, request, pure_target_facts()));
+    }
+
+    cases
+}
+
+fn control_flow_type_integrity_cases() -> Vec<CoreTypeIntegrityCase> {
+    let mut cases = Vec::new();
+
+    let branch_source = "package integrity.branch@1;\n\
+        type Input = { value: U64, };\n\
+        type Output = { value: U64, };\n\
+        intent choose(input: Input) returns Output\n\
+          profile hello.readOnly\n\
+          basis none\n\
+          budget <= hello.tinyBudget {\n\
+          let value = if true { yield input.value; } else { yield input.value; };\n\
+          return { value };\n\
+        }";
+    let module = edict_syntax::parse_module(branch_source).expect("branch source parses");
+    let mut branch = compile_to_core(&module, &pure_context()).expect("branch source compiles");
+    let CoreNode::Branch {
+        binding: Some(binding),
+        ..
+    } = &mut branch
+        .intents
+        .get_mut("choose")
+        .expect("branch intent")
+        .body
+        .nodes[0]
+    else {
+        panic!("branch fixture begins with a bound branch");
+    };
+    set_invalid_core_type(&mut binding.ty);
+    cases.push(("branch binding", branch, pure_target_facts()));
+
+    let mut loop_binder = pure_core();
+    loop_binder
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .nodes = vec![CoreNode::For {
+        binder: LocalRef {
+            id: "loop.item".to_owned(),
+            alpha_name: "$loopItem".to_owned(),
+            ty: INVALID.to_owned(),
+        },
+        iter: CoreExpr::Const(CoreValue::Null),
+        bound: CoreBound::Literal(1),
+        body: CoreBlock {
+            locals: Vec::new(),
+            nodes: Vec::new(),
+            result: CoreExpr::Const(CoreValue::Null),
+        },
+    }];
+    cases.push(("loop binder", loop_binder, pure_target_facts()));
+
+    let mut nested_loop = pure_core();
+    nested_loop
+        .intents
+        .get_mut("sayHello")
+        .expect("pure intent")
+        .body
+        .nodes = vec![CoreNode::For {
+        binder: LocalRef {
+            id: "loop.item".to_owned(),
+            alpha_name: "$loopItem".to_owned(),
+            ty: "U64".to_owned(),
+        },
+        iter: CoreExpr::Const(CoreValue::Null),
+        bound: CoreBound::Literal(1),
+        body: CoreBlock {
+            locals: vec![LocalRef {
+                id: "loop.local".to_owned(),
+                alpha_name: "$loopLocal".to_owned(),
+                ty: INVALID.to_owned(),
+            }],
+            nodes: Vec::new(),
+            result: CoreExpr::Local {
+                reference: LocalRef {
+                    id: "loop.local".to_owned(),
+                    alpha_name: "$loopLocal".to_owned(),
+                    ty: INVALID.to_owned(),
+                },
+            },
+        },
+    }];
+    cases.push(("nested loop block", nested_loop, pure_target_facts()));
+
+    cases
+}
+
+#[test]
+fn every_core_type_bearing_surface_crosses_one_integrity_boundary() {
+    let mut cases = pure_core_type_integrity_cases();
+    cases.extend(effect_and_request_type_integrity_cases());
+    cases.extend(control_flow_type_integrity_cases());
+
+    let mut wrong = Vec::new();
+    for (case, core, facts) in cases {
+        let report = lower_to_target_ir(&core, &facts);
+        if report.status != TargetLoweringStatus::Unsupported
+            || report.artifact.is_some()
+            || failure_kinds(&report) != vec![TargetLoweringFailureKind::InvalidCoreIdentity]
+        {
+            wrong.push((
+                case,
+                report.status,
+                report.artifact.is_some(),
+                failure_kinds(&report),
+            ));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "Core integrity was bypassed or classified inconsistently: {wrong:#?}"
+    );
 }
 
 #[test]

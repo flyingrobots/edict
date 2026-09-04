@@ -7,7 +7,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-use crate::core_ir::{core_type_fits, CORE_APPLICATION_INPUT_LOCAL_ID};
+use crate::core_ir::{
+    core_type_fits, validate_core_module_type_integrity, CORE_APPLICATION_INPUT_LOCAL_ID,
+};
 use crate::{
     decode_canonical_cbor, digest_canonical_artifact, encode_canonical_cbor, CanonicalValue,
     CoreDigest, CoreExpr, CoreIntent, CoreModule, CoreNode, CoreType, LocalRef, TargetIrArtifact,
@@ -187,6 +189,14 @@ pub fn emit_result_projection(
     target_ir: &TargetIrArtifact,
     intent_name: &str,
 ) -> Result<ResultProjectionArtifact, ResultProjectionFailure> {
+    let validated_core =
+        validate_core_module_type_integrity(core).map_err(|integrity_failure| {
+            failure(
+                ResultProjectionFailureKind::CoreTargetMismatch,
+                integrity_failure.path(),
+            )
+        })?;
+    let core = validated_core.module();
     let expected_semantic_closure =
         crate::target_ir::semantic_closure_for_core(core).map_err(|error| {
             failure(
@@ -251,6 +261,14 @@ pub fn verify_result_projection(
     canonical_bytes: &[u8],
     claimed_digest: CoreDigest,
 ) -> Result<VerifiedResultProjection, ResultProjectionFailure> {
+    let validated_core =
+        validate_core_module_type_integrity(core).map_err(|integrity_failure| {
+            failure(
+                ResultProjectionFailureKind::CoreTargetMismatch,
+                integrity_failure.path(),
+            )
+        })?;
+    let core = validated_core.module();
     let projection = decode_result_projection(canonical_bytes)?;
     let digest = digest_canonical_artifact(RESULT_PROJECTION_DIGEST_DOMAIN, canonical_bytes)
         .map_err(|error| {

@@ -134,10 +134,11 @@ pub use contract_bundle::{
     SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
-    CompareOp, CoreBlock, CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
-    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
-    CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
+    validate_core_module_type_integrity, CompareOp, CoreBlock, CoreBound, CoreBudget, CoreExpr,
+    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule, CoreNode,
+    CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType,
+    CoreTypeIntegrityFailure, CoreTypeIntegrityFailureKind, CoreValue, InputConstraint,
+    InputConstraintSource, LocalRef, ResourceRef, ValidatedCoreModule, CORE_API_VERSION,
 };
 pub use highlight::{highlight_source, HighlightRole, HighlightToken};
 pub use lawpack::{

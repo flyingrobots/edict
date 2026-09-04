@@ -22,7 +22,8 @@ use crate::lawpack::{
 };
 use crate::lowerability::WriteClass;
 use crate::target_ir::{
-    TargetEffectLowering, TargetEffectSignatureFact, TargetIrLoweringFacts, TargetPureFunctionFact,
+    TargetEffectLowering, TargetEffectSignatureFact, TargetEffectSignatureShape,
+    TargetIrLoweringFacts, TargetPureFunctionFact,
 };
 
 /// Canonical direct lawpack-adapter ABI supported by this crate.
@@ -363,7 +364,13 @@ fn project_effects(
                     "matching exported semantic effect",
                 ))
             })?;
-        let signature_types = vec![exported.input_type.clone(), exported.output_type.clone()];
+        let mut signature_types = vec![exported.input_type.clone(), exported.output_type.clone()];
+        signature_types.extend(
+            exported
+                .effect_failures
+                .values()
+                .map(|failure| failure.payload_type.clone()),
+        );
         let type_closure = imported_type_core_closure(&signature_types, type_shapes, lawpack)
             .ok_or_else(|| {
                 one(failure(
@@ -372,6 +379,11 @@ fn project_effects(
                     "input and output types in the exact exported bounded type closure",
                 ))
             })?;
+        let failure_payload_types = exported
+            .effect_failures
+            .iter()
+            .map(|(failure, definition)| (failure.clone(), definition.payload_type.clone()))
+            .collect::<BTreeMap<_, _>>();
         compiler_context = compiler_context
             .with_effect_write_class(local_effect.clone(), effect.write_class.clone())
             .with_effect_signature(
@@ -382,15 +394,19 @@ fn project_effects(
                     type_parameters: exported.type_parameters.clone(),
                     input_type: exported.input_type.clone(),
                     output_type: exported.output_type.clone(),
+                    failure_payload_types: failure_payload_types.clone(),
                 },
             );
         effect_signatures.push(TargetEffectSignatureFact::from_validated_lawpack_export(
             lawpack.clone(),
             local_effect.clone(),
-            exported.coordinate.clone(),
-            exported.type_parameters.clone(),
-            exported.input_type.clone(),
-            exported.output_type.clone(),
+            TargetEffectSignatureShape {
+                coordinate: exported.coordinate.clone(),
+                type_parameters: exported.type_parameters.clone(),
+                input_type: exported.input_type.clone(),
+                output_type: exported.output_type.clone(),
+                failure_payload_types,
+            },
             type_closure,
         ));
         obstruction_coordinates.extend(effect.failure_mappings.values().cloned());

@@ -1031,6 +1031,15 @@ fn causal_cell_exports() -> CanonicalValue {
                         text("Record<key:String<max=64,canonical=raw-utf8>>"),
                     ),
                 ]),
+                map([
+                    ("coordinate", text("causal.cell@1.ExistingValue")),
+                    (
+                        "definition",
+                        text(
+                            "Record<key:String<max=64,canonical=raw-utf8>,value:String<max=256,canonical=raw-utf8>>",
+                        ),
+                    ),
+                ]),
             ]),
         ),
         ("constants", CanonicalValue::Array(Vec::new())),
@@ -1128,6 +1137,26 @@ intent createGreeting(input: cell.CreateInput) returns GreetingCreated
     )
 }
 
+fn hello_echo_source_for_bundle(
+    root: &Path,
+    bundle: &ValidatedLawpackBundle,
+) -> Result<String, String> {
+    let checked_in_source = fs::read_to_string(root.join(CREATE_GREETING_SOURCE))
+        .map_err(|error| format!("read {CREATE_GREETING_SOURCE}: {error}"))?;
+    let prior_manifest_digest = fs::read_to_string(root.join(MANIFEST_DIGEST))
+        .map_err(|error| format!("read {MANIFEST_DIGEST}: {error}"))?;
+    let prior_manifest_digest = prior_manifest_digest.trim();
+    if checked_in_source.matches(prior_manifest_digest).count() != 1 {
+        return Err(format!(
+            "{CREATE_GREETING_SOURCE}: expected exactly one import pinned to {prior_manifest_digest}"
+        ));
+    }
+    Ok(checked_in_source.replace(
+        prior_manifest_digest,
+        &bundle.manifest_digest_review_string(),
+    ))
+}
+
 fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>)>, String> {
     let exports_value = hello_echo_exports();
     let exports_bytes = encode_canonical_cbor(&exports_value)
@@ -1149,8 +1178,7 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
         .map_err(|failures| format!("validate Hello Echo lawpack: {failures:?}"))?;
     let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
         .map_err(|failures| format!("validate Hello Echo adapter: {failures:?}"))?;
-    let source = fs::read_to_string(root.join(CREATE_GREETING_SOURCE))
-        .map_err(|error| format!("read {CREATE_GREETING_SOURCE}: {error}"))?;
+    let source = hello_echo_source_for_bundle(root, &bundle)?;
     let module = parse_module(&source)
         .map_err(|error| format!("parse {CREATE_GREETING_SOURCE}: {error:?}"))?;
     let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
@@ -1209,6 +1237,7 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             TARGET_CONFIGURATION_DIGEST,
             target_configuration_digest.into_bytes(),
         ),
+        (CREATE_GREETING_SOURCE, source.into_bytes()),
         (CREATE_GREETING_CORE_CBOR, core_bytes),
         (CREATE_GREETING_CORE_DIGEST, core_digest.into_bytes()),
         (CREATE_GREETING_TARGET_IR_CBOR, target_ir_bytes),
@@ -1395,6 +1424,15 @@ fn hello_echo_exports() -> CanonicalValue {
                     (
                         "definition",
                         text("Record<key:String<max=64,canonical=raw-utf8>>"),
+                    ),
+                ]),
+                map([
+                    ("coordinate", text("hello.echo@1.ExistingGreeting")),
+                    (
+                        "definition",
+                        text(
+                            "Record<key:String<max=64,canonical=raw-utf8>,message:String<max=256,canonical=raw-utf8>>",
+                        ),
                     ),
                 ]),
             ]),

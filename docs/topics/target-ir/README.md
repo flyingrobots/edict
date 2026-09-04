@@ -33,6 +33,15 @@ The `edict_syntax` crate exposes `lower_to_target_ir`,
 not read target facts from ambient environment, discover runtimes, or fetch
 registries.
 
+Because `CoreModule` is publicly constructible, Target first invokes the shared
+whole-module Core type-integrity judgment and consumes its opaque borrowed
+witness. Invalid or unresolved type references in any named definition—even an
+unused one—or any type-bearing graph surface return one
+`InvalidCoreIdentity` failure before Target or result-projection artifact
+construction. Target-specific graph and authority checks run only after that
+shared border succeeds. The built-in provider compatibility seam delegates to
+this exact path. [TIR-REQ-044]
+
 The crate also exposes `BuiltinTargetLowerer`, `BuiltinLowererRequest`, and
 `lower_with_builtin_lowerer` as an
 in-process migration seam for the existing Echo and git-warp lowerers. Selection

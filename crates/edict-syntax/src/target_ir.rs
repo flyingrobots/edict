@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
-    core_type_fits, core_type_table_key_is_named, is_lowercase_sha256_review_digest,
-    named_core_type_closure, resolved_core_type, CoreBudget, CoreExpr, CoreExternalActionBudget,
+    core_type_fits, is_lowercase_sha256_review_digest, named_core_type_closure, resolved_core_type,
+    validate_core_module_type_integrity, CoreBudget, CoreExpr, CoreExternalActionBudget,
     CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
     CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, LocalRef,
     ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
@@ -152,26 +152,33 @@ pub struct TargetEffectSignatureFact {
     type_parameters: Vec<String>,
     input_type: String,
     output_type: String,
+    failure_payload_types: BTreeMap<String, String>,
     type_closure: BTreeMap<String, CoreType>,
+}
+
+pub(crate) struct TargetEffectSignatureShape {
+    pub(crate) coordinate: String,
+    pub(crate) type_parameters: Vec<String>,
+    pub(crate) input_type: String,
+    pub(crate) output_type: String,
+    pub(crate) failure_payload_types: BTreeMap<String, String>,
 }
 
 impl TargetEffectSignatureFact {
     pub(crate) fn from_validated_lawpack_export(
         lawpack: ResourceRef,
         source_coordinate: String,
-        coordinate: String,
-        type_parameters: Vec<String>,
-        input_type: String,
-        output_type: String,
+        shape: TargetEffectSignatureShape,
         type_closure: BTreeMap<String, CoreType>,
     ) -> Self {
         Self {
             lawpack,
             source_coordinate,
-            coordinate,
-            type_parameters,
-            input_type,
-            output_type,
+            coordinate: shape.coordinate,
+            type_parameters: shape.type_parameters,
+            input_type: shape.input_type,
+            output_type: shape.output_type,
+            failure_payload_types: shape.failure_payload_types,
             type_closure,
         }
     }
@@ -408,6 +415,18 @@ pub fn lower_to_target_ir(
         Ok(target_selection) => target_selection,
         Err(failures) => return unsupported(failures),
     };
+    let validated_core = match validate_core_module_type_integrity(core) {
+        Ok(validated) => validated,
+        Err(failure) => {
+            return unsupported(vec![TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+                intent: None,
+                node_index: None,
+                detail: failure.path().to_owned(),
+            }]);
+        }
+    };
+    let core = validated_core.module();
     let core_failures = validate_core_module(core, &facts.pure_functions, &facts.effect_signatures);
     if !core_failures.is_empty() {
         return unsupported(core_failures);
@@ -631,18 +650,6 @@ fn validate_core_module(
             intent: None,
             node_index: None,
             detail: "source Core coordinate is empty".to_owned(),
-        }];
-    }
-    if let Some(reference) = core
-        .types
-        .keys()
-        .find(|reference| !core_type_table_key_is_named(reference))
-    {
-        return vec![TargetLoweringFailure {
-            kind: TargetLoweringFailureKind::InvalidCoreIdentity,
-            intent: None,
-            node_index: None,
-            detail: format!("Core type table key `{reference}` is not a named type reference"),
         }];
     }
     if core.intents.is_empty() {
@@ -909,7 +916,13 @@ fn node_expressions_have_closed_authority(
                 available,
             ) && obstruction_map.iter().all(|(failure, arm)| {
                 locals.get(arm.binder.id.as_str()).copied() == Some(&arm.binder)
-                    && arm.binder.ty == format!("{effect}.{failure}")
+                    && obstruction_binder_matches_effect_signature(
+                        core,
+                        effect_signatures,
+                        effect,
+                        failure,
+                        &arm.binder,
+                    )
                     && obstruction_value_has_closed_authority(
                         core,
                         pure_functions,
@@ -960,6 +973,24 @@ fn node_expressions_have_closed_authority(
     }
 }
 
+fn obstruction_binder_matches_effect_signature(
+    core: &CoreModule,
+    effect_signatures: &[TargetEffectSignatureFact],
+    effect: &str,
+    failure: &str,
+    binder: &LocalRef,
+) -> bool {
+    if lawpack_import_for_source_coordinate(core, effect).is_none() {
+        return binder.ty == "Unit";
+    }
+    validated_effect_signature_fact(core, effect_signatures, effect).is_some_and(|signature| {
+        signature
+            .failure_payload_types
+            .get(failure)
+            .is_some_and(|payload_type| payload_type == &binder.ty)
+    })
+}
+
 fn effect_signature_matches_core(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
@@ -999,6 +1030,10 @@ fn validated_effect_signature_fact<'a>(
         || !signature.type_parameters.is_empty()
         || signature.input_type.is_empty()
         || signature.output_type.is_empty()
+        || signature
+            .failure_payload_types
+            .values()
+            .any(String::is_empty)
     {
         return None;
     }
@@ -1015,10 +1050,9 @@ fn validated_effect_signature_fact<'a>(
         || !authenticated_named_type_closure_matches(
             core,
             &signature.lawpack,
-            [
-                signature.input_type.as_str(),
-                signature.output_type.as_str(),
-            ],
+            std::iter::once(signature.input_type.as_str())
+                .chain(std::iter::once(signature.output_type.as_str()))
+                .chain(signature.failure_payload_types.values().map(String::as_str)),
             &signature.type_closure,
         )
     {

@@ -114,7 +114,8 @@ The current executable Rust surfaces touching lawpacks are:
   through the source import's exact alias and manifest digest.
   [LAWPACKS-REQ-008] [LAWPACKS-REQ-017] [LAWPACKS-REQ-018]
 - The same preparation resolves every non-generic semantic effect's input and
-  output through its exact exported bounded type closure. Imported definitions
+  output plus every declared failure payload through its exact exported bounded
+  type closure. Imported definitions
   may use bounded scalars, lists, aliases, nominals, and records such as
   `Record<key:String<max=64,canonical=raw-utf8>>`. Source compilation checks the
   argument and result annotation for early diagnostics. A private Target fact
@@ -123,7 +124,10 @@ The current executable Rust surfaces touching lawpacks are:
   that map or claim lawpack ownership,
   so caller-authored Core cannot substitute a value, binding type, or type
   definition while retaining a trusted coordinate. Missing or unresolvable
-  signature types refuse during preparation. [LAWPACKS-REQ-020]
+  signature types refuse during preparation. Each source obstruction binder is
+  typed from the exact authenticated failure-payload root; a failure name never
+  becomes a synthetic `effect.failure` Core identity. [LAWPACKS-REQ-020]
+  [LAWPACKS-REQ-023]
 - The same preparation boundary projects each exported pure-helper signature
   through the source alias. Source calls type-check against that signature and
   lower under the canonical exported coordinate, while the exact imported

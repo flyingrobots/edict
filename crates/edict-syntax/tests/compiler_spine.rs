@@ -327,17 +327,7 @@ fn bounded_hello_compiles_to_initial_core() {
         }
     );
 
-    let name_ty = core
-        .types
-        .get("HelloInput.name")
-        .expect("lowered field type");
-    assert_eq!(
-        name_ty,
-        &CoreType::String {
-            max: 256,
-            canonical: "raw-utf8".to_owned(),
-        }
-    );
+    assert!(!core.types.contains_key("HelloInput.name"));
 
     let intent = core.intents.get("sayHello").expect("sayHello intent");
     assert_eq!(
@@ -507,31 +497,35 @@ fn exact_bytes_and_imported_nominal_aliases_preserve_core_identity() {
     let module = parse_module(source).expect("exact-byte source parses");
     let exact_core = compile_to_core(&module, &context).expect("exact-byte source compiles");
 
-    for field in ["Input.raw", "Output.raw"] {
+    for parent in ["Input", "Output"] {
+        let Some(CoreType::Record { fields }) = exact_core.types.get(parent) else {
+            panic!("{parent} must remain a named record");
+        };
         assert_eq!(
-            exact_core.types.get(field),
-            Some(&CoreType::Bytes {
-                min: Some(32),
-                max: 32,
-            }),
-            "{field} must retain the exact byte interval",
+            fields.get("raw").map(String::as_str),
+            Some("Bytes<exact=32>")
         );
-    }
-    for (field, contract) in [
-        ("Input.bufferId", "example.bounds@1.BufferId"),
-        ("Output.bufferId", "example.bounds@1.BufferId"),
-        ("Input.basisHeadId", "example.bounds@1.HeadId"),
-        ("Output.basisHeadId", "example.bounds@1.HeadId"),
-        ("example.bounds@1.BufferId", "example.bounds@1.BufferId"),
-        ("example.bounds@1.HeadId", "example.bounds@1.HeadId"),
-    ] {
         assert_eq!(
-            exact_core.types.get(field),
+            fields.get("bufferId").map(String::as_str),
+            Some("example.bounds@1.BufferId")
+        );
+        assert_eq!(
+            fields.get("basisHeadId").map(String::as_str),
+            Some("example.bounds@1.HeadId")
+        );
+        assert!(exact_core
+            .types
+            .keys()
+            .all(|coordinate| !coordinate.starts_with(&format!("{parent}."))));
+    }
+    for contract in ["example.bounds@1.BufferId", "example.bounds@1.HeadId"] {
+        assert_eq!(
+            exact_core.types.get(contract),
             Some(&CoreType::Nominal {
                 contract: contract.to_owned(),
                 representation: "Bytes<exact=32>".to_owned(),
             }),
-            "{field} must retain the nominal contract and its exact storage ABI",
+            "{contract} must retain its exact nominal storage ABI",
         );
     }
 
@@ -566,11 +560,18 @@ fn imported_nominal_byte_interval_preserves_both_bounds() {
     let core = compile_to_core(&module, &context)
         .expect("bounded imported byte interval compiles to Core");
 
-    for coordinate in [
-        "Input.slice",
-        "Output.slice",
-        "example.bounds@1.BoundedSlice",
-    ] {
+    for parent in ["Input", "Output"] {
+        let Some(CoreType::Record { fields }) = core.types.get(parent) else {
+            panic!("{parent} must remain a named record");
+        };
+        assert_eq!(
+            fields.get("slice").map(String::as_str),
+            Some("example.bounds@1.BoundedSlice")
+        );
+        assert!(!core.types.contains_key(&format!("{parent}.slice")));
+    }
+    let coordinate = "example.bounds@1.BoundedSlice";
+    {
         assert_eq!(
             core.types.get(coordinate),
             Some(&CoreType::Nominal {
@@ -1762,7 +1763,7 @@ fn effectful_write_intent_lowers_to_typed_core_from_file_backed_facts() {
         .expect("failure arm is keyed by low-level failure coordinate");
     assert_eq!(arm.binder.id, "obstruction.0");
     assert_eq!(arm.binder.alpha_name, "$obstruction0");
-    assert_eq!(arm.binder.ty, "target.replace.rejected");
+    assert_eq!(arm.binder.ty, "Unit");
     assert!(matches!(
         &arm.value,
         CoreExpr::Call { callee, args, .. } if callee == "domain.WriteRejected" && args.is_empty()
@@ -2571,6 +2572,120 @@ fn duplicate_obstruction_reason_payload_fields_reject_before_core_digest() {
             .map(|err| err.kind)
             .collect::<Vec<CompilerErrorKind>>(),
         vec![CompilerErrorKind::DuplicateObstructionPayloadField]
+    );
+}
+
+#[test]
+fn source_type_declarations_require_core_named_identities() {
+    for name in [
+        "Unit",
+        "Bool",
+        "I8",
+        "I16",
+        "I32",
+        "I64",
+        "U8",
+        "U16",
+        "U32",
+        "U64",
+        "String",
+        "Bytes",
+        "Record",
+        "Option",
+        "List",
+        "Map",
+        "CapabilityRef",
+        "ExternalActionRequest",
+        "Nominal",
+        "Variant",
+    ] {
+        let source = format!("package reserved.identity@1;\ntype {name} = {{ value: U64, }};\n");
+        let module = parse_module(&source).expect("reserved declaration source parses");
+        let edict_syntax::ast::Decl::Type(declaration) = &module.decls[0] else {
+            panic!("fixture starts with a type declaration");
+        };
+        let failures = compile_to_core(&module, &CompilerContext::new())
+            .expect_err("reserved Core identity must reject during source compilation");
+
+        let [failure] = failures.as_slice() else {
+            panic!("{name} must reject with one structured compiler failure: {failures:?}");
+        };
+        assert_eq!(failure.stage, CompilerStage::TypeCheck, "{name}");
+        assert_eq!(
+            failure.kind,
+            CompilerErrorKind::ReservedTypeIdentity,
+            "{name}"
+        );
+        assert_eq!(failure.span, declaration.span, "{name}");
+    }
+
+    let ordinary = parse_module("package reserved.identity@1;\ntype Widget = { value: U64, };\n")
+        .expect("ordinary declaration source parses");
+    compile_to_core(&ordinary, &CompilerContext::new())
+        .expect("ordinary named declaration compiles");
+}
+
+#[test]
+fn public_lower_core_rejects_an_invalid_typed_type_table() {
+    let module = parse_module(BOUNDED_HELLO).expect("bounded source parses");
+    let resolved = resolve_module(&module, &hello_context()).expect("bounded source resolves");
+    let mut typed = type_check(&resolved).expect("bounded source type-checks");
+    typed.types.insert("Bool".to_owned(), CoreType::Bool);
+
+    let failures = lower_core(&typed).expect_err("invalid typed Core table must reject");
+    let [failure] = failures.as_slice() else {
+        panic!("lower_core must return one structured failure: {failures:?}");
+    };
+    assert_eq!(failure.stage, CompilerStage::LowerCore);
+    assert_eq!(failure.kind, CompilerErrorKind::InvalidCoreTypeIntegrity);
+}
+
+#[test]
+fn compiler_emits_authored_and_authenticated_named_types_without_field_scratch_entries() {
+    let source = "package a.b@1;\n\
+        use lawpack example.bounds@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as bounds;\n\
+        type Nested = { leaf: U64, };\n\
+        type Input = { scalar: U64, text: String<max=8>, nested: Nested, values: List<String<max=4>, max=2>, foreign: bounds.BufferId, };\n\
+        type Output = { scalar: U64, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          return { scalar: input.scalar };\n\
+        }";
+    let lawpack = example_bounds_lawpack();
+    let context = pure_context().with_type_shape(TypeShapeFact {
+        lawpack,
+        coordinate: "example.bounds@1.BufferId".to_owned(),
+        definition: "Nominal<Bytes<exact=32>>".to_owned(),
+    });
+    let module = parse_module(source).expect("mixed record source parses");
+    let core = compile_to_core(&module, &context).expect("mixed record source compiles");
+
+    assert_eq!(
+        core.types.keys().map(String::as_str).collect::<Vec<_>>(),
+        vec!["Input", "Nested", "Output", "example.bounds@1.BufferId"]
+    );
+    let CoreType::Record { fields } = &core.types["Input"] else {
+        panic!("Input is a named record");
+    };
+    assert_eq!(fields["scalar"], "U64");
+    assert_eq!(fields["text"], "String<max=8,canonical=raw-utf8>");
+    assert_eq!(fields["nested"], "a.b@1.Nested");
+    assert_eq!(
+        fields["values"],
+        "List<String<max=4,canonical=raw-utf8>,max=2>"
+    );
+    assert_eq!(fields["foreign"], "example.bounds@1.BufferId");
+
+    let changed_module = parse_module(&source.replace("String<max=8>", "String<max=9>"))
+        .expect("field mutation source parses");
+    let changed =
+        compile_to_core(&changed_module, &context).expect("field mutation source compiles");
+    assert_ne!(core.types["Input"], changed.types["Input"]);
+    assert_ne!(
+        digest_core_module(&core).expect("baseline Core digests"),
+        digest_core_module(&changed).expect("changed Core digests")
     );
 }
 

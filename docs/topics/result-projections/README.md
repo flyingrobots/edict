@@ -13,6 +13,8 @@ executing the operation or introducing host-authored application semantics.
 `edict_syntax::emit_result_projection` accepts one exact Core module, its
 matching Target IR artifact, and an intent name. The emitter requires:
 
+- the raw Core candidate to pass the authoritative whole-module type-integrity
+  judgment, including unused definitions and every graph-carried reference;
 - the intent to exist in both artifacts;
 - the Target IR semantic closure to equal the complete Core-derived closure,
   including the exact Core coordinate, canonical Core digest, and every
@@ -28,7 +30,7 @@ matching Target IR artifact, and an intent name. The emitter requires:
   Core effect node.
 
 No projection is emitted after any of these checks fails.
-[RESULT-PROJ-REQ-001] [RESULT-PROJ-REQ-005]
+[RESULT-PROJ-REQ-001] [RESULT-PROJ-REQ-005] [RESULT-PROJ-REQ-011]
 
 `lower_to_target_ir` invokes that emitter for every intent in an artifact with
 an explicit semantic closure and returns the artifacts in
@@ -95,21 +97,23 @@ Echo bytes and digest under
 `verify_result_projection` does not call the emitter or trust the claimed
 digest. It:
 
-1. decodes the claimed bytes through the canonical CBOR decoder;
-2. validates the closed projection shape and representation bounds;
-3. reproduces the exact canonical bytes;
-4. recomputes the domain-framed identity;
-5. independently reconstructs and compares the complete Core-derived semantic
+1. obtains the same whole-module Core type-integrity witness required by the
+   emitter, canonical encoder, and Target lowerer;
+2. decodes the claimed bytes through the canonical CBOR decoder;
+3. validates the closed projection shape and representation bounds;
+4. reproduces the exact canonical bytes;
+5. recomputes the domain-framed identity;
+6. independently reconstructs and compares the complete Core-derived semantic
    closure;
-6. independently rebuilds the source-ordered Core-to-Target pure-binding and
+7. independently rebuilds the source-ordered Core-to-Target pure-binding and
    capability-step correspondence;
-7. reconstructs a Core result expression from the projection; and
-8. requires that reconstruction to equal both the authored Core result and the
+8. reconstructs a Core result expression from the projection; and
+9. requires that reconstruction to equal both the authored Core result and the
    matching Target IR result.
 
 Only then does the API return `VerifiedResultProjection`, whose fields are
 available through read-only accessors. [RESULT-PROJ-REQ-005]
-[RESULT-PROJ-REQ-006]
+[RESULT-PROJ-REQ-006] [RESULT-PROJ-REQ-011]
 
 The public application-build path requires exactly one compiler-emitted
 projection for its current singleton executable-operation slice, runs the

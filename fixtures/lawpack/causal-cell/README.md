@@ -14,8 +14,8 @@ create-if-absent capability and its typed `AlreadyExists` obstruction.
 - `manifest.cbor` and `manifest.sha256` bind the canonical
   `edict.lawpack/v1` manifest.
 - `exports.cbor` and `exports.sha256` bind the portable capability surface,
-  including bounded `CreateInput` and `CreateReceipt` record definitions used
-  by the effect signature.
+  including bounded `CreateInput`, `CreateReceipt`, and `ExistingValue` record
+  definitions used by the effect and failure-payload signatures.
 - `adapter.cbor` and `adapter.sha256` bind the direct declarative Echo adapter.
 - `echo-operation-configuration.cbor` and its digest sidecar bind the generic
   Echo operation-lowering configuration.

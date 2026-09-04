@@ -7,7 +7,8 @@ a fake transport, or a handwritten Echo executable package.
 - `manifest.cbor` is the canonical lawpack manifest.
 - `manifest.sha256` is its `edict.lawpack/v1` domain-framed identity.
 - `exports.cbor` is the canonical export surface, including authenticated
-  bounded record definitions for `CreateGreetingInput` and `GreetingReceipt`.
+  bounded record definitions for `CreateGreetingInput`, `GreetingReceipt`, and
+  the `ExistingGreeting` failure payload.
 - `exports.sha256` is its `hello.echo.exports/v1` domain-framed identity.
 - `adapter.cbor` is the canonical direct declarative Echo target adapter.
 - `adapter.sha256` is its manifest-bound domain-framed identity.

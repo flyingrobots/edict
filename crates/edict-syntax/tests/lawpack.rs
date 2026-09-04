@@ -56,6 +56,7 @@ fn hello_echo_lawpack_bundle_loads_from_exact_canonical_resources() {
         vec![
             "hello.echo@1.CreateGreetingInput",
             "hello.echo@1.GreetingReceipt",
+            "hello.echo@1.ExistingGreeting",
         ]
     );
     assert_eq!(bundle.exports().effects.len(), 1);
@@ -177,6 +178,87 @@ fn lawpack_effect_signature_requires_exported_type_closure() {
 
     let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
         .expect_err("an unresolved effect signature must not become compiler or Target facts");
+
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::InvalidShape]
+    );
+}
+
+#[test]
+fn effect_failure_payload_types_enter_the_authenticated_signature_closure() {
+    const PAYLOAD: &str = "hello.echo@1.ExistingGreeting";
+    let complete_exports = hello_echo_exports();
+    let complete_bundle = decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES)
+        .expect("load payload-complete lawpack");
+    let complete_module =
+        parse_module(CREATE_GREETING_SOURCE).expect("payload-complete effect source parses");
+    let complete_adapter = decode_lawpack_adapter(&complete_bundle, "echo.dpo@1", ADAPTER_BYTES)
+        .expect("load exact adapter");
+    let preparation =
+        prepare_lawpack_compilation(&complete_module, &complete_bundle, &complete_adapter)
+            .expect("authenticate the complete effect signature");
+
+    let core = compile_to_core(&complete_module, preparation.compiler_context())
+        .expect("compile an obstruction binder from its payload signature");
+    assert!(core.types.contains_key(PAYLOAD));
+    let effect = core
+        .intents
+        .get("createGreeting")
+        .expect("createGreeting intent")
+        .body
+        .nodes
+        .first()
+        .expect("effect node");
+    let CoreNode::Effect {
+        obstruction_map, ..
+    } = effect
+    else {
+        panic!("first createGreeting node is the effect");
+    };
+    assert_eq!(
+        obstruction_map
+            .get("alreadyExists")
+            .expect("alreadyExists arm")
+            .binder
+            .ty,
+        PAYLOAD
+    );
+    assert!(!core
+        .types
+        .contains_key("hello.createGreeting.alreadyExists"));
+
+    let mut missing_exports = complete_exports;
+    assert_eq!(
+        array_mut(field_mut(&mut missing_exports, "types")).pop(),
+        Some(map([
+            ("coordinate", text(PAYLOAD)),
+            (
+                "definition",
+                text(
+                    "Record<key:String<max=64,canonical=raw-utf8>,message:String<max=256,canonical=raw-utf8>>",
+                ),
+            ),
+        ]))
+    );
+    let missing_exports_bytes =
+        encode_canonical_cbor(&missing_exports).expect("encode payload-incomplete exports");
+    let missing_manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &missing_exports));
+    let missing_manifest_bytes =
+        encode_canonical_cbor(&missing_manifest).expect("encode payload-incomplete manifest");
+    let missing_bundle = decode_lawpack_bundle(&missing_manifest_bytes, &missing_exports_bytes)
+        .expect("load shape-valid lawpack with unresolved failure payload");
+    let missing_source = CREATE_GREETING_SOURCE.replace(
+        MANIFEST_DIGEST.trim(),
+        &missing_bundle.manifest_digest_review_string(),
+    );
+    let missing_module =
+        parse_module(&missing_source).expect("payload-incomplete effect source parses");
+    let missing_adapter = decode_lawpack_adapter(&missing_bundle, "echo.dpo@1", ADAPTER_BYTES)
+        .expect("load exact adapter");
+
+    let failures = prepare_lawpack_compilation(&missing_module, &missing_bundle, &missing_adapter)
+        .expect_err("an unresolved failure payload must not become compiler or Target facts");
 
     assert_eq!(
         adapter_failure_kinds(&failures),
@@ -1169,15 +1251,20 @@ fn lawpack_pure_helper_signature_rejects_type_definition_substitution() {
     let mut core = compile_to_core(&module, preparation.compiler_context())
         .expect("compile helper over an exact exported bounded type");
 
-    for coordinate in ["hello.echo@1.GreetingKey", "Input.value", "Output.value"] {
-        let prior = core
-            .types
-            .insert(coordinate.to_owned(), edict_syntax::CoreType::Bool);
-        assert!(
-            matches!(prior, Some(edict_syntax::CoreType::String { .. })),
-            "{coordinate} starts as the authenticated bounded string"
+    for parent in ["Input", "Output"] {
+        let Some(edict_syntax::CoreType::Record { fields }) = core.types.get(parent) else {
+            panic!("{parent} starts as a named record");
+        };
+        assert_eq!(
+            fields.get("value").map(String::as_str),
+            Some("String<max=32,canonical=raw-utf8>")
         );
     }
+    let prior = core.types.insert(
+        "hello.echo@1.GreetingKey".to_owned(),
+        edict_syntax::CoreType::Bool,
+    );
+    assert!(matches!(prior, Some(edict_syntax::CoreType::String { .. })));
 
     let target = lower_to_target_ir(&core, preparation.target_ir_facts());
 

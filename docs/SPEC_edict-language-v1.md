@@ -711,6 +711,12 @@ one is rejected as dead handling. Effects with **two or more** unmapped
 domain-mappable coordinates must use the full `else { failure => ... }` mapping
 form, one arm per coordinate (`EDICT-LANG-OBSTRUCT-EXHAUST-001`).
 
+Every declared effect failure payload type is an authenticated root of the
+same exact named-type closure as the effect input and output. A source
+obstruction binder has that resolved payload type; the failure name selects an
+arm but does not synthesize a new `effect.failure` Core type identity. Missing
+or unresolved payload roots reject before compiler or Target facts exist.
+
 Low-level failure classes are classified before source mapping:
 
 - `domainMappable`: author may translate to a typed domain obstruction;
@@ -1551,6 +1557,11 @@ Semantic grammar rules:
 
 - `migration` and `projection` are reserved words for future syntax and are not
   accepted as v1 declarations.
+- A source `type` declaration name MUST classify as a `core-named-type-ref`
+  before type checking may publish it. Intrinsic identities and reserved bare
+  structural constructor names therefore reject at the declaration span; the
+  Core reference classifier, rather than a second source-only reserved-name
+  list, owns this judgment.
 - Keywords are reserved as bare identifiers but may appear after `.` as member
   names, so `ref.ensure(value)` and `history.event.record(value)` are legal.
 - Each intent may contain at most one `profile`, one `implements`, one `basis`,
@@ -2232,6 +2243,14 @@ The module `coordinate` is its nonempty semantic identity. Imports are exact
 resource references. The `types` map contains named definitions only; its key
 restriction is defined below. Intents are keyed by their module-local names.
 
+A publicly constructible raw `CoreModule` is an untrusted candidate, not proof
+that the module satisfies Core type semantics. The authoritative whole-module
+type-integrity judgment validates the complete candidate and, on success,
+mints an opaque `ValidatedCoreModule` witness borrowing those exact immutable
+contents. Canonical encoding and digesting, Target lowering, and
+result-projection emission or verification MUST obtain that witness before
+they can mint or verify an artifact.
+
 ### Core Type Reference Identity
 
 Every `core-type-ref` MUST classify without consulting mutable module state as
@@ -2302,6 +2321,25 @@ identity reject before canonical Core bytes or Target artifacts exist. Named
 records and other named structural definitions remain valid: their key carries
 provenance, while the referenced children carry either structure or further
 names.
+
+The whole-module type-integrity judgment eagerly validates every named
+definition, including valid unused authored definitions that intentionally
+remain hash-significant. It validates each supported scalar invariant, record
+field and variant shape, composite child reference, nominal contract equality,
+named resolution, recursion depth, and the v1 cycle policy. It also traverses
+every type reference carried by intents, complete local tables, producer and
+obstruction binders, expressions and call type arguments, external requests,
+predicates, reasons, nested branches and loops, and result expressions. A
+malformed unused definition is still part of the Core digest preimage and does
+not escape this judgment merely because Target execution cannot reach it.
+
+Compiler-produced `core.types` entries consist only of independently authored
+local named definitions and exact authenticated imported named definitions.
+Field positions are represented inside their owning record definition; a
+compiler-created `Type.field`, `effect.failure`, `anonymous.record`, or other
+scratch coordinate is not a Core named definition and MUST NOT enter canonical
+Core identity. The parent definition and its canonical child references carry
+the complete field meaning.
 
 Nominal contracts are named identities. A nominal definition's `contract` MUST
 equal its table key, and its representation is another `core-type-ref`. A

@@ -1271,6 +1271,8 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::UnrequestableExternalOperation => "UnrequestableExternalOperation",
         CompilerErrorKind::DuplicateObstructionFailure => "DuplicateObstructionFailure",
         CompilerErrorKind::DuplicateObstructionPayloadField => "DuplicateObstructionPayloadField",
+        CompilerErrorKind::ReservedTypeIdentity => "ReservedTypeIdentity",
+        CompilerErrorKind::InvalidCoreTypeIntegrity => "InvalidCoreTypeIntegrity",
     }
 }
 

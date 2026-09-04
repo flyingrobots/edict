@@ -12,10 +12,10 @@ use std::str;
 use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
-    core_type_table_key_is_named, is_lowercase_sha256_review_digest, parse_core_integer, CompareOp,
-    CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind,
-    CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue,
-    InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
+    is_lowercase_sha256_review_digest, parse_core_integer, validate_core_module_type_integrity,
+    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
+    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CorePredicate, CoreType,
+    CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
 };
 use crate::target_ir::{
     TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrPureBinding,
@@ -844,16 +844,10 @@ fn target_ir_step_value(step: &TargetIrStep) -> Result<CanonicalValue, Canonical
 }
 
 fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalError> {
-    if let Some(reference) = module
-        .types
-        .keys()
-        .find(|reference| !core_type_table_key_is_named(reference))
-    {
-        return Err(CanonicalError::new(
-            CanonicalErrorKind::UnsupportedValue,
-            format!("Core type table key `{reference}` is not a named type reference"),
-        ));
-    }
+    let validated = validate_core_module_type_integrity(module).map_err(|failure| {
+        CanonicalError::new(CanonicalErrorKind::UnsupportedValue, failure.to_string())
+    })?;
+    let module = validated.module();
     let capability_imports = module
         .imports
         .iter()

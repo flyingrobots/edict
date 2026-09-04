@@ -4,7 +4,8 @@
 //! for source-to-Core lowering tests. They are not canonical bytes, do not carry
 //! their own digest, and do not represent target IR or admission bundles.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +28,72 @@ pub struct CoreModule {
     pub intents: BTreeMap<String, CoreIntent>,
     pub required_core_capabilities: Vec<String>,
 }
+
+/// A Core module proven to satisfy the complete type-integrity judgment.
+///
+/// The witness borrows the raw module, so safe Rust cannot mutate that module
+/// while a consumer relies on the validation result. Its private field makes
+/// successful [`validate_core_module_type_integrity`] the only constructor.
+#[derive(Debug, Clone, Copy)]
+pub struct ValidatedCoreModule<'a> {
+    module: &'a CoreModule,
+}
+
+impl<'a> ValidatedCoreModule<'a> {
+    /// Borrow the exact raw module covered by this witness.
+    #[must_use]
+    pub const fn module(self) -> &'a CoreModule {
+        self.module
+    }
+}
+
+/// Stable categories for whole-module Core type-integrity failures.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoreTypeIntegrityFailureKind {
+    InvalidTableKey,
+    InvalidDefinition,
+    InvalidReference,
+    UnresolvedNamedReference,
+    NominalContractMismatch,
+    ReferenceCycle,
+    DepthExceeded,
+}
+
+/// Structured failure from the authoritative Core type-integrity judgment.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreTypeIntegrityFailure {
+    kind: CoreTypeIntegrityFailureKind,
+    path: String,
+}
+
+impl CoreTypeIntegrityFailure {
+    /// Return the stable rejection category.
+    #[must_use]
+    pub const fn kind(&self) -> CoreTypeIntegrityFailureKind {
+        self.kind
+    }
+
+    /// Return the structural path to the invalid definition or reference.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn new(kind: CoreTypeIntegrityFailureKind, path: impl Into<String>) -> Self {
+        Self {
+            kind,
+            path: path.into(),
+        }
+    }
+}
+
+impl fmt::Display for CoreTypeIntegrityFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{:?}: {}", self.kind, self.path)
+    }
+}
+
+impl std::error::Error for CoreTypeIntegrityFailure {}
 
 /// A Core import that survives source resolution.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -757,6 +824,601 @@ where
     }
 }
 
+/// Validate every Core type definition and graph-carried type reference.
+///
+/// This judgment is deliberately eager: valid unused named definitions remain
+/// legal and hash-significant, while malformed unused definitions still reject
+/// because they are part of the module's semantic preimage.
+///
+/// # Errors
+///
+/// Returns one deterministic structured failure for the first invalid table
+/// key, definition, reference, cycle, or depth boundary in canonical map and
+/// source order.
+pub fn validate_core_module_type_integrity(
+    module: &CoreModule,
+) -> Result<ValidatedCoreModule<'_>, CoreTypeIntegrityFailure> {
+    for key in module.types.keys() {
+        if !core_type_table_key_is_named(key) {
+            return Err(CoreTypeIntegrityFailure::new(
+                CoreTypeIntegrityFailureKind::InvalidTableKey,
+                format!("types.{key}"),
+            ));
+        }
+    }
+
+    let mut state = CoreTypeIntegrityState::default();
+    for key in module.types.keys() {
+        validate_named_core_type_definition(module, &mut state, key, &format!("types.{key}"), 0)?;
+    }
+    for (intent_name, intent) in &module.intents {
+        validate_core_intent_types(
+            module,
+            &mut state,
+            intent,
+            &format!("intents.{intent_name}"),
+        )?;
+    }
+
+    Ok(ValidatedCoreModule { module })
+}
+
+#[derive(Default)]
+struct CoreTypeIntegrityState {
+    validated_named: BTreeSet<String>,
+    visiting_named: BTreeSet<String>,
+}
+
+fn validate_named_core_type_definition(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    table_key: &str,
+    path: &str,
+    depth: usize,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    if depth > MAX_CORE_TYPE_DEPTH {
+        return Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::DepthExceeded,
+            path,
+        ));
+    }
+    if state.validated_named.contains(table_key) {
+        return Ok(());
+    }
+    if !state.visiting_named.insert(table_key.to_owned()) {
+        return Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::ReferenceCycle,
+            path,
+        ));
+    }
+    let definition = module.types.get(table_key).ok_or_else(|| {
+        CoreTypeIntegrityFailure::new(CoreTypeIntegrityFailureKind::UnresolvedNamedReference, path)
+    })?;
+    validate_core_type_definition(module, state, Some(table_key), definition, path, depth)?;
+    state.visiting_named.remove(table_key);
+    state.validated_named.insert(table_key.to_owned());
+    Ok(())
+}
+
+fn validate_core_type_definition(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    table_key: Option<&str>,
+    definition: &CoreType,
+    path: &str,
+    depth: usize,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    if depth > MAX_CORE_TYPE_DEPTH {
+        return Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::DepthExceeded,
+            path,
+        ));
+    }
+    match definition {
+        CoreType::Bool | CoreType::Unit => Ok(()),
+        CoreType::Int { width }
+            if matches!(
+                width.as_str(),
+                "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64"
+            ) =>
+        {
+            Ok(())
+        }
+        CoreType::Int { .. } => Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::InvalidDefinition,
+            format!("{path}.width"),
+        )),
+        CoreType::String { canonical, .. }
+            if matches!(canonical.as_str(), "raw-utf8" | "unicode-scalar-nfc") =>
+        {
+            Ok(())
+        }
+        CoreType::String { .. } => Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::InvalidDefinition,
+            format!("{path}.canonical"),
+        )),
+        CoreType::Bytes { min, max } if min.is_none_or(|min| min <= *max) => Ok(()),
+        CoreType::Bytes { .. } => Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::InvalidDefinition,
+            format!("{path}.bounds"),
+        )),
+        CoreType::Nominal {
+            contract,
+            representation,
+        } => {
+            if table_key != Some(contract.as_str()) {
+                return Err(CoreTypeIntegrityFailure::new(
+                    CoreTypeIntegrityFailureKind::NominalContractMismatch,
+                    format!("{path}.contract"),
+                ));
+            }
+            validate_core_type_reference(
+                module,
+                state,
+                representation,
+                &format!("{path}.representation"),
+                depth + 1,
+            )
+        }
+        CoreType::Record { fields } => {
+            validate_core_record_definition(module, state, fields, path, depth)
+        }
+        CoreType::Variant { cases } => {
+            validate_core_variant_definition(module, state, cases, path, depth)
+        }
+        CoreType::Option { item }
+        | CoreType::List { item, .. }
+        | CoreType::CapabilityRef { item } => {
+            validate_core_type_reference(module, state, item, &format!("{path}.item"), depth + 1)
+        }
+        CoreType::Map { key, value, .. } => {
+            validate_core_type_reference(module, state, key, &format!("{path}.key"), depth + 1)?;
+            validate_core_type_reference(module, state, value, &format!("{path}.value"), depth + 1)
+        }
+        CoreType::ExternalActionRequest { settlement } => validate_core_type_reference(
+            module,
+            state,
+            settlement,
+            &format!("{path}.settlement"),
+            depth + 1,
+        ),
+    }
+}
+
+fn validate_core_record_definition(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    fields: &BTreeMap<String, String>,
+    path: &str,
+    depth: usize,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    for (field, reference) in fields {
+        if !is_core_field_name(field) {
+            return Err(CoreTypeIntegrityFailure::new(
+                CoreTypeIntegrityFailureKind::InvalidDefinition,
+                format!("{path}.fields.{field}"),
+            ));
+        }
+        validate_core_type_reference(
+            module,
+            state,
+            reference,
+            &format!("{path}.fields.{field}"),
+            depth + 1,
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_core_variant_definition(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    cases: &BTreeMap<String, Option<String>>,
+    path: &str,
+    depth: usize,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    if cases.is_empty() {
+        return Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::InvalidDefinition,
+            format!("{path}.cases"),
+        ));
+    }
+    for (case, payload) in cases {
+        if let Some(reference) = payload {
+            validate_core_type_reference(
+                module,
+                state,
+                reference,
+                &format!("{path}.cases.{case}.payload"),
+                depth + 1,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_core_type_reference(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    reference: &str,
+    path: &str,
+    depth: usize,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    if depth > MAX_CORE_TYPE_DEPTH {
+        return Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::DepthExceeded,
+            path,
+        ));
+    }
+    let Some(classification) = classify_core_type_reference_at_depth(reference, depth) else {
+        let kind = if structural_reference_exceeds_depth(reference, depth) {
+            CoreTypeIntegrityFailureKind::DepthExceeded
+        } else {
+            CoreTypeIntegrityFailureKind::InvalidReference
+        };
+        return Err(CoreTypeIntegrityFailure::new(kind, path));
+    };
+    match classification {
+        CoreTypeReference::Intrinsic(definition) | CoreTypeReference::Structural(definition) => {
+            validate_core_type_definition(module, state, None, &definition, path, depth)
+        }
+        CoreTypeReference::Named => {
+            let table_key =
+                resolved_named_core_type_table_key(module, reference).ok_or_else(|| {
+                    CoreTypeIntegrityFailure::new(
+                        CoreTypeIntegrityFailureKind::UnresolvedNamedReference,
+                        path,
+                    )
+                })?;
+            validate_named_core_type_definition(module, state, table_key, path, depth)
+        }
+    }
+}
+
+fn structural_reference_exceeds_depth(reference: &str, starting_depth: usize) -> bool {
+    let mut depth = starting_depth;
+    for character in reference.chars() {
+        match character {
+            '<' => {
+                let Some(next) = depth.checked_add(1) else {
+                    return true;
+                };
+                depth = next;
+                if depth > MAX_CORE_TYPE_DEPTH {
+                    return true;
+                }
+            }
+            '>' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    false
+}
+
+fn resolved_named_core_type_table_key<'a>(
+    module: &'a CoreModule,
+    reference: &str,
+) -> Option<&'a str> {
+    module
+        .types
+        .get_key_value(reference)
+        .map(|(key, _)| key.as_str())
+        .or_else(|| {
+            reference
+                .strip_prefix(module.coordinate.as_str())
+                .and_then(|relative| relative.strip_prefix('.'))
+                .and_then(|relative| module.types.get_key_value(relative))
+                .map(|(key, _)| key.as_str())
+        })
+}
+
+fn validate_core_intent_types(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    intent: &CoreIntent,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    validate_core_type_reference(module, state, &intent.input, &format!("{path}.input"), 0)?;
+    validate_core_type_reference(module, state, &intent.output, &format!("{path}.output"), 0)?;
+    if let Some(basis) = &intent.basis {
+        validate_core_expression_types(module, state, basis, &format!("{path}.basis"))?;
+    }
+    for (index, constraint) in intent.input_constraints.iter().enumerate() {
+        validate_core_predicate_types(
+            module,
+            state,
+            &constraint.predicate,
+            &format!("{path}.inputConstraints[{index}].predicate"),
+        )?;
+    }
+    validate_core_block_types(module, state, &intent.body, &format!("{path}.body"))
+}
+
+fn validate_core_block_types(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    block: &CoreBlock,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    for (index, local) in block.locals.iter().enumerate() {
+        validate_core_local_type(
+            module,
+            state,
+            local,
+            &format!("{path}.locals[{index}].type"),
+        )?;
+    }
+    for (index, node) in block.nodes.iter().enumerate() {
+        validate_core_node_types(module, state, node, &format!("{path}.nodes[{index}]"))?;
+    }
+    validate_core_expression_types(module, state, &block.result, &format!("{path}.result"))
+}
+
+fn validate_core_local_type(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    local: &LocalRef,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    validate_core_type_reference(module, state, &local.ty, path, 0)
+}
+
+fn validate_core_node_types(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    node: &CoreNode,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    match node {
+        CoreNode::Let { binding, value } => {
+            validate_core_local_type(module, state, binding, &format!("{path}.let.binding.type"))?;
+            validate_core_expression_types(module, state, value, &format!("{path}.let.value"))
+        }
+        CoreNode::Require { predicate, arm } => {
+            validate_core_predicate_types(
+                module,
+                state,
+                predicate,
+                &format!("{path}.require.predicate"),
+            )?;
+            let reason = match arm {
+                CoreRequireFailureArm::Terminal { reason }
+                | CoreRequireFailureArm::ContinueObstructed { reason } => reason,
+            };
+            validate_core_obstruction_reason_types(
+                module,
+                state,
+                reason,
+                &format!("{path}.require.reason"),
+            )
+        }
+        CoreNode::Effect {
+            binding,
+            input,
+            obstruction_map,
+            ..
+        } => {
+            validate_core_local_type(
+                module,
+                state,
+                binding,
+                &format!("{path}.effect.binding.type"),
+            )?;
+            validate_core_expression_types(module, state, input, &format!("{path}.effect.input"))?;
+            for (failure, arm) in obstruction_map {
+                validate_core_local_type(
+                    module,
+                    state,
+                    &arm.binder,
+                    &format!("{path}.effect.obstructionMap.{failure}.binder.type"),
+                )?;
+                validate_core_expression_types(
+                    module,
+                    state,
+                    &arm.value,
+                    &format!("{path}.effect.obstructionMap.{failure}.value"),
+                )?;
+            }
+            Ok(())
+        }
+        CoreNode::ExternalActionRequest { .. } => {
+            validate_external_action_request_types(module, state, node, path)
+        }
+        CoreNode::For {
+            binder, iter, body, ..
+        } => {
+            validate_core_local_type(module, state, binder, &format!("{path}.for.binder.type"))?;
+            validate_core_expression_types(module, state, iter, &format!("{path}.for.iter"))?;
+            validate_core_block_types(module, state, body, &format!("{path}.for.body"))
+        }
+        CoreNode::Branch {
+            binding,
+            predicate,
+            then_block,
+            else_block,
+        } => {
+            if let Some(binding) = binding {
+                validate_core_local_type(
+                    module,
+                    state,
+                    binding,
+                    &format!("{path}.branch.binding.type"),
+                )?;
+            }
+            validate_core_predicate_types(
+                module,
+                state,
+                predicate,
+                &format!("{path}.branch.predicate"),
+            )?;
+            validate_core_block_types(module, state, then_block, &format!("{path}.branch.then"))?;
+            validate_core_block_types(module, state, else_block, &format!("{path}.branch.else"))
+        }
+    }
+}
+
+fn validate_external_action_request_types(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    node: &CoreNode,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    let CoreNode::ExternalActionRequest {
+        binding,
+        input_type,
+        settlement_type,
+        input,
+        authority_scope,
+        basis,
+        budget,
+        ..
+    } = node
+    else {
+        unreachable!("caller selects the external-action request variant");
+    };
+    let request_path = format!("{path}.externalActionRequest");
+    validate_core_local_type(
+        module,
+        state,
+        binding,
+        &format!("{request_path}.binding.type"),
+    )?;
+    validate_core_type_reference(
+        module,
+        state,
+        input_type,
+        &format!("{request_path}.inputType"),
+        0,
+    )?;
+    validate_core_type_reference(
+        module,
+        state,
+        settlement_type,
+        &format!("{request_path}.settlementType"),
+        0,
+    )?;
+    for (name, expression) in [
+        ("input", input),
+        ("authorityScope", authority_scope),
+        ("basis", basis),
+        ("budget.maxSettlementBytes", &budget.max_settlement_bytes),
+        ("budget.maxAttempts", &budget.max_attempts),
+    ] {
+        validate_core_expression_types(
+            module,
+            state,
+            expression,
+            &format!("{request_path}.{name}"),
+        )?;
+    }
+    Ok(())
+}
+
+fn validate_core_obstruction_reason_types(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    reason: &CoreObstructionReason,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    for (field, value) in &reason.payload {
+        validate_core_expression_types(module, state, value, &format!("{path}.payload.{field}"))?;
+    }
+    Ok(())
+}
+
+fn validate_core_expression_types(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    expression: &CoreExpr,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    match expression {
+        CoreExpr::Local { reference } => {
+            validate_core_local_type(module, state, reference, &format!("{path}.local.type"))
+        }
+        CoreExpr::Const(_) => Ok(()),
+        CoreExpr::Record { fields } => {
+            for (field, value) in fields {
+                validate_core_expression_types(
+                    module,
+                    state,
+                    value,
+                    &format!("{path}.record.{field}"),
+                )?;
+            }
+            Ok(())
+        }
+        CoreExpr::Field { base, .. } => {
+            validate_core_expression_types(module, state, base, &format!("{path}.field.base"))
+        }
+        CoreExpr::Call {
+            type_args, args, ..
+        } => {
+            for (index, reference) in type_args.iter().enumerate() {
+                validate_core_type_reference(
+                    module,
+                    state,
+                    reference,
+                    &format!("{path}.call.typeArgs[{index}]"),
+                    0,
+                )?;
+            }
+            for (index, argument) in args.iter().enumerate() {
+                validate_core_expression_types(
+                    module,
+                    state,
+                    argument,
+                    &format!("{path}.call.args[{index}]"),
+                )?;
+            }
+            Ok(())
+        }
+        CoreExpr::If {
+            predicate,
+            then_value,
+            else_value,
+        } => {
+            validate_core_predicate_types(
+                module,
+                state,
+                predicate,
+                &format!("{path}.if.predicate"),
+            )?;
+            validate_core_expression_types(module, state, then_value, &format!("{path}.if.then"))?;
+            validate_core_expression_types(module, state, else_value, &format!("{path}.if.else"))
+        }
+    }
+}
+
+fn validate_core_predicate_types(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    predicate: &CorePredicate,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    match predicate {
+        CorePredicate::True | CorePredicate::False => Ok(()),
+        CorePredicate::Not(value) => {
+            validate_core_predicate_types(module, state, value, &format!("{path}.not"))
+        }
+        CorePredicate::All(values) | CorePredicate::Any(values) => {
+            for (index, value) in values.iter().enumerate() {
+                validate_core_predicate_types(
+                    module,
+                    state,
+                    value,
+                    &format!("{path}.values[{index}]"),
+                )?;
+            }
+            Ok(())
+        }
+        CorePredicate::Compare { left, right, .. } => {
+            validate_core_expression_types(module, state, left, &format!("{path}.compare.left"))?;
+            validate_core_expression_types(module, state, right, &format!("{path}.compare.right"))
+        }
+    }
+}
+
 fn scalar_types_fit(left: &CoreType, right: &CoreType) -> Option<bool> {
     match (left, right) {
         (CoreType::Bool, CoreType::Bool) | (CoreType::Unit, CoreType::Unit) => Some(true),
@@ -864,9 +1526,21 @@ pub enum CorePredicate {
 #[cfg(test)]
 mod structural_type_reference_tests {
     use super::{
-        builtin_core_type, render_self_describing_core_type, CoreType, MAX_CORE_TYPE_DEPTH,
+        builtin_core_type, render_self_describing_core_type, validate_core_module_type_integrity,
+        CoreModule, CoreType, CoreTypeIntegrityFailureKind, CORE_API_VERSION, MAX_CORE_TYPE_DEPTH,
     };
     use std::collections::BTreeMap;
+
+    fn module_with_types(types: BTreeMap<String, CoreType>) -> CoreModule {
+        CoreModule {
+            api_version: CORE_API_VERSION.to_owned(),
+            coordinate: "integrity.test@1".to_owned(),
+            imports: Vec::new(),
+            types,
+            intents: BTreeMap::new(),
+            required_core_capabilities: Vec::new(),
+        }
+    }
 
     #[test]
     fn canonical_structural_type_references_round_trip() {
@@ -964,6 +1638,115 @@ mod structural_type_reference_tests {
 
         let over_depth = format!("Record<value:{at_depth}>");
         assert_eq!(builtin_core_type(&over_depth), None);
+    }
+
+    #[test]
+    fn whole_module_type_integrity_reports_stable_kinds_and_paths() {
+        let over_depth =
+            (0..=MAX_CORE_TYPE_DEPTH).fold("U64".to_owned(), |inner, _| format!("Option<{inner}>"));
+        let mut cycle = BTreeMap::new();
+        cycle.insert(
+            "CycleA".to_owned(),
+            CoreType::Option {
+                item: "CycleB".to_owned(),
+            },
+        );
+        cycle.insert(
+            "CycleB".to_owned(),
+            CoreType::Option {
+                item: "CycleA".to_owned(),
+            },
+        );
+        let cases = [
+            (
+                "table key",
+                module_with_types(BTreeMap::from([("Bool".to_owned(), CoreType::Bool)])),
+                CoreTypeIntegrityFailureKind::InvalidTableKey,
+                "types.Bool",
+            ),
+            (
+                "definition",
+                module_with_types(BTreeMap::from([(
+                    "Wide".to_owned(),
+                    CoreType::Int {
+                        width: "I128".to_owned(),
+                    },
+                )])),
+                CoreTypeIntegrityFailureKind::InvalidDefinition,
+                "types.Wide.width",
+            ),
+            (
+                "reference",
+                module_with_types(BTreeMap::from([(
+                    "Bad".to_owned(),
+                    CoreType::Option {
+                        item: "List<U64,max=01>".to_owned(),
+                    },
+                )])),
+                CoreTypeIntegrityFailureKind::InvalidReference,
+                "types.Bad.item",
+            ),
+            (
+                "unresolved",
+                module_with_types(BTreeMap::from([(
+                    "Bad".to_owned(),
+                    CoreType::Option {
+                        item: "Missing".to_owned(),
+                    },
+                )])),
+                CoreTypeIntegrityFailureKind::UnresolvedNamedReference,
+                "types.Bad.item",
+            ),
+            (
+                "nominal",
+                module_with_types(BTreeMap::from([(
+                    "Handle".to_owned(),
+                    CoreType::Nominal {
+                        contract: "Other".to_owned(),
+                        representation: "U64".to_owned(),
+                    },
+                )])),
+                CoreTypeIntegrityFailureKind::NominalContractMismatch,
+                "types.Handle.contract",
+            ),
+            (
+                "cycle",
+                module_with_types(cycle),
+                CoreTypeIntegrityFailureKind::ReferenceCycle,
+                "types.CycleA.item.item",
+            ),
+            (
+                "depth",
+                module_with_types(BTreeMap::from([(
+                    "Deep".to_owned(),
+                    CoreType::Option { item: over_depth },
+                )])),
+                CoreTypeIntegrityFailureKind::DepthExceeded,
+                "types.Deep.item",
+            ),
+        ];
+
+        for (case, module, expected_kind, expected_path) in cases {
+            let failure = validate_core_module_type_integrity(&module)
+                .expect_err("invalid module must not mint a witness");
+            assert_eq!(failure.kind(), expected_kind, "{case}");
+            assert_eq!(failure.path(), expected_path, "{case}");
+        }
+    }
+
+    #[test]
+    fn valid_unused_named_definition_mints_a_borrowed_witness() {
+        let module = module_with_types(BTreeMap::from([(
+            "Unused".to_owned(),
+            CoreType::List {
+                item: "U64".to_owned(),
+                max: 4,
+            },
+        )]));
+
+        let validated = validate_core_module_type_integrity(&module)
+            .expect("valid unused authored definition remains legal");
+        assert!(std::ptr::eq(validated.module(), &raw const module));
     }
 }
 
