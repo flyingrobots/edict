@@ -40,6 +40,7 @@ Out of scope:
 | SYNTAX-REQ-011 | implemented | Source/surface validation rejects context-free semantic errors while deferring resolution, contextual typing, bound proof, and target/lawpack-dependent checks. | issue #10 |
 | SYNTAX-REQ-012 | planned | Full source lowering emits canonical Core IR with byte-stable golden artifacts. | issue #21, issue #22 |
 | SYNTAX-REQ-013 | implemented | Obstruction-strand source spelling has first-class parser syntax and does not parse as an ordinary obstruction-target function call. | issue #118, docs/topics/obstruction-strands/test-plan.md |
+| SYNTAX-REQ-014 | implemented | Byte refinements distinguish maximum length from exact length; `Bytes<exact=N>` preserves one structural exact bound in the AST without adding a byte canonicalization policy. | issue #200, docs/SPEC_edict-language-v1.md |
 
 ## Fixtures
 
@@ -57,7 +58,7 @@ Out of scope:
 | SYNTAX-TP-001 | implemented | Golden path | SYNTAX-REQ-001 | Public API returns a `Module` with expected package/declaration shape. | bounded_hello_parses | fixtures/lang/bounds/bounded-hello.edict | Source AST, not Core IR. |
 | SYNTAX-TP-002 | implemented | Golden path | SYNTAX-REQ-002 | Exact version strings match source spelling. | multi_part_package_version, package_versions_preserve_underscores, import_versions_preserve_underscore_labels | - | Covers `_beta` labels. |
 | SYNTAX-TP-003 | implemented | Import boundary | SYNTAX-REQ-003 | Invalid digests reject with a stable error kind, while a digest-bound capability import preserves its distinct AST kind and digest. | import_digest_literals_are_validated, capability_imports_parse_as_external_operation_references | - | Capability import is request authority, not performance authority. |
-| SYNTAX-TP-004 | implemented | Golden path | SYNTAX-REQ-004 | Type AST nodes match expected records, bytes, variants, enums, and bounds. | bounded_hello_parses, bytes_accept_coordinate_bounds, enum_decl_parses, variant_type_with_and_without_payloads_parses | fixtures/lang/bounds/bounded-hello.edict | Structural AST equality. |
+| SYNTAX-TP-004 | implemented | Golden path | SYNTAX-REQ-004, SYNTAX-REQ-014 | Type AST nodes match expected records, maximum and exact bytes, variants, enums, and bounds. | bounded_hello_parses, bytes_accept_coordinate_bounds, bytes_accept_exact_bounds, enum_decl_parses, variant_type_with_and_without_payloads_parses | fixtures/lang/bounds/bounded-hello.edict | Structural AST equality. |
 | SYNTAX-TP-005 | implemented | Error handling | SYNTAX-REQ-004 | Empty enums reject with `ParseErrorKind::EmptyEnum`. | empty_enum_and_empty_obstruction_maps_reject | - | Parser-level syntactic emptiness. |
 | SYNTAX-TP-006 | implemented | Edge case | SYNTAX-REQ-005 | Integer suffix is preserved in `Expr::Int` and `BoundRef::Int`. | typed_integer_suffix, bound_integer_suffixes_are_preserved | - | Source-significant suffix oracle. |
 | SYNTAX-TP-007 | implemented | Golden path | SYNTAX-REQ-006 | Intent clauses and bodies parse into expected AST. | bounded_hello_parses, read_greeting_parses, require_statement_parses_terminal_obstruction_source_shape | fixtures/lang/bounds/bounded-hello.edict, fixtures/lang/effects/read-greeting.edict | Requiredness and `require` lowering semantics are deferred. |

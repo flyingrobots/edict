@@ -45,7 +45,7 @@ The current executable Rust surfaces touching lawpacks are:
 - complete dependency-set validation with exact manifest-digest edges;
 - canonical direct-adapter loading with exact target selection, adapter digest
   corroboration, complete callable profile/effect/budget coverage, and
-  request-only profiles whose exact budget and target configuration confer no
+  effect-free profiles whose exact budget and target configuration confer no
   callable effect authority;
 - compiler and Target IR fact derivation from the exact
   module/lawpack/adapter closure;
@@ -89,20 +89,55 @@ The current executable Rust surfaces touching lawpacks are:
   runtime-effect, budget, footprint, cost, and named-failure coverage before
   returning an opaque validated adapter. Each callable effect carries one
   typed, digest-locked target-configuration reference. A profile with no
-  semantic effects is request-only and must carry its own exact budget
-  obligation and target configuration. Compilation preserves the
-  profile-to-budget association and rejects source that selects another
-  profile's budget. The exact adapter budget set also covers every exported
-  pure helper's cost template. Edict preserves those references but does not
-  interpret their target-owned semantics.
+  semantic effects may govern a pure executable program or a request-only
+  program and must carry its own exact budget obligation and target
+  configuration. Application provider inputs select that profile-owned
+  configuration even when the adapter has no effects. For an effectful profile,
+  application configuration selection includes only effect coordinates present
+  in compiled Core whenever at least one is invoked, so another advertised effect
+  cannot introduce an unused target configuration. If the selected effectful
+  profile invokes none, its full advertised effect set must instead converge on
+  one exact target configuration; an ambiguous set rejects. Compilation
+  preserves the profile-to-budget association and rejects source that selects
+  another profile's budget. Direct-adapter closure also requires every authored
+  profile to map to a distinct Core profile, preventing source-profile
+  configuration authority from collapsing after compilation erases the source
+  coordinate. Application configuration selection resolves that exact profile
+  for each compiled intent and verifies that every invoked semantic effect is
+  advertised by it before applying the zero-invocation fallback. An effect
+  advertised only by another profile cannot contribute an intrinsic or target
+  configuration. The exact adapter budget set also covers every exported pure
+  helper's cost template. Edict
+  preserves those references but does not interpret their target-owned
+  semantics. [LAWPACKS-REQ-019]
   `prepare_lawpack_compilation` then derives compiler and Target IR facts
   through the source import's exact alias and manifest digest.
-  [LAWPACKS-REQ-008]
+  [LAWPACKS-REQ-008] [LAWPACKS-REQ-017] [LAWPACKS-REQ-018]
+- The same preparation resolves every non-generic semantic effect's input and
+  output plus every declared failure payload through its exact exported bounded
+  type closure. Imported definitions
+  may use bounded scalars, lists, aliases, nominals, and records such as
+  `Record<key:String<max=64,canonical=raw-utf8>>`. Source compilation checks the
+  argument and result annotation for early diagnostics. A private Target fact
+  separately carries the canonical effect export and exact reachable named-type
+  map. Inline structural constructors are parsed and traversed but never enter
+  that map or claim lawpack ownership,
+  so caller-authored Core cannot substitute a value, binding type, or type
+  definition while retaining a trusted coordinate. Missing or unresolvable
+  signature types refuse during preparation. Each source obstruction binder is
+  typed from the exact authenticated failure-payload root; a failure name never
+  becomes a synthetic `effect.failure` Core identity. [LAWPACKS-REQ-020]
+  [LAWPACKS-REQ-023]
 - The same preparation boundary projects each exported pure-helper signature
   through the source alias. Source calls type-check against that signature and
   lower under the canonical exported coordinate, while the exact imported
-  manifest digest continues to bind the helper implementation.
-  [LAWPACKS-REQ-012]
+  manifest digest continues to bind the helper implementation. The corresponding
+  Target fact is externally immutable and privately carries the exact named
+  closure reachable from every parameter and the return. Target reconstructs
+  that closure through the same structural-transparent judgment used for effect
+  signatures. Missing, extra, foreign, or substituted named definitions refuse;
+  an empty closure remains valid for signatures built only from intrinsic and
+  structural forms. [LAWPACKS-REQ-012] [LAWPACKS-REQ-021] [LAWPACKS-REQ-022]
 - The preparation boundary also projects exported `U32` and `U64` constants
   through the source alias as numeric bound facts. Static loop checks consume
   the value, while Core preserves the canonical exported coordinate.
@@ -114,6 +149,14 @@ The current executable Rust surfaces touching lawpacks are:
   have the declared types. Helper calls must also form an acyclic graph no
   deeper than 128 calls, checked without recursive graph traversal.
   [LAWPACKS-REQ-014]
+- Byte constants preserve the complete exported interval during that check:
+
+  | Exported byte form | Accepted length |
+  | --- | --- |
+  | `Bytes<exact=N>` | Exactly `N` bytes |
+  | `Bytes<min=M,max=N>` | From `M` through `N`, inclusive |
+
+  [LAWPACKS-REQ-016]
 - The Hello Echo golden generator compiles the exact source and lawpack closure,
   lowers the resulting Core module, and pins canonical Core and Target IR bytes
   under their native domain-framed identities. [LAWPACKS-REQ-009]

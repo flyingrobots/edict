@@ -14,8 +14,8 @@ use common::{bounded_hello_core, hello_context, BOUNDED_HELLO};
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_canonical_cbor,
     encode_core_module, parse_module, CanonicalErrorKind, CanonicalValue, CompilerContext,
-    CoreBudget, CoreImport, CoreImportKind, CoreNode, CorePredicate, InputConstraint,
-    InputConstraintSource, ResourceRef,
+    CoreBudget, CoreImport, CoreImportKind, CoreModule, CoreNode, CorePredicate, CoreType,
+    InputConstraint, InputConstraintSource, ResourceRef,
 };
 
 const STATEMENT_BRANCH: &str = "package a.b@1;\n\
@@ -76,6 +76,216 @@ fn find_branch_map(value: &CanonicalValue) -> Option<&[(CanonicalValue, Canonica
     }
 }
 
+fn map_field<'a>(value: &'a CanonicalValue, field: &str) -> &'a CanonicalValue {
+    let CanonicalValue::Map(entries) = value else {
+        panic!("expected map while looking up {field:?}");
+    };
+    entries
+        .iter()
+        .find_map(|(key, value)| (key == &CanonicalValue::Text(field.to_owned())).then_some(value))
+        .unwrap_or_else(|| panic!("missing map field {field:?}"))
+}
+
+#[test]
+fn max_only_bytes_preserve_prior_canonical_shape() {
+    let source = "package a.b@1;\n\
+        type Input = { value: Bytes<max=32>, };\n\
+        type Output = { value: Bytes<max=32>, };\n\
+        intent t(input: Input) returns Output\n\
+          profile p.read\n\
+          basis none\n\
+          budget <= p.tiny {\n\
+          return { value: input.value };\n\
+        }";
+    let module = parse_module(source).expect("max-only bytes parse");
+    let core = compile_to_core(&module, &statement_branch_context())
+        .expect("max-only bytes compile to Core");
+    let canonical =
+        decode_canonical_cbor(&encode_core_module(&core).expect("max-only byte Core encodes"))
+            .expect("max-only byte Core decodes");
+    let input = map_field(map_field(&canonical, "types"), "Input");
+    let value = map_field(map_field(input, "fields"), "value");
+    assert_eq!(value, &CanonicalValue::Text("Bytes<max=32>".to_owned()));
+    let CanonicalValue::Map(types) = map_field(&canonical, "types") else {
+        panic!("Core types are a canonical map");
+    };
+    assert!(types.iter().all(|(key, _)| {
+        key != &CanonicalValue::Text("Input.value".to_owned())
+            && key != &CanonicalValue::Text("Output.value".to_owned())
+    }));
+}
+
+#[test]
+fn invalid_byte_interval_rejects_before_core_identity() {
+    let mut core = bounded_hello_core();
+    core.types.insert(
+        "invalid.bytes".to_owned(),
+        CoreType::Bytes {
+            min: Some(33),
+            max: 32,
+        },
+    );
+    let failure = encode_core_module(&core).expect_err("invalid byte interval must reject");
+    assert_eq!(failure.kind(), CanonicalErrorKind::UnsupportedValue);
+}
+
+#[test]
+fn core_type_table_rejects_self_describing_reference_keys() {
+    for (case, coordinate) in [
+        ("intrinsic bool", "Bool"),
+        ("intrinsic unit", "Unit"),
+        (
+            "structural",
+            "Record<inner:Record<value:U64>,values:List<U64,max=2>>",
+        ),
+    ] {
+        let mut core = bounded_hello_core();
+        core.types.insert(coordinate.to_owned(), CoreType::Bool);
+
+        let failure = encode_core_module(&core)
+            .expect_err("self-describing key must reject before canonical identity");
+        assert_eq!(
+            failure.kind(),
+            CanonicalErrorKind::UnsupportedValue,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn canonical_core_rejects_every_invalid_named_definition_including_unused_entries() {
+    let mut accepted = Vec::new();
+    for (case, core) in invalid_named_definition_cases() {
+        let encoded = encode_core_module(&core);
+        let digested = digest_core_module(&core);
+        if encoded.is_ok() || digested.is_ok() {
+            accepted.push(case);
+            continue;
+        }
+        assert_eq!(
+            encoded
+                .expect_err("invalid definition must not encode")
+                .kind(),
+            CanonicalErrorKind::UnsupportedValue,
+            "{case}"
+        );
+        assert_eq!(
+            digested
+                .expect_err("invalid definition must not digest")
+                .kind(),
+            CanonicalErrorKind::UnsupportedValue,
+            "{case}"
+        );
+    }
+    assert!(
+        accepted.is_empty(),
+        "invalid definitions crossed canonical boundaries: {accepted:?}"
+    );
+}
+
+fn invalid_named_definition_cases() -> Vec<(&'static str, CoreModule)> {
+    let over_depth = (0..=128).fold("U64".to_owned(), |inner, _| format!("List<{inner},max=1>"));
+    let mut cycle = bounded_hello_core();
+    cycle.types.insert(
+        "CycleA".to_owned(),
+        CoreType::Option {
+            item: "CycleB".to_owned(),
+        },
+    );
+    cycle.types.insert(
+        "CycleB".to_owned(),
+        CoreType::Option {
+            item: "CycleA".to_owned(),
+        },
+    );
+
+    let definitions = [
+        (
+            "noncanonical nested reference",
+            CoreType::List {
+                item: "List<U64,max=01>".to_owned(),
+                max: 2,
+            },
+        ),
+        (
+            "unsupported integer width",
+            CoreType::Int {
+                width: "I128".to_owned(),
+            },
+        ),
+        (
+            "invalid string canonicalization",
+            CoreType::String {
+                max: 8,
+                canonical: "not-a-canonicalization".to_owned(),
+            },
+        ),
+        (
+            "incoherent byte bounds",
+            CoreType::Bytes {
+                min: Some(9),
+                max: 8,
+            },
+        ),
+        (
+            "unresolved named child",
+            CoreType::Option {
+                item: "MissingType".to_owned(),
+            },
+        ),
+        (
+            "nominal contract mismatch",
+            CoreType::Nominal {
+                contract: "DifferentName".to_owned(),
+                representation: "U64".to_owned(),
+            },
+        ),
+        (
+            "invalid record field",
+            CoreType::Record {
+                fields: BTreeMap::from([("bad field".to_owned(), "U64".to_owned())]),
+            },
+        ),
+        (
+            "empty variant",
+            CoreType::Variant {
+                cases: BTreeMap::new(),
+            },
+        ),
+        ("over-depth child", CoreType::Option { item: over_depth }),
+    ];
+
+    let mut cases = definitions
+        .into_iter()
+        .map(|(case, definition)| {
+            let mut core = bounded_hello_core();
+            core.types.insert(case.replace(' ', "_"), definition);
+            (case, core)
+        })
+        .collect::<Vec<_>>();
+    cases.push(("named-reference cycle", cycle));
+    cases
+}
+
+#[test]
+fn valid_unused_named_definition_remains_hash_significant() {
+    let baseline = bounded_hello_core();
+    let mut with_unused = baseline.clone();
+    with_unused.types.insert(
+        "UnusedButAuthored".to_owned(),
+        CoreType::List {
+            item: "U64".to_owned(),
+            max: 4,
+        },
+    );
+
+    encode_core_module(&with_unused).expect("valid unused named definition encodes");
+    assert_ne!(
+        digest_core_module(&baseline).expect("baseline Core digests"),
+        digest_core_module(&with_unused).expect("unused authored name remains hash-significant")
+    );
+}
+
 #[test]
 fn statement_branch_omits_binding_and_preserves_exact_canonical_identity() {
     let module = parse_module(STATEMENT_BRANCH).expect("statement branch parses");
@@ -91,7 +301,6 @@ fn statement_branch_omits_binding_and_preserves_exact_canonical_identity() {
             output
         },
     );
-
     assert!(branch
         .iter()
         .all(|(key, _)| { key != &CanonicalValue::Text("binding".to_owned()) }));

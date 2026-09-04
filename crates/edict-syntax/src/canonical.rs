@@ -12,14 +12,14 @@ use std::str;
 use sha2::{Digest, Sha256};
 
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBudget,
-    CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule,
-    CoreNode, CoreObstructionArm, CorePredicate, CoreType, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef,
+    is_lowercase_sha256_review_digest, parse_core_integer, validate_core_module_type_integrity,
+    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
+    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CorePredicate, CoreType,
+    CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
 };
 use crate::target_ir::{
-    TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrRequireFailure,
-    TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
+    TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrPureBinding,
+    TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
 };
 
 /// Canonical encoding profile for Core artifacts.
@@ -503,16 +503,21 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
         .intents
         .values()
         .any(|intent| !intent.external_action_requests.is_empty());
+    let has_pure_bindings = artifact
+        .intents
+        .values()
+        .any(|intent| !intent.pure_bindings.is_empty());
     if artifact.semantic_closure.is_none()
         && (artifact
             .intents
             .values()
             .any(|intent| intent.basis.is_some())
+            || has_pure_bindings
             || has_external_action_requests)
     {
         return Err(CanonicalError::new(
             CanonicalErrorKind::UnsupportedValue,
-            "basis- or external-action-bearing Target IR requires a semantic closure",
+            "basis-, pure-binding-, or external-action-bearing Target IR requires a semantic closure",
         ));
     }
     if let Some(closure) = &artifact.semantic_closure {
@@ -645,6 +650,46 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
 }
 
 fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+    let mut binding_ids = BTreeSet::new();
+    for binding in &intent.pure_bindings {
+        if binding.id.is_empty() || !binding_ids.insert(binding.id.as_str()) {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                format!(
+                    "Target IR pure binding id `{}` is empty or duplicated",
+                    binding.id
+                ),
+            ));
+        }
+    }
+    let mut local_ids = BTreeSet::from(["arg.0"]);
+    for (producer, binding) in intent
+        .pure_bindings
+        .iter()
+        .map(|binding| ("pure binding", &binding.binding))
+        .chain(
+            intent
+                .steps
+                .iter()
+                .map(|step| ("target step", &step.binding)),
+        )
+        .chain(
+            intent
+                .external_action_requests
+                .iter()
+                .map(|request| ("external-action request", &request.binding)),
+        )
+    {
+        if binding.id.is_empty() || !local_ids.insert(binding.id.as_str()) {
+            return Err(CanonicalError::new(
+                CanonicalErrorKind::UnsupportedValue,
+                format!(
+                    "Target IR {producer} local id `{}` is empty or duplicated across the application input and producers",
+                    binding.id
+                ),
+            ));
+        }
+    }
     let mut request_ids = BTreeSet::new();
     for request in &intent.external_action_requests {
         if !request_ids.insert(request.id.as_str()) {
@@ -680,6 +725,17 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
     if let Some(basis) = &intent.basis {
         entries.push(("basis", core_expr_value(basis)?));
     }
+    if !intent.pure_bindings.is_empty() {
+        entries.push((
+            "pureBindings",
+            array_results(
+                intent
+                    .pure_bindings
+                    .iter()
+                    .map(target_ir_pure_binding_value),
+            )?,
+        ));
+    }
     if !intent.external_action_requests.is_empty() {
         entries.push((
             "externalActionRequests",
@@ -692,6 +748,16 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
         ));
     }
     Ok(map(entries))
+}
+
+fn target_ir_pure_binding_value(
+    binding: &TargetIrPureBinding,
+) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("id", text(&binding.id)),
+        ("binding", local_ref_value(&binding.binding)),
+        ("value", core_expr_value(&binding.value)?),
+    ]))
 }
 
 fn target_ir_external_action_request_value(
@@ -778,6 +844,10 @@ fn target_ir_step_value(step: &TargetIrStep) -> Result<CanonicalValue, Canonical
 }
 
 fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalError> {
+    let validated = validate_core_module_type_integrity(module).map_err(|failure| {
+        CanonicalError::new(CanonicalErrorKind::UnsupportedValue, failure.to_string())
+    })?;
+    let module = validated.module();
     let capability_imports = module
         .imports
         .iter()
@@ -812,7 +882,7 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
                 module
                     .types
                     .iter()
-                    .map(|(name, ty)| Ok((name.as_str(), core_type_value(ty)))),
+                    .map(|(name, ty)| core_type_value(ty).map(|value| (name.as_str(), value))),
             )?,
         ),
         (
@@ -924,16 +994,38 @@ fn hex_value(byte: u8) -> Result<u8, CanonicalError> {
     }
 }
 
-fn core_type_value(ty: &CoreType) -> CanonicalValue {
-    match ty {
+fn core_type_value(ty: &CoreType) -> Result<CanonicalValue, CanonicalError> {
+    let value = match ty {
         CoreType::Bool => map([("kind", text("Bool"))]),
+        CoreType::Unit => map([("kind", text("Unit"))]),
         CoreType::Int { width } => map([("kind", text(width))]),
         CoreType::String { max, canonical } => map([
             ("kind", text("String")),
             ("max", uint(*max)),
             ("canonical", text(canonical)),
         ]),
-        CoreType::Bytes { max } => map([("kind", text("Bytes")), ("max", uint(*max))]),
+        CoreType::Bytes { min, max } => {
+            if min.is_some_and(|min| min > *max) {
+                return Err(CanonicalError::new(
+                    CanonicalErrorKind::UnsupportedValue,
+                    "Core byte type minimum exceeds its maximum",
+                ));
+            }
+            let mut fields = vec![("kind", text("Bytes"))];
+            if let Some(min) = min {
+                fields.push(("min", uint(*min)));
+            }
+            fields.push(("max", uint(*max)));
+            map(fields)
+        }
+        CoreType::Nominal {
+            contract,
+            representation,
+        } => map([
+            ("kind", text("Nominal")),
+            ("contract", text(contract)),
+            ("representation", text(representation)),
+        ]),
         CoreType::Record { fields } => map([
             ("kind", text("Record")),
             (
@@ -974,7 +1066,8 @@ fn core_type_value(ty: &CoreType) -> CanonicalValue {
             ("kind", text("ExternalActionRequest")),
             ("settlement", text(settlement)),
         ]),
-    }
+    };
+    Ok(value)
 }
 
 fn core_intent_value(intent: &CoreIntent) -> Result<CanonicalValue, CanonicalError> {

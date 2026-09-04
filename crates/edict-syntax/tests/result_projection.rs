@@ -6,8 +6,9 @@ use edict_syntax::{
     decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle, decode_result_projection,
     digest_core_module, digest_result_projection, emit_result_projection, encode_canonical_cbor,
     encode_result_projection, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
-    verify_result_projection, CanonicalValue, CoreBlock, CoreBound, CoreExpr, CoreModule, CoreNode,
-    CorePredicate, LocalRef, ResultProjection, ResultProjectionExpr, ResultProjectionFailureKind,
+    verify_result_projection, CanonicalValue, CompilerContext, CoreBlock, CoreBound, CoreBudget,
+    CoreExpr, CoreModule, CoreNode, CorePredicate, CoreType, LocalRef, ResourceRef,
+    ResultProjection, ResultProjectionArtifact, ResultProjectionExpr, ResultProjectionFailureKind,
     ResultProjectionSource, TargetIrArtifact, TargetIrLoweringFacts, TargetLoweringReport,
     TargetLoweringStatus, MAX_RESULT_PROJECTION_ARTIFACT_BYTES, MAX_RESULT_PROJECTION_NODES,
     MAX_RESULT_PROJECTION_PATH_SEGMENTS, MAX_RESULT_PROJECTION_TEXT_BYTES,
@@ -23,6 +24,18 @@ const PROJECTION_BYTES: &[u8] =
 const PROJECTION_DIGEST: &str =
     include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.result-projection.sha256");
 const PROPERTY_SEED: u64 = 0x1730_5eed_cafe_babe;
+const PURE_SOURCE: &str = "package examples.pure@1;\n\
+    use lawpack examples.pure.law@1 digest \"sha256:0000000000000000000000000000000000000000000000000000000000000000\" as law;\n\
+    type Input = { name: String<max=16>, };\n\
+    type Output = { message: String<max=18>, };\n\
+    intent greet(input: Input) returns Output\n\
+      profile law.read\n\
+      basis input.name\n\
+      budget <= law.tiny {\n\
+      let prefix = \"hi\";\n\
+      let message = prefix + input.name;\n\
+      return { message };\n\
+    }";
 
 fn hello_echo_core_and_facts() -> (CoreModule, TargetIrLoweringFacts) {
     let bundle =
@@ -47,6 +60,38 @@ fn hello_echo_lowering() -> (CoreModule, TargetLoweringReport) {
 fn hello_echo() -> (CoreModule, TargetIrArtifact) {
     let (core, target) = hello_echo_lowering();
     (core, target.artifact.expect("lower Hello Echo Target IR"))
+}
+
+fn pure_lowering() -> (CoreModule, TargetLoweringReport) {
+    let module = parse_module(PURE_SOURCE).expect("parse pure source");
+    let core = edict_syntax::compile_to_core(
+        &module,
+        &CompilerContext::new()
+            .with_operation_profile("law.read", "continuum.profile.read-only/v1")
+            .with_budget(
+                "law.tiny",
+                CoreBudget {
+                    max_steps: 8,
+                    max_allocated_bytes: 256,
+                    max_output_bytes: 64,
+                },
+            ),
+    )
+    .expect("compile pure Core");
+    let facts = TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: "echo.dpo@1".to_owned(),
+            digest: Some(format!("sha256:{}", "1".repeat(64))),
+        },
+        target_ir_domain: "echo.span-ir/v1".to_owned(),
+        operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
+        obstruction_coordinates: Vec::new(),
+        effect_lowerings: Vec::new(),
+        effect_signatures: Vec::new(),
+        pure_functions: Vec::new(),
+    };
+    let report = lower_to_target_ir(&core, &facts);
+    (core, report)
 }
 
 fn expected_expression() -> ResultProjectionExpr {
@@ -197,14 +242,146 @@ fn echo_target_lowering_emits_the_verified_result_projection() {
 }
 
 #[test]
+fn pure_binding_result_projection_round_trips_through_independent_verification() {
+    let (core, report) = pure_lowering();
+    assert_eq!(report.status, TargetLoweringStatus::Lowered);
+    let target = report.artifact.as_ref().expect("pure Target IR");
+    let projection = report
+        .result_projections
+        .get("greet")
+        .expect("pure result projection");
+    let ResultProjectionExpr::Record { fields } = &projection.projection().expression else {
+        panic!("pure result remains a record");
+    };
+    assert_eq!(
+        fields["message"],
+        ResultProjectionExpr::Source {
+            source: ResultProjectionSource::PureBinding {
+                binding_id: "greet.binding.1".to_owned(),
+            },
+            path: Vec::new(),
+        }
+    );
+    assert_eq!(
+        decode_result_projection(projection.canonical_bytes()).expect("decode pure projection"),
+        *projection.projection()
+    );
+    verify_result_projection(
+        &core,
+        target,
+        "greet",
+        projection.canonical_bytes(),
+        projection.digest(),
+    )
+    .expect("independent verifier reconstructs the pure binding result");
+}
+
+#[test]
+fn pure_binding_projection_rejects_missing_substituted_reordered_and_duplicate_target_authority() {
+    let (core, report) = pure_lowering();
+    let target = report.artifact.expect("pure Target IR");
+    let projection = report
+        .result_projections
+        .get("greet")
+        .expect("pure result projection");
+
+    let mut missing = target.clone();
+    missing
+        .intents
+        .get_mut("greet")
+        .expect("pure intent")
+        .pure_bindings
+        .pop();
+    assert_pure_target_authority_rejected(&core, &missing, projection);
+
+    let mut substituted = target.clone();
+    substituted
+        .intents
+        .get_mut("greet")
+        .expect("pure intent")
+        .pure_bindings[1]
+        .value = CoreExpr::Const(edict_syntax::CoreValue::String("wrong".to_owned()));
+    assert_pure_target_authority_rejected(&core, &substituted, projection);
+
+    let mut reordered = target.clone();
+    reordered
+        .intents
+        .get_mut("greet")
+        .expect("pure intent")
+        .pure_bindings
+        .swap(0, 1);
+    assert_pure_target_authority_rejected(&core, &reordered, projection);
+
+    let mut duplicated = target;
+    let bindings = &mut duplicated
+        .intents
+        .get_mut("greet")
+        .expect("pure intent")
+        .pure_bindings;
+    bindings[1].id = bindings[0].id.clone();
+    assert_pure_target_authority_rejected(&core, &duplicated, projection);
+}
+
+#[test]
+fn projection_rejects_local_identity_shared_with_application_input() {
+    let (mut core, report) = pure_lowering();
+    let mut target = report.artifact.expect("pure Target IR");
+    let intent = core.intents.get_mut("greet").expect("pure Core intent");
+    let CoreNode::Let { binding, .. } = &mut intent.body.nodes[0] else {
+        panic!("pure fixture starts with a let");
+    };
+    binding.id = "arg.0".to_owned();
+    intent.body.locals[1].id = "arg.0".to_owned();
+    target
+        .intents
+        .get_mut("greet")
+        .expect("pure Target IR intent")
+        .pure_bindings[0]
+        .binding
+        .id = "arg.0".to_owned();
+    repin_target_core(&core, &mut target);
+
+    let failure = emit_result_projection(&core, &target, "greet")
+        .expect_err("one local identity cannot name input and pure-binding producers");
+
+    assert_eq!(
+        failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+}
+
+fn assert_pure_target_authority_rejected(
+    core: &CoreModule,
+    target: &TargetIrArtifact,
+    projection: &ResultProjectionArtifact,
+) {
+    assert_eq!(
+        emit_result_projection(core, target, "greet")
+            .expect_err("mutated pure binding authority must reject during emission")
+            .kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(
+        verify_result_projection(
+            core,
+            target,
+            "greet",
+            projection.canonical_bytes(),
+            projection.digest(),
+        )
+        .expect_err("mutated pure binding authority must reject during verification")
+        .kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+}
+
+#[test]
 fn target_lowering_exposes_an_unsupported_result_projection_without_claiming_one() {
     let (mut core, facts) = hello_echo_core_and_facts();
-    core.intents
-        .get_mut("createGreeting")
-        .expect("Core intent")
-        .body
-        .result = CoreExpr::Call {
-        callee: "examples.hidden@1.callback".to_owned(),
+    let intent = core.intents.get_mut("createGreeting").expect("Core intent");
+    intent.output = "String<max=0,canonical=raw-utf8>".to_owned();
+    intent.body.result = CoreExpr::Call {
+        callee: "core.string.concat".to_owned(),
         type_args: Vec::new(),
         args: Vec::new(),
     };
@@ -335,6 +512,49 @@ fn mutated_target_core_closure_fails_closed() {
 }
 
 #[test]
+fn malformed_raw_core_cannot_emit_or_verify_a_result_projection() {
+    let (core, facts) = hello_echo_core_and_facts();
+    let baseline = lower_to_target_ir(&core, &facts);
+    let baseline_target = baseline.artifact.expect("baseline Target IR");
+    let projection = emit_result_projection(&core, &baseline_target, "createGreeting")
+        .expect("baseline projection emits");
+
+    let mut malformed = core;
+    malformed.types.insert(
+        "UnusedInvalid".to_owned(),
+        CoreType::List {
+            item: "List<U64,max=01>".to_owned(),
+            max: 1,
+        },
+    );
+    let target = lower_to_target_ir(&malformed, &facts)
+        .artifact
+        .unwrap_or_else(|| baseline_target.clone());
+
+    let emitted = emit_result_projection(&malformed, &target, "createGreeting");
+    let verified = verify_result_projection(
+        &malformed,
+        &target,
+        "createGreeting",
+        projection.canonical_bytes(),
+        projection.digest(),
+    );
+    let (Err(emission_failure), Err(verification_failure)) = (emitted, verified) else {
+        panic!("malformed raw Core crossed a public projection boundary");
+    };
+    assert_eq!(
+        emission_failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(emission_failure.subject(), "types.UnusedInvalid.item");
+    assert_eq!(
+        verification_failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(verification_failure.subject(), "types.UnusedInvalid.item");
+}
+
+#[test]
 fn mutated_target_lawpack_closure_fails_closed() {
     let (core, mut target) = hello_echo();
     target
@@ -425,6 +645,108 @@ fn incomplete_output_and_zero_output_bound_fail_closed() {
     assert_eq!(
         unbounded.kind(),
         ResultProjectionFailureKind::InvalidOutputBound
+    );
+}
+
+#[test]
+fn exact_byte_projection_refuses_a_max_only_source() {
+    let source = PURE_SOURCE
+        .replace("name: String<max=16>", "name: Bytes<exact=16>")
+        .replace("message: String<max=18>", "message: Bytes<exact=16>")
+        .replace("  let prefix = \"hi\";\n", "")
+        .replace("prefix + input.name", "input.name");
+    let module = parse_module(&source).expect("exact-byte projection source parses");
+    let mut core = edict_syntax::compile_to_core(
+        &module,
+        &CompilerContext::new()
+            .with_operation_profile("law.read", "continuum.profile.read-only/v1")
+            .with_budget(
+                "law.tiny",
+                CoreBudget {
+                    max_steps: 8,
+                    max_allocated_bytes: 256,
+                    max_output_bytes: 64,
+                },
+            ),
+    )
+    .expect("exact-byte projection Core compiles");
+    let facts = TargetIrLoweringFacts {
+        target_profile: ResourceRef {
+            coordinate: "echo.dpo@1".to_owned(),
+            digest: Some(format!("sha256:{}", "1".repeat(64))),
+        },
+        target_ir_domain: "echo.span-ir/v1".to_owned(),
+        operation_profiles: vec!["continuum.profile.read-only/v1".to_owned()],
+        obstruction_coordinates: Vec::new(),
+        effect_lowerings: Vec::new(),
+        effect_signatures: Vec::new(),
+        pure_functions: Vec::new(),
+    };
+    let mut target = lower_to_target_ir(&core, &facts)
+        .artifact
+        .expect("exact-byte projection Target IR lowers");
+    emit_result_projection(&core, &target, "greet")
+        .expect("exact byte source fits exact byte output");
+
+    let Some(CoreType::Record { fields }) = core.types.get_mut("Input") else {
+        panic!("Input remains a named record");
+    };
+    assert_eq!(
+        fields.insert("name".to_owned(), "Bytes<max=16>".to_owned()),
+        Some("Bytes<exact=16>".to_owned())
+    );
+    assert!(!core.types.contains_key("Input.name"));
+    let core_intent = core.intents.get_mut("greet").expect("greet Core intent");
+    let CoreNode::Let { binding, .. } = core_intent
+        .body
+        .nodes
+        .last_mut()
+        .expect("greet has a message binding")
+    else {
+        panic!("greet ends with its message binding");
+    };
+    binding.ty = "Bytes<max=16>".to_owned();
+    let binding_id = binding.id.clone();
+    core_intent
+        .body
+        .locals
+        .iter_mut()
+        .find(|local| local.id == binding_id)
+        .expect("message binding appears in the local table")
+        .ty = "Bytes<max=16>".to_owned();
+    let CoreExpr::Record { fields } = &mut core_intent.body.result else {
+        panic!("greet returns a record");
+    };
+    let CoreExpr::Local { reference } = fields.get_mut("message").expect("message result field")
+    else {
+        panic!("message result is the pure binding");
+    };
+    reference.ty = "Bytes<max=16>".to_owned();
+
+    let target_intent = target
+        .intents
+        .get_mut("greet")
+        .expect("greet Target intent");
+    target_intent
+        .pure_bindings
+        .last_mut()
+        .expect("Target greet has a message binding")
+        .binding
+        .ty = "Bytes<max=16>".to_owned();
+    let CoreExpr::Record { fields } = &mut target_intent.result else {
+        panic!("Target greet returns a record");
+    };
+    let CoreExpr::Local { reference } = fields.get_mut("message").expect("Target message field")
+    else {
+        panic!("Target message result is the pure binding");
+    };
+    reference.ty = "Bytes<max=16>".to_owned();
+    repin_target_core(&core, &mut target);
+    let failure = emit_result_projection(&core, &target, "greet")
+        .expect_err("max-only source cannot prove exact-byte output");
+    assert_eq!(
+        failure.kind(),
+        ResultProjectionFailureKind::OutputShapeMismatch
     );
 }
 

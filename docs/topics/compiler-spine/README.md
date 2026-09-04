@@ -57,16 +57,33 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   bare literals inherit an unambiguous expected width from supported comparison,
   annotation, and record-return contexts. Unconstrained bare literals, overflow,
   negative unsigned values, and cross-width assignments reject in type checking;
-  signed minima are accepted through unary-negative literal folding. Statically
-  bounded `Bytes<max=N>` lowers with its exact bound.
-  [CSPINE-REQ-019] [CSPINE-REQ-021]
+  signed minima are accepted through unary-negative literal folding. Byte
+  forms lower while preserving these bounds and identities:
+
+  | Source form | Lowered byte bounds | Preserved Core identity |
+  | --- | --- | --- |
+  | `Bytes<max=N>` | `max=N`, with no minimum | Structural byte type |
+  | `Bytes<exact=N>` | Closed interval `min=N,max=N` | Structural byte type |
+  | Digest-bound imported lawpack alias | Bounds supplied by the exported definition | Nominal exported coordinate |
+
+  [CSPINE-REQ-019] [CSPINE-REQ-021] [CSPINE-REQ-033]
 - An explicit basis expression is checked in the pure pre-body environment
   containing the intent parameter, before body locals exist. The typed
   expression is preserved in Core; this is authoring evidence, not runtime
   basis resolution or admission. [CSPINE-REQ-020]
 - Core lowering produces structured in-memory `CoreModule` values with module
   coordinate, imports, types, intents, input constraints, budgets, locals,
-  ordered nodes, and result expressions. [CSPINE-REQ-003]
+  ordered nodes, and result expressions. Public `lower_core` runs the shared
+  whole-module Core type-integrity judgment before returning, so a caller-built
+  `TypedModule` cannot bypass the source checker and publish invalid Core.
+  [CSPINE-REQ-003] [CSPINE-REQ-037]
+- A source type declaration must classify under Core's shared reference grammar
+  as a named identity. Intrinsics and reserved bare structural constructors
+  reject with `ReservedTypeIdentity` at the declaration span. Compiler-produced
+  `core.types` contains authored local named definitions and exact authenticated
+  imported named definitions only: record fields live in their parent
+  definition, and no `Type.field` or equivalent scratch entry enters Core
+  identity. [CSPINE-REQ-037]
 - Resolver/type-checker failures use stable `CompilerErrorKind` and
   `CompilerStage` values. Tests assert those structured values rather than
   diagnostic prose. [CSPINE-REQ-007]
@@ -96,11 +113,20 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   calls and bare effect statements still reject with stable compiler stage and
   kind identities before Core lowering. Bare-integer width inference memoizes
   successful yield-block shapes within one compilation, so nested valid
-  branches do not cause exponential repeated checking.
-  [CSPINE-REQ-032]
+  branches do not cause exponential repeated checking. Compatible byte ranges
+  join by independently taking the minimum lower bound and maximum upper bound;
+  for example, `Bytes<min=2,max=4>` and `Bytes<min=3,max=5>` infer
+  `Bytes<min=2,max=5>` in either branch order. This least-upper-bound affects
+  unannotated branch inference only and does not weaken exact or annotated
+  assignment checks.
+  [CSPINE-REQ-032] [CSPINE-REQ-035]
   [CSPINE-REQ-012]
 - Duplicate failure keys in an obstruction map reject with
   `DuplicateObstructionFailure` before Core lowering. [CSPINE-REQ-013]
+- Each obstruction binder for an imported effect receives the exact
+  authenticated failure-payload type from the effect signature closure. The
+  compiler does not synthesize an `effect.failure` coordinate; a missing or
+  unresolved payload root rejects before Core. [CSPINE-REQ-037]
 - Lowerable `require ... else <obstruction>` statements lower to Core
   terminal require-failure arms, and
   `require ... else continue obstructed { reason: ... }` lowers to a preserved
@@ -122,10 +148,17 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   structural loop work combine on each control-flow path before exclusive
   branch maxima are selected, preserving branch correlation under the shared
   operation step budget. Imported type-alias traversal rejects beyond a
-  deterministic depth of 128 rather than risking unbounded recursion. The imported lawpack
-  digest remains the helper implementation, cost, and type-closure identity.
+  deterministic depth of 128 rather than risking unbounded recursion. Every
+  resolved named helper parameter, return type, or reachable named child enters
+  the emitted Core type closure even when no application declaration names it.
+  Inline records and other structural constructors use Core's shared canonical
+  renderer and are traversed without being interned as names. Synthesized record
+  literals and conditional joins therefore expose deterministic, branch-order-
+  independent structural references; no `anonymous.record` scratch coordinate
+  crosses into Core. The imported lawpack digest remains the helper
+  implementation, cost, and named-closure identity.
   [CSPINE-REQ-024]
-  [CSPINE-REQ-029] [CSPINE-REQ-031]
+  [CSPINE-REQ-029] [CSPINE-REQ-031] [CSPINE-REQ-034] [CSPINE-REQ-036]
 - Coordinate loop bounds resolve only from explicit compiler facts. Exact
   lawpack preparation projects exported `U32` and `U64` constants through the
   source alias, uses their numeric values for static soundness and budget

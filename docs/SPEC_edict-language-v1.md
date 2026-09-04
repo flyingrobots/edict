@@ -8,7 +8,7 @@ status: "draft"
 owners:
   - "@flyingrobots"
 created: "2026-06-17"
-updated: "2026-06-18"
+updated: "2026-09-03"
 ---
 
 <!-- markdownlint-disable MD025 -->
@@ -45,6 +45,7 @@ the boundaries that must not leak back into language meaning:
 
 - [SPEC - Edict Language v1](./SPEC_edict-language-v1.md): source syntax, type
   system, effect rules, Core IR, and language-level canonical value semantics.
+  Canonical schemas: `abi/edict-common.cddl`, `abi/edict-core.cddl`.
 - [SPEC - Edict Lawpack ABI v1](./SPEC_edict-lawpack-abi-v1.md): lawpack
   manifest and dependency graph, exported types/constants, pure helper and
   semantic effect signatures, proof-only vs runtime-materialized classification,
@@ -65,6 +66,23 @@ the boundaries that must not leak back into language meaning:
   trial.
 - [REQUIREMENTS - Fixture Constitution](./REQUIREMENTS.md): the requirement-ID
   registry binding every normative rule to its owner spec and fixtures.
+
+## Specification Maintenance
+
+This document is Edict's formal language specification. Its language and Core
+semantics are normative even while the v1 design status remains `draft`;
+`draft` permits reviewed evolution and does not permit implementation behavior
+to supersede the written contract silently.
+
+A contract-bearing change to source syntax, static semantics, compiler-visible
+language behavior, Core type identity, or Core IR MUST update this specification
+in the same pull request. When the wire shape changes, the coupled
+`abi/edict-common.cddl` or `abi/edict-core.cddl` schema MUST move with it. The
+owning requirement and test-plan evidence MUST also move when their current
+claim changes. If an implementation change leaves all of those contracts
+unchanged, the pull request may instead record `docs-impact: none` with a
+specific rationale. Tests are conformance evidence; they do not become a second
+language specification.
 
 ## Decision Summary
 
@@ -692,6 +710,12 @@ none, or all are already handled) the `else` clause is omitted entirely; writing
 one is rejected as dead handling. Effects with **two or more** unmapped
 domain-mappable coordinates must use the full `else { failure => ... }` mapping
 form, one arm per coordinate (`EDICT-LANG-OBSTRUCT-EXHAUST-001`).
+
+Every declared effect failure payload type is an authenticated root of the
+same exact named-type closure as the effect input and output. A source
+obstruction binder has that resolved payload type; the failure name selects an
+arm but does not synthesize a new `effect.failure` Core type identity. Missing
+or unresolved payload roots reject before compiler or Target facts exist.
 
 Low-level failure classes are classified before source mapping:
 
@@ -1392,7 +1416,7 @@ type-ref        = qual-ident , type-args?
                   "max" , "=" , bound-ref , ">" ;
 string-refine   = "<" , "max" , "=" , bound-ref ,
                   ( "," , "canonical" , "=" , ident )? , ">" ;
-bytes-refine    = "<" , "max" , "=" , bound-ref , ">" ;
+bytes-refine    = "<" , ( "max" | "exact" ) , "=" , bound-ref , ">" ;
 type-args       = "<" , type-ref , { "," , type-ref } , ">" ;
 
 fn-decl         = "fn" , ident , "(" , param-list? , ")" ,
@@ -1533,6 +1557,11 @@ Semantic grammar rules:
 
 - `migration` and `projection` are reserved words for future syntax and are not
   accepted as v1 declarations.
+- A source `type` declaration name MUST classify as a `core-named-type-ref`
+  before type checking may publish it. Intrinsic identities and reserved bare
+  structural constructor names therefore reject at the declaration span; the
+  Core reference classifier, rather than a second source-only reserved-name
+  list, owns this judgment.
 - Keywords are reserved as bare identifiers but may appear after `.` as member
   names, so `ref.ensure(value)` and `history.event.record(value)` are legal.
 - Each intent may contain at most one `profile`, one `implements`, one `basis`,
@@ -1615,21 +1644,28 @@ lawpack-defined raw text scalar, not ambiently normalized `String`.
 #### Refined Scalar Types
 
 `String` and `Bytes` are bounded with the same `<max=...>` mechanism as `List`
-and `Map`, and `String` may also pin a canonicalization policy:
+and `Map`; `Bytes` may instead require one exact byte length, and `String` may
+also pin a canonicalization policy:
 
 ```edict
 String<max=128>
 String<max=128, canonical=nfc>
 Bytes<max=65536>
+Bytes<exact=32>
 
 type UserName = String<max=128, canonical=nfc>;
 type RawText  = Bytes<max=1048576>;
 ```
 
-Only `String` may pin a `canonical=` policy; `Bytes` carries `max` only.
+Only `String` may pin a `canonical=` policy; `Bytes` carries either `max` or
+`exact`.
 `Bytes<max=N, canonical=...>` is a syntax error (the grammar gives `Bytes` a
-max-only refinement), because bytes are measured and hashed raw and must not be
+length-only refinement), because bytes are measured and hashed raw and must not be
 normalized (`EDICT-LANG-BYTES-NOCANON-001`).
+
+`Bytes<exact=N>` is the closed structural interval `min=N,max=N` in Core. It is
+application-neutral: lawpacks may assign nominal coordinates such as `HeadId`
+or `BlobId`, while Edict owns only the exact byte-length invariant.
 
 Boundedness is expressible **everywhere** a type appears: intent parameters,
 return types, type aliases, record fields, function parameters and returns, and
@@ -1647,7 +1683,7 @@ Length and bound units are pinned (`EDICT-LANG-LEN-001`):
 - `len(value: String) -> U64` is the count of **Unicode scalar values**.
 - `len(value: Bytes) -> U64` is the count of **bytes**.
 - A `String<max=N>` bound is `N` Unicode scalar values; a `Bytes<max=N>` bound
-  is `N` bytes.
+  is at most `N` bytes; and `Bytes<exact=N>` is exactly `N` bytes.
 - `canonical=nfc` (or another versioned profile) is applied **before** length
   is measured and before comparison or hashing.
 - String/bytes concatenation result bounds are derived as the sum of operand
@@ -2183,37 +2219,135 @@ Edict Core IR is the canonical compiler output before target lowering. It is
 not source syntax and not target IR.
 
 > [!NOTE]
-> The review-JSON expression examples in this section (`CoreExpr`,
-> `CorePredicate`, `inputConstraints` trees, node shapes) are **illustrative
-> until the normative `edict.core/v1` CDDL lands**. The Phase 0 Core-schema issue
-> ([#3](https://github.com/flyingrobots/edict/issues/3)) owns the complete tagged
-> union and canonical encoding. **No Core hash golden may be frozen before that
-> schema lands** (`EDICT-CORE-EXPR-CDDL-001`).
+> [`abi/edict-core.cddl`](./abi/edict-core.cddl), assembled with
+> [`abi/edict-common.cddl`](./abi/edict-common.cddl), is the normative
+> `edict.core/v1` wire schema. This section is the normative semantic contract
+> for constraints that CDDL's `tstr` cannot express. The reference encoder and
+> reviewed Core goldens are executable conformance evidence
+> (`EDICT-CORE-EXPR-CDDL-001`).
 
 ### Core Module Shape
 
-```json
-{
-  "apiVersion": "edict.core/v1",
-  "package": {
-    "name": "graft.structural_history",
-    "version": "1"
-  },
-  "semanticInputs": {
-    "sourceProfile": "edict@1",
-    "sourceProfileFactsDigest": "sha256:..."
-  },
-  "requiredCoreCapabilities": [],
-  "imports": [],
-  "types": [],
-  "functions": [],
-  "intents": [],
-  "canonicalizationProfile": {
-    "id": "edict.canonical-cbor/v1",
-    "digest": "sha256:..."
-  }
+```cddl
+core-module = {
+  apiVersion: "edict.core/v1",
+  coordinate: tstr,
+  imports: [* core-import],
+  types: { * core-named-type-ref => core-type },
+  intents: { + tstr => core-intent },
+  requiredCoreCapabilities: [* tstr],
 }
 ```
+
+The module `coordinate` is its nonempty semantic identity. Imports are exact
+resource references. The `types` map contains named definitions only; its key
+restriction is defined below. Intents are keyed by their module-local names.
+
+A publicly constructible raw `CoreModule` is an untrusted candidate, not proof
+that the module satisfies Core type semantics. The authoritative whole-module
+type-integrity judgment validates the complete candidate and, on success,
+mints an opaque `ValidatedCoreModule` witness borrowing those exact immutable
+contents. Canonical encoding and digesting, Target lowering, and
+result-projection emission or verification MUST obtain that witness before
+they can mint or verify an artifact.
+
+### Core Type Reference Identity
+
+Every `core-type-ref` MUST classify without consulting mutable module state as
+exactly one of these identity classes:
+
+1. **Intrinsic** — a fixed Core coordinate: `Unit`, `Bool`, or one of `I8`,
+   `I16`, `I32`, `I64`, `U8`, `U16`, `U32`, and `U64`. Its definition is built
+   into the Core ABI.
+2. **Structural** — canonical constructor syntax whose complete meaning is
+   encoded by the reference itself. Structural references are parsed, not
+   looked up.
+3. **Named** — a nonempty canonical type coordinate whose exact definition is
+   supplied by the owning module or authenticated lawpack.
+
+A malformed, noncanonical, or over-depth string is not a fourth class; it is an
+invalid Core type reference and MUST reject. The canonical structural grammar
+is:
+
+```ebnf
+core-type-ref = intrinsic-ref | structural-ref | named-ref ;
+
+intrinsic-ref = "Unit" | "Bool"
+              | "I8" | "I16" | "I32" | "I64"
+              | "U8" | "U16" | "U32" | "U64" ;
+
+structural-ref = string-ref | bytes-ref | record-ref | option-ref
+               | list-ref | map-ref | capability-ref | external-request-ref ;
+
+string-ref = "String<max=" uint ",canonical=" string-canonical ">" ;
+string-canonical = "raw-utf8" | "unicode-scalar-nfc" ;
+bytes-ref = "Bytes<max=" uint ">"
+          | "Bytes<exact=" uint ">"
+          | "Bytes<min=" uint ",max=" uint ">" ;
+record-ref = "Record<" [ record-field { "," record-field } ] ">" ;
+record-field = field-ident ":" core-type-ref ;
+option-ref = "Option<" core-type-ref ">" ;
+list-ref = "List<" core-type-ref ",max=" uint ">" ;
+map-ref = "Map<" core-type-ref "," core-type-ref ",max=" uint ">" ;
+capability-ref = "CapabilityRef<" core-type-ref ">" ;
+external-request-ref = "edict.external-action.request/v1<" core-type-ref ">" ;
+
+uint = "0" | nonzero-digit { digit } ;
+field-ident = ( letter | "_" ) { letter | digit | "_" } ;
+named-ref = named-ref-char { named-ref-char } ;
+digit = ? an ASCII digit from "0" through "9" ? ;
+nonzero-digit = ? an ASCII digit from "1" through "9" ? ;
+letter = ? an ASCII letter from "A" through "Z" or "a" through "z" ? ;
+named-ref-char = ? any Unicode scalar other than whitespace, "<", ">", ",", ":", or "=" ? ;
+```
+
+`uint` uses canonical unsigned decimal spelling: `0` or a nonzero digit followed
+by digits, with no leading zero. A `Bytes<min=M,max=N>` reference requires
+`M <= N`; equal bounds render as `Bytes<exact=N>`. Record field names use the
+Edict identifier shape and MUST appear once each in ascending canonical field
+order. Structural children recurse under the same rules, with a maximum type
+reference depth of 128. For every accepted intrinsic or structural reference
+`x`, rendering its parsed Core type MUST reproduce `x` byte-for-byte.
+
+A `named-ref` additionally excludes every intrinsic spelling, the reserved bare
+constructor names, `anonymous.record`, and every string that begins like a
+reserved structural constructor but fails its canonical grammar. Those strings
+are invalid references rather than names.
+
+Intrinsic and structural references MUST NOT appear as keys in `core.types` and
+MUST NOT be copied into authenticated type-closure maps. A `core.types` key is a
+`core-named-type-ref`; attempts to shadow or redefine intrinsic or structural
+identity reject before canonical Core bytes or Target artifacts exist. Named
+records and other named structural definitions remain valid: their key carries
+provenance, while the referenced children carry either structure or further
+names.
+
+The whole-module type-integrity judgment eagerly validates every named
+definition, including valid unused authored definitions that intentionally
+remain hash-significant. It validates each supported scalar invariant, record
+field and variant shape, composite child reference, nominal contract equality,
+named resolution, recursion depth, and the v1 cycle policy. It also traverses
+every type reference carried by intents, complete local tables, producer and
+obstruction binders, expressions and call type arguments, external requests,
+predicates, reasons, nested branches and loops, and result expressions. A
+malformed unused definition is still part of the Core digest preimage and does
+not escape this judgment merely because Target execution cannot reach it.
+
+Compiler-produced `core.types` entries consist only of independently authored
+local named definitions and exact authenticated imported named definitions.
+Field positions are represented inside their owning record definition; a
+compiler-created `Type.field`, `effect.failure`, `anonymous.record`, or other
+scratch coordinate is not a Core named definition and MUST NOT enter canonical
+Core identity. The parent definition and its canonical child references carry
+the complete field meaning.
+
+Nominal contracts are named identities. A nominal definition's `contract` MUST
+equal its table key, and its representation is another `core-type-ref`. A
+structural constructor nested inside a named definition is traversed
+transparently. An authenticated signature closure contains exactly every
+reachable named definition, recursively, and contains no intrinsic or structural
+entry. Each named lawpack coordinate in that closure MUST be below the exact
+digest-locked owning lawpack coordinate and match the caller's Core definition.
 
 `requiredCoreCapabilities` is a hash-significant Core module field: the set of
 non-minimal Core constructs the module relies on (e.g. variants, maps, bounded
@@ -2223,11 +2357,12 @@ its capability set without changing the Core digest
 (`EDICT-LANG-CAPABILITIES-SPLIT-001`). `requiredSourceCapabilities` is **not**
 here — it is source-profile/release metadata, checked by the compiler.
 
-`canonicalizationProfile` identifies the codec used to encode this module; it is
-**not** the module's own digest. A Core artifact must not contain its own
-self-hash (`EDICT-CORE-SELFHASH-001`). The Core IR digest is computed over the
-preimage and published in an external resource descriptor (e.g. the contract
-bundle's `coreIrDigest`), never embedded in the Core module itself.
+`edict.canonical-cbor/v1` identifies the codec used to encode this module, but it
+is a protocol constant rather than a Core module field. A Core artifact must not
+contain its own self-hash (`EDICT-CORE-SELFHASH-001`). The Core IR digest is
+computed over the canonical module and published in an external resource
+descriptor (for example, the contract bundle's `coreIrDigest`), never embedded
+in the Core module itself.
 
 The raw source artifact digest is bundle provenance only. It is intentionally
 excluded from the Core IR hash preimage so comments, formatting, file paths,
@@ -2238,54 +2373,27 @@ digest (`EDICT-CORE-NOPACKAGING-001`).
 
 ### Core Intent Shape
 
-```json
-{
-  "name": "recordGitWarpImportBatch",
-  "coordinate": "graft.structural_history@1.intent.recordGitWarpImportBatch",
-  "input": "RecordGitWarpImportBatchInput",
-  "output": "RecordGitWarpImportBatchReceipt",
-  "optic": {
-    "opticKind": "affectReintegration",
-    "boundaryKind": "affect",
-    "basis": { "kind": "fieldAccess", "of": "%input", "field": "basisId",
-               "type": "shape.ID" },
-    "apertureRequirement": { "kind": "footprintCeiling",
-                             "ref": "echo.dpo@1.footprint/recordBatch" },
-    "supportPolicy": "continuum.support.carry-or-obstruct/v1",
-    "lossDisposition": "continuum.support.reject-on-loss/v1"
-  },
-  "claims": {
-    "requiredOperationProfile": "echo.createOnly",
-    "targetAuthorities": ["echo.dpo@1"],
-    "lawProfiles": []
-  },
-  "implements": null,
-  "inputConstraints": [
-    { "op": "!=", "left": { "field": "%input.repo" }, "right": { "string": "" } }
-  ],
-  "coreEvaluationBudget": {
-    "maxSteps": 10000,
-    "maxAllocatedBytes": 1048576,
-    "maxOutputBytes": 65536
-  },
-  "targetBudget": {
-    "costAlgebra": { "id": "echo.dpo.cost/v1", "digest": "sha256:..." },
-    "ceiling": { "maxTargetReads": 128, "maxTargetWrites": 128,
-                 "maxClosureReads": 8, "maxGeneratedEffects": 256 }
-  },
-  "body": {
-    "kind": "block",
-    "nodes": []
-  }
+```cddl
+core-intent = {
+  input: core-type-ref,
+  output: core-type-ref,
+  requiredOperationProfile: tstr,
+  ? basis: core-expr,
+  inputConstraints: [* input-constraint],
+  coreEvaluationBudget: core-budget,
+  body: core-block,
+  ? optic: core-optic,
 }
 ```
 
-Hash-significant intent fields are the optic contract, the
-`requiredOperationProfile` **requirement**, target authorities, law profiles,
-the typed `inputConstraints` predicate trees (not a validator reference),
-Core/target budgets, and the body. (The module-level `requiredCoreCapabilities`
-field is also hash-significant; see Core Module Shape.) The following are **not**
-in the Core intent preimage:
+Every present Core intent field is hash-significant: input and output type
+references, the `requiredOperationProfile` requirement, optional typed basis,
+typed `inputConstraints` predicate trees, Core evaluation budget, body, and the
+optional optic contract. Target authorities are module imports; law profiles,
+target budgets, verifier conclusions, and packaging metadata belong to their
+own ABIs rather than the Core intent. The module-level
+`requiredCoreCapabilities` field is also hash-significant. The following are
+**not** in the Core intent preimage:
 
 - `verifiedOperationMode` — a verifier-report field, not a Core claim. Core
   states the requirement; the verifier proves the verdict

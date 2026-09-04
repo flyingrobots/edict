@@ -12,7 +12,8 @@ use crate::canonical::{
     decode_canonical_cbor, digest_canonical_value, sha256_review_string, CanonicalValue,
 };
 use crate::compiler::{
-    BoundFact, CompilerContext, PureFunctionFact, PureHelperCostFact, TypeShapeFact,
+    imported_type_core_closure, BoundFact, CompilerContext, EffectSignatureFact, PureFunctionFact,
+    PureHelperCostFact, TypeShapeFact,
 };
 use crate::core_ir::{CoreBudget, ResourceRef};
 use crate::lawpack::{
@@ -20,7 +21,10 @@ use crate::lawpack::{
     ValidatedLawpackBundle,
 };
 use crate::lowerability::WriteClass;
-use crate::target_ir::{TargetEffectLowering, TargetIrLoweringFacts};
+use crate::target_ir::{
+    TargetEffectLowering, TargetEffectSignatureFact, TargetEffectSignatureShape,
+    TargetIrLoweringFacts, TargetPureFunctionFact,
+};
 
 /// Canonical direct lawpack-adapter ABI supported by this crate.
 pub const LAWPACK_ADAPTER_API_VERSION: &str = "edict.lawpack-adapter/v1";
@@ -140,6 +144,13 @@ pub struct PreparedLawpackCompilation {
     target_ir_facts: TargetIrLoweringFacts,
 }
 
+struct ProjectedEffects {
+    compiler_context: CompilerContext,
+    obstruction_coordinates: BTreeSet<String>,
+    effect_lowerings: Vec<TargetEffectLowering>,
+    effect_signatures: Vec<TargetEffectSignatureFact>,
+}
+
 impl PreparedLawpackCompilation {
     /// Compiler facts projected through the module-local lawpack alias.
     #[must_use]
@@ -215,8 +226,12 @@ pub fn prepare_lawpack_compilation(
     };
     let mut compiler_context = CompilerContext::new();
     let mut operation_profiles = BTreeSet::new();
-    let mut obstruction_coordinates = BTreeSet::new();
-    let mut effect_lowerings = Vec::new();
+    let type_shapes = exported_type_shapes(bundle, &lawpack);
+
+    for type_shape in type_shapes.values() {
+        local_coordinate(&alias, &prefix, &type_shape.coordinate)?;
+        compiler_context = compiler_context.with_type_shape(type_shape.clone());
+    }
 
     for (coordinate, profile) in &adapter.operation_profiles {
         let local_profile = local_coordinate(&alias, &prefix, coordinate)?;
@@ -242,41 +257,31 @@ pub fn prepare_lawpack_compilation(
         operation_profiles.insert(profile.core.clone());
     }
 
-    for (coordinate, effect) in &adapter.effects {
-        let local_effect = local_coordinate(&alias, &prefix, coordinate)?;
-        compiler_context = compiler_context
-            .with_effect_write_class(local_effect.clone(), effect.write_class.clone());
-        obstruction_coordinates.extend(effect.failure_mappings.values().cloned());
-        effect_lowerings.push(TargetEffectLowering {
-            effect: local_effect,
-            target_intrinsic: effect.target_intrinsic.clone(),
-            failure_mappings: effect.failure_mappings.clone(),
-        });
-    }
+    let ProjectedEffects {
+        compiler_context: projected_context,
+        obstruction_coordinates,
+        effect_lowerings,
+        effect_signatures,
+    } = project_effects(
+        compiler_context,
+        bundle,
+        adapter,
+        &lawpack,
+        &alias,
+        &prefix,
+        &type_shapes,
+    )?;
+    compiler_context = projected_context;
 
-    for function in &bundle.exports().pure_functions {
-        let local_function = local_coordinate(&alias, &prefix, &function.coordinate)?;
-        compiler_context = compiler_context.with_pure_function(
-            local_function,
-            PureFunctionFact {
-                lawpack: lawpack.clone(),
-                coordinate: function.coordinate.clone(),
-                type_parameters: function.type_parameters.clone(),
-                parameter_types: function.parameter_types.clone(),
-                return_type: function.return_type.clone(),
-                cost_template: function.cost_template.clone(),
-            },
-        );
-    }
-
-    for exported_type in &bundle.exports().types {
-        local_coordinate(&alias, &prefix, &exported_type.coordinate)?;
-        compiler_context = compiler_context.with_type_shape(TypeShapeFact {
-            lawpack: lawpack.clone(),
-            coordinate: exported_type.coordinate.clone(),
-            definition: exported_type.definition.clone(),
-        });
-    }
+    let (projected_context, pure_functions) = project_pure_functions(
+        compiler_context,
+        bundle,
+        &lawpack,
+        &alias,
+        &prefix,
+        &type_shapes,
+    )?;
+    compiler_context = projected_context;
 
     compiler_context =
         project_bound_constants(compiler_context, bundle, &lawpack, &alias, &prefix)?;
@@ -306,8 +311,162 @@ pub fn prepare_lawpack_compilation(
             operation_profiles: operation_profiles.into_iter().collect(),
             obstruction_coordinates: obstruction_coordinates.into_iter().collect(),
             effect_lowerings,
+            effect_signatures,
+            pure_functions,
         },
     })
+}
+
+fn exported_type_shapes(
+    bundle: &ValidatedLawpackBundle,
+    lawpack: &ResourceRef,
+) -> BTreeMap<String, TypeShapeFact> {
+    bundle
+        .exports()
+        .types
+        .iter()
+        .map(|exported_type| {
+            (
+                exported_type.coordinate.clone(),
+                TypeShapeFact {
+                    lawpack: lawpack.clone(),
+                    coordinate: exported_type.coordinate.clone(),
+                    definition: exported_type.definition.clone(),
+                },
+            )
+        })
+        .collect()
+}
+
+fn project_effects(
+    mut compiler_context: CompilerContext,
+    bundle: &ValidatedLawpackBundle,
+    adapter: &ValidatedLawpackAdapter,
+    lawpack: &ResourceRef,
+    alias: &str,
+    prefix: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+) -> Result<ProjectedEffects, Vec<LawpackAdapterFailure>> {
+    let mut obstruction_coordinates = BTreeSet::new();
+    let mut effect_lowerings = Vec::new();
+    let mut effect_signatures = Vec::new();
+    for (coordinate, effect) in &adapter.effects {
+        let local_effect = local_coordinate(alias, prefix, coordinate)?;
+        let exported = bundle
+            .exports()
+            .effects
+            .iter()
+            .find(|exported| exported.coordinate == *coordinate)
+            .ok_or_else(|| {
+                one(failure(
+                    LawpackAdapterFailureKind::MissingEffectImplementation,
+                    format!("exports.effects.{coordinate}"),
+                    "matching exported semantic effect",
+                ))
+            })?;
+        let mut signature_types = vec![exported.input_type.clone(), exported.output_type.clone()];
+        signature_types.extend(
+            exported
+                .effect_failures
+                .values()
+                .map(|failure| failure.payload_type.clone()),
+        );
+        let type_closure = imported_type_core_closure(&signature_types, type_shapes, lawpack)
+            .ok_or_else(|| {
+                one(failure(
+                    LawpackAdapterFailureKind::InvalidShape,
+                    format!("exports.effects.{coordinate}"),
+                    "input and output types in the exact exported bounded type closure",
+                ))
+            })?;
+        let failure_payload_types = exported
+            .effect_failures
+            .iter()
+            .map(|(failure, definition)| (failure.clone(), definition.payload_type.clone()))
+            .collect::<BTreeMap<_, _>>();
+        compiler_context = compiler_context
+            .with_effect_write_class(local_effect.clone(), effect.write_class.clone())
+            .with_effect_signature(
+                local_effect.clone(),
+                EffectSignatureFact {
+                    lawpack: lawpack.clone(),
+                    coordinate: exported.coordinate.clone(),
+                    type_parameters: exported.type_parameters.clone(),
+                    input_type: exported.input_type.clone(),
+                    output_type: exported.output_type.clone(),
+                    failure_payload_types: failure_payload_types.clone(),
+                },
+            );
+        effect_signatures.push(TargetEffectSignatureFact::from_validated_lawpack_export(
+            lawpack.clone(),
+            local_effect.clone(),
+            TargetEffectSignatureShape {
+                coordinate: exported.coordinate.clone(),
+                type_parameters: exported.type_parameters.clone(),
+                input_type: exported.input_type.clone(),
+                output_type: exported.output_type.clone(),
+                failure_payload_types,
+            },
+            type_closure,
+        ));
+        obstruction_coordinates.extend(effect.failure_mappings.values().cloned());
+        effect_lowerings.push(TargetEffectLowering {
+            effect: local_effect,
+            target_intrinsic: effect.target_intrinsic.clone(),
+            failure_mappings: effect.failure_mappings.clone(),
+        });
+    }
+
+    Ok(ProjectedEffects {
+        compiler_context,
+        obstruction_coordinates,
+        effect_lowerings,
+        effect_signatures,
+    })
+}
+
+fn project_pure_functions(
+    mut context: CompilerContext,
+    bundle: &ValidatedLawpackBundle,
+    lawpack: &ResourceRef,
+    alias: &str,
+    prefix: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+) -> Result<(CompilerContext, Vec<TargetPureFunctionFact>), Vec<LawpackAdapterFailure>> {
+    let mut target_facts = Vec::new();
+    for function in &bundle.exports().pure_functions {
+        let local_function = local_coordinate(alias, prefix, &function.coordinate)?;
+        let mut signature_types = function.parameter_types.clone();
+        signature_types.push(function.return_type.clone());
+        let type_closure = imported_type_core_closure(&signature_types, type_shapes, lawpack)
+            .ok_or_else(|| {
+                one(failure(
+                    LawpackAdapterFailureKind::InvalidShape,
+                    format!("exports.pureFunctions.{}", function.coordinate),
+                    "parameter and return types in the exact exported bounded type closure",
+                ))
+            })?;
+        target_facts.push(TargetPureFunctionFact::from_validated_lawpack_export(
+            lawpack.clone(),
+            function.coordinate.clone(),
+            function.type_parameters.clone(),
+            function.parameter_types.clone(),
+            function.return_type.clone(),
+            type_closure,
+        ));
+        context = context.with_pure_function(
+            local_function,
+            PureFunctionFact {
+                lawpack: lawpack.clone(),
+                coordinate: function.coordinate.clone(),
+                type_parameters: function.type_parameters.clone(),
+                parameter_types: function.parameter_types.clone(),
+                return_type: function.return_type.clone(),
+                cost_template: function.cost_template.clone(),
+            },
+        );
+    }
+    Ok((context, target_facts))
 }
 
 fn project_bound_constants(
@@ -566,6 +725,7 @@ fn validate_adapter_closure(
         required_budgets.insert(effect.cost_obligation.as_str());
     }
 
+    let mut core_profile_owners = BTreeMap::new();
     for (coordinate, profile) in operation_profiles {
         if let Some(budget) = &profile.budget_obligation {
             required_budgets.insert(budget);
@@ -599,6 +759,13 @@ fn validate_adapter_closure(
                     effect,
                 )));
             }
+        }
+        if let Some(first_owner) = core_profile_owners.insert(&profile.core, coordinate) {
+            return Err(one(failure(
+                LawpackAdapterFailureKind::DuplicateReference,
+                format!("adapter.operationProfiles.{coordinate}.core"),
+                format!("unique Core profile mapping; first mapped by `{first_owner}`"),
+            )));
         }
     }
     exact_keys(

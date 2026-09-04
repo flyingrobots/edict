@@ -10,6 +10,23 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Updated the capability-denied provider host from Wasmtime 46.0.2 to 46.0.3
+  after RUSTSEC-2026-0268 and RUSTSEC-2026-0269 made the prior exact pin fail
+  the mandatory supply-chain gate. The direct feature and single-owner
+  dependency boundary remain unchanged.
+- Lowered bounded source-ordered pure Core bindings into generic Target IR with
+  exact compiler-local identities, expressions, helper and conditional
+  dependencies, semantic closure, canonical identity, and independently
+  verifiable result-projection sources. Malformed binding graphs, dangling
+  results, type-incompatible binding values, cross-class local-identity
+  collisions, substituted or reordered target bindings, duplicate identities,
+  and closure stripping now fail before provider invocation. The public
+  application boundary proves that only operation profiles required by compiled
+  Core contribute a target configuration. Effect-free adapters now supply their
+  operation-profile target configuration to application provider inputs instead
+  of requiring a synthetic runtime effect, and configurations owned only by
+  adapter profiles whose Core mapping is not required by the compiled
+  application no longer create false application-build ambiguity.
 - Replaced sentinel external-request schema and reconciliation identities
   with generator-owned canonical artifacts. External-action application builds
   now require an exact `externalActionResources` closure, independently validate
@@ -31,6 +48,10 @@ versions still track specification maturity rather than a released product.
 
 ### Added
 
+- Added explicit imported `Nominal<T>` lawpack contracts. Nominal contracts
+  preserve exact and ranged bounded-byte storage representations in Core while
+  rejecting cross-assignment between distinct contract coordinates before
+  lowering.
 - Added a public application-owned lawpack authoring boundary. One bounded
   `edict.lawpack-build/v1` review document now emits deterministic canonical
   manifests, exports, adapters, local resources, and digest sidecars through

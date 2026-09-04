@@ -58,7 +58,11 @@ Target lowering copies the node into `externalActionRequests`. It never turns
 the operation into a target step or `targetIntrinsic`. The Target IR semantic
 closure binds the exact capability resource alongside the source Core and any
 lawpacks; canonical Target IR encoding refuses a request whose operation is
-absent from that closure. [EXTREQ-REQ-003] [EXTREQ-REQ-004]
+absent from that closure. Before artifact emission, Target validation also
+requires `settlementType` to resolve and the compiler-owned binding to be an
+`ExternalActionRequest` whose settlement is structurally equivalent in both
+directions. Caller-authored Core cannot change only the metadata while retaining
+the old request binding. [EXTREQ-REQ-003] [EXTREQ-REQ-004]
 
 Equivalent source and compiler facts produce byte-identical Core and Target IR.
 Every operation, schema, input, scope, basis, budget, or reconciliation change

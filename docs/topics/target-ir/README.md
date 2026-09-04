@@ -14,8 +14,9 @@ The current target IR implementation is deliberately narrow:
 - selected target profile: `echo.dpo@1` or `gitwarp.ref_crdt@1`;
 - selected Target IR artifact domain: `echo.span-ir/v1` or
   `gitwarp.commit-reducer-ir/v1`;
-- selected source/Core shape: the first supported effectful Core effect node,
-  Echo `require` guard requirements, and typed external-action request data;
+- selected source/Core shape: source-ordered pure `let` bindings, the first
+  supported effectful Core effect node, Echo `require` guard requirements, and
+  typed external-action request data;
 - selected outcome: a deterministic target-owned review artifact with canonical
   `edict.canonical-cbor/v1` bytes and a reviewed
   `edict.target-ir.artifact/v1` digest;
@@ -24,12 +25,22 @@ The current target IR implementation is deliberately narrow:
 
 The `edict_syntax` crate exposes `lower_to_target_ir`,
 `TargetIrLoweringFacts`, `TargetLoweringReport`, `TargetIrArtifact`,
-`TargetIrSemanticClosure`, `TargetIrExternalActionRequest`,
+`TargetIrSemanticClosure`, `TargetEffectSignatureFact`, `TargetIrPureBinding`,
+`TargetIrExternalActionRequest`,
 `encode_target_ir_artifact`, `digest_target_ir_artifact`, and stable
 `TargetLoweringFailureKind` values. The lowerer consumes an already-built
 `CoreModule` and explicit target-lowering facts supplied by the caller. It does
 not read target facts from ambient environment, discover runtimes, or fetch
 registries.
+
+Because `CoreModule` is publicly constructible, Target first invokes the shared
+whole-module Core type-integrity judgment and consumes its opaque borrowed
+witness. Invalid or unresolved type references in any named definition—even an
+unused one—or any type-bearing graph surface return one
+`InvalidCoreIdentity` failure before Target or result-projection artifact
+construction. Target-specific graph and authority checks run only after that
+shared border succeeds. The built-in provider compatibility seam delegates to
+this exact path. [TIR-REQ-044]
 
 The crate also exposes `BuiltinTargetLowerer`, `BuiltinLowererRequest`, and
 `lower_with_builtin_lowerer` as an
@@ -84,7 +95,10 @@ Each supported Core external-action request instead becomes one
 `externalActionRequests` entry. It preserves the operation, input and settlement
 types, schemas, input, scope, basis, budgets, reconciliation law, compiler-owned
 binding, deterministic request id, and fixed awaiting-settlement posture. It
-does not emit a target step or target intrinsic.
+does not emit a target step or target intrinsic. Before copying the request, the
+lowerer resolves its settlement metadata and requires the binding to be an
+`ExternalActionRequest` with a structurally equivalent settlement type in both
+directions. [TIR-REQ-031]
 
 For the supported Echo slice, each supported Core `require` node before any
 target step becomes a deterministic Target IR requirement that records:
@@ -108,13 +122,89 @@ future artifact-model change.
 
 Each Target IR intent also preserves an explicit Core basis expression when
 present, the Core input constraints, Core evaluation budget, source-ordered
-requirements, source-ordered effect steps, and structured Core result
-expression for the supported slice. This records authored basis, preconditions,
-evaluation limits, guard dispositions, and success-output semantics without
-resolving a runtime basis, executing Echo, or admitting a bundle.
+pure bindings, source-ordered requirements, source-ordered effect steps, and
+structured Core result expression for the supported slice. Each pure binding
+retains its exact compiler local, Core expression, and deterministic intent-local
+identity. The lowerer neither evaluates nor duplicates helper calls and
+conditionals. Malformed Core with a dangling, conflicting, forward, self, or
+duplicate pure binding fails with `InvalidCoreIdentity` before Target IR exists.
+Pure conditional predicates independently prove reference closure, compatible
+operand types, and fixed-width integer domains at this boundary, including when
+a conditional is nested inside string-shape derivation. Supported pure calls,
+including `core.string.concat`, contribute their bounded result type to operand
+comparison instead of falling through to literal-only inference. String
+concatenation accepts valid raw or NFC bounded operands, including mixed
+canonicalizations, and derives the compiler-defined raw UTF-8 result with the
+checked sum of their maxima. [TIR-REQ-035] Conditional operands also validate
+their nested predicate and compute a bounded least-upper-bound for their branch
+results. An exact shared named reference is retained; otherwise the result uses
+the canonical structural meaning rather than choosing a branch's provenance.
+Byte intervals join their lower and upper bounds component-wise. Lists
+recursively join their item shapes and take the wider collection maximum, while
+equal-key structural records recursively join each field. This `join`
+judgment is distinct from predicate `comparable`: a direct comparison is lawful
+only when the complete left shape fits the right or the complete right shape
+fits the left. It cannot synthesize a byte union or choose a different
+compatibility direction for each record field. Structural Core judgments share
+the compiler's finite 128-level type-depth boundary and one Core parser/renderer.
+Intrinsics and canonical structural records, lists, options, maps, capability
+references, and external requests resolve from syntax; any such `core.types` key
+rejects as an identity redefinition before artifact construction. [TIR-REQ-027]
+[TIR-REQ-029] [TIR-REQ-032] [TIR-REQ-033] [TIR-REQ-037] [TIR-REQ-038]
+[TIR-REQ-042] Field projection uses the same structural record inference. A
+direct record or record-valued conditional can therefore supply a field without
+inventing a name for its base; predicates, branches, and the selected field
+still pass the same recursive type checks. [TIR-REQ-036]
+Each non-intrinsic pure call must also match exactly one helper fact projected
+from a validated lawpack export. Those facts expose read-only identity and
+signature accessors but cannot be constructed or mutated by an external caller.
+Target lowering checks the canonical coordinate, complete non-generic signature,
+exact digest-locked owning lawpack, and independently reconstructs the exact
+reachable named-type closure from the signature roots. Structural constructors
+are traversed transparently and never need fictitious lawpack ownership. Every
+named parent or leaf must remain below the exact lawpack and match caller Core;
+missing, extra, foreign, or type-definition-substituted helper evidence rejects
+as `InvalidCoreIdentity`; fabricated facts are unrepresentable at the public
+API. [TIR-REQ-034] Before copying any expression-bearing Core surface, the lowerer
+also traverses intent basis and constraints, requirement predicates and reason
+payloads, effect inputs and obstruction values, and every external-request
+value. Local references must be available in source order, scalar and declared
+types must remain valid, and every executable call must pass the same exact
+lawpack-helper check. The current Core obstruction arm's nonempty,
+zero-argument call-shaped constructor remains an opaque application value in
+that specific position; adding arguments makes it executable and subjects it to
+helper authority. Empty `All` and `Any` aggregates reject through this same
+predicate judgment on every copied surface, matching the Core wire schema's
+one-or-more cardinality. Effect-failure binder types are checked structurally
+against their enclosing effect and failure coordinates. None of these checks
+recognize application nouns or verbs. [TIR-REQ-025] [TIR-REQ-039] Before the
+supported graph judgment runs, one recursive identity preflight rejects empty
+identities in every local table and producer class, including obstruction and
+loop binders and nested branch blocks. The canonical encoder also
+rejects any local identity produced by more than one pure binding, target step,
+or external-action request, and reserves the implicit application-input identity
+from those explicit producers, so every downstream result reference remains
+unambiguous. This records authored basis, preconditions, evaluation limits, pure
+computation, guard dispositions, and success-output semantics without resolving
+a runtime basis, executing Echo, or admitting a bundle. [TIR-REQ-018]
+[TIR-REQ-019] [TIR-REQ-020] [TIR-REQ-021] [TIR-REQ-022] [TIR-REQ-023]
+[TIR-REQ-024] [TIR-REQ-026] [TIR-REQ-028] [TIR-REQ-034] [TIR-REQ-040]
 
-When any intent has an explicit basis, the Core module imports a lawpack, or the
-Core module imports a requestable capability, the artifact carries a
+Lawpack-aliased effects have an additional typed authority gate. Validated
+lawpack preparation is the only constructor for an effect-signature fact; the
+fact binds the source alias to the canonical export, exact manifest digest,
+non-generic input/output signature, and resolved exported-type closure. The
+compiler checks source calls against that signature for early diagnostics, and
+Target validation independently requires exactly one matching fact, reconstructs
+the same exact reachable named closure used for helpers, and checks an input that
+fits the exported input plus an exported output that fits the result binding.
+Missing, extra, duplicate, foreign, value-substituted, or type-definition-
+substituted evidence rejects before a Target artifact exists. Native
+lowerability facts remain a separate non-lawpack path. [TIR-REQ-030]
+[TIR-REQ-043]
+
+When any intent has an explicit basis or pure binding, the Core module imports a
+lawpack, or the Core module imports a requestable capability, the artifact carries a
 `TargetIrSemanticClosure`. The closure binds the exact canonical Core
 coordinate/digest plus coordinate-keyed, lowercase digest-locked lawpack and
 capability sets. Equivalent resource order and duplicate identical references
@@ -134,10 +224,11 @@ CBOR for:
 The canonical value includes the artifact's own domain, digest-locked target
 profile resource, non-empty source Core coordinate, optional semantic closure,
 sorted intent map, optional explicit basis expressions, input constraints, Core
-evaluation budget, source-ordered requirements, requirement predicates and
-failure dispositions, source-ordered target steps, source-ordered external
-requests, sorted obstruction failure keys and arms, and structured Core result
-expression. Target profile and semantic-closure digests are strict artifact
+evaluation budget, source-ordered pure bindings and exact expressions,
+source-ordered requirements, requirement predicates and failure dispositions,
+source-ordered target steps, source-ordered external requests, sorted
+obstruction failure keys and arms, and structured Core result expression. Target
+profile and semantic-closure digests are strict artifact
 references: missing digests and non-lowercase `sha256:<64 hex>` review strings
 reject before hashing.
 
@@ -181,15 +272,16 @@ with an unsupported ABI rejects with
 floating imports rejects with `TargetLoweringFailureKind::UndigestedCoreImport`.
 Supplying unsupported Core capability flags rejects with
 `TargetLoweringFailureKind::UnsupportedCoreCapability`. Supplying Core nodes
-outside the supported effect, external-request, and Echo requirement shapes
+outside the supported pure binding, effect, external-request, and Echo
+requirement shapes
 rejects with
 `TargetLoweringFailureKind::UnsupportedCoreNode`. Supplying a target-specific
 Core feature that the selected target does not support rejects with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`. Missing or ambiguous
 effect lowering facts, non-Echo target intrinsics, missing operation-profile
 support, and obstruction keys absent from the selected target facts also reject
-before any artifact is emitted. A Core intent with no target-owned requirements,
-steps, or external requests, or a Core module with no intents, rejects with
+before any artifact is emitted. A Core intent with no target-owned pure bindings,
+requirements, steps, or external requests, or a Core module with no intents, rejects with
 `TargetLoweringFailureKind::NoTargetSteps`. Duplicate target-lowering facts are
 ambiguous only when they match an effect used by the Core module being lowered;
 unrelated duplicate facts do not block the supported artifact.

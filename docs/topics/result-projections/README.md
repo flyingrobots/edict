@@ -13,6 +13,8 @@ executing the operation or introducing host-authored application semantics.
 `edict_syntax::emit_result_projection` accepts one exact Core module, its
 matching Target IR artifact, and an intent name. The emitter requires:
 
+- the raw Core candidate to pass the authoritative whole-module type-integrity
+  judgment, including unused definitions and every graph-carried reference;
 - the intent to exist in both artifacts;
 - the Target IR semantic closure to equal the complete Core-derived closure,
   including the exact Core coordinate, canonical Core digest, and every
@@ -21,12 +23,14 @@ matching Target IR artifact, and an intent name. The emitter requires:
   budget to agree;
 - the application input to be the declared `arg.0` local with the intent input
   type; and
+- every pure-binding source to identify the same source-ordered binding,
+  compiler local, and exact Core expression in Core and Target IR; and
 - every capability-result source to identify exactly one Target IR step whose
   binding, effect coordinate, and input expression match the corresponding
   Core effect node.
 
 No projection is emitted after any of these checks fails.
-[RESULT-PROJ-REQ-001] [RESULT-PROJ-REQ-005]
+[RESULT-PROJ-REQ-001] [RESULT-PROJ-REQ-005] [RESULT-PROJ-REQ-011]
 
 `lower_to_target_ir` invokes that emitter for every intent in an artifact with
 an explicit semantic closure and returns the artifacts in
@@ -44,6 +48,8 @@ The closed `edict.result-projection/v1` expression language contains only:
 
 - records with canonically ordered field names;
 - the declared application input;
+- compiler-owned pure bindings addressed by deterministic Target IR binding
+  identity;
 - capability results addressed by Target IR step identity; and
 - bounded field paths rooted at one of those declared sources.
 
@@ -91,20 +97,23 @@ Echo bytes and digest under
 `verify_result_projection` does not call the emitter or trust the claimed
 digest. It:
 
-1. decodes the claimed bytes through the canonical CBOR decoder;
-2. validates the closed projection shape and representation bounds;
-3. reproduces the exact canonical bytes;
-4. recomputes the domain-framed identity;
-5. independently reconstructs and compares the complete Core-derived semantic
+1. obtains the same whole-module Core type-integrity witness required by the
+   emitter, canonical encoder, and Target lowerer;
+2. decodes the claimed bytes through the canonical CBOR decoder;
+3. validates the closed projection shape and representation bounds;
+4. reproduces the exact canonical bytes;
+5. recomputes the domain-framed identity;
+6. independently reconstructs and compares the complete Core-derived semantic
    closure;
-6. independently rebuilds the Core-to-Target step/source correspondence;
-7. reconstructs a Core result expression from the projection; and
-8. requires that reconstruction to equal both the authored Core result and the
+7. independently rebuilds the source-ordered Core-to-Target pure-binding and
+   capability-step correspondence;
+8. reconstructs a Core result expression from the projection; and
+9. requires that reconstruction to equal both the authored Core result and the
    matching Target IR result.
 
 Only then does the API return `VerifiedResultProjection`, whose fields are
 available through read-only accessors. [RESULT-PROJ-REQ-005]
-[RESULT-PROJ-REQ-006]
+[RESULT-PROJ-REQ-006] [RESULT-PROJ-REQ-011]
 
 The public application-build path requires exactly one compiler-emitted
 projection for its current singleton executable-operation slice, runs the
