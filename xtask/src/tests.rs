@@ -1719,7 +1719,13 @@ fn release_prep_scaffolds_version_policy_changelog_and_notes() {
     write_release_prep_scaffold_fixture(&root);
     let xtask_source_before =
         fs::read_to_string(root.join("xtask/src/tests.rs")).expect("xtask tests before");
-    release_prep(&root, "v0.12.0-alpha.1", Some("2026-08-04")).expect("release prep scaffold");
+    release_prep(
+        &root,
+        "v0.12.0-alpha.1",
+        Some("2026-08-04"),
+        std::time::UNIX_EPOCH,
+    )
+    .expect("release prep scaffold");
 
     let package_version = "version = \"0.12.0-alpha.1\"";
     assert!(
@@ -1816,8 +1822,13 @@ fn release_prep_rejects_existing_release_notes_before_writing() {
         })
         .collect::<Vec<_>>();
 
-    let error = release_prep(&root, "v0.12.0-alpha.1", Some("2026-08-04"))
-        .expect_err("existing notes reject");
+    let error = release_prep(
+        &root,
+        "v0.12.0-alpha.1",
+        Some("2026-08-04"),
+        std::time::UNIX_EPOCH,
+    )
+    .expect_err("existing notes reject");
     assert!(
         error.contains("release notes already exist"),
         "duplicate release notes must be rejected before writes: {error}"

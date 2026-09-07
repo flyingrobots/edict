@@ -146,7 +146,12 @@ fn run_release_prep(args: &mut impl Iterator<Item = String>) -> Result<(), Strin
     if let Some(extra) = args.next() {
         return Err(format!("unexpected release-prep argument `{extra}`"));
     }
-    release_prep(&repo_root()?, &version, date.as_deref())
+    release_prep(
+        &repo_root()?,
+        &version,
+        date.as_deref(),
+        std::time::SystemTime::now(),
+    )
 }
 
 fn run_release_dates(args: &mut impl Iterator<Item = String>) -> Result<(), String> {

@@ -54,9 +54,17 @@ fn parse_decimal(part: &str, name: &str) -> Result<u16, String> {
         .map_err(|err| format!("parse release-prep {name} version part `{part}`: {err}"))
 }
 
-pub(crate) fn release_prep(root: &Path, input: &str, date: Option<&str>) -> Result<(), String> {
+pub(crate) fn release_prep(
+    root: &Path,
+    input: &str,
+    date: Option<&str>,
+    now: SystemTime,
+) -> Result<(), String> {
     let version = ReleasePrepVersion::parse(input)?;
-    let target_date = scaffold_release_date(date)?;
+    let target_date = scaffold_release_date(date, now).map_err(|kind| match date {
+        Some(value) => format!("{kind:?}: `{value}`"),
+        None => format!("{kind:?}"),
+    })?;
     let cli_manifest_path = root.join("crates/edict-cli/Cargo.toml");
     let syntax_manifest_path = root.join("crates/edict-syntax/Cargo.toml");
     let lockfile_path = root.join("Cargo.lock");
@@ -379,19 +387,24 @@ fn replace_once(
 /// produces a date in the past: seeded from the realigned record, the next value
 /// would be 2026-07-14. An explicit `--date` wins; otherwise today's UTC date is
 /// used, so the scaffold is at least current when it is written.
-fn scaffold_release_date(explicit: Option<&str>) -> Result<String, String> {
+fn scaffold_release_date(
+    explicit: Option<&str>,
+    now: SystemTime,
+) -> Result<String, ReleasePrepDateError> {
     match explicit {
         Some(date) => {
-            validate_iso_date(date).map_err(|kind| format!("{kind:?}: `{date}`"))?;
+            validate_iso_date(date)?;
             Ok(date.to_owned())
         }
-        None => today_utc(),
+        None => utc_date_at(now),
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ReleasePrepDateError {
     InvalidIsoDate,
+    ClockBeforeEpoch,
+    ClockOutOfRange,
 }
 
 fn validate_iso_date(date: &str) -> Result<(), ReleasePrepDateError> {
@@ -417,14 +430,16 @@ fn validate_iso_date(date: &str) -> Result<(), ReleasePrepDateError> {
     Ok(())
 }
 
-fn today_utc() -> Result<String, String> {
-    let seconds = SystemTime::now()
+fn utc_date_at(now: SystemTime) -> Result<String, ReleasePrepDateError> {
+    let seconds = now
         .duration_since(UNIX_EPOCH)
-        .map_err(|err| format!("read system clock: {err}"))?
+        .map_err(|_| ReleasePrepDateError::ClockBeforeEpoch)?
         .as_secs();
-    let days = i64::try_from(seconds / 86_400)
-        .map_err(|err| format!("system clock out of range: {err}"))?;
-    Ok(iso_date_from_days_since_epoch(days))
+    let days =
+        i64::try_from(seconds / 86_400).map_err(|_| ReleasePrepDateError::ClockOutOfRange)?;
+    let date = iso_date_from_days_since_epoch(days);
+    validate_iso_date(&date).map_err(|_| ReleasePrepDateError::ClockOutOfRange)?;
+    Ok(date)
 }
 
 /// Civil date from a day count since 1970-01-01, using Howard Hinnant's
@@ -473,7 +488,44 @@ fn is_divisible_by(value: u16, divisor: u16) -> bool {
 
 #[cfg(test)]
 mod date_tests {
-    use super::{validate_iso_date, ReleasePrepDateError};
+    use super::{scaffold_release_date, validate_iso_date, ReleasePrepDateError};
+    use std::time::{Duration, UNIX_EPOCH};
+
+    #[test]
+    fn release_prep_default_date_uses_supplied_utc_clock() {
+        for (seconds, expected) in [
+            (0, "1970-01-01"),
+            (86_399, "1970-01-01"),
+            (86_400, "1970-01-02"),
+            (951_782_400, "2000-02-29"),
+            (253_402_300_799, "9999-12-31"),
+        ] {
+            assert_eq!(
+                scaffold_release_date(None, UNIX_EPOCH + Duration::from_secs(seconds)),
+                Ok(expected.to_owned())
+            );
+        }
+    }
+
+    #[test]
+    fn release_prep_clock_failures_are_structured() {
+        assert_eq!(
+            scaffold_release_date(None, UNIX_EPOCH - Duration::from_secs(1)),
+            Err(ReleasePrepDateError::ClockBeforeEpoch)
+        );
+        assert_eq!(
+            scaffold_release_date(None, UNIX_EPOCH + Duration::from_hours(70_389_528)),
+            Err(ReleasePrepDateError::ClockOutOfRange)
+        );
+    }
+
+    #[test]
+    fn release_prep_explicit_date_overrides_clock() {
+        assert_eq!(
+            scaffold_release_date(Some("2026-08-04"), UNIX_EPOCH - Duration::from_secs(1)),
+            Ok("2026-08-04".to_owned())
+        );
+    }
 
     #[test]
     fn release_prep_rejects_noncanonical_iso_date() {

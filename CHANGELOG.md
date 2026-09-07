@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Moved release preparation's clock read to the CLI boundary and made default
+  UTC dates deterministic under an injected clock, including structured clock
+  range failures and explicit-date precedence.
 - Rejected noncanonical release-prep dates such as `2026-1-001` with the stable
   `InvalidIsoDate` classification before release file I/O; all date grammar
   and calendar failures now share that classification.
