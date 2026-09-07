@@ -6,17 +6,19 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
-    BinOp, Block, BoundRef, Decl, DigestLockedPackageRef, ElseClause, Expr, FieldDecl, Import,
-    ImportKind, IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler,
+    BinOp, Block, BoundRef, BytesRefine, Decl, DigestLockedPackageRef, ElseClause, Expr, FieldDecl,
+    Import, ImportKind, IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler,
     ObstructionTarget, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
     TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
-    is_lowercase_sha256_review_digest, parse_core_integer, CompareOp, CoreBlock, CoreBound,
-    CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent,
-    CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
-    ResourceRef, CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID,
+    classify_core_type_reference, is_lowercase_sha256_review_digest, parse_core_integer,
+    render_self_describing_core_type, validate_core_module_type_integrity, CompareOp, CoreBlock,
+    CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind,
+    CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
+    CoreRequireFailureArm, CoreType, CoreTypeReference, CoreValue, InputConstraint,
+    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
+    CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -47,6 +49,8 @@ pub enum CompilerErrorKind {
     UnrequestableExternalOperation,
     DuplicateObstructionFailure,
     DuplicateObstructionPayloadField,
+    ReservedTypeIdentity,
+    InvalidCoreTypeIntegrity,
 }
 
 /// Deterministic signature and canonical identity for one imported pure helper.
@@ -62,6 +66,17 @@ pub struct PureFunctionFact {
     pub parameter_types: Vec<String>,
     pub return_type: String,
     pub cost_template: String,
+}
+
+/// Authenticated signature for one semantic effect imported from a lawpack.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EffectSignatureFact {
+    pub(crate) lawpack: ResourceRef,
+    pub(crate) coordinate: String,
+    pub(crate) type_parameters: Vec<String>,
+    pub(crate) input_type: String,
+    pub(crate) output_type: String,
+    pub(crate) failure_payload_types: BTreeMap<String, String>,
 }
 
 /// Canonical identity and Core definition for one imported lawpack type.
@@ -107,6 +122,7 @@ pub struct CompilerContext {
     operation_profile_write_classes: BTreeMap<String, BTreeSet<WriteClass>>,
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
+    effect_signatures: BTreeMap<String, EffectSignatureFact>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
     pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -170,6 +186,17 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub(crate) fn with_effect_signature(
+        mut self,
+        source_effect_coordinate: impl Into<String>,
+        fact: EffectSignatureFact,
+    ) -> Self {
+        self.effect_signatures
+            .insert(source_effect_coordinate.into(), fact);
+        self
+    }
+
+    #[must_use]
     pub fn with_pure_function(
         mut self,
         source_coordinate: impl Into<String>,
@@ -215,6 +242,7 @@ pub struct ResolvedModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
+    pub(crate) effect_signatures: BTreeMap<String, EffectSignatureFact>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
     pub pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     pub type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -329,6 +357,7 @@ pub fn resolve_module(
             coordinate,
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
+            effect_signatures: context.effect_signatures.clone(),
             pure_functions: context.pure_functions.clone(),
             pure_helper_costs: context.pure_helper_costs.clone(),
             type_shapes: context.type_shapes.clone(),
@@ -374,14 +403,23 @@ pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>>
             )
         })
         .collect();
-    Ok(CoreModule {
+    let core = CoreModule {
         api_version: CORE_API_VERSION.to_owned(),
         coordinate: typed.coordinate.clone(),
         imports: typed.imports.clone(),
         types: typed.types.clone(),
         intents,
         required_core_capabilities: Vec::new(),
-    })
+    };
+    match validate_core_module_type_integrity(&core) {
+        Ok(_) => Ok(core),
+        Err(failure) => Err(vec![CompilerError {
+            stage: CompilerStage::LowerCore,
+            kind: CompilerErrorKind::InvalidCoreTypeIntegrity,
+            message: failure.to_string(),
+            span: Span::new(0, 0),
+        }]),
+    }
 }
 
 fn resolve_imports(imports: &[Import]) -> Vec<CoreImport> {
@@ -501,17 +539,35 @@ fn missing_context_fact(message: String, span: Span) -> CompilerError {
 struct TypeShape {
     coord: String,
     kind: TypeKind,
+    preserve_named_identity: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum TypeKind {
     Bool,
-    Int { width: String },
-    String { max: u64, canonical: String },
-    Bytes { max: u64 },
-    List { item: Box<TypeShape>, max: u64 },
+    Int {
+        width: String,
+    },
+    String {
+        max: u64,
+        canonical: String,
+    },
+    Bytes {
+        min: Option<u64>,
+        max: u64,
+    },
+    Nominal {
+        contract: String,
+        representation: Box<TypeShape>,
+    },
+    List {
+        item: Box<TypeShape>,
+        max: u64,
+    },
     Record(BTreeMap<String, TypeShape>),
-    ExternalActionRequest { settlement: Box<TypeShape> },
+    ExternalActionRequest {
+        settlement: Box<TypeShape>,
+    },
 }
 
 impl TypeShape {
@@ -525,7 +581,17 @@ impl TypeShape {
                 max: *max,
                 canonical: canonical.clone(),
             },
-            TypeKind::Bytes { max } => CoreType::Bytes { max: *max },
+            TypeKind::Bytes { min, max } => CoreType::Bytes {
+                min: *min,
+                max: *max,
+            },
+            TypeKind::Nominal {
+                contract,
+                representation,
+            } => CoreType::Nominal {
+                contract: contract.clone(),
+                representation: representation.value_type_coord(),
+            },
             TypeKind::List { item, max } => CoreType::List {
                 item: item.value_type_coord(),
                 max: *max,
@@ -533,24 +599,32 @@ impl TypeShape {
             TypeKind::Record(fields) => CoreType::Record {
                 fields: fields
                     .iter()
-                    .map(|(name, shape)| (name.clone(), shape.coord.clone()))
+                    .map(|(name, shape)| (name.clone(), shape.value_type_coord()))
                     .collect(),
             },
             TypeKind::ExternalActionRequest { settlement } => CoreType::ExternalActionRequest {
-                settlement: settlement.coord.clone(),
+                settlement: settlement.value_type_coord(),
             },
         }
     }
 
     fn value_type_coord(&self) -> String {
-        match &self.kind {
-            TypeKind::Bool => "Bool".to_owned(),
-            TypeKind::Int { width } => width.clone(),
-            TypeKind::String { max, canonical } => string_type_coord(*max, canonical),
-            TypeKind::Bytes { max } => bytes_type_coord(*max),
-            TypeKind::List { item, max } => list_type_coord(&item.value_type_coord(), *max),
-            TypeKind::Record(_) | TypeKind::ExternalActionRequest { .. } => self.coord.clone(),
+        if self.preserve_named_identity {
+            self.coord.clone()
+        } else {
+            render_self_describing_core_type(&self.core_type())
+                .unwrap_or_else(|| self.coord.clone())
         }
+    }
+
+    fn canonical_structural(kind: TypeKind) -> Option<Self> {
+        let mut shape = Self {
+            coord: String::new(),
+            kind,
+            preserve_named_identity: false,
+        };
+        shape.coord = render_self_describing_core_type(&shape.core_type())?;
+        Some(shape)
     }
 }
 
@@ -680,6 +754,18 @@ impl<'a> TypeChecker<'a> {
 
     fn check_types(&mut self) {
         for decl in &self.resolved.types {
+            if !matches!(
+                classify_core_type_reference(&decl.name),
+                Some(CoreTypeReference::Named)
+            ) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::ReservedTypeIdentity,
+                    format!("type `{}` cannot become a Core named identity", decl.name),
+                    decl.source.span,
+                ));
+                continue;
+            }
             let Some(shape) = self.type_decl_shape(&decl.source) else {
                 continue;
             };
@@ -691,7 +777,7 @@ impl<'a> TypeChecker<'a> {
     fn type_decl_shape(&mut self, decl: &TypeDecl) -> Option<TypeShape> {
         let coord = format!("{}.{}", self.resolved.coordinate, decl.name);
         match &decl.body {
-            TypeExpr::Record(fields) => self.record_shape(&coord, &decl.name, fields, decl.span),
+            TypeExpr::Record(fields) => self.record_shape(&coord, fields, decl.span),
             TypeExpr::Variant(_) | TypeExpr::Ref(_) => {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -704,27 +790,19 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn record_shape(
-        &mut self,
-        coord: &str,
-        type_name: &str,
-        fields: &[FieldDecl],
-        span: Span,
-    ) -> Option<TypeShape> {
+    fn record_shape(&mut self, coord: &str, fields: &[FieldDecl], span: Span) -> Option<TypeShape> {
         let mut out = BTreeMap::new();
         for field in fields {
-            let field_key = format!("{type_name}.{}", field.name);
-            let field_coord = format!("{coord}.{}", field.name);
-            let Some(shape) = self.type_ref_shape(&field.ty, field.span, Some(field_coord)) else {
+            let Some(shape) = self.type_ref_shape(&field.ty, field.span) else {
                 continue;
             };
-            self.core_types.insert(field_key, shape.core_type());
             out.insert(field.name.clone(), shape);
         }
         if out.len() == fields.len() {
             Some(TypeShape {
                 coord: coord.to_owned(),
                 kind: TypeKind::Record(out),
+                preserve_named_identity: true,
             })
         } else {
             self.errors.push(error(
@@ -737,12 +815,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn type_ref_shape(
-        &mut self,
-        ty: &TypeRef,
-        span: Span,
-        coord_hint: Option<String>,
-    ) -> Option<TypeShape> {
+    fn type_ref_shape(&mut self, ty: &TypeRef, span: Span) -> Option<TypeShape> {
         match ty {
             TypeRef::Named { path, args } if args.is_empty() && path.len() == 1 => {
                 let name = &path[0];
@@ -760,19 +833,19 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
+            TypeRef::Named { path, args } if args.is_empty() && path.len() >= 2 => {
+                self.imported_source_type_shape(path, span)
+            }
             TypeRef::Named { path, args }
                 if path.as_slice() == ["ExternalActionRequest"] && args.len() == 1 =>
             {
-                let settlement = self.type_ref_shape(&args[0], span, None)?;
-                Some(TypeShape {
-                    coord: format!("edict.external-action.request/v1<{}>", settlement.coord),
-                    kind: TypeKind::ExternalActionRequest {
-                        settlement: Box::new(settlement),
-                    },
+                let settlement = self.type_ref_shape(&args[0], span)?;
+                TypeShape::canonical_structural(TypeKind::ExternalActionRequest {
+                    settlement: Box::new(settlement),
                 })
             }
-            TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span, coord_hint),
-            TypeRef::BytesTy(Some(bound)) => self.bytes_shape(bound, span, coord_hint),
+            TypeRef::StringTy(Some(refine)) => self.string_shape(refine, span),
+            TypeRef::BytesTy(Some(refine)) => self.bytes_shape(refine, span),
             TypeRef::List { elem, max } => {
                 let BoundRef::Int { value, .. } = max else {
                     self.errors.push(error(
@@ -783,15 +856,12 @@ impl<'a> TypeChecker<'a> {
                     ));
                     return None;
                 };
-                let item = self.type_ref_shape(elem, span, None)?;
-                Some(TypeShape {
-                    coord: coord_hint
-                        .unwrap_or_else(|| list_type_coord(&item.value_type_coord(), *value)),
-                    kind: TypeKind::List {
-                        item: Box::new(item),
-                        max: *value,
-                    },
-                })
+                let item = self.type_ref_shape(elem, span)?;
+                let kind = TypeKind::List {
+                    item: Box::new(item),
+                    max: *value,
+                };
+                TypeShape::canonical_structural(kind)
             }
             TypeRef::BytesTy(None)
             | TypeRef::Option(_)
@@ -810,12 +880,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn string_shape(
-        &mut self,
-        refine: &ScalarRefine,
-        span: Span,
-        coord_hint: Option<String>,
-    ) -> Option<TypeShape> {
+    fn string_shape(&mut self, refine: &ScalarRefine, span: Span) -> Option<TypeShape> {
         let BoundRef::Int { value, .. } = refine.max else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -829,22 +894,15 @@ impl<'a> TypeChecker<'a> {
             .canonical
             .clone()
             .unwrap_or_else(|| "raw-utf8".to_owned());
-        Some(TypeShape {
-            coord: coord_hint.unwrap_or_else(|| string_type_coord(value, &canonical)),
-            kind: TypeKind::String {
-                max: value,
-                canonical,
-            },
-        })
+        let kind = TypeKind::String {
+            max: value,
+            canonical,
+        };
+        TypeShape::canonical_structural(kind)
     }
 
-    fn bytes_shape(
-        &mut self,
-        bound: &BoundRef,
-        span: Span,
-        coord_hint: Option<String>,
-    ) -> Option<TypeShape> {
-        let BoundRef::Int { value, .. } = bound else {
+    fn bytes_shape(&mut self, refine: &BytesRefine, span: Span) -> Option<TypeShape> {
+        let BoundRef::Int { value: max, .. } = &refine.max else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnsupportedSourceShape,
@@ -853,10 +911,89 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        Some(TypeShape {
-            coord: coord_hint.unwrap_or_else(|| bytes_type_coord(*value)),
-            kind: TypeKind::Bytes { max: *value },
-        })
+        let min = match &refine.min {
+            Some(BoundRef::Int { value, .. }) => Some(*value),
+            Some(BoundRef::Coord(_)) => {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    "coordinate byte bounds require bound proof in a later stage",
+                    span,
+                ));
+                return None;
+            }
+            None => None,
+        };
+        if min.is_some_and(|min| min > *max) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "byte minimum exceeds byte maximum",
+                span,
+            ));
+            return None;
+        }
+        TypeShape::canonical_structural(TypeKind::Bytes { min, max: *max })
+    }
+
+    fn imported_source_type_shape(&mut self, path: &[String], span: Span) -> Option<TypeShape> {
+        let source_alias = &path[0];
+        let source_suffix = path[1..].join(".");
+        let Some(import) = self.resolved.imports.iter().find(|import| {
+            import.kind == CoreImportKind::Lawpack
+                && import.alias.as_deref() == Some(source_alias.as_str())
+        }) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "type `{}` has no exact owning lawpack import",
+                    path.join(".")
+                ),
+                span,
+            ));
+            return None;
+        };
+        let coordinate = format!("{}.{}", import.resource.coordinate, source_suffix);
+        let Some(fact) = self.resolved.type_shapes.get(&coordinate).cloned() else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!("type `{}` has no compiler context fact", path.join(".")),
+                span,
+            ));
+            return None;
+        };
+        if fact.coordinate != coordinate || fact.lawpack != import.resource {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "type `{}` is not owned by its exact imported lawpack",
+                    path.join(".")
+                ),
+                span,
+            ));
+            return None;
+        }
+        if let Some(shape) = self.shape_from_imported_type(&fact) {
+            self.core_types.extend(imported_type_shape_closure(
+                &shape,
+                &self.resolved.type_shapes,
+            ));
+            Some(shape)
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "type `{}` has an unsupported imported definition",
+                    path.join(".")
+                ),
+                span,
+            ));
+            None
+        }
     }
 
     fn check_intent(&mut self, intent: &ResolvedIntent) -> Option<TypedIntent> {
@@ -871,8 +1008,8 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
         let param = &source.params[0];
-        let input_shape = self.type_ref_shape(&param.ty, param.span, None)?;
-        let output_shape = self.type_ref_shape(&source.returns, source.span, None)?;
+        let input_shape = self.type_ref_shape(&param.ty, param.span)?;
+        let output_shape = self.type_ref_shape(&source.returns, source.span)?;
         self.check_helper_cost_budget(intent)?;
         let input_binding = LocalRef {
             id: CORE_APPLICATION_INPUT_LOCAL_ID.to_owned(),
@@ -1768,7 +1905,7 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        let Some(request_shape) = self.type_ref_shape(request_type, span, None) else {
+        let Some(request_shape) = self.type_ref_shape(request_type, span) else {
             return;
         };
         let TypeKind::ExternalActionRequest { settlement } = &request_shape.kind else {
@@ -2172,7 +2309,7 @@ impl<'a> TypeChecker<'a> {
             return;
         }
         let annotation_shape = match stmt.ty {
-            Some(annotation) => match self.type_ref_shape(annotation, stmt.span, None) {
+            Some(annotation) => match self.type_ref_shape(annotation, stmt.span) {
                 Some(shape) => Some(shape),
                 None => return,
             },
@@ -2213,7 +2350,7 @@ impl<'a> TypeChecker<'a> {
             return;
         };
         let annotation_shape = match stmt.ty {
-            Some(annotation) => match self.type_ref_shape(annotation, stmt.span, None) {
+            Some(annotation) => match self.type_ref_shape(annotation, stmt.span) {
                 Some(shape) => Some(shape),
                 None => return,
             },
@@ -2562,10 +2699,7 @@ impl<'a> TypeChecker<'a> {
                     .infer_joint_record_field_shape(then_entry, then_env, else_entry, else_env)?;
                 fields.insert(name.to_owned(), shape);
             }
-            return Some(TypeShape {
-                coord: "anonymous.record".to_owned(),
-                kind: TypeKind::Record(fields),
-            });
+            return TypeShape::canonical_structural(TypeKind::Record(fields));
         }
         if contains_contextual_bare_integer(then_expr)
             && !contains_contextual_bare_integer(else_expr)
@@ -2730,7 +2864,9 @@ impl<'a> TypeChecker<'a> {
         let Some(binding_shape) = self.effect_binding_shape(stmt.ty, stmt.span) else {
             return;
         };
-        let Some((effect, input)) = self.check_effect_call(stmt.value, env, stmt.span) else {
+        let Some((effect, input)) =
+            self.check_effect_call(stmt.value, env, &binding_shape, stmt.span)
+        else {
             return;
         };
         let local = next_local(&mut state.local_index, binding_shape.coord.clone());
@@ -2830,13 +2966,14 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        self.type_ref_shape(ty, span, None)
+        self.type_ref_shape(ty, span)
     }
 
     fn check_effect_call(
         &mut self,
         call: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        binding_shape: &TypeShape,
         span: Span,
     ) -> Option<(String, CoreExpr)> {
         let effect = effect_coordinate(call)?;
@@ -2866,6 +3003,58 @@ impl<'a> TypeChecker<'a> {
             return None;
         };
         let input = self.check_expr(arg, env)?;
+        let signature = self.resolved.effect_signatures.get(&effect).cloned();
+        if let Some(signature) = signature {
+            if !self.fact_matches_source_import(&effect, &signature.coordinate, &signature.lawpack)
+                || !signature.type_parameters.is_empty()
+            {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::MissingContextFact,
+                    format!("effect `{effect}` has no exact non-generic lawpack signature"),
+                    span,
+                ));
+                return None;
+            }
+            let Some(expected_input) =
+                self.shape_for_helper_coordinate(&signature.input_type, &signature.lawpack)
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "effect `{effect}` input type `{}` is outside its exact exported type closure",
+                        signature.input_type
+                    ),
+                    span,
+                ));
+                return None;
+            };
+            let Some(effect_output) =
+                self.shape_for_helper_coordinate(&signature.output_type, &signature.lawpack)
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "effect `{effect}` output type `{}` is outside its exact exported type closure",
+                        signature.output_type
+                    ),
+                    span,
+                ));
+                return None;
+            };
+            if !compatible(&expected_input, &input.ty) || !compatible(binding_shape, &effect_output)
+            {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    format!("effect `{effect}` call does not match its exported signature"),
+                    span,
+                ));
+                return None;
+            }
+        }
         Some((effect, input.expr))
     }
 
@@ -2939,10 +3128,46 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         }
+        let binder_type = if let Some(signature) =
+            self.resolved.effect_signatures.get(effect).cloned()
+        {
+            let Some(payload_type) = signature.failure_payload_types.get(&arm.failure).cloned()
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::MissingContextFact,
+                    format!(
+                        "effect `{effect}` has no authenticated payload type for failure `{}`",
+                        arm.failure
+                    ),
+                    arm.span,
+                ));
+                return None;
+            };
+            let Some(payload_shape) =
+                self.shape_for_helper_coordinate(&payload_type, &signature.lawpack)
+            else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "effect `{effect}` failure `{}` payload type `{payload_type}` is outside its exact exported type closure",
+                        arm.failure
+                    ),
+                    arm.span,
+                ));
+                return None;
+            };
+            payload_shape.value_type_coord()
+        } else {
+            // Legacy facts carry no failure-payload authority and this source
+            // subset cannot read the binder. Preserve that erasure as Unit.
+            "Unit".to_owned()
+        };
         let binder = LocalRef {
             id: format!("obstruction.{obstruction_index}"),
             alpha_name: format!("$obstruction{obstruction_index}"),
-            ty: format!("{effect}.{}", arm.failure),
+            ty: binder_type,
         };
         let value = self.check_obstruction_target(&arm.target)?;
         Some((arm.failure.clone(), CoreObstructionArm { binder, value }))
@@ -3270,12 +3495,13 @@ impl<'a> TypeChecker<'a> {
     ) -> Option<TypedValue> {
         match expr {
             Expr::Ident { name, span } => self.check_ident(name, *span, env),
-            Expr::Str { value, .. } => Some(string_value(value)),
+            Expr::Str { value, .. } => string_value(value),
             Expr::Bool { value, .. } => Some(TypedValue {
                 expr: CoreExpr::Const(CoreValue::Bool(*value)),
                 ty: TypeShape {
                     coord: "Bool".to_owned(),
                     kind: TypeKind::Bool,
+                    preserve_named_identity: false,
                 },
             }),
             Expr::Int {
@@ -3512,38 +3738,37 @@ impl<'a> TypeChecker<'a> {
         Some((source_coordinate, fact))
     }
 
-    fn shape_for_coordinate(&self, coordinate: &str) -> Option<TypeShape> {
-        if coordinate == "Bool" {
-            return Some(TypeShape {
-                coord: "Bool".to_owned(),
-                kind: TypeKind::Bool,
-            });
-        }
-        if let Some(width) = builtin_integer_width(coordinate) {
-            return Some(integer_shape(width));
-        }
-        self.named_types
-            .values()
-            .find(|shape| shape.coord == coordinate)
-            .cloned()
-    }
-
     fn shape_for_helper_coordinate(
-        &self,
+        &mut self,
         coordinate: &str,
         lawpack: &ResourceRef,
     ) -> Option<TypeShape> {
-        if coordinate == "Bool" || builtin_integer_width(coordinate).is_some() {
-            return self.shape_for_coordinate(coordinate);
-        }
-        self.resolved
+        let shape = if let Some(fact) = self
+            .resolved
             .type_shapes
             .get(coordinate)
             .filter(|fact| {
                 &fact.lawpack == lawpack
                     && coordinate_is_below_lawpack(&fact.coordinate, &fact.lawpack)
             })
-            .and_then(|fact| self.shape_from_imported_type(fact))
+            .cloned()
+        {
+            self.shape_from_imported_type(&fact)?
+        } else {
+            imported_type_definition_shape(
+                coordinate,
+                &self.resolved.type_shapes,
+                lawpack,
+                &mut BTreeSet::new(),
+                None,
+                1,
+            )?
+        };
+        self.core_types.extend(imported_type_shape_closure(
+            &shape,
+            &self.resolved.type_shapes,
+        ));
+        Some(shape)
     }
 
     fn shape_from_imported_type(&self, fact: &TypeShapeFact) -> Option<TypeShape> {
@@ -3553,9 +3778,11 @@ impl<'a> TypeChecker<'a> {
             &self.resolved.type_shapes,
             &fact.lawpack,
             &mut resolving,
+            Some(&fact.coordinate),
             1,
         )?;
         shape.coord.clone_from(&fact.coordinate);
+        shape.preserve_named_identity = true;
         Some(shape)
     }
 
@@ -3736,16 +3963,14 @@ impl<'a> TypeChecker<'a> {
         };
         let max = lmax + rmax;
         let canonical = "raw-utf8".to_owned();
+        let ty = TypeShape::canonical_structural(TypeKind::String { max, canonical })?;
         Some(TypedValue {
             expr: CoreExpr::Call {
                 callee: "core.string.concat".to_owned(),
                 type_args: Vec::new(),
                 args: vec![left.expr, right.expr],
             },
-            ty: TypeShape {
-                coord: string_type_coord(max, &canonical),
-                kind: TypeKind::String { max, canonical },
-            },
+            ty,
         })
     }
 
@@ -3798,12 +4023,10 @@ impl<'a> TypeChecker<'a> {
                 }
             }
         }
+        let ty = TypeShape::canonical_structural(TypeKind::Record(field_types))?;
         Some(TypedValue {
             expr: CoreExpr::Record { fields },
-            ty: TypeShape {
-                coord: "anonymous.record".to_owned(),
-                kind: TypeKind::Record(field_types),
-            },
+            ty,
         })
     }
 }
@@ -3865,6 +4088,28 @@ fn record_entries_by_name(entries: &[RecordEntry]) -> Option<BTreeMap<&str, &Rec
 
 fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
     if let (
+        TypeKind::Bytes {
+            min: left_min,
+            max: left_max,
+        },
+        TypeKind::Bytes {
+            min: right_min,
+            max: right_max,
+        },
+    ) = (&left.kind, &right.kind)
+    {
+        let joined_min = match (left_min, right_min) {
+            (Some(left), Some(right)) => Some((*left).min(*right)),
+            (None, _) | (_, None) => None,
+        };
+        let joined_max = (*left_max).max(*right_max);
+        let joined_kind = TypeKind::Bytes {
+            min: joined_min,
+            max: joined_max,
+        };
+        return joined_shape(left, right, joined_kind);
+    }
+    if let (
         TypeKind::List {
             item: left_item,
             max: left_max,
@@ -3877,20 +4122,14 @@ fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
     {
         let joined_item = compatible_shape(left_item, right_item)?;
         let joined_max = (*left_max).max(*right_max);
-        let coord = if joined_item == **left_item && joined_max == *left_max {
-            left.coord.clone()
-        } else if joined_item == **right_item && joined_max == *right_max {
-            right.coord.clone()
-        } else {
-            list_type_coord(&joined_item.value_type_coord(), joined_max)
-        };
-        return Some(TypeShape {
-            coord,
-            kind: TypeKind::List {
+        return joined_shape(
+            left,
+            right,
+            TypeKind::List {
                 item: Box::new(joined_item),
                 max: joined_max,
             },
-        });
+        );
     }
     if let (TypeKind::Record(left_fields), TypeKind::Record(right_fields)) =
         (&left.kind, &right.kind)
@@ -3903,37 +4142,42 @@ fn compatible_shape(left: &TypeShape, right: &TypeShape) -> Option<TypeShape> {
             let right_field = right_fields.get(name)?;
             joined_fields.insert(name.clone(), compatible_shape(left_field, right_field)?);
         }
-        let coord = if &joined_fields == left_fields {
-            left.coord.clone()
-        } else if &joined_fields == right_fields {
-            right.coord.clone()
-        } else {
-            "anonymous.record".to_owned()
-        };
-        return Some(TypeShape {
-            coord,
-            kind: TypeKind::Record(joined_fields),
-        });
+        return joined_shape(left, right, TypeKind::Record(joined_fields));
     }
-    if compatible(left, right) {
-        Some(left.clone())
+    let selected = if compatible(left, right) {
+        left
     } else if compatible(right, left) {
-        Some(right.clone())
+        right
     } else {
-        None
+        return None;
+    };
+    if left.coord == right.coord {
+        Some(selected.clone())
+    } else {
+        TypeShape::canonical_structural(selected.kind.clone())
     }
 }
 
-fn string_value(value: &str) -> TypedValue {
+fn joined_shape(left: &TypeShape, right: &TypeShape, kind: TypeKind) -> Option<TypeShape> {
+    if left.coord == right.coord && left.kind == kind && right.kind == kind {
+        Some(TypeShape {
+            coord: left.coord.clone(),
+            kind,
+            preserve_named_identity: left.preserve_named_identity && right.preserve_named_identity,
+        })
+    } else {
+        TypeShape::canonical_structural(kind)
+    }
+}
+
+fn string_value(value: &str) -> Option<TypedValue> {
     let max = value.len() as u64;
     let canonical = "raw-utf8".to_owned();
-    TypedValue {
+    let kind = TypeKind::String { max, canonical };
+    Some(TypedValue {
         expr: CoreExpr::Const(CoreValue::String(value.to_owned())),
-        ty: TypeShape {
-            coord: string_type_coord(max, &canonical),
-            kind: TypeKind::String { max, canonical },
-        },
-    }
+        ty: TypeShape::canonical_structural(kind)?,
+    })
 }
 
 fn next_local(index: &mut usize, ty: String) -> LocalRef {
@@ -3958,6 +4202,11 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
     if expected.coord == actual.coord {
         return true;
     }
+    if matches!(expected.kind, TypeKind::Nominal { .. })
+        || matches!(actual.kind, TypeKind::Nominal { .. })
+    {
+        return false;
+    }
     match (&expected.kind, &actual.kind) {
         (
             TypeKind::String {
@@ -3971,7 +4220,16 @@ fn compatible(expected: &TypeShape, actual: &TypeShape) -> bool {
         ) => actual_max <= expected_max && actual_canonical == expected_canonical,
         (TypeKind::Bool, TypeKind::Bool) => true,
         (TypeKind::Int { width: expected }, TypeKind::Int { width: actual }) => expected == actual,
-        (TypeKind::Bytes { max: expected }, TypeKind::Bytes { max: actual }) => actual <= expected,
+        (
+            TypeKind::Bytes {
+                min: expected_min,
+                max: expected_max,
+            },
+            TypeKind::Bytes {
+                min: actual_min,
+                max: actual_max,
+            },
+        ) => actual_min.unwrap_or(0) >= expected_min.unwrap_or(0) && actual_max <= expected_max,
         (
             TypeKind::List {
                 item: expected_item,
@@ -4024,100 +4282,221 @@ fn compare_op(op: BinOp) -> Option<CompareOp> {
     }
 }
 
-fn string_type_coord(max: u64, canonical: &str) -> String {
-    format!("String<max={max},canonical={canonical}>")
-}
-
 fn imported_type_definition_shape(
     definition: &str,
     type_shapes: &BTreeMap<String, TypeShapeFact>,
     lawpack: &ResourceRef,
     resolving: &mut BTreeSet<String>,
+    definition_coordinate: Option<&str>,
     depth: usize,
 ) -> Option<TypeShape> {
-    const MAX_IMPORTED_TYPE_DEPTH: usize = 128;
-    if depth > MAX_IMPORTED_TYPE_DEPTH {
+    if depth > MAX_CORE_TYPE_DEPTH {
         return None;
     }
-    if definition == "Bool" {
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::Bool,
-        });
+    if definition.starts_with("Nominal<") {
+        return imported_nominal_type_definition_shape(
+            definition,
+            type_shapes,
+            lawpack,
+            resolving,
+            definition_coordinate?,
+            depth,
+        );
     }
-    if let Some(width) = builtin_integer_width(definition) {
-        return Some(integer_shape(width));
-    }
-    if let Some(inner) = definition
-        .strip_prefix("String<max=")
-        .and_then(|value| value.strip_suffix('>'))
-    {
-        let (max, canonical) = inner.split_once(",canonical=")?;
-        if !matches!(canonical, "raw-utf8" | "unicode-scalar-nfc") {
-            return None;
+    match classify_core_type_reference(definition)? {
+        CoreTypeReference::Intrinsic(core_type) | CoreTypeReference::Structural(core_type) => {
+            imported_core_type_shape(
+                definition,
+                core_type,
+                type_shapes,
+                lawpack,
+                resolving,
+                depth,
+            )
         }
-        let max = max.parse().ok()?;
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::String {
-                max,
-                canonical: canonical.to_owned(),
-            },
-        });
+        CoreTypeReference::Named => {
+            let fact = type_shapes.get(definition).filter(|fact| {
+                &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
+            })?;
+            if !resolving.insert(definition.to_owned()) {
+                return None;
+            }
+            let mut shape = imported_type_definition_shape(
+                &fact.definition,
+                type_shapes,
+                lawpack,
+                resolving,
+                Some(&fact.coordinate),
+                depth + 1,
+            )?;
+            resolving.remove(definition);
+            shape.coord.clone_from(&fact.coordinate);
+            shape.preserve_named_identity = true;
+            Some(shape)
+        }
     }
-    if let Some(max) = definition
-        .strip_prefix("Bytes<max=")
-        .and_then(|value| value.strip_suffix('>'))
-        .and_then(|value| value.parse().ok())
-    {
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::Bytes { max },
-        });
-    }
-    let inner = definition
-        .strip_prefix("List<")
-        .and_then(|value| value.strip_suffix('>'));
-    if let Some(inner) = inner {
-        let (item, max) = inner.rsplit_once(",max=")?;
-        return Some(TypeShape {
-            coord: definition.to_owned(),
-            kind: TypeKind::List {
-                item: Box::new(imported_type_definition_shape(
-                    item,
-                    type_shapes,
-                    lawpack,
-                    resolving,
-                    depth + 1,
-                )?),
-                max: max.parse().ok()?,
-            },
-        });
-    }
-    let fact = type_shapes.get(definition).filter(|fact| {
-        &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
-    })?;
-    if !resolving.insert(definition.to_owned()) {
-        return None;
-    }
-    let mut shape = imported_type_definition_shape(
-        &fact.definition,
-        type_shapes,
-        lawpack,
-        resolving,
-        depth + 1,
-    )?;
-    resolving.remove(definition);
-    shape.coord.clone_from(&fact.coordinate);
-    Some(shape)
 }
 
-fn bytes_type_coord(max: u64) -> String {
-    format!("Bytes<max={max}>")
+fn imported_core_type_shape(
+    definition: &str,
+    core_type: CoreType,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+    resolving: &mut BTreeSet<String>,
+    depth: usize,
+) -> Option<TypeShape> {
+    let kind = match core_type {
+        CoreType::Bool => TypeKind::Bool,
+        CoreType::Int { width } => TypeKind::Int { width },
+        CoreType::String { max, canonical } => TypeKind::String { max, canonical },
+        CoreType::Bytes { min, max } => TypeKind::Bytes { min, max },
+        CoreType::Record { fields } => TypeKind::Record(
+            fields
+                .into_iter()
+                .map(|(name, definition)| {
+                    Some((
+                        name,
+                        imported_type_definition_shape(
+                            &definition,
+                            type_shapes,
+                            lawpack,
+                            resolving,
+                            None,
+                            depth + 1,
+                        )?,
+                    ))
+                })
+                .collect::<Option<BTreeMap<_, _>>>()?,
+        ),
+        CoreType::List { item, max } => TypeKind::List {
+            item: Box::new(imported_type_definition_shape(
+                &item,
+                type_shapes,
+                lawpack,
+                resolving,
+                None,
+                depth + 1,
+            )?),
+            max,
+        },
+        CoreType::ExternalActionRequest { settlement } => TypeKind::ExternalActionRequest {
+            settlement: Box::new(imported_type_definition_shape(
+                &settlement,
+                type_shapes,
+                lawpack,
+                resolving,
+                None,
+                depth + 1,
+            )?),
+        },
+        CoreType::Unit
+        | CoreType::Nominal { .. }
+        | CoreType::Variant { .. }
+        | CoreType::Option { .. }
+        | CoreType::Map { .. }
+        | CoreType::CapabilityRef { .. } => return None,
+    };
+    Some(TypeShape {
+        coord: definition.to_owned(),
+        kind,
+        preserve_named_identity: false,
+    })
 }
 
-fn list_type_coord(item: &str, max: u64) -> String {
-    format!("List<{item},max={max}>")
+fn imported_type_shape_closure(
+    shape: &TypeShape,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+) -> BTreeMap<String, CoreType> {
+    let mut closure = BTreeMap::new();
+    collect_imported_type_shape_closure(shape, type_shapes, &mut closure);
+    closure
+}
+
+fn collect_imported_type_shape_closure(
+    shape: &TypeShape,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    closure: &mut BTreeMap<String, CoreType>,
+) {
+    if type_shapes.contains_key(&shape.coord) {
+        closure.insert(shape.coord.clone(), shape.core_type());
+    }
+    match &shape.kind {
+        TypeKind::Record(fields) => {
+            for field in fields.values() {
+                collect_imported_type_shape_closure(field, type_shapes, closure);
+            }
+        }
+        TypeKind::Nominal { representation, .. }
+        | TypeKind::List {
+            item: representation,
+            ..
+        }
+        | TypeKind::ExternalActionRequest {
+            settlement: representation,
+        } => collect_imported_type_shape_closure(representation, type_shapes, closure),
+        TypeKind::Bool
+        | TypeKind::Int { .. }
+        | TypeKind::String { .. }
+        | TypeKind::Bytes { .. } => {}
+    }
+}
+
+pub(crate) fn imported_type_core_closure(
+    coordinates: &[String],
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+) -> Option<BTreeMap<String, CoreType>> {
+    let mut closure = BTreeMap::new();
+    for coordinate in coordinates {
+        let shape = if let Some(fact) = type_shapes.get(coordinate).filter(|fact| {
+            &fact.lawpack == lawpack && coordinate_is_below_lawpack(&fact.coordinate, lawpack)
+        }) {
+            let mut resolving = BTreeSet::from([fact.coordinate.clone()]);
+            let mut shape = imported_type_definition_shape(
+                &fact.definition,
+                type_shapes,
+                lawpack,
+                &mut resolving,
+                Some(&fact.coordinate),
+                1,
+            )?;
+            shape.coord.clone_from(&fact.coordinate);
+            shape.preserve_named_identity = true;
+            shape
+        } else {
+            imported_type_definition_shape(
+                coordinate,
+                type_shapes,
+                lawpack,
+                &mut BTreeSet::new(),
+                None,
+                1,
+            )?
+        };
+        closure.extend(imported_type_shape_closure(&shape, type_shapes));
+    }
+    Some(closure)
+}
+
+fn imported_nominal_type_definition_shape(
+    definition: &str,
+    type_shapes: &BTreeMap<String, TypeShapeFact>,
+    lawpack: &ResourceRef,
+    resolving: &mut BTreeSet<String>,
+    contract: &str,
+    depth: usize,
+) -> Option<TypeShape> {
+    let inner = definition.strip_prefix("Nominal<")?.strip_suffix('>')?;
+    let representation =
+        imported_type_definition_shape(inner, type_shapes, lawpack, resolving, None, depth + 1)?;
+    Some(TypeShape {
+        coord: contract.to_owned(),
+        kind: TypeKind::Nominal {
+            contract: contract.to_owned(),
+            representation: Box::new(representation),
+        },
+        preserve_named_identity: true,
+    })
 }
 
 fn empty_core_block() -> CoreBlock {
@@ -4153,6 +4532,7 @@ fn integer_shape(width: &str) -> TypeShape {
         kind: TypeKind::Int {
             width: width.to_owned(),
         },
+        preserve_named_identity: false,
     }
 }
 

@@ -29,9 +29,11 @@ intent sayHello(input: HelloInput)
 }
 "#;
 
+// The import contributes semantic-closure identity; the projection settings
+// independently inject `target.replace` as a synthetic native effect.
 const ECHO_SOURCE: &str = r#"package demo.echo@1;
 
-use lawpack demo.write@1 digest "sha256:2222222222222222222222222222222222222222222222222222222222222222" as target;
+use lawpack demo.write@1 digest "sha256:2222222222222222222222222222222222222222222222222222222222222222" as semantics;
 
 type Input = { id: String<max=16>, basis: String<max=128>, };
 type Receipt = { id: String<max=16>, };
@@ -560,6 +562,44 @@ fn project_invalid_source_emits_diagnostics_without_process_failure() {
     assert_eq!(
         core.pointer("/reason/0/kind").and_then(Value::as_str),
         Some("ExpectedToken")
+    );
+}
+
+#[test]
+fn project_reserved_type_identity_emits_the_stable_compiler_kind() {
+    let source = VALID_SOURCE.replace("HelloInput", "Unit");
+    let output = run_edict(&jsonl([
+        projection_settings(["diagnostics", "core"]),
+        json!({
+            "schema": "edict.compiler.input/v1",
+            "type": "compilerInput",
+            "kind": "source",
+            "name": "unsaved/reserved.edict",
+            "source": source,
+        }),
+    ]));
+
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "compiler diagnostics are projection data, not process failure"
+    );
+    assert!(output.stderr.is_empty());
+    let stdout = assert_jsonl_stream(&output.stdout, "stdout");
+    let diagnostics = record_of_type(&stdout, "diagnostics");
+    let items = diagnostics
+        .get("diagnostics")
+        .and_then(Value::as_array)
+        .expect("diagnostics projection carries compiler diagnostics");
+    assert!(items.iter().any(|item| {
+        item.get("stage").and_then(Value::as_str) == Some("typeCheck")
+            && item.get("kind").and_then(Value::as_str) == Some("ReservedTypeIdentity")
+    }));
+    assert_eq!(
+        record_of_type(&stdout, "core")
+            .get("state")
+            .and_then(Value::as_str),
+        Some("blocked")
     );
 }
 
@@ -1656,6 +1696,8 @@ fn projection_target_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.replace".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        effect_signatures: Vec::new(),
+        pure_functions: Vec::new(),
     }
 }
 
