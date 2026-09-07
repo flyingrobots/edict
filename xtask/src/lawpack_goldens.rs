@@ -1012,7 +1012,36 @@ fn causal_cell_target_configuration() -> CanonicalValue {
 
 fn causal_cell_exports() -> CanonicalValue {
     map([
-        ("types", CanonicalValue::Array(Vec::new())),
+        (
+            "types",
+            CanonicalValue::Array(vec![
+                map([
+                    ("coordinate", text("causal.cell@1.CreateInput")),
+                    (
+                        "definition",
+                        text(
+                            "Record<basis:String<max=128,canonical=raw-utf8>,key:String<max=64,canonical=raw-utf8>,value:String<max=256,canonical=raw-utf8>>",
+                        ),
+                    ),
+                ]),
+                map([
+                    ("coordinate", text("causal.cell@1.CreateReceipt")),
+                    (
+                        "definition",
+                        text("Record<key:String<max=64,canonical=raw-utf8>>"),
+                    ),
+                ]),
+                map([
+                    ("coordinate", text("causal.cell@1.ExistingValue")),
+                    (
+                        "definition",
+                        text(
+                            "Record<key:String<max=64,canonical=raw-utf8>,value:String<max=256,canonical=raw-utf8>>",
+                        ),
+                    ),
+                ]),
+            ]),
+        ),
         ("constants", CanonicalValue::Array(Vec::new())),
         ("pureFunctions", CanonicalValue::Array(Vec::new())),
         (
@@ -1087,27 +1116,17 @@ fn causal_cell_application_source(manifest_digest: &str) -> String {
 
 use lawpack causal.cell@1 digest "{manifest_digest}" as cell;
 
-type CreateGreetingInput = {{
-  basis: String<max=128>,
-  key: String<max=64>,
-  value: String<max=256>,
-}};
-
-type CellCreateReceipt = {{
-  key: String<max=64>,
-}};
-
 type GreetingCreated = {{
   key: String<max=64>,
   message: String<max=256>,
 }};
 
-intent createGreeting(input: CreateGreetingInput) returns GreetingCreated
+intent createGreeting(input: cell.CreateInput) returns GreetingCreated
   profile cell.createIfAbsent
   basis input.basis
   budget <= cell.smallCreateBudget
 {{
-  let receipt: CellCreateReceipt = cell.createIfAbsent(input)
+  let receipt: cell.CreateReceipt = cell.createIfAbsent(input)
     else {{ alreadyExists(existing) => cell.AlreadyExists }};
   return {{
     key: receipt.key,
@@ -1116,6 +1135,26 @@ intent createGreeting(input: CreateGreetingInput) returns GreetingCreated
 }}
 "#
     )
+}
+
+fn hello_echo_source_for_bundle(
+    root: &Path,
+    bundle: &ValidatedLawpackBundle,
+) -> Result<String, String> {
+    let checked_in_source = fs::read_to_string(root.join(CREATE_GREETING_SOURCE))
+        .map_err(|error| format!("read {CREATE_GREETING_SOURCE}: {error}"))?;
+    let prior_manifest_digest = fs::read_to_string(root.join(MANIFEST_DIGEST))
+        .map_err(|error| format!("read {MANIFEST_DIGEST}: {error}"))?;
+    let prior_manifest_digest = prior_manifest_digest.trim();
+    if checked_in_source.matches(prior_manifest_digest).count() != 1 {
+        return Err(format!(
+            "{CREATE_GREETING_SOURCE}: expected exactly one import pinned to {prior_manifest_digest}"
+        ));
+    }
+    Ok(checked_in_source.replace(
+        prior_manifest_digest,
+        &bundle.manifest_digest_review_string(),
+    ))
 }
 
 fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>)>, String> {
@@ -1139,8 +1178,7 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
         .map_err(|failures| format!("validate Hello Echo lawpack: {failures:?}"))?;
     let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", &adapter_bytes)
         .map_err(|failures| format!("validate Hello Echo adapter: {failures:?}"))?;
-    let source = fs::read_to_string(root.join(CREATE_GREETING_SOURCE))
-        .map_err(|error| format!("read {CREATE_GREETING_SOURCE}: {error}"))?;
+    let source = hello_echo_source_for_bundle(root, &bundle)?;
     let module = parse_module(&source)
         .map_err(|error| format!("parse {CREATE_GREETING_SOURCE}: {error:?}"))?;
     let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
@@ -1199,6 +1237,7 @@ fn hello_echo_golden_artifacts(root: &Path) -> Result<Vec<(&'static str, Vec<u8>
             TARGET_CONFIGURATION_DIGEST,
             target_configuration_digest.into_bytes(),
         ),
+        (CREATE_GREETING_SOURCE, source.into_bytes()),
         (CREATE_GREETING_CORE_CBOR, core_bytes),
         (CREATE_GREETING_CORE_DIGEST, core_digest.into_bytes()),
         (CREATE_GREETING_TARGET_IR_CBOR, target_ir_bytes),
@@ -1368,7 +1407,36 @@ fn hello_echo_target_configuration() -> CanonicalValue {
 
 fn hello_echo_exports() -> CanonicalValue {
     map([
-        ("types", CanonicalValue::Array(Vec::new())),
+        (
+            "types",
+            CanonicalValue::Array(vec![
+                map([
+                    ("coordinate", text("hello.echo@1.CreateGreetingInput")),
+                    (
+                        "definition",
+                        text(
+                            "Record<basis:String<max=128,canonical=raw-utf8>,key:String<max=64,canonical=raw-utf8>,message:String<max=256,canonical=raw-utf8>>",
+                        ),
+                    ),
+                ]),
+                map([
+                    ("coordinate", text("hello.echo@1.GreetingReceipt")),
+                    (
+                        "definition",
+                        text("Record<key:String<max=64,canonical=raw-utf8>>"),
+                    ),
+                ]),
+                map([
+                    ("coordinate", text("hello.echo@1.ExistingGreeting")),
+                    (
+                        "definition",
+                        text(
+                            "Record<key:String<max=64,canonical=raw-utf8>,message:String<max=256,canonical=raw-utf8>>",
+                        ),
+                    ),
+                ]),
+            ]),
+        ),
         ("constants", CanonicalValue::Array(Vec::new())),
         ("pureFunctions", CanonicalValue::Array(Vec::new())),
         (

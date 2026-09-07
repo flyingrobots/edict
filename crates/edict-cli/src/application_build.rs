@@ -141,6 +141,7 @@ struct ProviderInvocationContext<'a> {
     target_profile: &'a ProviderBoundArtifact,
     loaded: &'a LoadedLawpack,
     adapter: &'a edict_syntax::ValidatedLawpackAdapter,
+    configuration: &'a edict_syntax::LawpackResourceRef,
     source_bytes: &'a [u8],
     target_ir_bytes: &'a [u8],
     result_projection: &'a ResultProjectionArtifact,
@@ -282,8 +283,6 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             "lawpack adapter target profile digest does not match the selected provider profile",
         ));
     }
-    validate_target_configuration_binding(&adapter, &loaded.configuration_bytes)?;
-
     let preparation =
         prepare_lawpack_compilation(&module, &loaded.bundle, &adapter).map_err(|failures| {
             failure(
@@ -306,6 +305,9 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
             ),
         ));
     }
+    let configuration =
+        single_configuration_for_core(adapter.operation_profiles(), adapter.effects(), &core)?;
+    validate_target_configuration_binding(configuration, &loaded.configuration_bytes)?;
     let target_ir_report = lower_to_target_ir(&core, preparation.target_ir_facts());
     if target_ir_report.status != TargetLoweringStatus::Lowered {
         return Err(failure(
@@ -429,6 +431,7 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         target_profile: &target_profile,
         loaded,
         adapter: &adapter,
+        configuration,
         source_bytes: &source_artifact_bytes,
         target_ir_bytes: &target_ir_bytes,
         result_projection,
@@ -1264,21 +1267,9 @@ fn read_provider_artifact(
 }
 
 fn validate_target_configuration_binding(
-    adapter: &edict_syntax::ValidatedLawpackAdapter,
+    reference: &edict_syntax::LawpackResourceRef,
     bytes: &[u8],
 ) -> Result<(), ApplicationBuildFailure> {
-    let reference = single_unique_configuration(
-        adapter
-            .effects()
-            .values()
-            .map(|effect| &effect.target_configuration)
-            .chain(
-                adapter
-                    .operation_profiles()
-                    .values()
-                    .filter_map(|profile| profile.target_configuration.as_ref()),
-            ),
-    )?;
     let digest = provider_digest(&reference.id, bytes)?;
     if reference.digest_review_string() != rendered_digest(&digest) {
         return Err(failure(
@@ -1324,6 +1315,7 @@ fn invoke_lowerer(
     let semantic_inputs = lowering_inputs(
         invocation.loaded,
         invocation.adapter,
+        invocation.configuration,
         invocation.coordinate,
         invocation.source_bytes,
         invocation.target_ir_bytes,
@@ -1428,6 +1420,7 @@ fn invoke_verifier(
     let semantic_inputs = verification_inputs(
         invocation.loaded,
         invocation.adapter,
+        invocation.configuration,
         invocation.coordinate,
         invocation.source_bytes,
         package_bytes,
@@ -1501,12 +1494,12 @@ fn invoke_verifier(
 fn lowering_inputs(
     loaded: &LoadedLawpack,
     adapter: &edict_syntax::ValidatedLawpackAdapter,
+    configuration: &edict_syntax::LawpackResourceRef,
     coordinate: &str,
     source_bytes: &[u8],
     target_ir_bytes: &[u8],
     result_projection: &ResultProjectionArtifact,
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
-    let configuration = single_configuration(adapter)?;
     let adapter_reference = selected_adapter_reference(
         &loaded.bundle.manifest().target_adapters,
         adapter.target_profile(),
@@ -1567,12 +1560,12 @@ fn lowering_inputs(
 fn verification_inputs(
     loaded: &LoadedLawpack,
     adapter: &edict_syntax::ValidatedLawpackAdapter,
+    configuration: &edict_syntax::LawpackResourceRef,
     coordinate: &str,
     source_bytes: &[u8],
     package_bytes: &[u8],
     result_projection: &ResultProjectionArtifact,
 ) -> Result<Vec<ProviderSemanticInput>, ApplicationBuildFailure> {
-    let configuration = single_configuration(adapter)?;
     let adapter_reference = selected_adapter_reference(
         &loaded.bundle.manifest().target_adapters,
         adapter.target_profile(),
@@ -1630,15 +1623,170 @@ fn verification_inputs(
     )
 }
 
-fn single_configuration(
-    adapter: &edict_syntax::ValidatedLawpackAdapter,
-) -> Result<&edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
-    single_unique_configuration(
-        adapter
-            .effects()
-            .values()
-            .map(|effect| &effect.target_configuration),
+fn single_configuration_for_core<'a>(
+    operation_profiles: &'a BTreeMap<String, edict_syntax::LawpackAdapterOperationProfile>,
+    effects: &'a BTreeMap<String, edict_syntax::LawpackAdapterEffect>,
+    core: &edict_syntax::CoreModule,
+) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    for (intent_name, intent) in &core.intents {
+        let mut matching_profiles = operation_profiles
+            .iter()
+            .filter(|(_, profile)| profile.core == intent.required_operation_profile);
+        let Some((profile_coordinate, profile)) = matching_profiles.next() else {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core intent `{intent_name}` requires unknown operation profile `{}`",
+                    intent.required_operation_profile
+                ),
+            ));
+        };
+        if matching_profiles.next().is_some() {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core intent `{intent_name}` requires an ambiguous operation profile `{}`",
+                    intent.required_operation_profile
+                ),
+            ));
+        }
+        let required_effects = semantic_effects_required_by_block(core, &intent.body);
+        if let Some(unadvertised_effect) = required_effects
+            .iter()
+            .find(|effect| !profile.semantic_effects.contains(effect))
+        {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core intent `{intent_name}` invokes effect `{unadvertised_effect}` outside operation profile `{profile_coordinate}`"
+                ),
+            ));
+        }
+    }
+    let required_core_profiles = core
+        .intents
+        .values()
+        .map(|intent| intent.required_operation_profile.as_str())
+        .collect::<BTreeSet<_>>();
+    let required_semantic_effects = semantic_effects_required_by_core(core);
+    single_configuration_for_required_core_profiles(
+        operation_profiles,
+        effects,
+        &required_core_profiles,
+        &required_semantic_effects,
     )
+}
+
+fn semantic_effects_required_by_core(core: &edict_syntax::CoreModule) -> BTreeSet<String> {
+    core.intents
+        .values()
+        .flat_map(|intent| semantic_effects_required_by_block(core, &intent.body))
+        .collect()
+}
+
+fn semantic_effects_required_by_block(
+    core: &edict_syntax::CoreModule,
+    root: &edict_syntax::CoreBlock,
+) -> BTreeSet<String> {
+    let mut source_effects = BTreeSet::new();
+    let mut blocks = vec![root];
+    while let Some(block) = blocks.pop() {
+        for node in &block.nodes {
+            match node {
+                edict_syntax::CoreNode::Effect { effect, .. } => {
+                    source_effects.insert(effect.as_str());
+                }
+                edict_syntax::CoreNode::For { body, .. } => blocks.push(body),
+                edict_syntax::CoreNode::Branch {
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    blocks.push(else_block);
+                    blocks.push(then_block);
+                }
+                edict_syntax::CoreNode::Let { .. }
+                | edict_syntax::CoreNode::Require { .. }
+                | edict_syntax::CoreNode::ExternalActionRequest { .. } => {}
+            }
+        }
+    }
+    source_effects
+        .into_iter()
+        .map(|effect| {
+            let Some((alias, suffix)) = effect.split_once('.') else {
+                return effect.to_owned();
+            };
+            core.imports
+                .iter()
+                .find(|import| {
+                    import.kind == edict_syntax::CoreImportKind::Lawpack
+                        && import.alias.as_deref() == Some(alias)
+                })
+                .map_or_else(
+                    || effect.to_owned(),
+                    |import| format!("{}.{}", import.resource.coordinate, suffix),
+                )
+        })
+        .collect()
+}
+
+fn single_configuration_for_required_core_profiles<'a>(
+    operation_profiles: &'a BTreeMap<String, edict_syntax::LawpackAdapterOperationProfile>,
+    effects: &'a BTreeMap<String, edict_syntax::LawpackAdapterEffect>,
+    required_core_profiles: &BTreeSet<&str>,
+    required_semantic_effects: &BTreeSet<String>,
+) -> Result<&'a edict_syntax::LawpackResourceRef, ApplicationBuildFailure> {
+    let mut configurations = Vec::new();
+    for required_core_profile in required_core_profiles {
+        let mut matched = false;
+        for (coordinate, profile) in operation_profiles
+            .iter()
+            .filter(|(_, profile)| profile.core == *required_core_profile)
+        {
+            matched = true;
+            if profile.semantic_effects.is_empty() {
+                let configuration = profile.target_configuration.as_ref().ok_or_else(|| {
+                    failure(
+                        "InvalidLawpackAdapter",
+                        format!("operation profile `{coordinate}` has no target configuration"),
+                    )
+                })?;
+                configurations.push(configuration);
+            } else {
+                let invoked_effects = profile
+                    .semantic_effects
+                    .iter()
+                    .filter(|effect| required_semantic_effects.contains(effect.as_str()))
+                    .collect::<Vec<_>>();
+                let configuration_effects = if invoked_effects.is_empty() {
+                    profile.semantic_effects.iter().collect::<Vec<_>>()
+                } else {
+                    invoked_effects
+                };
+                for effect_coordinate in configuration_effects {
+                    let effect = effects.get(effect_coordinate).ok_or_else(|| {
+                        failure(
+                            "InvalidLawpackAdapter",
+                            format!(
+                                "operation profile `{coordinate}` selects unknown effect `{effect_coordinate}`"
+                            ),
+                        )
+                    })?;
+                    configurations.push(&effect.target_configuration);
+                }
+            }
+        }
+        if !matched {
+            return Err(failure(
+                "InvalidLawpackAdapter",
+                format!(
+                    "compiled Core requires unknown operation profile `{required_core_profile}`"
+                ),
+            ));
+        }
+    }
+    single_unique_configuration(configurations)
 }
 
 fn single_result_projection<'a>(
@@ -2391,24 +2539,29 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
 
     use edict_syntax::{
-        compile_to_core, decode_canonical_cbor, decode_lawpack_adapter, decode_lawpack_bundle,
-        decode_result_projection, digest_canonical_artifact, encode_canonical_cbor,
-        lower_to_target_ir, parse_module, prepare_lawpack_compilation, CanonicalValue,
-        LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind, ProviderArtifactRef,
-        ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat, ResourceRef,
-        ResultProjectionArtifact, TargetIrArtifact, TargetLoweringReport, TargetProviderManifest,
-        RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION,
+        author_lawpack, compile_to_core, decode_canonical_cbor, decode_lawpack_adapter,
+        decode_lawpack_bundle, decode_result_projection, digest_canonical_artifact,
+        encode_canonical_cbor, lower_to_target_ir, parse_module, prepare_lawpack_compilation,
+        CanonicalValue, LawpackAdapterOperationProfile, LawpackArtifactKind,
+        LawpackAuthoringDefinition, LawpackResourceRef, LawpackTargetAdapter, ProviderArtifactKind,
+        ProviderArtifactRef, ProviderArtifactSource, ProviderSchemaBinding, ProviderSchemaFormat,
+        ResourceRef, ResultProjectionArtifact, TargetIrArtifact, TargetLoweringReport,
+        TargetProviderManifest, RESULT_PROJECTION_DIGEST_DOMAIN, TARGET_PROVIDER_ABI,
+        TARGET_PROVIDER_MANIFEST_API_VERSION,
     };
 
     use super::{
-        build_application, canonical_application_root, output_lock_path, provider_schema_artifacts,
-        read, selected_adapter_reference, single_result_projection, single_unique_configuration,
-        validate_application_manifest, validate_external_action_artifacts,
-        with_result_projection_input, write_external_action_outputs, write_outputs,
-        ApplicationBuildKind, ApplicationExternalActionResource, ApplicationLawpack,
-        ApplicationManifest, ApplicationTarget, ExternalActionResourceKind,
-        LoadedExternalActionResource, LoadedLawpack, EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN,
-        MAX_EXTERNAL_ACTION_RESOURCES, RESULT_PROJECTION_ROLE,
+        build_application, canonical_application_root, lowering_inputs, output_lock_path,
+        provider_schema_artifacts, read, selected_adapter_reference,
+        semantic_effects_required_by_core, single_configuration_for_core,
+        single_configuration_for_required_core_profiles, single_result_projection,
+        single_unique_configuration, validate_application_manifest,
+        validate_external_action_artifacts, with_result_projection_input,
+        write_external_action_outputs, write_outputs, ApplicationBuildKind,
+        ApplicationExternalActionResource, ApplicationLawpack, ApplicationManifest,
+        ApplicationTarget, ExternalActionResourceKind, LoadedExternalActionResource, LoadedLawpack,
+        EXTERNAL_ACTION_RESOURCE_DIGEST_DOMAIN, MAX_EXTERNAL_ACTION_RESOURCES,
+        RESULT_PROJECTION_ROLE,
     };
 
     const STRESS_SEED: u64 = 0x5eed_1a77_c105_0a11;
@@ -3199,6 +3352,378 @@ mod tests {
     }
 
     #[test]
+    fn operation_profile_configuration_is_selected_when_adapter_has_no_effects() {
+        let loaded = external_action_loaded_lawpack();
+        let adapter = test_ok(
+            decode_lawpack_adapter(&loaded.bundle, "echo.dpo@1", &loaded.adapter_bytes),
+            "decode request-only adapter",
+        );
+        assert!(
+            adapter.effects().is_empty(),
+            "request-only fixture must remain effect-free"
+        );
+
+        let required_core_profiles = BTreeSet::from(["continuum.profile.read-only/v1"]);
+        let configuration = test_ok(
+            single_configuration_for_required_core_profiles(
+                adapter.operation_profiles(),
+                adapter.effects(),
+                &required_core_profiles,
+                &BTreeSet::new(),
+            ),
+            "profile-owned target configuration",
+        );
+
+        assert_eq!(configuration.id, "workspace.snapshot.request-profile/v1");
+
+        let source_bytes = test_ok(
+            encode_canonical_cbor(&CanonicalValue::Bytes(
+                include_str!(
+                    "../../../fixtures/lawpack/workspace-snapshot/observe-workspace.edict"
+                )
+                .as_bytes()
+                .to_vec(),
+            )),
+            "encode the invocation source artifact",
+        );
+        let target_ir_bytes = include_bytes!(
+            "../../../fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor"
+        );
+
+        let inputs = test_ok(
+            lowering_inputs(
+                &loaded,
+                &adapter,
+                configuration,
+                "examples.workspace_observer@1",
+                &source_bytes,
+                target_ir_bytes,
+                &result_projection_artifact(),
+            ),
+            "construct the lowerer invocation inputs",
+        );
+        let Some(configuration_input) = inputs
+            .iter()
+            .find(|input| input.role == "05-target-configuration")
+        else {
+            panic!("lowerer invocation carries the selected target configuration");
+        };
+        assert_eq!(configuration_input.role, "05-target-configuration");
+        assert_eq!(
+            configuration_input.kind,
+            edict_syntax::ProviderSemanticInputKind::Auxiliary("target-configuration".to_owned())
+        );
+        assert_eq!(
+            configuration_input.artifact.reference.coordinate,
+            configuration.id
+        );
+        assert_eq!(
+            configuration_input.artifact.reference.digest.algorithm,
+            edict_syntax::ProviderDigestAlgorithm::Sha256
+        );
+        assert_eq!(
+            configuration_input.artifact.reference.digest.bytes,
+            configuration.digest
+        );
+        assert_eq!(
+            configuration_input.artifact.artifact.domain,
+            configuration.id
+        );
+        assert_eq!(
+            configuration_input.artifact.artifact.bytes,
+            loaded.configuration_bytes
+        );
+    }
+
+    #[test]
+    fn unused_operation_profile_configuration_does_not_enter_application_selection() {
+        let selected_configuration = lawpack_ref("target.selected-configuration@1", 0x45);
+        let unused_configuration = lawpack_ref("target.unused-configuration@1", 0x46);
+        let operation_profiles = BTreeMap::from([
+            (
+                "profile.selected@1".to_owned(),
+                LawpackAdapterOperationProfile {
+                    core: "continuum.profile.read-only/v1".to_owned(),
+                    semantic_effects: Vec::new(),
+                    budget_obligation: Some("budget.selected@1".to_owned()),
+                    target_configuration: Some(selected_configuration.clone()),
+                },
+            ),
+            (
+                "profile.unused@1".to_owned(),
+                LawpackAdapterOperationProfile {
+                    core: "continuum.profile.write-only/v1".to_owned(),
+                    semantic_effects: Vec::new(),
+                    budget_obligation: Some("budget.unused@1".to_owned()),
+                    target_configuration: Some(unused_configuration),
+                },
+            ),
+        ]);
+        let required_core_profiles = BTreeSet::from(["continuum.profile.read-only/v1"]);
+        let effects = BTreeMap::new();
+
+        let actual = test_ok(
+            single_configuration_for_required_core_profiles(
+                &operation_profiles,
+                &effects,
+                &required_core_profiles,
+                &BTreeSet::new(),
+            ),
+            "configuration from the Core-selected operation profile",
+        );
+
+        assert_eq!(actual, &selected_configuration);
+    }
+
+    #[test]
+    fn unused_effect_configuration_does_not_enter_application_selection() {
+        let manifest =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+        let exports =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+        let adapter_bytes =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+        let source = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+        let bundle = test_ok(
+            decode_lawpack_bundle(manifest, exports),
+            "decode Hello Echo lawpack",
+        );
+        let adapter = test_ok(
+            decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter_bytes),
+            "decode Hello Echo adapter",
+        );
+        let module = test_ok(parse_module(source), "parse Hello Echo source");
+        let preparation = test_ok(
+            prepare_lawpack_compilation(&module, &bundle, &adapter),
+            "prepare Hello Echo compilation",
+        );
+        let core = test_ok(
+            compile_to_core(&module, preparation.compiler_context()),
+            "compile Hello Echo Core",
+        );
+
+        let mut operation_profiles = adapter.operation_profiles().clone();
+        let mut effects = adapter.effects().clone();
+        assert_eq!(operation_profiles.len(), 1, "fixture selects one profile");
+        assert_eq!(effects.len(), 1, "fixture invokes one effect");
+        let Some(used_effect_coordinate) = effects.keys().next().cloned() else {
+            panic!("fixture effect coordinate");
+        };
+        let Some(used_effect) = effects.get(&used_effect_coordinate) else {
+            panic!("fixture effect");
+        };
+        let selected_configuration = used_effect.target_configuration.clone();
+        assert_eq!(
+            semantic_effects_required_by_core(&core),
+            BTreeSet::from([used_effect_coordinate.clone()]),
+            "configuration selection follows the exact effects present in Core",
+        );
+        let mut unused_effect = used_effect.clone();
+        unused_effect.target_configuration =
+            lawpack_ref("target.unused-effect-configuration@1", 0x47);
+        let unused_effect_coordinate = "hello.echo@1.unusedEffect".to_owned();
+        effects.insert(unused_effect_coordinate.clone(), unused_effect);
+        let Some(operation_profile) = operation_profiles.values_mut().next() else {
+            panic!("fixture operation profile");
+        };
+        operation_profile
+            .semantic_effects
+            .push(unused_effect_coordinate);
+
+        let actual = test_ok(
+            single_configuration_for_core(&operation_profiles, &effects, &core),
+            "configuration from the effect actually invoked by Core",
+        );
+
+        assert_eq!(actual, &selected_configuration);
+    }
+
+    #[test]
+    fn application_configuration_rejects_effect_outside_selected_profile() {
+        let manifest =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+        let exports =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+        let adapter_bytes =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+        let source = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict");
+        let bundle = test_ok(
+            decode_lawpack_bundle(manifest, exports),
+            "decode Hello Echo lawpack",
+        );
+        let adapter = test_ok(
+            decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter_bytes),
+            "decode Hello Echo adapter",
+        );
+        let module = test_ok(parse_module(source), "parse Hello Echo source");
+        let preparation = test_ok(
+            prepare_lawpack_compilation(&module, &bundle, &adapter),
+            "prepare Hello Echo compilation",
+        );
+        let core = test_ok(
+            compile_to_core(&module, preparation.compiler_context()),
+            "compile Hello Echo Core",
+        );
+
+        let mut operation_profiles = adapter.operation_profiles().clone();
+        let mut effects = adapter.effects().clone();
+        let Some((invoked_coordinate, invoked_effect)) = effects
+            .first_key_value()
+            .map(|(coordinate, effect)| (coordinate.clone(), effect.clone()))
+        else {
+            panic!("Hello Echo invokes one effect");
+        };
+        assert_eq!(
+            semantic_effects_required_by_core(&core),
+            BTreeSet::from([invoked_coordinate.clone()]),
+        );
+        let selected_only_coordinate = "hello.echo@1.selectedOnly".to_owned();
+        let mut selected_only_effect = invoked_effect.clone();
+        selected_only_effect.target_configuration =
+            lawpack_ref("target.selected-profile-configuration@1", 0x49);
+        effects.insert(selected_only_coordinate.clone(), selected_only_effect);
+
+        let Some((selected_coordinate, selected_profile)) = operation_profiles
+            .first_key_value()
+            .map(|(coordinate, profile)| (coordinate.clone(), profile.clone()))
+        else {
+            panic!("Hello Echo selects one profile");
+        };
+        let Some(selected_entry) = operation_profiles.get_mut(&selected_coordinate) else {
+            panic!("selected profile remains present");
+        };
+        selected_entry.semantic_effects = vec![selected_only_coordinate];
+        operation_profiles.insert(
+            "hello.echo@1.otherProfile".to_owned(),
+            LawpackAdapterOperationProfile {
+                core: "continuum.profile.other/v1".to_owned(),
+                semantic_effects: vec![invoked_coordinate],
+                budget_obligation: selected_profile.budget_obligation,
+                target_configuration: selected_profile.target_configuration,
+            },
+        );
+
+        let failure = test_err(
+            single_configuration_for_core(&operation_profiles, &effects, &core),
+            "an invoked effect outside the selected profile must reject",
+        );
+
+        assert_eq!(failure.kind, "InvalidLawpackAdapter");
+    }
+
+    #[test]
+    fn selected_effectful_profile_without_invocations_uses_unique_advertised_configuration() {
+        let manifest =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice();
+        let exports =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice();
+        let adapter_bytes =
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice();
+        let bundle = test_ok(
+            decode_lawpack_bundle(manifest, exports),
+            "decode Hello Echo lawpack",
+        );
+        let adapter = test_ok(
+            decode_lawpack_adapter(&bundle, "echo.dpo@1", adapter_bytes),
+            "decode Hello Echo adapter",
+        );
+        let mut operation_profiles = adapter.operation_profiles().clone();
+        let mut effects = adapter.effects().clone();
+        let Some((advertised_coordinate, advertised_effect)) = effects
+            .first_key_value()
+            .map(|(coordinate, effect)| (coordinate.clone(), effect.clone()))
+        else {
+            panic!("Hello Echo advertises one semantic effect");
+        };
+        let duplicate_coordinate = "hello.echo@1.sameConfiguration".to_owned();
+        effects.insert(duplicate_coordinate.clone(), advertised_effect.clone());
+        let Some(profile) = operation_profiles.values_mut().next() else {
+            panic!("Hello Echo advertises one operation profile");
+        };
+        profile.semantic_effects = vec![advertised_coordinate, duplicate_coordinate.clone()];
+        let required_core_profile = profile.core.clone();
+        let required_core_profiles = BTreeSet::from([required_core_profile.as_str()]);
+
+        let selected = test_ok(
+            single_configuration_for_required_core_profiles(
+                &operation_profiles,
+                &effects,
+                &required_core_profiles,
+                &BTreeSet::new(),
+            ),
+            "unique configuration advertised by an uninvoked effectful profile",
+        );
+        assert_eq!(selected, &advertised_effect.target_configuration);
+
+        let Some(duplicate_effect) = effects.get_mut(&duplicate_coordinate) else {
+            panic!("duplicate advertised effect");
+        };
+        duplicate_effect.target_configuration =
+            lawpack_ref("target.ambiguous-configuration@1", 0x48);
+        let failure = test_err(
+            single_configuration_for_required_core_profiles(
+                &operation_profiles,
+                &effects,
+                &required_core_profiles,
+                &BTreeSet::new(),
+            ),
+            "ambiguous advertised configurations must reject",
+        );
+        assert_eq!(failure.kind, "InvalidLawpackAdapter");
+    }
+
+    #[test]
+    fn public_application_selects_and_binds_configuration_from_compiled_core_profiles() {
+        let root = temp_tree("public-selected-core-profile");
+        let config_path = write_external_action_application(&root);
+        install_two_profile_workspace_lawpack(&root);
+
+        test_ok(
+            build_application(&config_path),
+            "build with a differently configured unused operation profile",
+        );
+
+        assert!(root.join(".build/application/core.cbor").is_file());
+        assert!(root.join(".build/application/target-ir.cbor").is_file());
+        test_ok(fs::remove_dir_all(root), "remove two-profile build tree");
+
+        let root = temp_tree("public-mismatched-core-profile");
+        let config_path = write_external_action_application(&root);
+        install_two_profile_workspace_lawpack(&root);
+        let mut config = test_ok(
+            serde_json::from_slice::<serde_json::Value>(&test_ok(
+                fs::read(&config_path),
+                "read application manifest",
+            )),
+            "decode application manifest",
+        );
+        config["lawpacks"][0]["targetConfiguration"] =
+            serde_json::json!("vendor/workspace-snapshot/unused-profile-configuration.cbor");
+        test_ok(
+            fs::write(
+                &config_path,
+                test_ok(
+                    serde_json::to_vec_pretty(&config),
+                    "encode mismatched application manifest",
+                ),
+            ),
+            "write mismatched application manifest",
+        );
+
+        let failure = test_err(
+            build_application(&config_path),
+            "the unused configuration cannot impersonate the selected profile",
+        );
+
+        assert_eq!(failure.kind, "TargetConfigurationMismatch");
+        assert!(
+            !root.join(".build/application").exists(),
+            "a configuration mismatch must reject before publication"
+        );
+        test_ok(fs::remove_dir_all(root), "remove mismatched build tree");
+    }
+
+    #[test]
     fn compiler_result_projection_is_bound_into_the_provider_closure() {
         let projection = result_projection_artifact();
         let bytes = projection.canonical_bytes().to_vec();
@@ -3422,6 +3947,175 @@ mod tests {
             .to_review_string(),
         })
         .collect()
+    }
+
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the test lawpack keeps both profile configurations reviewable"
+    )]
+    fn install_two_profile_workspace_lawpack(root: &std::path::Path) {
+        let definition = test_ok(
+            serde_json::from_value::<LawpackAuthoringDefinition>(serde_json::json!({
+                "schema": "edict.lawpack-authoring/v1",
+                "id": "workspace.snapshot",
+                "version": "1",
+                "acceptedCoreAbi": ["edict.core/v1"],
+                "dependencies": [],
+                "exportsCoordinate": "workspace.snapshot.exports/v1",
+                "exports": {
+                    "types": [],
+                    "constants": [],
+                    "pureFunctions": [],
+                    "effects": [],
+                    "obstructions": [],
+                    "operationProfiles": {
+                        "workspace.snapshot@1.observeRequest": {
+                            "opticTemplate": {
+                                "opticKind": "revelation",
+                                "boundaryKind": "projection",
+                                "supportPolicy": "workspace.snapshot@1.requestOnly",
+                                "lossDisposition": "workspace.snapshot@1.lossless",
+                                "basisTemplate": null,
+                                "apertureRequirement": {
+                                    "kind": "abstractFootprintObligation",
+                                    "reference": "workspace.snapshot@1.authorityScope"
+                                }
+                            },
+                            "effectPredicate": "workspace.snapshot@1.externalObservation"
+                        },
+                        "workspace.snapshot@1.unusedRequest": {
+                            "opticTemplate": {
+                                "opticKind": "revelation",
+                                "boundaryKind": "projection",
+                                "supportPolicy": "workspace.snapshot@1.requestOnly",
+                                "lossDisposition": "workspace.snapshot@1.lossless",
+                                "basisTemplate": null,
+                                "apertureRequirement": {
+                                    "kind": "abstractFootprintObligation",
+                                    "reference": "workspace.snapshot@1.authorityScope"
+                                }
+                            },
+                            "effectPredicate": "workspace.snapshot@1.externalObservation"
+                        }
+                    }
+                },
+                "targetAdapters": [{
+                    "coordinate": "workspace.snapshot.echo-adapter/v1",
+                    "output": "adapter.cbor",
+                    "acceptedTargetProfile": {
+                        "id": "echo.dpo@1",
+                        "digest": "sha256:2e2494121aecf5e6a2d920f5fb85408825d394765fad41484c416397c920fb04"
+                    },
+                    "acceptedTargetIr": {
+                        "id": "echo.span-ir/v1",
+                        "digest": "sha256:0057167e68f50c99dcce087b3e1cd677d17c5d1dc238bdb52d89469e1472fc2f"
+                    },
+                    "operationProfiles": {
+                        "workspace.snapshot@1.observeRequest": {
+                            "core": "continuum.profile.read-only/v1",
+                            "semanticEffects": [],
+                            "budgetObligation": "workspace.snapshot@1.tinyObservationBudget",
+                            "targetConfiguration": {"local": "selected-configuration"}
+                        },
+                        "workspace.snapshot@1.unusedRequest": {
+                            "core": "continuum.profile.unused/v1",
+                            "semanticEffects": [],
+                            "budgetObligation": "workspace.snapshot@1.tinyObservationBudget",
+                            "targetConfiguration": {"local": "unused-configuration"}
+                        }
+                    },
+                    "effectImplementations": {},
+                    "budgets": {
+                        "workspace.snapshot@1.tinyObservationBudget": {
+                            "maxSteps": 512,
+                            "maxAllocatedBytes": 262_144,
+                            "maxOutputBytes": 131_072
+                        }
+                    }
+                }],
+                "helperComponent": null,
+                "verifier": {
+                    "class": "declarative",
+                    "ruleset": {
+                        "id": "workspace.snapshot.verifier-rules/v1",
+                        "digest": format!("sha256:{}", "84".repeat(32))
+                    }
+                },
+                "compatibility": {
+                    "id": "workspace.snapshot.compatibility/v1",
+                    "digest": format!("sha256:{}", "85".repeat(32))
+                },
+                "conformanceFixtureCorpus": {
+                    "id": "workspace.snapshot.fixtures/v1",
+                    "digest": format!("sha256:{}", "86".repeat(32))
+                },
+                "localResources": [{
+                    "name": "selected-configuration",
+                    "coordinate": "workspace.snapshot.request-profile/v1",
+                    "output": "request-profile-configuration.cbor",
+                    "value": {
+                        "operation": "workspace.snapshot.observe@1",
+                        "apiVersion": "workspace.snapshot.request-profile/v1",
+                        "basisClass": "workspace-root",
+                        "authorityClass": "scoped"
+                    }
+                }, {
+                    "name": "unused-configuration",
+                    "coordinate": "workspace.snapshot.unused-profile/v1",
+                    "output": "unused-profile-configuration.cbor",
+                    "value": {
+                        "apiVersion": "workspace.snapshot.unused-profile/v1",
+                        "sentinel": "must-not-select"
+                    }
+                }]
+            })),
+            "decode two-profile lawpack definition",
+        );
+        let artifacts = test_ok(
+            author_lawpack(&definition, &[]),
+            "author two-profile lawpack",
+        );
+        let lawpack_directory = root.join("vendor/workspace-snapshot");
+        for artifact in artifacts.artifacts() {
+            let path = lawpack_directory.join(artifact.path());
+            if let Some(parent) = path.parent() {
+                test_ok(
+                    fs::create_dir_all(parent),
+                    "create authored artifact parent",
+                );
+            }
+            test_ok(
+                fs::write(path, artifact.bytes()),
+                "write authored lawpack artifact",
+            );
+        }
+
+        let manifest = test_ok(
+            artifacts
+                .artifact(LawpackArtifactKind::Manifest)
+                .ok_or("authored lawpack has no manifest"),
+            "locate authored lawpack manifest",
+        );
+        let source_path = root.join("src/observe-workspace.edict");
+        let source = test_ok(fs::read_to_string(&source_path), "read workspace source");
+        let original_digest =
+            include_str!("../../../fixtures/lawpack/workspace-snapshot/manifest.sha256").trim();
+        let repinned = source.replace(original_digest, manifest.digest());
+        assert_ne!(repinned, source, "source lawpack digest must move");
+        test_ok(fs::write(source_path, repinned), "repin workspace source");
+
+        let selected = test_ok(
+            fs::read(lawpack_directory.join("request-profile-configuration.cbor")),
+            "read selected configuration",
+        );
+        let unused = test_ok(
+            fs::read(lawpack_directory.join("unused-profile-configuration.cbor")),
+            "read unused configuration",
+        );
+        assert_ne!(
+            selected, unused,
+            "the unused configuration is materially distinct"
+        );
     }
 
     #[allow(

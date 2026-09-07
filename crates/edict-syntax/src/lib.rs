@@ -78,6 +78,7 @@ pub mod core_ir;
 pub mod highlight;
 pub mod lawpack;
 pub mod lawpack_adapter;
+pub mod lawpack_authoring;
 pub mod lowerability;
 pub mod parser;
 pub mod provider;
@@ -118,9 +119,9 @@ pub use canonical::{
     TARGET_IR_ARTIFACT_DIGEST_DOMAIN,
 };
 pub use compiler::{
-    compile_to_core, lower_core, resolve_module, type_check, CompilerContext, CompilerError,
-    CompilerErrorKind, CompilerStage, ResolvedIntent, ResolvedModule, ResolvedTypeDecl,
-    TypedIntent, TypedModule,
+    compile_to_core, lower_core, resolve_module, type_check, BoundFact, CompilerContext,
+    CompilerError, CompilerErrorKind, CompilerStage, PureFunctionFact, PureHelperCostFact,
+    ResolvedIntent, ResolvedModule, ResolvedTypeDecl, TypeShapeFact, TypedIntent, TypedModule,
 };
 pub use contract_bundle::{
     assemble_contract_bundle, assemble_contract_bundle_from_target_ir,
@@ -133,10 +134,11 @@ pub use contract_bundle::{
     SourceArtifactRef, SuppliedDigest, SuppliedTargetIrResource, CONTRACT_BUNDLE_API_VERSION,
 };
 pub use core_ir::{
-    CompareOp, CoreBlock, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport,
-    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
-    CorePredicate, CoreRequireFailureArm, CoreType, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
+    validate_core_module_type_integrity, CompareOp, CoreBlock, CoreBound, CoreBudget, CoreExpr,
+    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreIntent, CoreModule, CoreNode,
+    CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType,
+    CoreTypeIntegrityFailure, CoreTypeIntegrityFailureKind, CoreValue, InputConstraint,
+    InputConstraintSource, LocalRef, ResourceRef, ValidatedCoreModule, CORE_API_VERSION,
 };
 pub use highlight::{highlight_source, HighlightRole, HighlightToken};
 pub use lawpack::{
@@ -153,6 +155,21 @@ pub use lawpack_adapter::{
     decode_lawpack_adapter, prepare_lawpack_compilation, LawpackAdapterEffect,
     LawpackAdapterFailure, LawpackAdapterFailureKind, LawpackAdapterOperationProfile,
     PreparedLawpackCompilation, ValidatedLawpackAdapter, LAWPACK_ADAPTER_API_VERSION,
+};
+pub use lawpack_authoring::{
+    author_lawpack, preflight_lawpack_authoring_paths, LawpackArtifactKind,
+    LawpackAuthoredArtifact, LawpackAuthoredArtifactSet, LawpackAuthoringAdapter,
+    LawpackAuthoringAdapterBudget, LawpackAuthoringAdapterEffect,
+    LawpackAuthoringAdapterOperationProfile, LawpackAuthoringApertureRequirement,
+    LawpackAuthoringAuthorityClass, LawpackAuthoringConstant, LawpackAuthoringDefinition,
+    LawpackAuthoringDependency, LawpackAuthoringDeterminismClass, LawpackAuthoringEffect,
+    LawpackAuthoringEffectFailure, LawpackAuthoringEffectKind, LawpackAuthoringExecutableComponent,
+    LawpackAuthoringExecutionClass, LawpackAuthoringExports, LawpackAuthoringFailure,
+    LawpackAuthoringFailureCause, LawpackAuthoringFailureKind, LawpackAuthoringLocalReference,
+    LawpackAuthoringLocalResource, LawpackAuthoringObstruction, LawpackAuthoringOperationProfile,
+    LawpackAuthoringOpticTemplate, LawpackAuthoringPinnedResource, LawpackAuthoringPureFunction,
+    LawpackAuthoringResourceRef, LawpackAuthoringType, LawpackAuthoringVerifier,
+    LAWPACK_AUTHORING_API_VERSION, MAX_LAWPACK_AUTHORING_VALUE_NESTING_DEPTH,
 };
 pub use lowerability::{
     check_lowerability, AtomicityRequirement, DirectAdapterSupport, GuardKind,
@@ -209,10 +226,11 @@ pub use result_projection::{
 };
 pub use semantic::{validate_module, validate_surface, SemanticError, SemanticErrorKind};
 pub use target_ir::{
-    lower_to_target_ir, TargetEffectLowering, TargetIrArtifact, TargetIrExternalActionRequest,
-    TargetIrIntent, TargetIrLoweringFacts, TargetIrRequireFailure, TargetIrRequirement,
-    TargetIrSemanticClosure, TargetIrStep, TargetLoweringFailure, TargetLoweringFailureKind,
-    TargetLoweringReport, TargetLoweringStatus, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
+    lower_to_target_ir, TargetEffectLowering, TargetEffectSignatureFact, TargetIrArtifact,
+    TargetIrExternalActionRequest, TargetIrIntent, TargetIrLoweringFacts, TargetIrPureBinding,
+    TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
+    TargetLoweringFailure, TargetLoweringFailureKind, TargetLoweringReport, TargetLoweringStatus,
+    TargetPureFunctionFact, ECHO_DPO_TARGET_PROFILE, ECHO_SPAN_IR_DOMAIN,
     GITWARP_COMMIT_REDUCER_IR_DOMAIN, GITWARP_REF_CRDT_TARGET_PROFILE,
 };
 pub use target_profile::{

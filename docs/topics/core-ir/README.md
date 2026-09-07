@@ -27,6 +27,19 @@ container rejects with stable `CanonicalErrorKind::NestingLimitExceeded`. The
 human walkthrough is [canonical-encoding.md](./canonical-encoding.md).
 [COREIR-REQ-012] [COREIR-REQ-013] [COREIR-REQ-014] [COREIR-REQ-017]
 
+The crate also exposes `validate_core_module_type_integrity`. A raw
+`CoreModule` is an untrusted candidate; successful validation returns an opaque
+borrowed `ValidatedCoreModule` witness plus stable structured failure kinds and
+paths on rejection. Canonical encoding and digesting, Target lowering, and
+public result-projection emission and verification all cross this same border
+before producing or accepting an artifact. Named definitions are memoized by
+their context-free maximum structural expansion height; each occurrence then
+applies its own remaining depth budget, so earlier shallow validation cannot
+bless a later deep use. First-time summary construction also bounds structural
+descent, so a long acyclic named chain returns `DepthExceeded` before exhausting
+the stack. Depth failures identify the checked table or graph occurrence; other
+failure kinds retain their specific child paths. [COREIR-REQ-027] [COREIR-REQ-028]
+
 The Core module schema does not embed reviewed golden bytes, exact Core
 digests, target IR, or admission bundles. Reviewed Core artifact fixtures live
 outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
@@ -41,15 +54,48 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 - Core types cover bounded scalars, records, variants, options, lists, maps,
   capability references, and typed external-action requests. Runtime-sized
   collections remain explicitly bounded at the Core schema boundary. Integer
-  type and value identity retains exact width and signedness, and byte payloads
-  carry an explicit maximum. [COREIR-REQ-002] [COREIR-REQ-019]
-  [COREIR-REQ-020]
+  type and value identity retains exact width and signedness. Byte payloads
+  carry an explicit maximum and may carry a minimum; equal bounds represent an
+  exact byte length, while max-only values omit the minimum from canonical Core.
+  Every Core type reference classifies without module state as fixed intrinsic,
+  canonical self-describing structure, or a name. One shared parser and renderer
+  owns bounded strings and bytes, records, options, lists, maps, capability
+  references, and external-action requests. Structural record fields are sorted
+  identifiers whose child references recurse under the same 128-level bound;
+  parse/render round trips are byte-exact. Intrinsic and structural references
+  resolve from themselves and may not occur as `core.types` keys. Only names
+  enter that table, so `Unit`, `Bool`, numeric intrinsics, and structural syntax
+  cannot be shadowed or redefined before canonical identity.
+  [COREIR-REQ-002]
+  [COREIR-REQ-019] [COREIR-REQ-020] [COREIR-REQ-022] [COREIR-REQ-023]
+  [COREIR-REQ-025] [COREIR-REQ-026]
+- Structural type compatibility and imported compiler type resolution share one
+  finite depth ceiling of 128. A compiler-accepted type chain at that boundary
+  remains compatible downstream instead of encountering an earlier Target IR
+  cutoff; deeper or cyclic caller-built shapes still fail closed.
+  [COREIR-REQ-024]
+- The whole-module type-integrity judgment eagerly validates every named
+  definition, including unused hash-significant definitions, and recursively
+  validates every type reference carried by intents, local tables, producers,
+  binders, expressions, requests, predicates, reasons, nested blocks, and
+  results. It enforces supported scalar definitions, canonical and resolvable
+  children, nominal contract equality, cycle policy, and the shared depth
+  ceiling. Depth is measured after acyclic named expansion: named references do
+  not consume an edge or reset the budget, each structural child consumes one,
+  depth 128 is accepted, and depth 129 rejects independently of table order,
+  root order, or prior traversal. Malformed raw Core therefore cannot mint
+  canonical bytes, a digest, Target IR, or projection authority.
+  [COREIR-REQ-027] [COREIR-REQ-028]
 - Core expressions and predicates are separate schema families. Expressions
   compute values; predicates express boolean obligations and input constraints.
   [COREIR-REQ-003]
 - Core blocks contain explicit locals, ordered nodes, and a result expression.
   Nodes cover local binding, semantic effects, guards, branches, bounded loops,
-  match blocks, and proof obligations. [COREIR-REQ-004]
+  match blocks, and proof obligations. A branch may carry one optional result
+  binding; when present, the selected block result becomes that local and the
+  binding participates in canonical Core identity. When absent, the canonical
+  encoder omits the field, preserving existing statement-only branch bytes and
+  digests. [COREIR-REQ-004] [COREIR-REQ-018] [COREIR-REQ-021]
 - The Rust Core IR model and reference canonical encoder represent the first
   semantic effect-node shape: binding, effect coordinate, input expression, and
   deterministic obstruction map. They also represent `require` nodes with
