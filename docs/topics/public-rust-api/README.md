@@ -19,3 +19,9 @@ Release preparation advances the facade package version, its exact
 `edict-syntax` requirement, and both lockfile package entries together. The
 prepared workspace remains resolvable with offline, locked Cargo metadata.
 [PUBRUST-REQ-004]
+
+The artifact namespace exports the value models needed to construct Core,
+Target IR, and result-projection inputs and to inspect decoded canonical values
+and verified projections. Diagnostic spans are available under `diagnostic`.
+These are explicit type exports; implementation modules remain private to the
+facade boundary. [PUBRUST-REQ-001]

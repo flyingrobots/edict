@@ -36,6 +36,7 @@ Out of scope:
 | PUBRUST-TP-003 | planned | Package boundary | PUBRUST-REQ-002 | Packaging succeeds with the reviewed inventory without publishing or mutating registry state. | release-engineering package check | crates/edict/Cargo.toml | The current package inventory dry run succeeds; the complete registry dependency closure remains unpublished. |
 | PUBRUST-TP-004 | planned | External consumer | PUBRUST-REQ-003 | The project compiles and runs without a sibling Edict checkout. | release-engineering external-consumer check | - | Requires packaged implementation dependencies or a sealed local registry before publication. |
 | PUBRUST-TP-005 | implemented | Release preparation | PUBRUST-REQ-004 | Cargo resolves the requested facade and implementation versions with the prepared lockfile. | release_prep_keeps_facade_exact_dependency_resolvable | xtask/src/tests.rs | Offline temporary workspace; no registry publication. |
+| PUBRUST-TP-006 | implemented | Consumer model closure | PUBRUST-REQ-001 | A consumer using only facade imports constructs Core, Target IR, and projection values, names decoded values and verified projections, and reads diagnostic spans. | facade_consumer_constructs_and_verifies_artifacts, facade_consumer_names_diagnostic_spans | crates/edict/tests/artifact_models.rs | The integration test is a separate consumer crate; it uses no implementation imports. |
 
 ## Known Gaps
 

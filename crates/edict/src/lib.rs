@@ -28,19 +28,26 @@ pub mod diagnostic {
     pub use edict_syntax::{
         CanonicalError, CanonicalErrorKind, CompilerError, CompilerErrorKind, CompilerStage,
         ParseError, ParseErrorKind, ResultProjectionFailure, ResultProjectionFailureKind,
-        SemanticError, SemanticErrorKind, TargetLoweringFailure, TargetLoweringFailureKind,
+        SemanticError, SemanticErrorKind, Span, TargetLoweringFailure, TargetLoweringFailureKind,
     };
 }
 
 /// Canonical semantic-artifact values, encoders, and domain-framed identity
-/// operations.
+/// operations. Nested value models are exported so callers can construct
+/// candidates and inspect results without importing implementation modules.
 pub mod artifact {
     pub use edict_syntax::{
         decode_canonical_cbor, decode_result_projection, digest_core_module,
         digest_result_projection, digest_target_ir_artifact, encode_core_module,
         encode_result_projection, encode_target_ir_artifact, verify_result_projection,
-        CanonicalError, CanonicalErrorKind, CoreDigest, CoreModule, ResultProjection,
-        ResultProjectionArtifact, ResultProjectionFailure, ResultProjectionFailureKind,
-        TargetIrArtifact,
+        CanonicalError, CanonicalErrorKind, CanonicalValue, CompareOp, CoreBlock, CoreBound,
+        CoreBudget, CoreDigest, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind,
+        CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
+        CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource,
+        LocalRef, ResourceRef, ResultProjection, ResultProjectionArtifact, ResultProjectionExpr,
+        ResultProjectionFailure, ResultProjectionFailureKind, ResultProjectionSource,
+        TargetIrArtifact, TargetIrExternalActionRequest, TargetIrIntent, TargetIrPureBinding,
+        TargetIrRequireFailure, TargetIrRequirement, TargetIrSemanticClosure, TargetIrStep,
+        VerifiedResultProjection,
     };
 }

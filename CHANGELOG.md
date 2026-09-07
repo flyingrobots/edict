@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Completed the Rust facade value-model exports for Core, Target IR, result
+  projections, decoded canonical values, and diagnostic spans, allowing
+  consumers to construct artifact inputs and inspect operation results.
 - Kept the Rust facade package version, exact implementation dependency, and
   lockfile entry synchronized during release preparation, so the prepared
   workspace resolves without repairing its lockfile.
