@@ -151,6 +151,37 @@ engineering work, not optional polish. Historical design and release documents
 remain evidence; update the current owning shelf rather than silently relying
 on an old decision record. [DOCS-REQ-007]
 
+### Decision relationship format
+
+Place a two-column `Relationship` / `Targets` table beside the decision's rule
+and posture. Include all four field names below, in this order. Each target is
+a Markdown link to the canonical document or section; use the requirement or
+decision ID as the link label when one exists. Separate multiple targets with
+commas. Write the literal `none` when a relationship has no targets; an omitted
+row or blank cell is incomplete. [DOCS-REQ-007]
+
+| Field | Meaning from this decision to its target |
+| --- | --- |
+| `refines` | Adds detail or a narrower rule while the target remains authoritative. |
+| `supersedes` | Replaces the target rule. Preserve its history and identify this replacement in the prior owner. |
+| `depends_on` | Requires the target contract to hold for this decision to hold. |
+| `related` | Provides relevant context without asserting refinement, replacement, or dependency. |
+
+For example, this durable-decision policy has current posture and the following
+relationships. It refines the documentation-impact rule by requiring a named
+canonical owner; it depends on the existing topic-shelf contract.
+
+| Relationship | Targets |
+| --- | --- |
+| `refines` | [DOCS-REQ-005](./test-plan.md#requirements) |
+| `supersedes` | none |
+| `depends_on` | [Topic shelf contract](../README.md) |
+| `related` | [Review process](../review-process/README.md) |
+
+These edges are reviewed as policy metadata. Link and topic checks verify the
+local references and evidence records; they do not prove that a claimed
+refinement, supersession, or dependency is semantically correct.
+
 ## Deterministic checks and editorial review
 
 The local gate already checks links, topic metadata, evidence names, fixture
