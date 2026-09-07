@@ -7,10 +7,10 @@
 //! `git for-each-ref refs/tags/v*`, which is the independent authority for when
 //! a release was tagged.
 //!
-//! The recorded date is the tag date, not the GitHub Release publication
-//! timestamp. Those can differ: `v0.4.0-alpha.1` was tagged 2026-06-24 while the
-//! prerelease was published 2026-06-25. Release notes record the publication
-//! timestamp separately.
+//! The recorded date is the UTC tag date. Release notes record the GitHub
+//! Release publication timestamp separately. For example, `v0.4.0-alpha.1`
+//! was tagged 2026-06-24 in PDT, which is 2026-06-25 in UTC; its recorded date
+//! is therefore 2026-06-25 regardless of the reader's timezone.
 
 use std::collections::BTreeMap;
 use std::path::Path;

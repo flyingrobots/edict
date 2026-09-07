@@ -88,7 +88,8 @@ identify missing surfaces, mismatched dates, or pending publication status.
 For a published release, `target_date` in [`policy.toml`](./policy.toml) and
 `Target date:` in `docs/releases/*.md` record the date the release was tagged,
 not a date it was planned for and not the GitHub Release publication timestamp.
-`v0.4.0-alpha.1` shows the difference: tagged 2026-06-24, published 2026-06-25.
+For example, `v0.4.0-alpha.1` was tagged 2026-06-24 in PDT, which is
+2026-06-25 in UTC; its recorded date is 2026-06-25.
 The field keeps its scaffold-era name because the reconciliation parses that
 exact literal. [RELEASE-REQ-008]
 
