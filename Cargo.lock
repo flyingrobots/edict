@@ -509,6 +509,7 @@ name = "flyingrobots-edict"
 version = "0.11.0-alpha.1"
 dependencies = [
  "edict-syntax",
+ "serde_json",
 ]
 
 [[package]]
