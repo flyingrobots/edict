@@ -15,7 +15,7 @@ pub const CORE_API_VERSION: &str = "edict.core/v1";
 /// Compiler-owned local identity for the single application intent input.
 pub(crate) const CORE_APPLICATION_INPUT_LOCAL_ID: &str = "arg.0";
 
-/// Shared recursion ceiling for compiler type resolution and Core compatibility.
+/// Shared ceiling for structural syntax and fully expanded semantic type graphs.
 pub(crate) const MAX_CORE_TYPE_DEPTH: usize = 128;
 
 /// A lowered in-memory Core module.
@@ -704,6 +704,14 @@ where
     I: IntoIterator<Item = &'a str>,
     F: Fn(&str) -> bool,
 {
+    let roots = roots.into_iter().collect::<Vec<_>>();
+    let mut integrity = CoreTypeIntegrityState::default();
+    for root in &roots {
+        validate_core_type_reference(core, &mut integrity, root, "typeClosure.root", 0).ok()?;
+    }
+
+    // Depth validity is complete above. This pass computes only the reachable
+    // named set, so closure membership is a context-free reachability cache.
     let mut closure = BTreeMap::new();
     let mut visiting = std::collections::BTreeSet::new();
     for root in roots {
@@ -713,7 +721,6 @@ where
             &named_coordinate_allowed,
             &mut closure,
             &mut visiting,
-            0,
         )?;
     }
     Some(closure)
@@ -725,36 +732,26 @@ fn collect_named_core_type_reference<F>(
     named_coordinate_allowed: &F,
     closure: &mut BTreeMap<String, CoreType>,
     visiting: &mut std::collections::BTreeSet<String>,
-    depth: usize,
 ) -> Option<()>
 where
     F: Fn(&str) -> bool,
 {
-    if depth > MAX_CORE_TYPE_DEPTH {
-        return None;
-    }
-    match classify_core_type_reference_at_depth(reference, depth)? {
+    match classify_core_type_reference(reference)? {
         CoreTypeReference::Intrinsic(ty) | CoreTypeReference::Structural(ty) => {
-            collect_named_core_type_children(
-                core,
-                &ty,
-                named_coordinate_allowed,
-                closure,
-                visiting,
-                depth,
-            )
+            collect_named_core_type_children(core, &ty, named_coordinate_allowed, closure, visiting)
         }
         CoreTypeReference::Named => {
-            if closure.contains_key(reference) {
+            let table_key = resolved_named_core_type_table_key(core, reference)?;
+            if closure.contains_key(table_key) {
                 return Some(());
             }
-            if !named_coordinate_allowed(reference) || !visiting.insert(reference.to_owned()) {
+            if !named_coordinate_allowed(table_key) || !visiting.insert(table_key.to_owned()) {
                 return None;
             }
-            let definition = core.types.get(reference)?.clone();
+            let definition = core.types.get(table_key)?.clone();
             if matches!(
                 &definition,
-                CoreType::Nominal { contract, .. } if contract != reference
+                CoreType::Nominal { contract, .. } if contract != table_key
             ) {
                 return None;
             }
@@ -764,10 +761,9 @@ where
                 named_coordinate_allowed,
                 closure,
                 visiting,
-                depth + 1,
             )?;
-            visiting.remove(reference);
-            closure.insert(reference.to_owned(), definition);
+            visiting.remove(table_key);
+            closure.insert(table_key.to_owned(), definition);
             Some(())
         }
     }
@@ -779,7 +775,6 @@ fn collect_named_core_type_children<F>(
     named_coordinate_allowed: &F,
     closure: &mut BTreeMap<String, CoreType>,
     visiting: &mut std::collections::BTreeSet<String>,
-    depth: usize,
 ) -> Option<()>
 where
     F: Fn(&str) -> bool,
@@ -791,7 +786,6 @@ where
             named_coordinate_allowed,
             closure,
             visiting,
-            depth + 1,
         )
     };
     match ty {
@@ -865,8 +859,12 @@ pub fn validate_core_module_type_integrity(
 
 #[derive(Default)]
 struct CoreTypeIntegrityState {
-    validated_named: BTreeSet<String>,
+    /// Context-free theorem keyed by the resolved `core.types` table identity.
+    named_expansion_height: BTreeMap<String, usize>,
+    /// Separate cycle judgment; partial or failed heights are never cached.
     visiting_named: BTreeSet<String>,
+    /// Non-memoized structural descent guard while constructing a first summary.
+    expanding_depth: usize,
 }
 
 fn validate_named_core_type_definition(
@@ -876,14 +874,22 @@ fn validate_named_core_type_definition(
     path: &str,
     depth: usize,
 ) -> Result<(), CoreTypeIntegrityFailure> {
-    if depth > MAX_CORE_TYPE_DEPTH {
-        return Err(CoreTypeIntegrityFailure::new(
-            CoreTypeIntegrityFailureKind::DepthExceeded,
-            path,
-        ));
-    }
-    if state.validated_named.contains(table_key) {
-        return Ok(());
+    validate_core_expansion_at_occurrence(
+        named_core_type_expansion_height(module, state, table_key, path),
+        depth,
+        path,
+    )
+}
+
+fn named_core_type_expansion_height(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    table_key: &str,
+    path: &str,
+) -> Result<usize, CoreTypeIntegrityFailure> {
+    if let Some(height) = state.named_expansion_height.get(table_key) {
+        validate_core_type_height_at_depth(*height, state.expanding_depth, path)?;
+        return Ok(*height);
     }
     if !state.visiting_named.insert(table_key.to_owned()) {
         return Err(CoreTypeIntegrityFailure::new(
@@ -891,38 +897,48 @@ fn validate_named_core_type_definition(
             path,
         ));
     }
-    let definition = module.types.get(table_key).ok_or_else(|| {
-        CoreTypeIntegrityFailure::new(CoreTypeIntegrityFailureKind::UnresolvedNamedReference, path)
-    })?;
-    validate_core_type_definition(module, state, Some(table_key), definition, path, depth)?;
+
+    let height = module
+        .types
+        .get(table_key)
+        .ok_or_else(|| {
+            CoreTypeIntegrityFailure::new(
+                CoreTypeIntegrityFailureKind::UnresolvedNamedReference,
+                path,
+            )
+        })
+        .and_then(|definition| {
+            core_type_definition_expansion_height(module, state, Some(table_key), definition, path)
+        });
     state.visiting_named.remove(table_key);
-    state.validated_named.insert(table_key.to_owned());
-    Ok(())
+    let height = height.and_then(|height| {
+        validate_core_type_height_at_depth(height, state.expanding_depth, path)?;
+        Ok(height)
+    });
+    if let Ok(height) = height {
+        state
+            .named_expansion_height
+            .insert(table_key.to_owned(), height);
+    }
+    height
 }
 
-fn validate_core_type_definition(
+fn core_type_definition_expansion_height(
     module: &CoreModule,
     state: &mut CoreTypeIntegrityState,
     table_key: Option<&str>,
     definition: &CoreType,
     path: &str,
-    depth: usize,
-) -> Result<(), CoreTypeIntegrityFailure> {
-    if depth > MAX_CORE_TYPE_DEPTH {
-        return Err(CoreTypeIntegrityFailure::new(
-            CoreTypeIntegrityFailureKind::DepthExceeded,
-            path,
-        ));
-    }
+) -> Result<usize, CoreTypeIntegrityFailure> {
     match definition {
-        CoreType::Bool | CoreType::Unit => Ok(()),
+        CoreType::Bool | CoreType::Unit => Ok(0),
         CoreType::Int { width }
             if matches!(
                 width.as_str(),
                 "I8" | "I16" | "I32" | "I64" | "U8" | "U16" | "U32" | "U64"
             ) =>
         {
-            Ok(())
+            Ok(0)
         }
         CoreType::Int { .. } => Err(CoreTypeIntegrityFailure::new(
             CoreTypeIntegrityFailureKind::InvalidDefinition,
@@ -931,13 +947,13 @@ fn validate_core_type_definition(
         CoreType::String { canonical, .. }
             if matches!(canonical.as_str(), "raw-utf8" | "unicode-scalar-nfc") =>
         {
-            Ok(())
+            Ok(0)
         }
         CoreType::String { .. } => Err(CoreTypeIntegrityFailure::new(
             CoreTypeIntegrityFailureKind::InvalidDefinition,
             format!("{path}.canonical"),
         )),
-        CoreType::Bytes { min, max } if min.is_none_or(|min| min <= *max) => Ok(()),
+        CoreType::Bytes { min, max } if min.is_none_or(|min| min <= *max) => Ok(0),
         CoreType::Bytes { .. } => Err(CoreTypeIntegrityFailure::new(
             CoreTypeIntegrityFailureKind::InvalidDefinition,
             format!("{path}.bounds"),
@@ -952,46 +968,57 @@ fn validate_core_type_definition(
                     format!("{path}.contract"),
                 ));
             }
-            validate_core_type_reference(
+            let child_height = core_structural_child_expansion_height(
                 module,
                 state,
                 representation,
                 &format!("{path}.representation"),
-                depth + 1,
-            )
+            )?;
+            structural_parent_height(child_height, path)
         }
-        CoreType::Record { fields } => {
-            validate_core_record_definition(module, state, fields, path, depth)
-        }
-        CoreType::Variant { cases } => {
-            validate_core_variant_definition(module, state, cases, path, depth)
-        }
+        CoreType::Record { fields } => core_record_expansion_height(module, state, fields, path),
+        CoreType::Variant { cases } => core_variant_expansion_height(module, state, cases, path),
         CoreType::Option { item }
         | CoreType::List { item, .. }
         | CoreType::CapabilityRef { item } => {
-            validate_core_type_reference(module, state, item, &format!("{path}.item"), depth + 1)
+            let child_height = core_structural_child_expansion_height(
+                module,
+                state,
+                item,
+                &format!("{path}.item"),
+            )?;
+            structural_parent_height(child_height, path)
         }
         CoreType::Map { key, value, .. } => {
-            validate_core_type_reference(module, state, key, &format!("{path}.key"), depth + 1)?;
-            validate_core_type_reference(module, state, value, &format!("{path}.value"), depth + 1)
+            let key_height =
+                core_structural_child_expansion_height(module, state, key, &format!("{path}.key"))?;
+            let value_height = core_structural_child_expansion_height(
+                module,
+                state,
+                value,
+                &format!("{path}.value"),
+            )?;
+            structural_parent_height(key_height.max(value_height), path)
         }
-        CoreType::ExternalActionRequest { settlement } => validate_core_type_reference(
-            module,
-            state,
-            settlement,
-            &format!("{path}.settlement"),
-            depth + 1,
-        ),
+        CoreType::ExternalActionRequest { settlement } => {
+            let child_height = core_structural_child_expansion_height(
+                module,
+                state,
+                settlement,
+                &format!("{path}.settlement"),
+            )?;
+            structural_parent_height(child_height, path)
+        }
     }
 }
 
-fn validate_core_record_definition(
+fn core_record_expansion_height(
     module: &CoreModule,
     state: &mut CoreTypeIntegrityState,
     fields: &BTreeMap<String, String>,
     path: &str,
-    depth: usize,
-) -> Result<(), CoreTypeIntegrityFailure> {
+) -> Result<usize, CoreTypeIntegrityFailure> {
+    let mut maximum_child_height = None;
     for (field, reference) in fields {
         if !is_core_field_name(field) {
             return Err(CoreTypeIntegrityFailure::new(
@@ -999,42 +1026,47 @@ fn validate_core_record_definition(
                 format!("{path}.fields.{field}"),
             ));
         }
-        validate_core_type_reference(
+        let child_height = core_structural_child_expansion_height(
             module,
             state,
             reference,
             &format!("{path}.fields.{field}"),
-            depth + 1,
         )?;
+        maximum_child_height = Some(
+            maximum_child_height.map_or(child_height, |height: usize| height.max(child_height)),
+        );
     }
-    Ok(())
+    maximum_child_height.map_or(Ok(0), |height| structural_parent_height(height, path))
 }
 
-fn validate_core_variant_definition(
+fn core_variant_expansion_height(
     module: &CoreModule,
     state: &mut CoreTypeIntegrityState,
     cases: &BTreeMap<String, Option<String>>,
     path: &str,
-    depth: usize,
-) -> Result<(), CoreTypeIntegrityFailure> {
+) -> Result<usize, CoreTypeIntegrityFailure> {
     if cases.is_empty() {
         return Err(CoreTypeIntegrityFailure::new(
             CoreTypeIntegrityFailureKind::InvalidDefinition,
             format!("{path}.cases"),
         ));
     }
+    let mut maximum_payload_height = None;
     for (case, payload) in cases {
         if let Some(reference) = payload {
-            validate_core_type_reference(
+            let payload_height = core_structural_child_expansion_height(
                 module,
                 state,
                 reference,
                 &format!("{path}.cases.{case}.payload"),
-                depth + 1,
             )?;
+            maximum_payload_height = Some(
+                maximum_payload_height
+                    .map_or(payload_height, |height: usize| height.max(payload_height)),
+            );
         }
     }
-    Ok(())
+    maximum_payload_height.map_or(Ok(0), |height| structural_parent_height(height, path))
 }
 
 fn validate_core_type_reference(
@@ -1044,14 +1076,21 @@ fn validate_core_type_reference(
     path: &str,
     depth: usize,
 ) -> Result<(), CoreTypeIntegrityFailure> {
-    if depth > MAX_CORE_TYPE_DEPTH {
-        return Err(CoreTypeIntegrityFailure::new(
-            CoreTypeIntegrityFailureKind::DepthExceeded,
-            path,
-        ));
-    }
-    let Some(classification) = classify_core_type_reference_at_depth(reference, depth) else {
-        let kind = if structural_reference_exceeds_depth(reference, depth) {
+    validate_core_expansion_at_occurrence(
+        core_type_reference_expansion_height(module, state, reference, path),
+        depth,
+        path,
+    )
+}
+
+fn core_type_reference_expansion_height(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    reference: &str,
+    path: &str,
+) -> Result<usize, CoreTypeIntegrityFailure> {
+    let Some(classification) = classify_core_type_reference(reference) else {
+        let kind = if structural_reference_exceeds_depth(reference, 0) {
             CoreTypeIntegrityFailureKind::DepthExceeded
         } else {
             CoreTypeIntegrityFailureKind::InvalidReference
@@ -1060,7 +1099,7 @@ fn validate_core_type_reference(
     };
     match classification {
         CoreTypeReference::Intrinsic(definition) | CoreTypeReference::Structural(definition) => {
-            validate_core_type_definition(module, state, None, &definition, path, depth)
+            core_type_definition_expansion_height(module, state, None, &definition, path)
         }
         CoreTypeReference::Named => {
             let table_key =
@@ -1070,8 +1109,70 @@ fn validate_core_type_reference(
                         path,
                     )
                 })?;
-            validate_named_core_type_definition(module, state, table_key, path, depth)
+            named_core_type_expansion_height(module, state, table_key, path)
         }
+    }
+}
+
+/// A structural child consumes one edge; expanding a name consumes none.
+/// Restore traversal state on failure as well as success. Only the independent
+/// height theorem, never this descent budget, is retained in the named cache.
+fn core_structural_child_expansion_height(
+    module: &CoreModule,
+    state: &mut CoreTypeIntegrityState,
+    reference: &str,
+    path: &str,
+) -> Result<usize, CoreTypeIntegrityFailure> {
+    let child_depth = structural_parent_height(state.expanding_depth, path)?;
+    validate_core_type_height_at_depth(0, child_depth, path)?;
+    let parent_depth = state.expanding_depth;
+    state.expanding_depth = child_depth;
+    let height = core_type_reference_expansion_height(module, state, reference, path);
+    state.expanding_depth = parent_depth;
+    height
+}
+
+fn validate_core_expansion_at_occurrence(
+    height: Result<usize, CoreTypeIntegrityFailure>,
+    depth: usize,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    height
+        .and_then(|height| validate_core_type_height_at_depth(height, depth, path))
+        .map_err(|failure| {
+            if failure.kind() == CoreTypeIntegrityFailureKind::DepthExceeded {
+                // Identify the checked occurrence regardless of cache history.
+                CoreTypeIntegrityFailure::new(CoreTypeIntegrityFailureKind::DepthExceeded, path)
+            } else {
+                failure
+            }
+        })
+}
+
+fn structural_parent_height(
+    child_height: usize,
+    path: &str,
+) -> Result<usize, CoreTypeIntegrityFailure> {
+    child_height.checked_add(1).ok_or_else(|| {
+        CoreTypeIntegrityFailure::new(CoreTypeIntegrityFailureKind::DepthExceeded, path)
+    })
+}
+
+fn validate_core_type_height_at_depth(
+    expansion_height: usize,
+    starting_depth: usize,
+    path: &str,
+) -> Result<(), CoreTypeIntegrityFailure> {
+    if starting_depth
+        .checked_add(expansion_height)
+        .is_some_and(|depth| depth <= MAX_CORE_TYPE_DEPTH)
+    {
+        Ok(())
+    } else {
+        Err(CoreTypeIntegrityFailure::new(
+            CoreTypeIntegrityFailureKind::DepthExceeded,
+            path,
+        ))
     }
 }
 
@@ -1526,8 +1627,10 @@ pub enum CorePredicate {
 #[cfg(test)]
 mod structural_type_reference_tests {
     use super::{
-        builtin_core_type, render_self_describing_core_type, validate_core_module_type_integrity,
-        CoreModule, CoreType, CoreTypeIntegrityFailureKind, CORE_API_VERSION, MAX_CORE_TYPE_DEPTH,
+        builtin_core_type, named_core_type_closure, render_self_describing_core_type,
+        validate_core_module_type_integrity, CoreBlock, CoreBudget, CoreExpr, CoreIntent,
+        CoreModule, CoreNode, CorePredicate, CoreType, CoreTypeIntegrityFailureKind, CoreValue,
+        LocalRef, CORE_API_VERSION, MAX_CORE_TYPE_DEPTH,
     };
     use std::collections::BTreeMap;
 
@@ -1539,6 +1642,73 @@ mod structural_type_reference_tests {
             types,
             intents: BTreeMap::new(),
             required_core_capabilities: Vec::new(),
+        }
+    }
+
+    fn nested_options(inner: &str, count: usize) -> String {
+        (0..count).fold(inner.to_owned(), |item, _| format!("Option<{item}>"))
+    }
+
+    fn shallow_and_deep_named_module(
+        shallow: &str,
+        deep: &str,
+        nested_item_wrappers: usize,
+    ) -> CoreModule {
+        module_with_types(BTreeMap::from([
+            (
+                shallow.to_owned(),
+                CoreType::Option {
+                    item: "U64".to_owned(),
+                },
+            ),
+            (
+                deep.to_owned(),
+                CoreType::Option {
+                    item: nested_options(shallow, nested_item_wrappers),
+                },
+            ),
+        ]))
+    }
+
+    fn intent_with_type_occurrences(
+        input: String,
+        output: String,
+        nested_local: Option<String>,
+    ) -> CoreIntent {
+        let nodes = nested_local.into_iter().map(|ty| CoreNode::Branch {
+            binding: None,
+            predicate: CorePredicate::True,
+            then_block: CoreBlock {
+                locals: vec![LocalRef {
+                    id: "nested.local".to_owned(),
+                    alpha_name: "$nested".to_owned(),
+                    ty,
+                }],
+                nodes: Vec::new(),
+                result: CoreExpr::Const(CoreValue::Null),
+            },
+            else_block: CoreBlock {
+                locals: Vec::new(),
+                nodes: Vec::new(),
+                result: CoreExpr::Const(CoreValue::Null),
+            },
+        });
+        CoreIntent {
+            input,
+            output,
+            required_operation_profile: "integrity.read-only".to_owned(),
+            basis: None,
+            input_constraints: Vec::new(),
+            core_evaluation_budget: CoreBudget {
+                max_steps: 1,
+                max_allocated_bytes: 1,
+                max_output_bytes: 1,
+            },
+            body: CoreBlock {
+                locals: Vec::new(),
+                nodes: nodes.collect(),
+                result: CoreExpr::Const(CoreValue::Null),
+            },
         }
     }
 
@@ -1722,7 +1892,7 @@ mod structural_type_reference_tests {
                     CoreType::Option { item: over_depth },
                 )])),
                 CoreTypeIntegrityFailureKind::DepthExceeded,
-                "types.Deep.item",
+                "types.Deep",
             ),
         ];
 
@@ -1747,6 +1917,356 @@ mod structural_type_reference_tests {
         let validated = validate_core_module_type_integrity(&module)
             .expect("valid unused authored definition remains legal");
         assert!(std::ptr::eq(validated.module(), &raw const module));
+    }
+
+    #[test]
+    fn named_type_depth_is_independent_of_table_order() {
+        let cases = [
+            (
+                "shallow definition sorts first",
+                shallow_and_deep_named_module("A", "Z", 127),
+                "types.Z",
+            ),
+            (
+                "deep definition sorts first",
+                shallow_and_deep_named_module("Z", "A", 127),
+                "types.A",
+            ),
+        ];
+
+        let kinds = cases.each_ref().map(|(_, module, _)| {
+            validate_core_module_type_integrity(module)
+                .err()
+                .map(|failure| failure.kind())
+        });
+        assert_eq!(
+            kinds,
+            [Some(CoreTypeIntegrityFailureKind::DepthExceeded); 2]
+        );
+
+        for (case, module, expected_path) in cases {
+            let failure = validate_core_module_type_integrity(&module)
+                .expect_err("depth 129 must reject independently of lexical key order");
+            assert_eq!(
+                failure.kind(),
+                CoreTypeIntegrityFailureKind::DepthExceeded,
+                "{case}"
+            );
+            assert_eq!(failure.path(), expected_path, "{case}");
+        }
+    }
+
+    #[test]
+    fn named_type_depth_accepts_exact_boundary() {
+        let exactly_at_limit = shallow_and_deep_named_module("A", "Z", 126);
+        validate_core_module_type_integrity(&exactly_at_limit)
+            .expect("127 wrappers around a height-one name place U64 at depth 128");
+
+        let one_beyond_limit = shallow_and_deep_named_module("A", "Z", 127);
+        let failure = validate_core_module_type_integrity(&one_beyond_limit)
+            .expect_err("128 wrappers around a height-one name place U64 at depth 129");
+        assert_eq!(failure.kind(), CoreTypeIntegrityFailureKind::DepthExceeded);
+        assert_eq!(failure.path(), "types.Z");
+    }
+
+    #[test]
+    fn named_type_depth_checks_every_occurrence() {
+        let mut graph_carried = module_with_types(BTreeMap::from([(
+            "A".to_owned(),
+            CoreType::Option {
+                item: "U64".to_owned(),
+            },
+        )]));
+        graph_carried.intents.insert(
+            "depth".to_owned(),
+            intent_with_type_occurrences(
+                "A".to_owned(),
+                nested_options("A", 127),
+                Some(nested_options("A", 128)),
+            ),
+        );
+        let failure = validate_core_module_type_integrity(&graph_carried)
+            .expect_err("a prior shallow and exact use must not bless a deeper occurrence");
+        assert_eq!(failure.kind(), CoreTypeIntegrityFailureKind::DepthExceeded);
+        assert_eq!(
+            failure.path(),
+            "intents.depth.body.nodes[0].branch.then.locals[0].type"
+        );
+    }
+
+    #[test]
+    fn named_type_depth_uses_resolved_table_identity() {
+        let mut exactly_at_limit = module_with_types(BTreeMap::from([(
+            "A".to_owned(),
+            CoreType::Option {
+                item: "U64".to_owned(),
+            },
+        )]));
+        exactly_at_limit.intents.insert(
+            "depth".to_owned(),
+            intent_with_type_occurrences(
+                nested_options("A", 127),
+                nested_options("integrity.test@1.A", 127),
+                None,
+            ),
+        );
+        validate_core_module_type_integrity(&exactly_at_limit)
+            .expect("both spellings share one exactly-at-limit expansion summary");
+
+        for spelling in ["A", "integrity.test@1.A"] {
+            let mut one_beyond_limit = exactly_at_limit.clone();
+            one_beyond_limit
+                .intents
+                .get_mut("depth")
+                .expect("depth intent")
+                .body = intent_with_type_occurrences(
+                "U64".to_owned(),
+                "U64".to_owned(),
+                Some(nested_options(spelling, 128)),
+            )
+            .body;
+            let failure = validate_core_module_type_integrity(&one_beyond_limit)
+                .expect_err("both spellings share the same over-depth expansion summary");
+            assert_eq!(
+                failure.kind(),
+                CoreTypeIntegrityFailureKind::DepthExceeded,
+                "{spelling}"
+            );
+            assert_eq!(
+                failure.path(),
+                "intents.depth.body.nodes[0].branch.then.locals[0].type",
+                "{spelling}"
+            );
+        }
+    }
+
+    #[test]
+    fn named_type_cycles_remain_distinct_from_depth_exhaustion() {
+        let module = module_with_types(BTreeMap::from([
+            (
+                "CycleA".to_owned(),
+                CoreType::Option {
+                    item: "CycleB".to_owned(),
+                },
+            ),
+            (
+                "CycleB".to_owned(),
+                CoreType::Option {
+                    item: "CycleA".to_owned(),
+                },
+            ),
+        ]));
+
+        let failure = validate_core_module_type_integrity(&module)
+            .expect_err("a shallow cycle must not become a cached success or depth error");
+        assert_eq!(failure.kind(), CoreTypeIntegrityFailureKind::ReferenceCycle);
+        assert_eq!(failure.path(), "types.CycleA.item.item");
+    }
+
+    #[test]
+    fn named_type_closure_is_independent_of_root_order() {
+        let module = shallow_and_deep_named_module("A", "Z", 126);
+        let shallow_first = named_core_type_closure(&module, ["A", "Z"], |_| true)
+            .expect("the exactly-at-limit closure is valid");
+        let deep_first = named_core_type_closure(&module, ["Z", "A"], |_| true)
+            .expect("root order cannot change an exactly-at-limit verdict");
+
+        assert_eq!(shallow_first, deep_first);
+        assert_eq!(
+            shallow_first.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec!["A", "Z"]
+        );
+
+        let over_limit = shallow_and_deep_named_module("A", "Z", 127);
+        for roots in [["A", "Z"], ["Z", "A"]] {
+            assert_eq!(named_core_type_closure(&over_limit, roots, |_| true), None);
+        }
+
+        // Qualification changes spelling, not the authenticated table identity.
+        assert_eq!(
+            named_core_type_closure(&module, ["integrity.test@1.A", "Z"], |_| true),
+            Some(shallow_first)
+        );
+        assert_eq!(
+            named_core_type_closure(&module, ["integrity.test@1.A"], |key| key != "A"),
+            None
+        );
+    }
+
+    #[test]
+    fn named_type_expansion_bounds_recursive_descent() {
+        for count in [128, 129, 4096] {
+            let module = module_with_types(
+                (0..count)
+                    .map(|index| {
+                        (
+                            format!("N{index:04}"),
+                            CoreType::Option {
+                                item: if index + 1 == count {
+                                    "U64".to_owned()
+                                } else {
+                                    format!("N{:04}", index + 1)
+                                },
+                            },
+                        )
+                    })
+                    .collect(),
+            );
+            let failure = validate_core_module_type_integrity(&module).err();
+            if count == 128 {
+                assert_eq!(failure, None);
+            } else {
+                let failure = failure.expect("over-depth chains reject before stack exhaustion");
+                assert_eq!(failure.kind(), CoreTypeIntegrityFailureKind::DepthExceeded);
+                assert_eq!(failure.path(), "types.N0000");
+            }
+        }
+    }
+
+    fn height_two_structural_definitions() -> [(&'static str, CoreType); 7] {
+        [
+            (
+                "option",
+                CoreType::Option {
+                    item: "A".to_owned(),
+                },
+            ),
+            (
+                "list",
+                CoreType::List {
+                    item: "A".to_owned(),
+                    max: 1,
+                },
+            ),
+            (
+                "capability",
+                CoreType::CapabilityRef {
+                    item: "A".to_owned(),
+                },
+            ),
+            (
+                "external request",
+                CoreType::ExternalActionRequest {
+                    settlement: "A".to_owned(),
+                },
+            ),
+            (
+                "map",
+                CoreType::Map {
+                    key: "U64".to_owned(),
+                    value: "A".to_owned(),
+                    max: 1,
+                },
+            ),
+            (
+                "record",
+                CoreType::Record {
+                    fields: BTreeMap::from([("value".to_owned(), "A".to_owned())]),
+                },
+            ),
+            (
+                "variant payload",
+                CoreType::Variant {
+                    cases: BTreeMap::from([("some".to_owned(), Some("A".to_owned()))]),
+                },
+            ),
+        ]
+    }
+
+    fn assert_height_two_definition_boundary(case: &str, definition: &CoreType) {
+        for (wrappers, should_succeed) in [(125, true), (126, false)] {
+            let module = module_with_types(BTreeMap::from([
+                (
+                    "A".to_owned(),
+                    CoreType::Option {
+                        item: "U64".to_owned(),
+                    },
+                ),
+                ("B".to_owned(), definition.clone()),
+                (
+                    "Z".to_owned(),
+                    CoreType::Option {
+                        item: nested_options("B", wrappers),
+                    },
+                ),
+            ]));
+            let result = validate_core_module_type_integrity(&module);
+            if should_succeed {
+                result.expect("height-two child at depth 126 ends at depth 128");
+            } else {
+                assert_eq!(
+                    result
+                        .expect_err("height-two child at depth 127 ends at depth 129")
+                        .kind(),
+                    CoreTypeIntegrityFailureKind::DepthExceeded,
+                    "{case}"
+                );
+            }
+        }
+    }
+
+    fn assert_nominal_height_boundary() {
+        let module = module_with_types(BTreeMap::from([
+            (
+                "A".to_owned(),
+                CoreType::Option {
+                    item: "U64".to_owned(),
+                },
+            ),
+            (
+                "B".to_owned(),
+                CoreType::Nominal {
+                    contract: "B".to_owned(),
+                    representation: "A".to_owned(),
+                },
+            ),
+            (
+                "Z".to_owned(),
+                CoreType::Option {
+                    item: nested_options("B", 126),
+                },
+            ),
+        ]));
+        assert_eq!(
+            validate_core_module_type_integrity(&module)
+                .expect_err("nominal representation consumes one structural edge")
+                .kind(),
+            CoreTypeIntegrityFailureKind::DepthExceeded
+        );
+    }
+
+    fn assert_zero_child_height(definition: CoreType) {
+        let module = module_with_types(BTreeMap::from([
+            ("A".to_owned(), definition),
+            (
+                "Z".to_owned(),
+                CoreType::Option {
+                    item: nested_options("A", 127),
+                },
+            ),
+        ]));
+        validate_core_module_type_integrity(&module)
+            .expect("empty record and payloadless variant have zero child height");
+    }
+
+    #[test]
+    fn named_type_expansion_height_covers_every_structural_constructor() {
+        for (case, definition) in height_two_structural_definitions() {
+            assert_height_two_definition_boundary(case, &definition);
+        }
+
+        assert_nominal_height_boundary();
+
+        for terminal in [
+            CoreType::Record {
+                fields: BTreeMap::new(),
+            },
+            CoreType::Variant {
+                cases: BTreeMap::from([("none".to_owned(), None)]),
+            },
+        ] {
+            assert_zero_child_height(terminal);
+        }
     }
 }
 

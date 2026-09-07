@@ -555,6 +555,56 @@ fn malformed_raw_core_cannot_emit_or_verify_a_result_projection() {
 }
 
 #[test]
+fn over_depth_named_expansion_cannot_emit_or_verify_a_result_projection() {
+    let (core, facts) = hello_echo_core_and_facts();
+    let baseline = lower_to_target_ir(&core, &facts);
+    let baseline_target = baseline.artifact.expect("baseline Target IR");
+    let projection = emit_result_projection(&core, &baseline_target, "createGreeting")
+        .expect("baseline projection emits");
+
+    let mut over_depth = core;
+    over_depth.types.insert(
+        "A.DepthBase".to_owned(),
+        CoreType::Option {
+            item: "U64".to_owned(),
+        },
+    );
+    over_depth.types.insert(
+        "Z.DepthOverflow".to_owned(),
+        CoreType::Option {
+            item: (0..127).fold("A.DepthBase".to_owned(), |inner, _| {
+                format!("Option<{inner}>")
+            }),
+        },
+    );
+    let target = lower_to_target_ir(&over_depth, &facts)
+        .artifact
+        .unwrap_or_else(|| baseline_target.clone());
+
+    let emitted = emit_result_projection(&over_depth, &target, "createGreeting");
+    let verified = verify_result_projection(
+        &over_depth,
+        &target,
+        "createGreeting",
+        projection.canonical_bytes(),
+        projection.digest(),
+    );
+    let (Err(emission_failure), Err(verification_failure)) = (emitted, verified) else {
+        panic!("over-depth named expansion crossed a public projection boundary");
+    };
+    assert_eq!(
+        emission_failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(emission_failure.subject(), "types.Z.DepthOverflow");
+    assert_eq!(
+        verification_failure.kind(),
+        ResultProjectionFailureKind::CoreTargetMismatch
+    );
+    assert_eq!(verification_failure.subject(), "types.Z.DepthOverflow");
+}
+
+#[test]
 fn mutated_target_lawpack_closure_fails_closed() {
     let (core, mut target) = hello_echo();
     target

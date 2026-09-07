@@ -32,7 +32,13 @@ The crate also exposes `validate_core_module_type_integrity`. A raw
 borrowed `ValidatedCoreModule` witness plus stable structured failure kinds and
 paths on rejection. Canonical encoding and digesting, Target lowering, and
 public result-projection emission and verification all cross this same border
-before producing or accepting an artifact. [COREIR-REQ-027]
+before producing or accepting an artifact. Named definitions are memoized by
+their context-free maximum structural expansion height; each occurrence then
+applies its own remaining depth budget, so earlier shallow validation cannot
+bless a later deep use. First-time summary construction also bounds structural
+descent, so a long acyclic named chain returns `DepthExceeded` before exhausting
+the stack. Depth failures identify the checked table or graph occurrence; other
+failure kinds retain their specific child paths. [COREIR-REQ-027] [COREIR-REQ-028]
 
 The Core module schema does not embed reviewed golden bytes, exact Core
 digests, target IR, or admission bundles. Reviewed Core artifact fixtures live
@@ -74,8 +80,12 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   binders, expressions, requests, predicates, reasons, nested blocks, and
   results. It enforces supported scalar definitions, canonical and resolvable
   children, nominal contract equality, cycle policy, and the shared depth
-  ceiling. Malformed raw Core therefore cannot mint canonical bytes, a digest,
-  Target IR, or projection authority. [COREIR-REQ-027]
+  ceiling. Depth is measured after acyclic named expansion: named references do
+  not consume an edge or reset the budget, each structural child consumes one,
+  depth 128 is accepted, and depth 129 rejects independently of table order,
+  root order, or prior traversal. Malformed raw Core therefore cannot mint
+  canonical bytes, a digest, Target IR, or projection authority.
+  [COREIR-REQ-027] [COREIR-REQ-028]
 - Core expressions and predicates are separate schema families. Expressions
   compute values; predicates express boolean obligations and input constraints.
   [COREIR-REQ-003]

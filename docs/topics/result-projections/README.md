@@ -14,7 +14,8 @@ executing the operation or introducing host-authored application semantics.
 matching Target IR artifact, and an intent name. The emitter requires:
 
 - the raw Core candidate to pass the authoritative whole-module type-integrity
-  judgment, including unused definitions and every graph-carried reference;
+  judgment, including unused definitions, every graph-carried reference, and
+  the fully expanded named-type depth of each occurrence;
 - the intent to exist in both artifacts;
 - the Target IR semantic closure to equal the complete Core-derived closure,
   including the exact Core coordinate, canonical Core digest, and every
@@ -113,7 +114,7 @@ digest. It:
 
 Only then does the API return `VerifiedResultProjection`, whose fields are
 available through read-only accessors. [RESULT-PROJ-REQ-005]
-[RESULT-PROJ-REQ-006] [RESULT-PROJ-REQ-011]
+[RESULT-PROJ-REQ-006] [RESULT-PROJ-REQ-011] [RESULT-PROJ-REQ-012]
 
 The public application-build path requires exactly one compiler-emitted
 projection for its current singleton executable-operation slice, runs the

@@ -75,8 +75,10 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   coordinate, imports, types, intents, input constraints, budgets, locals,
   ordered nodes, and result expressions. Public `lower_core` runs the shared
   whole-module Core type-integrity judgment before returning, so a caller-built
-  `TypedModule` cannot bypass the source checker and publish invalid Core.
-  [CSPINE-REQ-003] [CSPINE-REQ-037]
+  `TypedModule` cannot bypass the source checker and publish invalid Core. That
+  shared judgment measures depth after named expansion and applies the cached
+  expansion height at every emitted occurrence rather than trusting a prior
+  shallow use. [CSPINE-REQ-003] [CSPINE-REQ-037]
 - A source type declaration must classify under Core's shared reference grammar
   as a named identity. Intrinsics and reserved bare structural constructors
   reject with `ReservedTypeIdentity` at the declaration span. Compiler-produced

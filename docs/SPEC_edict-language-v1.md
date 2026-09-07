@@ -2309,6 +2309,26 @@ order. Structural children recurse under the same rules, with a maximum type
 reference depth of 128. For every accepted intrinsic or structural reference
 `x`, rendering its parsed Core type MUST reproduce `x` byte-for-byte.
 
+The depth limit applies to the fully expanded acyclic type graph, not only to
+the constructor text visible at one reference site. Let `H(x)` be the maximum
+additional structural height below `x` after recursively resolving named
+definitions. Scalars have height zero. A named reference has the height of its
+definition and consumes no edge itself. `Option`, `List`, `CapabilityRef`,
+`ExternalActionRequest`, and nominal representation each add one to their
+child's height; `Map` adds one to the greater child height. A nonempty `Record`
+adds one to its greatest field height, while an empty record has height zero. A
+`Variant` with payloads adds one to its greatest payload height, while a wholly
+payloadless variant has height zero. All additions MUST be checked.
+
+An occurrence beginning at depth `d` is valid exactly when `d + H(x) <= 128`.
+Consequently, depth 128 is valid and depth 129 rejects. Resolving a named
+definition MUST NOT reset the budget. Memoization MAY cache a named
+definition's context-free `H` value by its resolved `core.types` key, but MUST
+apply the occurrence depth separately; it MUST NOT cache a context-dependent
+success verdict. Cycle detection remains a distinct judgment, and validity
+MUST be independent of definition order, signature-root order, prior shallow
+uses, and relative versus module-qualified spelling of the same resolved key.
+
 A `named-ref` additionally excludes every intrinsic spelling, the reserved bare
 constructor names, `anonymous.record`, and every string that begins like a
 reserved structural constructor but fails its canonical grammar. Those strings

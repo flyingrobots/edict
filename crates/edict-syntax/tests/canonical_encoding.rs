@@ -185,6 +185,21 @@ fn canonical_core_rejects_every_invalid_named_definition_including_unused_entrie
 
 fn invalid_named_definition_cases() -> Vec<(&'static str, CoreModule)> {
     let over_depth = (0..=128).fold("U64".to_owned(), |inner, _| format!("List<{inner},max=1>"));
+    let mut shallow_cached_over_depth = bounded_hello_core();
+    shallow_cached_over_depth.types.insert(
+        "A.DepthBase".to_owned(),
+        CoreType::Option {
+            item: "U64".to_owned(),
+        },
+    );
+    shallow_cached_over_depth.types.insert(
+        "Z.DepthOverflow".to_owned(),
+        CoreType::Option {
+            item: (0..127).fold("A.DepthBase".to_owned(), |inner, _| {
+                format!("Option<{inner}>")
+            }),
+        },
+    );
     let mut cycle = bounded_hello_core();
     cycle.types.insert(
         "CycleA".to_owned(),
@@ -263,6 +278,10 @@ fn invalid_named_definition_cases() -> Vec<(&'static str, CoreModule)> {
             (case, core)
         })
         .collect::<Vec<_>>();
+    cases.push((
+        "shallow-cached over-depth named expansion",
+        shallow_cached_over_depth,
+    ));
     cases.push(("named-reference cycle", cycle));
     cases
 }

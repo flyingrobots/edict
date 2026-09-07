@@ -39,8 +39,10 @@ witness. Invalid or unresolved type references in any named definition—even an
 unused one—or any type-bearing graph surface return one
 `InvalidCoreIdentity` failure before Target or result-projection artifact
 construction. Target-specific graph and authority checks run only after that
-shared border succeeds. The built-in provider compatibility seam delegates to
-this exact path. [TIR-REQ-044]
+shared border succeeds. The border expands named definitions under the
+occurrence's real depth budget, so table order or a prior shallow validation
+cannot make an over-depth type lowerable. The built-in provider compatibility
+seam delegates to this exact path. [TIR-REQ-044] [TIR-REQ-045]
 
 The crate also exposes `BuiltinTargetLowerer`, `BuiltinLowererRequest`, and
 `lower_with_builtin_lowerer` as an
@@ -147,6 +149,9 @@ only when the complete left shape fits the right or the complete right shape
 fits the left. It cannot synthesize a byte union or choose a different
 compatibility direction for each record field. Structural Core judgments share
 the compiler's finite 128-level type-depth boundary and one Core parser/renderer.
+The depth theorem is computed over fully expanded acyclic meaning; named edges
+cost zero, structural child edges cost one, and contextual depth is checked at
+each use rather than cached as a boolean verdict.
 Intrinsics and canonical structural records, lists, options, maps, capability
 references, and external requests resolve from syntax; any such `core.types` key
 rejects as an identity redefinition before artifact construction. [TIR-REQ-027]
@@ -201,7 +206,7 @@ fits the exported input plus an exported output that fits the result binding.
 Missing, extra, duplicate, foreign, value-substituted, or type-definition-
 substituted evidence rejects before a Target artifact exists. Native
 lowerability facts remain a separate non-lawpack path. [TIR-REQ-030]
-[TIR-REQ-043]
+[TIR-REQ-043] [TIR-REQ-045]
 
 When any intent has an explicit basis or pure binding, the Core module imports a
 lawpack, or the Core module imports a requestable capability, the artifact carries a

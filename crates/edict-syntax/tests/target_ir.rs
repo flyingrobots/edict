@@ -2901,6 +2901,23 @@ fn set_invalid_core_type(target: &mut String) {
     INVALID.clone_into(target);
 }
 
+fn add_shallow_cached_over_depth_named_type(core: &mut CoreModule) {
+    core.types.insert(
+        "A.DepthBase".to_owned(),
+        CoreType::Option {
+            item: "U64".to_owned(),
+        },
+    );
+    core.types.insert(
+        "Z.DepthOverflow".to_owned(),
+        CoreType::Option {
+            item: (0..127).fold("A.DepthBase".to_owned(), |inner, _| {
+                format!("Option<{inner}>")
+            }),
+        },
+    );
+}
+
 fn pure_core_type_integrity_cases() -> Vec<CoreTypeIntegrityCase> {
     let mut cases = Vec::new();
 
@@ -3201,6 +3218,15 @@ fn every_core_type_bearing_surface_crosses_one_integrity_boundary() {
         wrong.is_empty(),
         "Core integrity was bypassed or classified inconsistently: {wrong:#?}"
     );
+}
+
+#[test]
+fn over_depth_named_expansion_cannot_lower_to_target_ir() {
+    let mut core = pure_core();
+    add_shallow_cached_over_depth_named_type(&mut core);
+
+    let report = lower_to_target_ir(&core, &pure_target_facts());
+    assert_invalid_core_identity(&report, "shallow-cached over-depth named definition");
 }
 
 #[test]

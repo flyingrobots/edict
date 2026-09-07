@@ -135,9 +135,12 @@ The current executable Rust surfaces touching lawpacks are:
   Target fact is externally immutable and privately carries the exact named
   closure reachable from every parameter and the return. Target reconstructs
   that closure through the same structural-transparent judgment used for effect
-  signatures. Missing, extra, foreign, or substituted named definitions refuse;
-  an empty closure remains valid for signatures built only from intrinsic and
-  structural forms. [LAWPACKS-REQ-012] [LAWPACKS-REQ-021] [LAWPACKS-REQ-022]
+  signatures. Each root first passes the shared expansion-height law; the
+  subsequent named-set collection is depth-free, so root order cannot change
+  validity or authority. Missing, extra, foreign, or substituted named
+  definitions refuse; an empty closure remains valid for signatures built only
+  from intrinsic and structural forms. [LAWPACKS-REQ-012] [LAWPACKS-REQ-021]
+  [LAWPACKS-REQ-022] [LAWPACKS-REQ-024]
 - The preparation boundary also projects exported `U32` and `U64` constants
   through the source alias as numeric bound facts. Static loop checks consume
   the value, while Core preserves the canonical exported coordinate.
