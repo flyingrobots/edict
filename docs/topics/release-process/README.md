@@ -58,7 +58,9 @@ versions, a dated changelog section, release policy boundary block, release
 notes stub, and paired release-process test-plan rows. The command does not
 write the release thesis, replace topic-shelf audits, decide scope/non-goals, or
 generate Rust test stubs; reviewers must replace the scaffold placeholders
-before release. [RELEASE-REQ-024]
+before release. An explicit `--date` must be a valid fixed-width ASCII
+`YYYY-MM-DD` calendar date; malformed values fail as `InvalidIsoDate` before
+release files are read or written. [RELEASE-REQ-024]
 
 The policy structural guard preserves the historical release identities from
 `v0.2.0-alpha.1` through `v0.11.0-alpha.1` while allowing later completed

@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Rejected noncanonical release-prep dates such as `2026-1-001` with the stable
+  `InvalidIsoDate` classification before release file I/O; all date grammar
+  and calendar failures now share that classification.
 - Exposed structured release-date findings with stable kinds, tag and surface
   identities, and expected/actual values. The CLI renders diagnostic text at
   the command boundary while retaining the existing failing/advisory split.

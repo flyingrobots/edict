@@ -56,6 +56,7 @@ fn parse_decimal(part: &str, name: &str) -> Result<u16, String> {
 
 pub(crate) fn release_prep(root: &Path, input: &str, date: Option<&str>) -> Result<(), String> {
     let version = ReleasePrepVersion::parse(input)?;
+    let target_date = scaffold_release_date(date)?;
     let cli_manifest_path = root.join("crates/edict-cli/Cargo.toml");
     let syntax_manifest_path = root.join("crates/edict-syntax/Cargo.toml");
     let lockfile_path = root.join("Cargo.lock");
@@ -72,7 +73,6 @@ pub(crate) fn release_prep(root: &Path, input: &str, date: Option<&str>) -> Resu
     }
 
     let policy = read_to_string(&policy_path)?;
-    let target_date = scaffold_release_date(date)?;
     let cli_manifest = replace_first_version_line(
         &read_to_string(&cli_manifest_path)?,
         &version.package_version,
@@ -382,23 +382,37 @@ fn replace_once(
 fn scaffold_release_date(explicit: Option<&str>) -> Result<String, String> {
     match explicit {
         Some(date) => {
-            validate_iso_date(date)?;
+            validate_iso_date(date).map_err(|kind| format!("{kind:?}: `{date}`"))?;
             Ok(date.to_owned())
         }
         None => today_utc(),
     }
 }
 
-fn validate_iso_date(date: &str) -> Result<(), String> {
-    let mut parts = date.split('-');
-    let year = parse_date_part(parts.next(), "year")?;
-    let month = parse_date_part(parts.next(), "month")?;
-    let day = parse_date_part(parts.next(), "day")?;
-    if parts.next().is_some() || date.len() != 10 || month == 0 || month > 12 || day == 0 {
-        return Err(format!("invalid ISO date `{date}`"));
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReleasePrepDateError {
+    InvalidIsoDate,
+}
+
+fn validate_iso_date(date: &str) -> Result<(), ReleasePrepDateError> {
+    let bytes = date.as_bytes();
+    if bytes.len() != 10
+        || !bytes.iter().enumerate().all(|(index, byte)| {
+            if matches!(index, 4 | 7) {
+                *byte == b'-'
+            } else {
+                byte.is_ascii_digit()
+            }
+        })
+    {
+        return Err(ReleasePrepDateError::InvalidIsoDate);
     }
-    if day > days_in_month(year, month)? {
-        return Err(format!("invalid ISO date `{date}`"));
+    // The byte grammar above proves these slices are ASCII and in bounds.
+    let year = parse_date_part(&date[..4])?;
+    let month = parse_date_part(&date[5..7])?;
+    let day = parse_date_part(&date[8..])?;
+    if day == 0 || day > days_in_month(year, month)? {
+        return Err(ReleasePrepDateError::InvalidIsoDate);
     }
     Ok(())
 }
@@ -434,19 +448,18 @@ fn iso_date_from_days_since_epoch(days: i64) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
-fn parse_date_part(part: Option<&str>, name: &str) -> Result<u16, String> {
-    part.ok_or_else(|| format!("date missing {name}"))?
-        .parse::<u16>()
-        .map_err(|err| format!("parse date {name}: {err}"))
+fn parse_date_part(part: &str) -> Result<u16, ReleasePrepDateError> {
+    part.parse::<u16>()
+        .map_err(|_| ReleasePrepDateError::InvalidIsoDate)
 }
 
-fn days_in_month(year: u16, month: u16) -> Result<u16, String> {
+fn days_in_month(year: u16, month: u16) -> Result<u16, ReleasePrepDateError> {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => Ok(31),
         4 | 6 | 9 | 11 => Ok(30),
         2 if is_leap_year(year) => Ok(29),
         2 => Ok(28),
-        _ => Err(format!("invalid month `{month}`")),
+        _ => Err(ReleasePrepDateError::InvalidIsoDate),
     }
 }
 
@@ -456,4 +469,48 @@ fn is_leap_year(year: u16) -> bool {
 
 fn is_divisible_by(value: u16, divisor: u16) -> bool {
     value.rem_euclid(divisor) == 0
+}
+
+#[cfg(test)]
+mod date_tests {
+    use super::{validate_iso_date, ReleasePrepDateError};
+
+    #[test]
+    fn release_prep_rejects_noncanonical_iso_date() {
+        assert_eq!(
+            validate_iso_date("2026-1-001"),
+            Err(ReleasePrepDateError::InvalidIsoDate)
+        );
+    }
+    #[test]
+    fn release_prep_date_validation_has_one_stable_failure() {
+        for date in ["1970-01-01", "2000-02-29", "2026-09-07", "9999-12-31"] {
+            assert_eq!(validate_iso_date(date), Ok(()), "{date}");
+        }
+        for date in [
+            "2026-1-001",
+            "2026-001-1",
+            "2026-1-1",
+            "2026-01-1 ",
+            "2026-01-01 ",
+            " 2026-01-01",
+            "+026-01-01",
+            "２０２６-01-01",
+            "2026-00-01",
+            "2026-13-01",
+            "2026-01-00",
+            "2026-04-31",
+            "1900-02-29",
+            "2026-02-29",
+            "2026-AA-01",
+            "",
+            "2026/01/01",
+        ] {
+            assert_eq!(
+                validate_iso_date(date),
+                Err(ReleasePrepDateError::InvalidIsoDate),
+                "{date}"
+            );
+        }
+    }
 }
