@@ -31,6 +31,7 @@ use super::provider_contract_pack::{
     provider_contract_pack, ProviderContractPackMode, CONTRACT_PACK_CDDL, CONTRACT_PACK_MANIFEST,
 };
 use super::provider_dependencies::provider_runtime_dependencies;
+use super::release_dates::{ReleaseDateFindingKind, Surface};
 use super::release_prep::release_prep;
 use super::util::{choose_diff_check_base, repo_root};
 
@@ -2951,41 +2952,60 @@ fn release_date_reconciliation_reports_internally_consistent_wrong_dates() {
 
     let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
 
-    // v0.9 is internally consistent across all three surfaces and still wrong,
-    // which is precisely what comparing copies against each other cannot see.
-    // v0.8 contributes two more findings: its policy block and release notes are
-    // absent, and absence of a covered surface is a failure, not an advisory.
+    let findings: Vec<_> = report
+        .drift
+        .iter()
+        .map(|finding| {
+            (
+                finding.kind,
+                finding.surface,
+                finding.tag.as_str(),
+                finding.expected.as_deref(),
+                finding.actual.as_deref(),
+            )
+        })
+        .collect();
     assert_eq!(
-        report.drift.len(),
-        5,
-        "three contradicting surfaces plus two absent ones: {:?}",
-        report.drift
+        findings,
+        vec![
+            (
+                ReleaseDateFindingKind::MissingSurface,
+                Surface::PolicyBlock,
+                "v0.8.0-alpha.1",
+                None,
+                None
+            ),
+            (
+                ReleaseDateFindingKind::MissingSurface,
+                Surface::ReleaseNotesFile,
+                "v0.8.0-alpha.1",
+                None,
+                None
+            ),
+            (
+                ReleaseDateFindingKind::DateMismatch,
+                Surface::PolicyTargetDate,
+                "v0.9.0-alpha.1",
+                Some("2026-06-28"),
+                Some("2026-10-07")
+            ),
+            (
+                ReleaseDateFindingKind::DateMismatch,
+                Surface::ChangelogSection,
+                "v0.9.0-alpha.1",
+                Some("2026-06-28"),
+                Some("2026-10-07")
+            ),
+            (
+                ReleaseDateFindingKind::DateMismatch,
+                Surface::ReleaseNotesDate,
+                "v0.9.0-alpha.1",
+                Some("2026-06-28"),
+                Some("2026-10-07")
+            ),
+        ]
     );
-    assert!(report
-        .drift
-        .iter()
-        .any(|entry| entry.contains("target_date is 2026-10-07")
-            && entry.contains("created 2026-06-28")));
-    assert!(report
-        .drift
-        .iter()
-        .any(|entry| entry.contains("CHANGELOG.md `## [v0.9.0-alpha.1]` is dated 2026-10-07")));
-
-    // v0.8's date agrees with its tag, but its absent surfaces still fail:
-    // deleting the evidence must not be a way to pass.
-    assert!(report
-        .drift
-        .iter()
-        .any(|entry| entry.contains("no [release_notes.*] block for tag v0.8.0-alpha.1")));
-    assert!(report
-        .drift
-        .iter()
-        .any(|entry| entry.contains("docs/releases/v0.8.0-alpha.1.md is missing")));
-    assert!(
-        report.gaps.is_empty(),
-        "nothing here is allowlisted or mid-publication: {:?}",
-        report.gaps
-    );
+    assert!(report.gaps.is_empty());
 }
 
 #[test]
@@ -3036,14 +3056,14 @@ fn release_date_reconciliation_rejects_lightweight_release_tags() {
     let notes = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), Some("2026-06-28".to_owned()))]);
 
     let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
-    assert!(
-        report
-            .drift
-            .iter()
-            .any(|entry| entry.contains("is lightweight")),
-        "lightweight release tags must fail: {:?}",
-        report.drift
-    );
+    assert_eq!(report.drift.len(), 1);
+    let finding = &report.drift[0];
+    assert_eq!(finding.kind, ReleaseDateFindingKind::LightweightTag);
+    assert_eq!(finding.surface, Surface::Tag);
+    assert_eq!(finding.tag, "v0.8.0-alpha.1");
+    assert_eq!(finding.expected.as_deref(), Some("annotated"));
+    assert_eq!(finding.actual.as_deref(), Some("lightweight"));
+    assert!(report.gaps.is_empty());
 }
 
 /// A tag exists before the post-publication change flips its block from `prep`
@@ -3064,19 +3084,14 @@ fn release_date_reconciliation_tolerates_prep_status_for_a_fresh_tag() {
     let notes = BTreeMap::from([("v0.12.0-alpha.1".to_owned(), Some("2026-08-04".to_owned()))]);
 
     let report = crate::release_dates::reconcile_release_dates(&tags, policy, changelog, &notes);
-    assert!(
-        report.drift.is_empty(),
-        "a freshly tagged prep release must not fail the gate: {:?}",
-        report.drift
-    );
-    assert!(
-        report
-            .gaps
-            .iter()
-            .any(|entry| entry.contains("still has status `prep`")),
-        "the lagging status must still be reported: {:?}",
-        report.gaps
-    );
+    assert!(report.drift.is_empty());
+    assert_eq!(report.gaps.len(), 1);
+    let finding = &report.gaps[0];
+    assert_eq!(finding.kind, ReleaseDateFindingKind::AwaitingPublication);
+    assert_eq!(finding.surface, Surface::PolicyStatus);
+    assert_eq!(finding.tag, "v0.12.0-alpha.1");
+    assert_eq!(finding.expected.as_deref(), Some("published"));
+    assert_eq!(finding.actual.as_deref(), Some("prep"));
 }
 
 /// Deleting a date-bearing surface must fail rather than downgrade to an
@@ -3086,22 +3101,26 @@ fn release_date_reconciliation_fails_when_a_covered_surface_disappears() {
     let tags = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), annotated_tag("2026-06-28"))]);
     let report =
         crate::release_dates::reconcile_release_dates(&tags, "", "# Changelog\n", &BTreeMap::new());
-    for expected in [
-        "no [release_notes.*] block for tag v0.8.0-alpha.1",
-        "CHANGELOG.md has no `## [v0.8.0-alpha.1]` section",
-        "docs/releases/v0.8.0-alpha.1.md is missing",
-    ] {
-        assert!(
-            report.drift.iter().any(|entry| entry.contains(expected)),
-            "missing surface must be drift, not a gap: {expected} not in {:?}",
-            report.drift
-        );
-    }
-    assert!(
-        report.gaps.is_empty(),
-        "no surface here is allowlisted: {:?}",
-        report.gaps
+    let surfaces: Vec<_> = report
+        .drift
+        .iter()
+        .map(|finding| {
+            assert_eq!(finding.kind, ReleaseDateFindingKind::MissingSurface);
+            assert_eq!(finding.tag, "v0.8.0-alpha.1");
+            assert_eq!(finding.expected, None);
+            assert_eq!(finding.actual, None);
+            finding.surface
+        })
+        .collect();
+    assert_eq!(
+        surfaces,
+        vec![
+            Surface::PolicyBlock,
+            Surface::ChangelogSection,
+            Surface::ReleaseNotesFile
+        ]
     );
+    assert!(report.gaps.is_empty());
 }
 
 /// The one release that predates the structured policy stays advisory.
@@ -3115,19 +3134,95 @@ fn release_date_reconciliation_allowlists_the_prepolicy_release() {
         "# Changelog\n\n## [v0.1.0-alpha.1] - 2026-06-21\n",
         &notes,
     );
-    assert!(
-        report.drift.is_empty(),
-        "the pre-policy release must not fail the gate: {:?}",
-        report.drift
+    assert!(report.drift.is_empty());
+    assert_eq!(report.gaps.len(), 1);
+    let finding = &report.gaps[0];
+    assert_eq!(finding.kind, ReleaseDateFindingKind::MissingSurface);
+    assert_eq!(finding.surface, Surface::PolicyBlock);
+    assert_eq!(finding.tag, "v0.1.0-alpha.1");
+    assert_eq!(finding.expected, None);
+    assert_eq!(finding.actual, None);
+}
+
+#[test]
+fn release_date_findings_identify_policy_errors_without_prose() {
+    let tags = BTreeMap::from([("v0.8.0-alpha.1".to_owned(), annotated_tag("2026-06-28"))]);
+    let report = crate::release_dates::reconcile_release_dates(
+        &tags,
+        "[release_notes.wrong]\ntag = \"v0.8.0-alpha.1\"\nstatus = \"planned\"\n",
+        "## [v0.8.0-alpha.1] - 2026-06-28\n",
+        &BTreeMap::from([("v0.8.0-alpha.1".to_owned(), Some("2026-06-28".to_owned()))]),
     );
-    assert!(
-        report
-            .gaps
-            .iter()
-            .any(|entry| entry.contains("no [release_notes.*] block for tag v0.1.0-alpha.1")),
-        "the allowlisted omission must still be reported: {:?}",
-        report.gaps
+    let fields: Vec<_> = report
+        .drift
+        .iter()
+        .map(|finding| {
+            assert_eq!(finding.tag, "v0.8.0-alpha.1");
+            (
+                finding.kind,
+                finding.surface,
+                finding.expected.as_deref(),
+                finding.actual.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        fields,
+        vec![
+            (
+                ReleaseDateFindingKind::SectionMismatch,
+                Surface::PolicySection,
+                Some("v0_8_0_alpha_1"),
+                Some("wrong")
+            ),
+            (
+                ReleaseDateFindingKind::MissingSurface,
+                Surface::PolicyTargetDate,
+                None,
+                None
+            ),
+            (
+                ReleaseDateFindingKind::InvalidStatus,
+                Surface::PolicyStatus,
+                Some("published or prep"),
+                Some("planned")
+            ),
+            (
+                ReleaseDateFindingKind::MissingSurface,
+                Surface::PolicyScope,
+                None,
+                None
+            ),
+            (
+                ReleaseDateFindingKind::MissingSurface,
+                Surface::PolicyNonGoals,
+                None,
+                None
+            ),
+        ]
     );
+    assert!(report.gaps.is_empty());
+}
+
+#[test]
+fn release_date_findings_identify_missing_tagger_date() {
+    use crate::release_dates::TagRecord;
+    let tags = BTreeMap::from([(
+        "v0.8.0-alpha.1".to_owned(),
+        TagRecord {
+            date: None,
+            annotated: true,
+        },
+    )]);
+    let report = crate::release_dates::reconcile_release_dates(&tags, "", "", &BTreeMap::new());
+    assert_eq!(report.drift.len(), 1);
+    let finding = &report.drift[0];
+    assert_eq!(finding.kind, ReleaseDateFindingKind::MissingTaggerDate);
+    assert_eq!(finding.surface, Surface::Tag);
+    assert_eq!(finding.tag, "v0.8.0-alpha.1");
+    assert_eq!(finding.expected, None);
+    assert_eq!(finding.actual, None);
+    assert!(report.gaps.is_empty());
 }
 
 fn annotated_tag(date: &str) -> crate::release_dates::TagRecord {

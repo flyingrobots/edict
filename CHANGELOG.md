@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Exposed structured release-date findings with stable kinds, tag and surface
+  identities, and expected/actual values. The CLI renders diagnostic text at
+  the command boundary while retaining the existing failing/advisory split.
 - Preserved historical release policy blocks by tag identity while allowing
   additional completed release-prep blocks, so preparing a new release no
   longer fails a frozen total-count assertion.

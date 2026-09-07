@@ -73,7 +73,11 @@ comparing them against each other only proves the copy succeeded; the tags are
 the independent authority for when a release happened. The check runs inside
 `cargo xtask verify` and reports uncovered surfaces separately from date drift.
 A clone without tags fails rather than passing silently, because a missing
-independent authority is not approval. [RELEASE-REQ-008]
+independent authority is not approval. The pure comparison returns structured
+finding kinds with tag, surface, expected-value, and actual-value fields. The
+command renders those findings as text; callers and tests do not parse prose to
+identify missing surfaces, mismatched dates, or pending publication status.
+[RELEASE-REQ-008]
 
 For a published release, `target_date` in [`policy.toml`](./policy.toml) and
 `Target date:` in `docs/releases/*.md` record the date the release was tagged,

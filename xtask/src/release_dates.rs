@@ -20,9 +20,13 @@ use crate::util::read_to_string;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Surface {
+    Tag,
     PolicyBlock,
+    PolicySection,
+    PolicyStatus,
     PolicyTargetDate,
     PolicyScope,
+    PolicyNonGoals,
     ChangelogSection,
     ReleaseNotesFile,
     ReleaseNotesDate,
@@ -45,14 +49,20 @@ const LEGACY_UNCOVERED: &[(&str, Surface)] = &[
 fn record_absent(
     tag: &str,
     surface: Surface,
-    message: String,
-    drift: &mut Vec<String>,
-    gaps: &mut Vec<String>,
+    drift: &mut Vec<ReleaseDateFinding>,
+    gaps: &mut Vec<ReleaseDateFinding>,
 ) {
+    let finding = ReleaseDateFinding::new(
+        ReleaseDateFindingKind::MissingSurface,
+        tag,
+        surface,
+        None,
+        None,
+    );
     if is_legacy_uncovered(tag, surface) {
-        gaps.push(message);
+        gaps.push(finding);
     } else {
-        drift.push(message);
+        drift.push(finding);
     }
 }
 
@@ -207,94 +217,115 @@ fn git_tag_dates(root: &Path) -> Result<BTreeMap<String, TagRecord>, String> {
     Ok(tags)
 }
 
-/// Outcome of comparing recorded dates against tag dates.
-///
-/// `drift` fails the gate: a recorded date contradicts its tag, or a surface
-/// that should exist is absent. `gaps` are advisory and cover only the two cases
-/// that are not contradictions: surfaces that predate a release, and the window
-/// between tag creation and the post-publication change that flips a block from
-/// `prep` to `published`.
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(crate) struct ReleaseDateReport {
-    pub(crate) drift: Vec<String>,
-    pub(crate) gaps: Vec<String>,
+/// Stable categories produced by release-date reconciliation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReleaseDateFindingKind {
+    MissingSurface,
+    DateMismatch,
+    SectionMismatch,
+    InvalidStatus,
+    AwaitingPublication,
+    LightweightTag,
+    MissingTaggerDate,
 }
 
-/// Compare one tag against the policy block that should own it.
-///
-/// Split out of `reconcile_release_dates` so each comparison stays readable.
+/// Structured evidence; expected and actual values belong to the named surface.
+/// Dates are ISO date strings, sections are policy keys, and statuses are policy
+/// status values. Missing surfaces have neither comparison value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReleaseDateFinding {
+    pub(crate) kind: ReleaseDateFindingKind,
+    pub(crate) tag: String,
+    pub(crate) surface: Surface,
+    pub(crate) expected: Option<String>,
+    pub(crate) actual: Option<String>,
+}
+
+impl ReleaseDateFinding {
+    fn new(
+        kind: ReleaseDateFindingKind,
+        tag: &str,
+        surface: Surface,
+        expected: Option<&str>,
+        actual: Option<&str>,
+    ) -> Self {
+        Self {
+            kind,
+            tag: tag.to_owned(),
+            surface,
+            expected: expected.map(str::to_owned),
+            actual: actual.map(str::to_owned),
+        }
+    }
+}
+
+/// `drift` fails the gate. `gaps` cover only allowlisted legacy omissions and
+/// the window between tag creation and the post-publication status change.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct ReleaseDateReport {
+    pub(crate) drift: Vec<ReleaseDateFinding>,
+    pub(crate) gaps: Vec<ReleaseDateFinding>,
+}
+
 fn reconcile_policy_block(
     tag: &str,
     tag_date: &str,
     blocks: &[ReleasePolicyBlock],
-    drift: &mut Vec<String>,
-    gaps: &mut Vec<String>,
+    drift: &mut Vec<ReleaseDateFinding>,
+    gaps: &mut Vec<ReleaseDateFinding>,
 ) {
-    match blocks
+    let Some(block) = blocks
         .iter()
         .find(|block| block.tag.as_deref() == Some(tag))
-    {
-        Some(block) => {
-            let section = &block.section;
-            let expected_section = policy_section_key(tag);
-            if *section != expected_section {
-                drift.push(format!(
-                    "policy.toml [release_notes.{section}] declares tag {tag}, which belongs in [release_notes.{expected_section}]"
-                ));
-            }
-            match block.target_date.as_deref() {
-                Some(date) if date == tag_date => {}
-                Some(date) => drift.push(format!(
-                    "policy.toml [release_notes.{section}] target_date is {date}, but tag {tag} was created {tag_date}"
-                )),
-                None => record_absent(
-                    tag,
-                    Surface::PolicyTargetDate,
-                    format!(
-                        "policy.toml [release_notes.{section}] has no target_date for tag {tag}"
-                    ),
-                    drift,
-                    gaps,
-                ),
-            }
-            match block.status.as_deref() {
-                Some("published") => {}
-                // The tag is created before the post-publication evidence
-                // change flips the status, so `prep` is a lagging surface
-                // rather than a contradiction. Failing here would make
-                // `verify` red on `main` for every unrelated branch until
-                // that second change lands.
-                Some("prep") => gaps.push(format!(
-                    "policy.toml [release_notes.{section}] still has status `prep` for existing tag {tag}"
-                )),
-                other => {
-                    let status = other.unwrap_or("<missing>");
-                    drift.push(format!(
-                        "policy.toml [release_notes.{section}] has status `{status}`, but tag {tag} exists"
-                    ));
-                }
-            }
-            for field in ["scope = [", "non_goals = ["] {
-                if !block.body.contains(field) {
-                    record_absent(
-                        tag,
-                        Surface::PolicyScope,
-                        format!(
-                            "policy.toml [release_notes.{section}] is missing `{field}` for tag {tag}"
-                        ),
-                        drift,
-                        gaps,
-                    );
-                }
-            }
-        }
-        None => record_absent(
+    else {
+        record_absent(tag, Surface::PolicyBlock, drift, gaps);
+        return;
+    };
+    let expected_section = policy_section_key(tag);
+    if block.section != expected_section {
+        drift.push(ReleaseDateFinding::new(
+            ReleaseDateFindingKind::SectionMismatch,
             tag,
-            Surface::PolicyBlock,
-            format!("policy.toml has no [release_notes.*] block for tag {tag}"),
-            drift,
-            gaps,
-        ),
+            Surface::PolicySection,
+            Some(&expected_section),
+            Some(&block.section),
+        ));
+    }
+    match block.target_date.as_deref() {
+        Some(date) if date == tag_date => {}
+        Some(date) => drift.push(ReleaseDateFinding::new(
+            ReleaseDateFindingKind::DateMismatch,
+            tag,
+            Surface::PolicyTargetDate,
+            Some(tag_date),
+            Some(date),
+        )),
+        None => record_absent(tag, Surface::PolicyTargetDate, drift, gaps),
+    }
+    match block.status.as_deref() {
+        Some("published") => {}
+        Some("prep") => gaps.push(ReleaseDateFinding::new(
+            ReleaseDateFindingKind::AwaitingPublication,
+            tag,
+            Surface::PolicyStatus,
+            Some("published"),
+            Some("prep"),
+        )),
+        other => drift.push(ReleaseDateFinding::new(
+            ReleaseDateFindingKind::InvalidStatus,
+            tag,
+            Surface::PolicyStatus,
+            Some("published or prep"),
+            other,
+        )),
+    }
+    for (field, surface) in [
+        ("scope = [", Surface::PolicyScope),
+        ("non_goals = [", Surface::PolicyNonGoals),
+    ] {
+        if !block.body.contains(field) {
+            record_absent(tag, surface, drift, gaps);
+        }
     }
 }
 
@@ -312,58 +343,75 @@ pub(crate) fn reconcile_release_dates(
     let blocks = parse_release_policy_blocks(policy);
     let mut drift = Vec::new();
     let mut gaps = Vec::new();
-
     for (tag, record) in tags {
         if !record.annotated {
-            drift.push(format!(
-                "release tag {tag} is lightweight; release tags must be annotated so the tag date records the release"
+            drift.push(ReleaseDateFinding::new(
+                ReleaseDateFindingKind::LightweightTag,
+                tag,
+                Surface::Tag,
+                Some("annotated"),
+                Some("lightweight"),
             ));
             continue;
         }
         let Some(tag_date) = record.date.as_deref() else {
-            drift.push(format!("release tag {tag} has no tagger date"));
+            drift.push(ReleaseDateFinding::new(
+                ReleaseDateFindingKind::MissingTaggerDate,
+                tag,
+                Surface::Tag,
+                None,
+                None,
+            ));
             continue;
         };
-
         reconcile_policy_block(tag, tag_date, &blocks, &mut drift, &mut gaps);
-
         match changelog_release_date(changelog, tag) {
             Some(date) if date == tag_date => {}
-            Some(date) => drift.push(format!(
-                "CHANGELOG.md `## [{tag}]` is dated {date}, but the tag was created {tag_date}"
-            )),
-            None => record_absent(
+            Some(date) => drift.push(ReleaseDateFinding::new(
+                ReleaseDateFindingKind::DateMismatch,
                 tag,
                 Surface::ChangelogSection,
-                format!("CHANGELOG.md has no `## [{tag}]` section"),
-                &mut drift,
-                &mut gaps,
-            ),
+                Some(tag_date),
+                Some(&date),
+            )),
+            None => record_absent(tag, Surface::ChangelogSection, &mut drift, &mut gaps),
         }
-
         match release_notes.get(tag) {
             Some(Some(date)) if date == tag_date => {}
-            Some(Some(date)) => drift.push(format!(
-                "docs/releases/{tag}.md records `Target date: {date}`, but the tag was created {tag_date}"
-            )),
-            Some(None) => record_absent(
+            Some(Some(date)) => drift.push(ReleaseDateFinding::new(
+                ReleaseDateFindingKind::DateMismatch,
                 tag,
                 Surface::ReleaseNotesDate,
-                format!("docs/releases/{tag}.md has no `Target date:` line"),
-                &mut drift,
-                &mut gaps,
-            ),
-            None => record_absent(
-                tag,
-                Surface::ReleaseNotesFile,
-                format!("docs/releases/{tag}.md is missing"),
-                &mut drift,
-                &mut gaps,
-            ),
+                Some(tag_date),
+                Some(date),
+            )),
+            Some(None) => record_absent(tag, Surface::ReleaseNotesDate, &mut drift, &mut gaps),
+            None => record_absent(tag, Surface::ReleaseNotesFile, &mut drift, &mut gaps),
         }
     }
-
     ReleaseDateReport { drift, gaps }
+}
+
+fn render_finding(finding: &ReleaseDateFinding) -> String {
+    let surface = match finding.surface {
+        Surface::Tag => "git tag",
+        Surface::PolicyBlock => "policy block",
+        Surface::PolicySection => "policy section key",
+        Surface::PolicyStatus => "policy status",
+        Surface::PolicyTargetDate => "policy target_date",
+        Surface::PolicyScope => "policy scope",
+        Surface::PolicyNonGoals => "policy non_goals",
+        Surface::ChangelogSection => "changelog section",
+        Surface::ReleaseNotesFile => "release notes file",
+        Surface::ReleaseNotesDate => "release notes Target date",
+    };
+    let detail = match (&finding.expected, &finding.actual) {
+        (Some(expected), Some(actual)) => format!("; expected {expected}, actual {actual}"),
+        (Some(expected), None) => format!("; expected {expected}, actual value missing"),
+        (None, Some(actual)) => format!("; actual {actual}"),
+        (None, None) => String::new(),
+    };
+    format!("{:?}: {} [{surface}]{detail}", finding.kind, finding.tag)
 }
 
 pub(crate) fn release_dates(root: &Path) -> Result<(), String> {
@@ -376,7 +424,6 @@ pub(crate) fn release_dates(root: &Path) -> Result<(), String> {
                 .to_owned(),
         );
     }
-
     let policy = read_to_string(&root.join("docs/topics/release-process/policy.toml"))?;
     let changelog = read_to_string(&root.join("CHANGELOG.md"))?;
     let mut release_notes = BTreeMap::new();
@@ -389,20 +436,18 @@ pub(crate) fn release_dates(root: &Path) -> Result<(), String> {
             );
         }
     }
-
     let report = reconcile_release_dates(&tags, &policy, &changelog, &release_notes);
     for gap in &report.gaps {
-        println!("release-dates: uncovered - {gap}");
+        println!("release-dates: uncovered - {}", render_finding(gap));
     }
     if report.drift.is_empty() {
         let (count, gap_count) = (tags.len(), report.gaps.len());
-        println!(
-            "release-dates: {count} tag(s) reconciled against git, {gap_count} uncovered surface(s)"
-        );
+        println!("release-dates: {count} tag(s) reconciled against git, {gap_count} uncovered surface(s)");
         return Ok(());
     }
+    let findings: Vec<_> = report.drift.iter().map(render_finding).collect();
     Err(format!(
         "release dates disagree with git tags:\n  {}",
-        report.drift.join("\n  ")
+        findings.join("\n  ")
     ))
 }
