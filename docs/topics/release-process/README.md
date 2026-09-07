@@ -64,6 +64,9 @@ release files are read or written. Without `--date`, the CLI supplies the curren
 clock to the scaffold helper, which derives its UTC date. Pre-epoch clocks fail
 as `ClockBeforeEpoch`; clocks beyond the four-digit year range fail as
 `ClockOutOfRange`. An explicit valid date takes precedence over the clock.
+The facade package version, exact implementation dependency, and lockfile entry
+advance with the implementation and CLI package versions, so the prepared
+workspace remains resolvable.
 [RELEASE-REQ-024]
 
 The policy structural guard preserves the historical release identities from
@@ -73,7 +76,9 @@ by keeping the total count unchanged. Git tag reconciliation separately checks
 coverage for every actual tagged release. Required `scope` and `non_goals`
 values are parsed as TOML string arrays; comments and string contents cannot
 satisfy field presence. The structural guard and date reconciliation use the
-same parsed fields. [RELEASE-REQ-025]
+same parsed fields. Policy target dates also use release preparation's calendar
+validator, so impossible month-end and leap-day values reject in published,
+prep, and planned blocks. [RELEASE-REQ-025]
 
 `cargo xtask release-dates` reconciles the dates recorded in the release policy,
 `CHANGELOG.md`, and `docs/releases/*.md` against the git tags that published

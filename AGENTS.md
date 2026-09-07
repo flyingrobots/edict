@@ -84,6 +84,12 @@ request body or final report.
 - Avoid ceremonial documentation. Update shelves because the contract changed,
   not because a path changed.
 
+## Durable Decision Discipline
+
+Follow the canonical [durable decision policy](docs/topics/documentation/README.md#durable-decision-discipline).
+Important decisions are incomplete until the owning repository document is
+current in the same change; chat, memory, and PR prose do not replace that owner.
+
 ## RED/GREEN Testing Discipline
 
 Edict uses RED/GREEN test-driven development for nontrivial changes. The shared

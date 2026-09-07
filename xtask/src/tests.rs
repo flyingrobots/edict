@@ -1794,6 +1794,53 @@ fn release_prep_scaffolds_version_policy_changelog_and_notes() {
 }
 
 #[test]
+fn release_prep_keeps_facade_exact_dependency_resolvable() {
+    let root = temp_root("release-prep-facade");
+    write_release_prep_scaffold_fixture(&root);
+    release_prep(
+        &root,
+        "v0.12.0-alpha.1",
+        Some("2026-08-04"),
+        std::time::UNIX_EPOCH,
+    )
+    .expect("release prep scaffold");
+
+    let lockfile_before = fs::read(root.join("Cargo.lock")).expect("prepared lockfile");
+    let output = Command::new("cargo")
+        .args(["metadata", "--offline", "--locked", "--format-version", "1"])
+        .current_dir(&root)
+        .output()
+        .expect("cargo metadata for prepared workspace");
+    assert!(
+        output.status.success(),
+        "prepared workspace must resolve: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let metadata: Value = serde_json::from_slice(&output.stdout).expect("Cargo metadata");
+    let packages = metadata["packages"].as_array().expect("packages");
+    assert_eq!(packages.len(), 3);
+    for package in packages {
+        assert_eq!(package["version"], "0.12.0-alpha.1", "{}", package["name"]);
+    }
+    let facade = packages
+        .iter()
+        .find(|package| package["name"] == "flyingrobots-edict")
+        .expect("facade package");
+    let syntax = facade["dependencies"]
+        .as_array()
+        .expect("facade dependencies")
+        .iter()
+        .find(|dependency| dependency["name"] == "edict-syntax")
+        .expect("facade implementation dependency");
+    assert_eq!(syntax["req"], "=0.12.0-alpha.1");
+    assert_eq!(
+        fs::read(root.join("Cargo.lock")).expect("checked lockfile"),
+        lockfile_before,
+        "metadata must not repair the prepared lockfile"
+    );
+}
+
+#[test]
 fn release_prep_rejects_existing_release_notes_before_writing() {
     let root = temp_root("release-prep-existing-notes");
     write_release_prep_scaffold_fixture(&root);
@@ -1805,6 +1852,7 @@ fn release_prep_rejects_existing_release_notes_before_writing() {
     let tracked = [
         "crates/edict-cli/Cargo.toml",
         "crates/edict-syntax/Cargo.toml",
+        "crates/edict/Cargo.toml",
         "Cargo.lock",
         "CHANGELOG.md",
         "docs/topics/release-process/policy.toml",
@@ -1843,6 +1891,22 @@ fn release_prep_rejects_existing_release_notes_before_writing() {
 }
 
 fn write_release_prep_scaffold_fixture(root: &Path) {
+    fs::create_dir_all(root).expect("workspace dir");
+    fs::write(
+        root.join("Cargo.toml"),
+        "[workspace]\nmembers = [\"crates/edict-cli\", \"crates/edict-syntax\", \"crates/edict\"]\nresolver = \"3\"\n",
+    )
+    .expect("workspace manifest");
+    for package in ["edict-cli", "edict-syntax", "edict"] {
+        let source = root.join("crates").join(package).join("src");
+        fs::create_dir_all(&source).expect("package source dir");
+        fs::write(source.join("lib.rs"), "").expect("library target");
+    }
+    fs::write(
+        root.join("crates/edict/Cargo.toml"),
+        "[package]\nname = \"flyingrobots-edict\"\nversion = \"0.11.0-alpha.1\"\n[dependencies]\nedict-syntax = { path = \"../edict-syntax\", version = \"=0.11.0-alpha.1\" }\n",
+    )
+    .expect("facade manifest");
     fs::create_dir_all(root.join("crates/edict-cli")).expect("edict-cli dir");
     fs::create_dir_all(root.join("crates/edict-syntax")).expect("edict-syntax dir");
     fs::create_dir_all(root.join("docs/releases")).expect("release notes dir");
@@ -1860,7 +1924,7 @@ fn write_release_prep_scaffold_fixture(root: &Path) {
     .expect("edict-syntax manifest");
     fs::write(
             root.join("Cargo.lock"),
-            "version = 4\n\n[[package]]\nname = \"edict-cli\"\nversion = \"0.11.0-alpha.1\"\n\n[[package]]\nname = \"edict-syntax\"\nversion = \"0.11.0-alpha.1\"\n",
+            "version = 4\n\n[[package]]\nname = \"edict-cli\"\nversion = \"0.11.0-alpha.1\"\n\n[[package]]\nname = \"edict-syntax\"\nversion = \"0.11.0-alpha.1\"\n\n[[package]]\nname = \"flyingrobots-edict\"\nversion = \"0.11.0-alpha.1\"\ndependencies = [\n \"edict-syntax\",\n]\n",
         )
         .expect("lockfile");
     fs::write(
@@ -3245,15 +3309,27 @@ fn annotated_tag(date: &str) -> crate::release_dates::TagRecord {
     }
 }
 
+#[test]
+fn release_policy_dates_require_real_calendar_days() {
+    for (value, expected) in [
+        ("2026-02-30", false),
+        ("2026-02-29", false),
+        ("1900-02-29", false),
+        ("2026-04-31", false),
+        ("2026-00-01", false),
+        ("2026-13-01", false),
+        ("2026-01-00", false),
+        ("2026-1-001", false),
+        ("2026-02-28", true),
+        ("2000-02-29", true),
+        ("2024-02-29", true),
+    ] {
+        assert_eq!(is_iso_date(value), expected, "{value}");
+    }
+}
+
 fn is_iso_date(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 10
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+    crate::release_prep::validate_iso_date(value).is_ok()
 }
 
 fn wit_named_type(interface: &Interface, name: &str) -> TypeId {

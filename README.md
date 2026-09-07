@@ -517,11 +517,12 @@ input. The full stream contract and JSON Schemas are in the
 
 ### Using the library
 
-`edict-syntax` is the front end. The one-call entry point parses and
-surface-validates a source string:
+The curated `edict` facade is the recommended Rust entry point. Its one-call
+check parses and surface-validates a source string without exposing the
+implementation crate's module tree:
 
 ```rust
-use edict_syntax::{check, CheckOutcome};
+use edict::{check, CheckOutcome};
 
 match check("package examples.hello@1;\n") {
     CheckOutcome::Valid => println!("ok"),
@@ -530,8 +531,10 @@ match check("package examples.hello@1;\n") {
 }
 ```
 
-The underlying stages (`parse_module` then `validate_surface`) remain available
-when you need the parsed module.
+The implementation crate retains lower-level stages for repository-internal
+consumers that need the parsed module. The curated facade remains
+`publish = false`; the current release-engineering work does not authorize or
+claim crates.io publication.
 
 ---
 

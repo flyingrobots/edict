@@ -114,6 +114,10 @@ Out of scope:
 | RELEASE-TP-029 | implemented | Published tag coverage | RELEASE-REQ-008 | Removing one published release tag fails even while another remains; prep and planned blocks without tags remain valid. | release_date_reconciliation_rejects_missing_published_tags, release_date_reconciliation_allows_untagged_preparation | xtask/src/tests.rs | Tag presence is checked from published policy blocks back to the tag inventory. |
 | RELEASE-TP-030 | implemented | Parsed policy fields | RELEASE-REQ-008, RELEASE-REQ-025 | Comments and string contents cannot satisfy scope/non_goals list presence; actual string arrays are accepted independent of assignment spacing. | release_policy_list_presence_requires_actual_assignments, release_policy_lists_accept_toml_assignment_spacing | xtask/src/release_dates.rs, xtask/src/tests.rs | Reconciliation and structural validation consume the same parsed list fields. |
 
+| RELEASE-TP-031 | implemented | Package versions | RELEASE-REQ-024 | After release preparation, Cargo resolves the facade exact implementation dependency with the requested package versions and an unchanged lockfile. | release_prep_keeps_facade_exact_dependency_resolvable | xtask/src/tests.rs | Offline Cargo metadata over a temporary workspace checks package versions, dependency requirements, and lockfile consistency. |
+
+| RELEASE-TP-032 | implemented | Policy calendar dates | RELEASE-REQ-025 | Policy date validation rejects impossible month-end and leap-day values while accepting real leap days and canonical ordinary dates. | release_policy_dates_require_real_calendar_days | xtask/src/tests.rs, xtask/src/release_prep.rs | The structural guard uses the same calendar judgment as release preparation, including for untagged prep and planned blocks. |
+
 ## Determinism Obligations
 
 - Release workflow contract tests inspect checked-in workflow text, not live
