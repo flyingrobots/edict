@@ -12,7 +12,7 @@
 //! was tagged 2026-06-24 in PDT, which is 2026-06-25 in UTC; its recorded date
 //! is therefore 2026-06-25 regardless of the reader's timezone.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::process::Command;
 
@@ -343,6 +343,16 @@ pub(crate) fn reconcile_release_dates(
     let blocks = parse_release_policy_blocks(policy);
     let mut drift = Vec::new();
     let mut gaps = Vec::new();
+    let published_tags: BTreeSet<_> = blocks
+        .iter()
+        .filter(|block| block.status.as_deref() == Some("published"))
+        .filter_map(|block| block.tag.as_deref())
+        .collect();
+    for tag in published_tags {
+        if !tags.contains_key(tag) {
+            record_absent(tag, Surface::Tag, &mut drift, &mut gaps);
+        }
+    }
     for (tag, record) in tags {
         if !record.annotated {
             drift.push(ReleaseDateFinding::new(

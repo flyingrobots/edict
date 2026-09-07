@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Rejected missing tags for published release-policy blocks even when other
+  release tags remain present, while retaining untagged prep/planned blocks.
 - Moved release preparation's clock read to the CLI boundary and made default
   UTC dates deterministic under an injected clock, including structured clock
   range failures and explicit-date precedence.

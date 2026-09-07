@@ -4329,3 +4329,65 @@ fn temp_root(name: &str) -> PathBuf {
     fs::create_dir_all(&dir).expect("temp root");
     dir
 }
+
+#[test]
+fn release_date_reconciliation_rejects_missing_published_tags() {
+    let root = repo_root().expect("repo root");
+    let policy =
+        fs::read_to_string(root.join("docs/topics/release-process/policy.toml")).expect("policy");
+    let changelog = fs::read_to_string(root.join("CHANGELOG.md")).expect("changelog");
+    let blocks = crate::release_dates::parse_release_policy_blocks(&policy);
+    let tags: BTreeMap<_, _> = blocks
+        .iter()
+        .filter(|block| block.status.as_deref() == Some("published"))
+        .map(|block| {
+            (
+                block.tag.clone().expect("tag"),
+                annotated_tag(block.target_date.as_deref().expect("date")),
+            )
+        })
+        .collect();
+    let notes: BTreeMap<_, _> = blocks
+        .iter()
+        .map(|block| (block.tag.clone().expect("tag"), block.target_date.clone()))
+        .collect();
+    let complete =
+        crate::release_dates::reconcile_release_dates(&tags, &policy, &changelog, &notes);
+    assert!(complete.drift.is_empty(), "{:?}", complete.drift);
+    for removed in tags.keys() {
+        let mut remaining = tags.clone();
+        remaining.remove(removed);
+        assert!(!remaining.is_empty());
+        let report =
+            crate::release_dates::reconcile_release_dates(&remaining, &policy, &changelog, &notes);
+        assert_eq!(
+            report.drift.len(),
+            1,
+            "removed {removed}: {:?}",
+            report.drift
+        );
+        let finding = &report.drift[0];
+        assert_eq!(finding.kind, ReleaseDateFindingKind::MissingSurface);
+        assert_eq!(finding.surface, Surface::Tag);
+        assert_eq!(&finding.tag, removed);
+        assert_eq!(finding.expected, None);
+        assert_eq!(finding.actual, None);
+        assert!(report.gaps.is_empty());
+    }
+}
+
+#[test]
+fn release_date_reconciliation_allows_untagged_preparation() {
+    for status in ["prep", "planned"] {
+        let policy = COMPLETED_NEXT_RELEASE_POLICY
+            .replace("status = \"prep\"", &format!("status = \"{status}\""));
+        let report = crate::release_dates::reconcile_release_dates(
+            &BTreeMap::new(),
+            &policy,
+            "",
+            &BTreeMap::new(),
+        );
+        assert!(report.drift.is_empty(), "{status}: {:?}", report.drift);
+        assert!(report.gaps.is_empty());
+    }
+}

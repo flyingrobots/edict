@@ -79,7 +79,10 @@ comparing them against each other only proves the copy succeeded; the tags are
 the independent authority for when a release happened. The check runs inside
 `cargo xtask verify` and reports uncovered surfaces separately from date drift.
 A clone without tags fails rather than passing silently, because a missing
-independent authority is not approval. The pure comparison returns structured
+independent authority is not approval. Each published policy block must also
+have its tag in the inventory, so a partially fetched or missing historical tag
+cannot disappear from the check. Untagged `prep` and `planned` blocks are allowed.
+The pure comparison returns structured
 finding kinds with tag, surface, expected-value, and actual-value fields. The
 command renders those findings as text; callers and tests do not parse prose to
 identify missing surfaces, mismatched dates, or pending publication status.
