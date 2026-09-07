@@ -6,7 +6,7 @@
 mod common;
 use common::{body, intent_of};
 use edict_syntax::ast::{
-    BinOp, BoundRef, Decl, Expr, ImportKind, RequireElseArm, Stmt, TypeExpr, TypeRef,
+    BinOp, BoundRef, BytesRefine, Decl, Expr, ImportKind, RequireElseArm, Stmt, TypeExpr, TypeRef,
 };
 use edict_syntax::token::IntSuffix;
 use edict_syntax::{parse_module, ParseErrorKind};
@@ -94,10 +94,33 @@ fn bytes_accept_coordinate_bounds() {
     };
     assert_eq!(
         fields[0].ty,
-        TypeRef::BytesTy(Some(BoundRef::Coord(vec![
-            "limits".into(),
-            "maxBytes".into()
-        ])))
+        TypeRef::BytesTy(Some(BytesRefine {
+            min: None,
+            max: BoundRef::Coord(vec!["limits".into(), "maxBytes".into()]),
+        }))
+    );
+}
+
+#[test]
+fn bytes_accept_exact_bounds() {
+    let m = parse_module("package a.b@1;\ntype T = { identity: Bytes<exact=32>, };")
+        .expect("exact byte bounds parse");
+    let Decl::Type(t) = &m.decls[0] else {
+        panic!("decl 0 is type");
+    };
+    let TypeExpr::Record(fields) = &t.body else {
+        panic!("T is a record");
+    };
+    let exact = BoundRef::Int {
+        value: 32,
+        suffix: None,
+    };
+    assert_eq!(
+        fields[0].ty,
+        TypeRef::BytesTy(Some(BytesRefine {
+            min: Some(exact.clone()),
+            max: exact,
+        }))
     );
 }
 
@@ -125,9 +148,12 @@ fn bound_integer_suffixes_are_preserved() {
 
     assert_eq!(
         fields[1].ty,
-        TypeRef::BytesTy(Some(BoundRef::Int {
-            value: 2,
-            suffix: Some(IntSuffix::I64)
+        TypeRef::BytesTy(Some(BytesRefine {
+            min: None,
+            max: BoundRef::Int {
+                value: 2,
+                suffix: Some(IntSuffix::I64)
+            },
         }))
     );
 

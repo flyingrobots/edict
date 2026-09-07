@@ -51,6 +51,8 @@ fn target_facts() -> TargetIrLoweringFacts {
             target_intrinsic: "echo.dpo@1.splice".to_owned(),
             failure_mappings: std::collections::BTreeMap::new(),
         }],
+        effect_signatures: Vec::new(),
+        pure_functions: Vec::new(),
     }
 }
 
@@ -102,22 +104,19 @@ fn digest_bytes(value: &CanonicalValue) -> &[u8] {
 fn operation_prerequisite_fixture_preserves_fixed_width_basis_and_lawpack_closure() {
     let (core, target) = lower_operation(OPERATION_SOURCE);
 
+    let Some(CoreType::Record { fields }) = core.types.get("SpliceInput") else {
+        panic!("SpliceInput remains a named record");
+    };
+    assert_eq!(fields.get("start").map(String::as_str), Some("U64"));
+    assert_eq!(fields.get("end").map(String::as_str), Some("U64"));
     assert_eq!(
-        core.types.get("SpliceInput.start"),
-        Some(&CoreType::Int {
-            width: "U64".to_owned()
-        })
+        fields.get("replacement").map(String::as_str),
+        Some("Bytes<max=4096>")
     );
-    assert_eq!(
-        core.types.get("SpliceInput.end"),
-        Some(&CoreType::Int {
-            width: "U64".to_owned()
-        })
-    );
-    assert_eq!(
-        core.types.get("SpliceInput.replacement"),
-        Some(&CoreType::Bytes { max: 4096 })
-    );
+    assert!(core
+        .types
+        .keys()
+        .all(|coordinate| !coordinate.starts_with("SpliceInput.")));
     let lawpack = core
         .imports
         .iter()
@@ -187,12 +186,11 @@ fn fixed_width_integer_types_and_suffixes_preserve_exact_domains() {
             .replace("U64", width)
             .replace("18446744073709551615u64", &format!("{maximum}{suffix}"));
         let core = compile_operation(&source);
-        assert_eq!(
-            core.types.get("SpliceInput.start"),
-            Some(&CoreType::Int {
-                width: width.to_owned()
-            })
-        );
+        let Some(CoreType::Record { fields }) = core.types.get("SpliceInput") else {
+            panic!("SpliceInput remains a named record");
+        };
+        assert_eq!(fields.get("start").map(String::as_str), Some(width));
+        assert!(!core.types.contains_key("SpliceInput.start"));
         let CorePredicate::Compare { right, .. } = &core
             .intents
             .get("splice")

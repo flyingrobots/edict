@@ -38,7 +38,9 @@ Edict's current documentation set has these roles:
 - [README.md](../../../README.md): product landing page and high-level
   explanation.
 - [docs/README.md](../../README.md): documentation router.
-- `docs/SPEC_*.md`: normative protocol, language, ABI, and admission reference.
+- `docs/SPEC_*.md`: normative protocol, language, ABI, and admission reference;
+  `docs/SPEC_edict-language-v1.md` is the maintained formal language and Core
+  semantics contract.
 - [docs/REQUIREMENTS.md](../../REQUIREMENTS.md): requirement and fixture
   registry.
 - `docs/topics/*`: current-truth contributor/evidence shelves.
@@ -95,6 +97,13 @@ the following before it is claimed complete:
 1. update affected documentation;
 2. show that existing documentation remains accurate;
 3. declare `docs-impact: none` with a concise rationale.
+
+Source syntax, static-semantics, compiler-visible language, or Core semantic
+changes must update `docs/SPEC_edict-language-v1.md` in the same pull request.
+Wire-shape changes must also update the coupled normative CDDL, and changed
+claims must update their owning requirement and test-plan evidence. Executable
+tests demonstrate conformance; they do not silently replace the formal
+language specification.
 
 Changed documentation must preserve page type. Do not turn a reference page into
 a tutorial, or a topic-shelf contributor page into a marketing page, as an

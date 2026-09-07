@@ -47,6 +47,7 @@ target-ir-semantic-closure = {
 target-ir-intent = {
   target-ir-intent-common,
   ? basis: core-expr,
+  ? pureBindings: [1* target-ir-pure-binding],
   ? externalActionRequests: [* target-ir-external-action-request],
 }
 
@@ -67,6 +68,12 @@ target-ir-requirement = {
   id: tstr,
   predicate: core-predicate,
   onFailure: require-failure-arm,
+}
+
+target-ir-pure-binding = {
+  id: tstr .regexp "(?s).+",
+  binding: local-ref,
+  value: core-expr,
 }
 
 target-ir-step = {

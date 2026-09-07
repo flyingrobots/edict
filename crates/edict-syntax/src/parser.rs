@@ -4,11 +4,11 @@
 //! text so they remain usable as member names after `.`.
 
 use crate::ast::{
-    BinOp, Block, BoundRef, ContinueObstructedArm, Decl, DigestLockedPackageRef, ElseClause,
-    EnumDecl, Expr, FieldConstraint, FieldDecl, Import, ImportKind, IntentClause, IntentDecl,
-    MatchArm, Module, ObstructionArm, ObstructionHandler, ObstructionTarget, PackageRef, Param,
-    RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr, TypeRef, UnOp,
-    VariantCase, YieldBlock,
+    BinOp, Block, BoundRef, BytesRefine, ContinueObstructedArm, Decl, DigestLockedPackageRef,
+    ElseClause, EnumDecl, Expr, FieldConstraint, FieldDecl, Import, ImportKind, IntentClause,
+    IntentDecl, MatchArm, Module, ObstructionArm, ObstructionHandler, ObstructionTarget,
+    PackageRef, Param, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
+    TypeRef, UnOp, VariantCase, YieldBlock,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -772,15 +772,23 @@ impl Parser {
         Ok(Some(ScalarRefine { max, canonical }))
     }
 
-    fn maybe_bytes_refine(&mut self) -> Result<Option<BoundRef>, ParseError> {
+    fn maybe_bytes_refine(&mut self) -> Result<Option<BytesRefine>, ParseError> {
         if !self.eat(&TokenKind::Lt) {
             return Ok(None);
         }
-        self.expect_kw("max")?;
+        let exact = if self.eat_kw("exact") {
+            true
+        } else {
+            self.expect_kw("max")?;
+            false
+        };
         self.expect(&TokenKind::Eq)?;
         let max = self.bound_ref()?;
         self.expect(&TokenKind::Gt)?;
-        Ok(Some(max))
+        Ok(Some(BytesRefine {
+            min: exact.then(|| max.clone()),
+            max,
+        }))
     }
 
     // --- intents ---

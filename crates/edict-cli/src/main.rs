@@ -1176,6 +1176,8 @@ fn project_target_facts(target: &ProjectionTargetSettings) -> TargetIrLoweringFa
                 failure_mappings: std::collections::BTreeMap::new(),
             })
             .collect(),
+        effect_signatures: Vec::new(),
+        pure_functions: Vec::new(),
     }
 }
 
@@ -1269,6 +1271,8 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::UnrequestableExternalOperation => "UnrequestableExternalOperation",
         CompilerErrorKind::DuplicateObstructionFailure => "DuplicateObstructionFailure",
         CompilerErrorKind::DuplicateObstructionPayloadField => "DuplicateObstructionPayloadField",
+        CompilerErrorKind::ReservedTypeIdentity => "ReservedTypeIdentity",
+        CompilerErrorKind::InvalidCoreTypeIntegrity => "InvalidCoreTypeIntegrity",
     }
 }
 
@@ -1458,12 +1462,21 @@ fn resource_ref_review(resource: &ResourceRef) -> Value {
 
 fn core_type_review(ty: &CoreType) -> Value {
     match ty {
+        CoreType::Unit => json!({ "kind": "unit" }),
         CoreType::Bool => json!({ "kind": "bool" }),
         CoreType::Int { width } => json!({ "kind": "int", "width": width }),
         CoreType::String { max, canonical } => {
             json!({ "kind": "string", "max": max, "canonical": canonical })
         }
-        CoreType::Bytes { max } => json!({ "kind": "bytes", "max": max }),
+        CoreType::Bytes { min, max } => json!({ "kind": "bytes", "min": min, "max": max }),
+        CoreType::Nominal {
+            contract,
+            representation,
+        } => json!({
+            "kind": "nominal",
+            "contract": contract,
+            "representation": representation,
+        }),
         CoreType::Record { fields } => json!({ "kind": "record", "fields": fields }),
         CoreType::Variant { cases } => json!({ "kind": "variant", "cases": cases }),
         CoreType::Option { item } => json!({ "kind": "option", "item": item }),
@@ -2275,4 +2288,17 @@ fn write_record(writer: &mut dyn Write, record: &Value) {
 
 fn default_directory_extensions() -> Vec<String> {
     vec![".edict".to_owned()]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{core_type_review, CoreType};
+
+    #[test]
+    fn core_type_review_is_total_for_unit() {
+        assert_eq!(
+            core_type_review(&CoreType::Unit),
+            serde_json::json!({ "kind": "unit" })
+        );
+    }
 }

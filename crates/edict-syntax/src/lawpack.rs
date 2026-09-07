@@ -1406,14 +1406,17 @@ fn infer_core_value_type(
             else {
                 return Err(pure_body_failure(&format!("{path}.value"), "a byte string"));
             };
-            let max = expected
-                .and_then(|expected| bytes_type_max(expected, type_definitions))
+            let (min, max) = expected
+                .and_then(|expected| bytes_type_bounds(expected, type_definitions))
                 .ok_or_else(|| pure_body_failure(path, "an exact bounded bytes type"))?;
-            if value.len() as u64 > max {
-                return Err(pure_body_failure(
-                    &format!("{path}.value"),
-                    &format!("at most {max} bytes"),
-                ));
+            let len = value.len() as u64;
+            if len < min || len > max {
+                let obligation = if min == max {
+                    format!("exactly {min} bytes")
+                } else {
+                    format!("between {min} and {max} bytes inclusive")
+                };
+                return Err(pure_body_failure(&format!("{path}.value"), &obligation));
             }
             expected.map(str::to_owned)
         }
@@ -1636,10 +1639,33 @@ fn string_type_max(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<
         .find_map(parse_named_max)
 }
 
-fn bytes_type_max(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<u64> {
+fn bytes_type_bounds(ty: &str, type_definitions: &BTreeMap<&str, &str>) -> Option<(u64, u64)> {
     let definition = resolved_type_definition(ty, type_definitions);
     let inner = definition.strip_prefix("Bytes<")?.strip_suffix('>')?;
-    parse_named_max(inner)
+    let mut min = None;
+    let mut max = None;
+    let mut exact = None;
+    for part in split_top_level(inner, ',') {
+        let (name, value) = part.split_once('=')?;
+        let value = value.trim().parse().ok()?;
+        let slot = match name.trim() {
+            "min" => &mut min,
+            "max" => &mut max,
+            "exact" => &mut exact,
+            _ => return None,
+        };
+        if slot.replace(value).is_some() {
+            return None;
+        }
+    }
+    match (min, max, exact) {
+        (None, None, Some(exact)) => Some((exact, exact)),
+        (min, Some(max), None) => {
+            let min = min.unwrap_or(0);
+            (min <= max).then_some((min, max))
+        }
+        _ => None,
+    }
 }
 
 fn parse_named_max(value: &str) -> Option<u64> {
