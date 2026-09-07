@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Reused release preparation's calendar validator in the policy structural
+  guard, rejecting impossible target dates in manually edited policy blocks.
 - Completed the Rust facade value-model exports for Core, Target IR, result
   projections, decoded canonical values, and diagnostic spans, allowing
   consumers to construct artifact inputs and inspect operation results.

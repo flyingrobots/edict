@@ -427,13 +427,13 @@ fn scaffold_release_date(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ReleasePrepDateError {
+pub(crate) enum ReleasePrepDateError {
     InvalidIsoDate,
     ClockBeforeEpoch,
     ClockOutOfRange,
 }
 
-fn validate_iso_date(date: &str) -> Result<(), ReleasePrepDateError> {
+pub(crate) fn validate_iso_date(date: &str) -> Result<(), ReleasePrepDateError> {
     let bytes = date.as_bytes();
     if bytes.len() != 10
         || !bytes.iter().enumerate().all(|(index, byte)| {

@@ -116,6 +116,8 @@ Out of scope:
 
 | RELEASE-TP-031 | implemented | Package versions | RELEASE-REQ-024 | After release preparation, Cargo resolves the facade exact implementation dependency with the requested package versions and an unchanged lockfile. | release_prep_keeps_facade_exact_dependency_resolvable | xtask/src/tests.rs | Offline Cargo metadata over a temporary workspace checks package versions, dependency requirements, and lockfile consistency. |
 
+| RELEASE-TP-032 | implemented | Policy calendar dates | RELEASE-REQ-025 | Policy date validation rejects impossible month-end and leap-day values while accepting real leap days and canonical ordinary dates. | release_policy_dates_require_real_calendar_days | xtask/src/tests.rs, xtask/src/release_prep.rs | The structural guard uses the same calendar judgment as release preparation, including for untagged prep and planned blocks. |
+
 ## Determinism Obligations
 
 - Release workflow contract tests inspect checked-in workflow text, not live

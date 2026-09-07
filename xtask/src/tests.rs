@@ -3309,15 +3309,27 @@ fn annotated_tag(date: &str) -> crate::release_dates::TagRecord {
     }
 }
 
+#[test]
+fn release_policy_dates_require_real_calendar_days() {
+    for (value, expected) in [
+        ("2026-02-30", false),
+        ("2026-02-29", false),
+        ("1900-02-29", false),
+        ("2026-04-31", false),
+        ("2026-00-01", false),
+        ("2026-13-01", false),
+        ("2026-01-00", false),
+        ("2026-1-001", false),
+        ("2026-02-28", true),
+        ("2000-02-29", true),
+        ("2024-02-29", true),
+    ] {
+        assert_eq!(is_iso_date(value), expected, "{value}");
+    }
+}
+
 fn is_iso_date(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 10
-        && bytes[4] == b'-'
-        && bytes[7] == b'-'
-        && bytes
-            .iter()
-            .enumerate()
-            .all(|(index, byte)| index == 4 || index == 7 || byte.is_ascii_digit())
+    crate::release_prep::validate_iso_date(value).is_ok()
 }
 
 fn wit_named_type(interface: &Interface, name: &str) -> TypeId {

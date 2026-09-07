@@ -76,7 +76,9 @@ by keeping the total count unchanged. Git tag reconciliation separately checks
 coverage for every actual tagged release. Required `scope` and `non_goals`
 values are parsed as TOML string arrays; comments and string contents cannot
 satisfy field presence. The structural guard and date reconciliation use the
-same parsed fields. [RELEASE-REQ-025]
+same parsed fields. Policy target dates also use release preparation's calendar
+validator, so impossible month-end and leap-day values reject in published,
+prep, and planned blocks. [RELEASE-REQ-025]
 
 `cargo xtask release-dates` reconciles the dates recorded in the release policy,
 `CHANGELOG.md`, and `docs/releases/*.md` against the git tags that published
