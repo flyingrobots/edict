@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Kept the Rust facade package version, exact implementation dependency, and
+  lockfile entry synchronized during release preparation, so the prepared
+  workspace resolves without repairing its lockfile.
 - Updated the capability-denied provider host from Wasmtime 46.0.2 to 46.0.3
   after RUSTSEC-2026-0268 and RUSTSEC-2026-0269 made the prior exact pin fail
   the mandatory supply-chain gate. The direct feature and single-owner

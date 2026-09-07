@@ -58,7 +58,10 @@ versions, a dated changelog section, release policy boundary block, release
 notes stub, release boundary test stub, changelog date guard entry, and paired
 release-process test-plan rows. The command does not write the release thesis,
 replace topic-shelf audits, or decide scope/non-goals; reviewers must replace
-the scaffold placeholders before release. [RELEASE-REQ-024]
+the scaffold placeholders before release. The facade package version, exact
+implementation dependency, and lockfile entry advance with the implementation
+and CLI package versions, so the prepared workspace remains resolvable.
+[RELEASE-REQ-024]
 
 Every release-prep branch must audit `docs/topics/` coverage and accuracy before
 the release-prep pull request opens. Coverage is audited topic shelves divided

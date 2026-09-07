@@ -25,6 +25,7 @@ Out of scope:
 | PUBRUST-REQ-001 | implemented | One curated package exposes Edict source checking, stable diagnostic kinds, and canonical artifact identity operations without re-exporting the implementation module tree. | issue #189 |
 | PUBRUST-REQ-002 | planned | The facade's package inventory is explicit, reproducible, and remains non-publishing until a separately approved publication policy exists. | issue #189 |
 | PUBRUST-REQ-003 | planned | A clean external consumer can compile against the facade without an undocumented repository-relative dependency. | issue #189 |
+| PUBRUST-REQ-004 | implemented | Release preparation advances the facade package version and exact implementation dependency together. | xtask/src/release_prep.rs |
 
 ## Test Cases
 
@@ -34,6 +35,7 @@ Out of scope:
 | PUBRUST-TP-002 | implemented | Negative compile | PUBRUST-REQ-001 | The implementation module tree is unavailable through `edict`. | implementation_modules_are_compile_fail_doctested | crates/edict/src/lib.rs, crates/edict/tests/public_surface.rs | The integration witness binds this row to the `compile_fail` doctest attempted by the workspace test pass. |
 | PUBRUST-TP-003 | planned | Package boundary | PUBRUST-REQ-002 | Packaging succeeds with the reviewed inventory without publishing or mutating registry state. | release-engineering package check | crates/edict/Cargo.toml | The current package inventory dry run succeeds; the complete registry dependency closure remains unpublished. |
 | PUBRUST-TP-004 | planned | External consumer | PUBRUST-REQ-003 | The project compiles and runs without a sibling Edict checkout. | release-engineering external-consumer check | - | Requires packaged implementation dependencies or a sealed local registry before publication. |
+| PUBRUST-TP-005 | implemented | Release preparation | PUBRUST-REQ-004 | Cargo resolves the requested facade and implementation versions with the prepared lockfile. | release_prep_keeps_facade_exact_dependency_resolvable | xtask/src/tests.rs | Offline temporary workspace; no registry publication. |
 
 ## Known Gaps
 

@@ -14,3 +14,8 @@ engineering boundary; it does not authorize or claim crates.io publication.
 The `edict` CLI remains the stable process boundary for complete application
 builds. The Rust facade does not duplicate the CLI's JSONL protocol, provider
 host, filesystem publication, or application-build orchestration.
+
+Release preparation advances the facade package version, its exact
+`edict-syntax` requirement, and both lockfile package entries together. The
+prepared workspace remains resolvable with offline, locked Cargo metadata.
+[PUBRUST-REQ-004]

@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use regex::Regex;
+
 use crate::util::read_to_string;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +65,7 @@ fn parse_decimal(part: &str, name: &str) -> Result<u16, String> {
 pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
     let version = ReleasePrepVersion::parse(input)?;
     let cli_manifest_path = root.join("crates/edict-cli/Cargo.toml");
+    let facade_manifest_path = root.join("crates/edict/Cargo.toml");
     let syntax_manifest_path = root.join("crates/edict-syntax/Cargo.toml");
     let lockfile_path = root.join("Cargo.lock");
     let changelog_path = root.join("CHANGELOG.md");
@@ -88,6 +91,10 @@ pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
         &read_to_string(&syntax_manifest_path)?,
         &version.package_version,
     )?;
+    let facade_manifest = replace_facade_manifest_version(
+        &read_to_string(&facade_manifest_path)?,
+        &version.package_version,
+    )?;
     let lockfile =
         replace_lock_package_versions(&read_to_string(&lockfile_path)?, &version.package_version)?;
     let changelog = insert_release_changelog_section(
@@ -106,6 +113,7 @@ pub(crate) fn release_prep(root: &Path, input: &str) -> Result<(), String> {
 
     write_file(&cli_manifest_path, &cli_manifest)?;
     write_file(&syntax_manifest_path, &syntax_manifest)?;
+    write_file(&facade_manifest_path, &facade_manifest)?;
     write_file(&lockfile_path, &lockfile)?;
     write_file(&changelog_path, &changelog)?;
     write_file(&policy_path, &policy)?;
@@ -144,6 +152,24 @@ fn replace_first_version_line(text: &str, package_version: &str) -> Result<Strin
     Ok(join_lines_preserving_final_newline(&lines, text))
 }
 
+fn replace_facade_manifest_version(text: &str, package_version: &str) -> Result<String, String> {
+    let text = replace_first_version_line(text, package_version)?;
+    // The facade declares its exact implementation requirement in an inline
+    // dependency table. Reject an absent or ambiguous requirement before writes.
+    let pattern = Regex::new(
+        r#"(?m)^([ \t]*edict-syntax[ \t]*=[ \t]*\{[^\r\n}]*\bversion[ \t]*=[ \t]*)"[^"]*""#,
+    )
+    .map_err(|error| format!("facade dependency pattern: {error}"))?;
+    if pattern.captures_iter(&text).count() != 1 {
+        return Err("facade manifest must declare one inline edict-syntax version".into());
+    }
+    Ok(pattern
+        .replace(&text, |captures: &regex::Captures<'_>| {
+            format!("{}\"={package_version}\"", &captures[1])
+        })
+        .into_owned())
+}
+
 fn replace_lock_package_versions(text: &str, package_version: &str) -> Result<String, String> {
     let mut current_package = None;
     let mut replaced = BTreeSet::new();
@@ -162,7 +188,7 @@ fn replace_lock_package_versions(text: &str, package_version: &str) -> Result<St
         if line.starts_with("version = ")
             && matches!(
                 current_package.as_deref(),
-                Some("edict-cli" | "edict-syntax")
+                Some("edict-cli" | "edict-syntax" | "flyingrobots-edict")
             )
         {
             if let Some(package) = current_package.as_deref() {
@@ -173,7 +199,7 @@ fn replace_lock_package_versions(text: &str, package_version: &str) -> Result<St
         }
         lines.push(line.to_owned());
     }
-    for package in ["edict-cli", "edict-syntax"] {
+    for package in ["edict-cli", "edict-syntax", "flyingrobots-edict"] {
         if !replaced.contains(package) {
             return Err(format!("Cargo.lock missing package version for {package}"));
         }
