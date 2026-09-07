@@ -44,8 +44,6 @@ scaffold_outputs = [
   "dated_changelog_section",
   "release_policy_boundary_block",
   "release_notes_stub",
-  "release_boundary_test_stub",
-  "alpha_changelog_date_guard_entry",
   "release_process_test_plan_rows",
 ]
 steps = [
@@ -146,7 +144,7 @@ required_evidence = [
 
 [release_notes.v0_2_0_alpha_1]
 tag = "v0.2.0-alpha.1"
-target_date = "2026-07-01"
+target_date = "2026-06-21"
 status = "published"
 release_issue = 28
 scope = [
@@ -166,7 +164,7 @@ non_goals = [
 
 [release_notes.v0_3_0_alpha_1]
 tag = "v0.3.0-alpha.1"
-target_date = "2026-07-15"
+target_date = "2026-06-24"
 status = "published"
 release_issue = 35
 scope = [
@@ -191,7 +189,7 @@ non_goals = [
 
 [release_notes.v0_4_0_alpha_1]
 tag = "v0.4.0-alpha.1"
-target_date = "2026-07-29"
+target_date = "2026-06-25"
 status = "published"
 release_issue = 39
 scope = [
@@ -213,7 +211,7 @@ non_goals = [
 
 [release_notes.v0_5_0_alpha_1]
 tag = "v0.5.0-alpha.1"
-target_date = "2026-08-12"
+target_date = "2026-06-25"
 status = "published"
 release_issue = 42
 scope = [
@@ -240,7 +238,7 @@ non_goals = [
 
 [release_notes.v0_6_0_alpha_1]
 tag = "v0.6.0-alpha.1"
-target_date = "2026-08-26"
+target_date = "2026-06-26"
 status = "published"
 release_issue = 50
 scope = [
@@ -271,7 +269,7 @@ non_goals = [
 
 [release_notes.v0_7_0_alpha_1]
 tag = "v0.7.0-alpha.1"
-target_date = "2026-09-09"
+target_date = "2026-06-27"
 status = "published"
 release_issue = 59
 published_at = "2026-06-27T22:31:49Z"
@@ -316,7 +314,7 @@ non_goals = [
 
 [release_notes.v0_8_0_alpha_1]
 tag = "v0.8.0-alpha.1"
-target_date = "2026-09-23"
+target_date = "2026-06-28"
 status = "published"
 release_issue = 62
 published_at = "2026-06-28T01:41:16Z"
@@ -365,7 +363,7 @@ non_goals = [
 
 [release_notes.v0_9_0_alpha_1]
 tag = "v0.9.0-alpha.1"
-target_date = "2026-10-07"
+target_date = "2026-06-28"
 status = "published"
 release_issue = 70
 published_at = "2026-06-28T07:04:06Z"
@@ -407,7 +405,7 @@ non_goals = [
 
 [release_notes.v0_10_0_alpha_1]
 tag = "v0.10.0-alpha.1"
-target_date = "2026-10-21"
+target_date = "2026-06-29"
 status = "published"
 release_issue = 76
 published_at = "2026-06-29T04:21:11Z"
@@ -446,7 +444,7 @@ non_goals = [
 
 [release_notes.v0_11_0_alpha_1]
 tag = "v0.11.0-alpha.1"
-target_date = "2026-11-04"
+target_date = "2026-06-30"
 status = "published"
 release_issue = 109
 published_at = "2026-06-30T07:58:29Z"
