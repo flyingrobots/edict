@@ -2825,20 +2825,20 @@ fn assert_release_policy_structure(policy: &str) {
             matches!(status, "published" | "planned" | "prep"),
             "[release_notes.{section}] has unexpected status `{status}`"
         );
-        for field in ["scope = [", "non_goals = ["] {
-            assert!(
-                block.body.contains(field),
-                "[release_notes.{section}] is missing `{field}`"
-            );
-        }
-        // Applies to `prep` too: auto-release-tag publishes from a merged
-        // release-prep branch, so a placeholder that survives to merge would
-        // ship in the release.
-        for placeholder in ["TODO_release_scope", "TODO_release_non_goal"] {
-            assert!(
-                !block.body.contains(placeholder),
-                "[release_notes.{section}] still has scaffold placeholder `{placeholder}`"
-            );
+        for (name, values) in [("scope", &block.scope), ("non_goals", &block.non_goals)] {
+            let values = values.as_ref().unwrap_or_else(|| {
+                panic!("[release_notes.{section}] is missing a string-list `{name}`")
+            });
+            // Auto-release-tag publishes from a merged prep branch, so these
+            // placeholders must reject for every status before merging.
+            for value in values {
+                for placeholder in ["TODO_release_scope", "TODO_release_non_goal"] {
+                    assert!(
+                        !value.contains(placeholder),
+                        "[release_notes.{section}] still has scaffold placeholder `{placeholder}`"
+                    );
+                }
+            }
         }
     }
 }
@@ -2935,8 +2935,10 @@ fn release_policy_block_parsing_scopes_fields_to_their_own_release() {
     // ...but it belongs to v0.4, and block-scoped parsing reports v0.3's own.
     assert_eq!(first.target_date.as_deref(), Some("1999-01-01"));
     assert_eq!(first.status.as_deref(), Some("published"));
-    assert!(first.body.contains("first_scope"));
-    assert!(!first.body.contains("second_scope"));
+    assert_eq!(
+        first.scope.as_deref(),
+        Some(["first_scope".to_owned()].as_slice())
+    );
 }
 
 /// The reconciliation compares recorded dates against git tag dates, which is
@@ -4390,4 +4392,45 @@ fn release_date_reconciliation_allows_untagged_preparation() {
         assert!(report.drift.is_empty(), "{status}: {:?}", report.drift);
         assert!(report.gaps.is_empty());
     }
+}
+
+#[test]
+fn release_policy_list_presence_requires_actual_assignments() {
+    for fields in [
+        "# scope = [\n# non_goals = [\n",
+        "explanation = \"scope = [ non_goals = [\"\n",
+        "scope = \"scope = [\"\nnon_goals = \"non_goals = [\"\n",
+        "explanation = '''\nscope = [\nnon_goals = [\n'''\n",
+    ] {
+        let policy = format!(
+            "[release_notes.v0_8_0_alpha_1]\ntag = \"v0.8.0-alpha.1\"\ntarget_date = \"2026-06-28\"\nstatus = \"published\"\n{fields}"
+        );
+        let report = crate::release_dates::reconcile_release_dates(
+            &BTreeMap::from([("v0.8.0-alpha.1".to_owned(), annotated_tag("2026-06-28"))]),
+            &policy,
+            "## [v0.8.0-alpha.1] - 2026-06-28\n",
+            &BTreeMap::from([("v0.8.0-alpha.1".to_owned(), Some("2026-06-28".to_owned()))]),
+        );
+        let fields: Vec<_> = report
+            .drift
+            .iter()
+            .map(|finding| {
+                assert_eq!(finding.kind, ReleaseDateFindingKind::MissingSurface);
+                assert_eq!(finding.tag, "v0.8.0-alpha.1");
+                finding.surface
+            })
+            .collect();
+        assert_eq!(fields, vec![Surface::PolicyScope, Surface::PolicyNonGoals]);
+        assert!(report.gaps.is_empty());
+    }
+}
+
+#[test]
+fn release_policy_lists_accept_toml_assignment_spacing() {
+    let root = repo_root().expect("root");
+    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+        .expect("policy")
+        .replace("scope = [", "scope=[")
+        .replace("non_goals = [", "'non_goals' = [");
+    assert_release_policy_structure(&policy);
 }

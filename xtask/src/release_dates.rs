@@ -84,7 +84,9 @@ pub(crate) struct ReleasePolicyBlock {
     pub(crate) tag: Option<String>,
     pub(crate) target_date: Option<String>,
     pub(crate) status: Option<String>,
-    pub(crate) body: String,
+    pub(crate) scope: Option<Vec<String>>,
+    pub(crate) non_goals: Option<Vec<String>>,
+    body: String,
 }
 
 pub(crate) fn parse_release_policy_blocks(policy: &str) -> Vec<ReleasePolicyBlock> {
@@ -93,7 +95,8 @@ pub(crate) fn parse_release_policy_blocks(policy: &str) -> Vec<ReleasePolicyBloc
     for line in policy.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
-            if let Some(block) = current.take() {
+            if let Some(mut block) = current.take() {
+                parse_policy_fields(&mut block);
                 blocks.push(block);
             }
             if let Some(section) = trimmed
@@ -105,6 +108,8 @@ pub(crate) fn parse_release_policy_blocks(policy: &str) -> Vec<ReleasePolicyBloc
                     tag: None,
                     target_date: None,
                     status: None,
+                    scope: None,
+                    non_goals: None,
                     body: String::new(),
                 });
             }
@@ -113,27 +118,44 @@ pub(crate) fn parse_release_policy_blocks(policy: &str) -> Vec<ReleasePolicyBloc
         if let Some(block) = current.as_mut() {
             block.body.push_str(line);
             block.body.push('\n');
-            if let Some(value) = quoted_field(trimmed, "tag") {
-                block.tag = Some(value);
-            } else if let Some(value) = quoted_field(trimmed, "target_date") {
-                block.target_date = Some(value);
-            } else if let Some(value) = quoted_field(trimmed, "status") {
-                block.status = Some(value);
-            }
         }
     }
-    if let Some(block) = current.take() {
+    if let Some(mut block) = current.take() {
+        parse_policy_fields(&mut block);
         blocks.push(block);
     }
     blocks
 }
 
-fn quoted_field(line: &str, name: &str) -> Option<String> {
-    let rest = line.strip_prefix(name)?.trim_start();
-    let rest = rest.strip_prefix('=')?.trim_start();
-    let rest = rest.strip_prefix('"')?;
-    let end = rest.find('"')?;
-    Some(rest[..end].to_owned())
+// Parse actual TOML values so comments, multiline strings, and malformed
+// assignments cannot impersonate required list fields. Invalid bodies leave
+// required fields absent and therefore fail the shared structural/date judgments.
+fn parse_policy_fields(block: &mut ReleasePolicyBlock) {
+    if let Ok(fields) = block.body.parse::<toml::Table>() {
+        block.tag = fields
+            .get("tag")
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned);
+        block.target_date = fields
+            .get("target_date")
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned);
+        block.status = fields
+            .get("status")
+            .and_then(toml::Value::as_str)
+            .map(str::to_owned);
+        block.scope = policy_string_list(&fields, "scope");
+        block.non_goals = policy_string_list(&fields, "non_goals");
+    }
+}
+
+fn policy_string_list(fields: &toml::Table, name: &str) -> Option<Vec<String>> {
+    fields
+        .get(name)?
+        .as_array()?
+        .iter()
+        .map(|value| value.as_str().map(str::to_owned))
+        .collect()
 }
 
 /// The `[release_notes.*]` key a tag must own: `v0.9.0-alpha.1` maps to
@@ -320,10 +342,10 @@ fn reconcile_policy_block(
         )),
     }
     for (field, surface) in [
-        ("scope = [", Surface::PolicyScope),
-        ("non_goals = [", Surface::PolicyNonGoals),
+        (&block.scope, Surface::PolicyScope),
+        (&block.non_goals, Surface::PolicyNonGoals),
     ] {
-        if !block.body.contains(field) {
+        if field.is_none() {
             record_absent(tag, surface, drift, gaps);
         }
     }
