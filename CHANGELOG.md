@@ -163,9 +163,10 @@ versions still track specification maturity rather than a released product.
 - Added `cargo xtask release-prep <version>` to scaffold the mechanical release
   prep surfaces that must move together: workspace package versions, lockfile
   package versions, dated changelog section, release policy boundary block,
-  release notes stub, boundary test stub, changelog date guard entry, and paired
-  release-process test-plan rows. Generated boundary tests now require operators
-  to replace scaffolded scope/non-goal placeholders before the branch can pass.
+  release notes stub and paired release-process test-plan rows. Release prep
+  leaves Rust test sources unchanged. The shared policy structural guard requires
+  operators to replace scaffolded scope/non-goal placeholders before the branch
+  can pass, and release dates are reconciled against annotated Git tags.
 - Added a root `ARCHITECTURE.md` workspace map covering current crate
   responsibilities, dependency direction, the `edict-syntax` crate-scope caveat,
   and current non-claims.
