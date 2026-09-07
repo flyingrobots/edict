@@ -138,8 +138,9 @@ Out of scope:
 - The scaffolded release date is `--date` or today's UTC date. It is still a
   prediction: a release-prep branch that sits unmerged past its scaffold date
   records a date earlier than its eventual tag, and `release-dates` only detects
-  that once the tag exists. Flipping the block to `published` is what binds the
-  recorded date to the tag.
+  that once the tag exists. The recorded date binds to the tag immediately,
+  including while the block still has `prep` status. Pending publication status
+  is reported separately as an advisory gap.
 - Per-release scope and non-goal content is reviewed rather than string-tested.
   `release_policy_blocks_are_structurally_complete` proves each block is present
   and complete, but nothing mechanically checks that a block's declared scope
