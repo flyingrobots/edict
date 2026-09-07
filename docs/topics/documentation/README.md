@@ -129,8 +129,12 @@ For every such decision:
    relevant `docs/topics/<topic>/README.md` for current behavior,
    `architecture.md` for machinery, a normative `docs/SPEC_*.md` or ABI schema
    for protocol law, and `test-plan.md` for planned and implemented evidence.
-2. Record the accepted rule, its current-versus-target posture, and explicit
-   refinement, supersession, dependency, and related-document edges.
+2. Record the accepted rule and whether it is implemented or planned. Put
+   implemented behavior in its current-truth owner. Put target behavior in
+   explicitly planned `test-plan.md` rows or a linked design proposal; a topic
+   `README.md` may link to that future work but must not describe it as current
+   behavior. Record the decision's refinement, supersession, dependency, and
+   related-document edges in the page that owns its actual posture.
 3. Update `docs/topics/README.md`, `docs/README.md`, or another relevant router
    when a durable page or topic shelf is added, moved, or renamed.
 4. Link to the canonical owner from reader-specific pages instead of copying
