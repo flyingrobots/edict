@@ -60,6 +60,12 @@ write the release thesis, replace topic-shelf audits, decide scope/non-goals, or
 generate Rust test stubs; reviewers must replace the scaffold placeholders
 before release. [RELEASE-REQ-024]
 
+The policy structural guard preserves the historical release identities from
+`v0.2.0-alpha.1` through `v0.11.0-alpha.1` while allowing later completed
+release-prep blocks. An added release cannot hide the loss of a historical block
+by keeping the total count unchanged. Git tag reconciliation separately checks
+coverage for every actual tagged release. [RELEASE-REQ-025]
+
 `cargo xtask release-dates` reconciles the dates recorded in the release policy,
 `CHANGELOG.md`, and `docs/releases/*.md` against the git tags that published
 them. Those three surfaces are written from one field at scaffold time, so

@@ -2769,15 +2769,15 @@ fn release_policy_blocks_are_structurally_complete() {
     let root = repo_root().expect("repo root");
     let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
         .expect("release policy");
-    let blocks = crate::release_dates::parse_release_policy_blocks(&policy);
+    assert_release_policy_structure(&policy);
+}
 
-    // Exact, not a lower bound: a lower bound lets a historical block be
-    // deleted silently, which is the failure class this check exists to stop.
-    assert_eq!(
-        blocks.len(),
-        10,
-        "release policy must retain exactly one block per release from v0.2.0-alpha.1 onward"
-    );
+fn assert_release_policy_structure(policy: &str) {
+    let blocks = crate::release_dates::parse_release_policy_blocks(policy);
+
+    // Preserve historical identities while allowing future prep blocks.
+    // Git tag reconciliation separately covers every actual tagged release.
+    assert_eq!(missing_historical_policy_tags(&blocks), BTreeSet::new());
 
     let mut seen_sections = BTreeSet::new();
     let mut seen_tags = BTreeSet::new();
@@ -2830,6 +2830,62 @@ fn release_policy_blocks_are_structurally_complete() {
         }
     }
 }
+
+fn missing_historical_policy_tags(
+    blocks: &[crate::release_dates::ReleasePolicyBlock],
+) -> BTreeSet<String> {
+    let present: BTreeSet<_> = blocks
+        .iter()
+        .filter_map(|block| block.tag.as_deref())
+        .collect();
+    // v0.1 predates the structured policy. v0.2 through v0.11 form the
+    // historical baseline this guard replaces the old per-release checks for.
+    (2..=11)
+        .map(|minor| format!("v0.{minor}.0-alpha.1"))
+        .filter(|tag| !present.contains(tag.as_str()))
+        .collect()
+}
+
+#[test]
+fn release_policy_history_cannot_be_replaced_by_a_new_release() {
+    let root = repo_root().expect("repo root");
+    let policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+        .expect("release policy");
+    let mut blocks = crate::release_dates::parse_release_policy_blocks(&policy);
+    assert_eq!(missing_historical_policy_tags(&blocks), BTreeSet::new());
+    let original_count = blocks.len();
+    blocks.retain(|block| block.tag.as_deref() != Some("v0.2.0-alpha.1"));
+    blocks.extend(crate::release_dates::parse_release_policy_blocks(
+        COMPLETED_NEXT_RELEASE_POLICY,
+    ));
+    assert_eq!(blocks.len(), original_count);
+    assert_eq!(
+        missing_historical_policy_tags(&blocks),
+        BTreeSet::from(["v0.2.0-alpha.1".to_owned()])
+    );
+}
+
+#[test]
+fn release_policy_structure_accepts_additional_completed_prep() {
+    let root = repo_root().expect("repo root");
+    let mut policy = fs::read_to_string(root.join("docs/topics/release-process/policy.toml"))
+        .expect("release policy");
+    policy.push_str(COMPLETED_NEXT_RELEASE_POLICY);
+    assert_release_policy_structure(&policy);
+}
+
+const COMPLETED_NEXT_RELEASE_POLICY: &str = "
+[release_notes.v0_12_0_alpha_1]
+tag = \"v0.12.0-alpha.1\"
+target_date = \"2026-09-07\"
+status = \"prep\"
+scope = [
+  \"next_release_scope\",
+]
+non_goals = [
+  \"next_release_non_goal\",
+]
+";
 
 /// Regression guard for the substring-matching flaw this test file used to
 /// have. The previous per-release guards asserted
