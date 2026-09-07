@@ -55,13 +55,63 @@ captured in [`policy.toml`](./policy.toml). [RELEASE-REQ-009]
 `cargo xtask release-prep <version>` scaffolds the mechanical release-prep
 surfaces that must move together: workspace package versions, lockfile package
 versions, a dated changelog section, release policy boundary block, release
-notes stub, release boundary test stub, changelog date guard entry, and paired
-release-process test-plan rows. The command does not write the release thesis,
-replace topic-shelf audits, or decide scope/non-goals; reviewers must replace
-the scaffold placeholders before release. The facade package version, exact
-implementation dependency, and lockfile entry advance with the implementation
-and CLI package versions, so the prepared workspace remains resolvable.
+notes stub, and paired release-process test-plan rows. The command does not
+write the release thesis, replace topic-shelf audits, decide scope/non-goals, or
+generate Rust test stubs; reviewers must replace the scaffold placeholders
+before release. An explicit `--date` must be a valid fixed-width ASCII
+`YYYY-MM-DD` calendar date; malformed values fail as `InvalidIsoDate` before
+release files are read or written. Without `--date`, the CLI supplies the current
+clock to the scaffold helper, which derives its UTC date. Pre-epoch clocks fail
+as `ClockBeforeEpoch`; clocks beyond the four-digit year range fail as
+`ClockOutOfRange`. An explicit valid date takes precedence over the clock.
+The facade package version, exact implementation dependency, and lockfile entry
+advance with the implementation and CLI package versions, so the prepared
+workspace remains resolvable.
 [RELEASE-REQ-024]
+
+The policy structural guard preserves the historical release identities from
+`v0.2.0-alpha.1` through `v0.11.0-alpha.1` while allowing later completed
+release-prep blocks. An added release cannot hide the loss of a historical block
+by keeping the total count unchanged. Git tag reconciliation separately checks
+coverage for every actual tagged release. Required `scope` and `non_goals`
+values are parsed as TOML string arrays; comments and string contents cannot
+satisfy field presence. The structural guard and date reconciliation use the
+same parsed fields. [RELEASE-REQ-025]
+
+`cargo xtask release-dates` reconciles the dates recorded in the release policy,
+`CHANGELOG.md`, and `docs/releases/*.md` against the git tags that published
+them. Those three surfaces are written from one field at scaffold time, so
+comparing them against each other only proves the copy succeeded; the tags are
+the independent authority for when a release happened. The check runs inside
+`cargo xtask verify` and reports uncovered surfaces separately from date drift.
+A clone without tags fails rather than passing silently, because a missing
+independent authority is not approval. Each published policy block must also
+have its tag in the inventory, so a partially fetched or missing historical tag
+cannot disappear from the check. Untagged `prep` and `planned` blocks are allowed.
+The pure comparison returns structured
+finding kinds with tag, surface, expected-value, and actual-value fields. The
+command renders those findings as text; callers and tests do not parse prose to
+identify missing surfaces, mismatched dates, or pending publication status.
+[RELEASE-REQ-008]
+
+For a published release, `target_date` in [`policy.toml`](./policy.toml) and
+`Target date:` in `docs/releases/*.md` record the date the release was tagged,
+not a date it was planned for and not the GitHub Release publication timestamp.
+For example, `v0.4.0-alpha.1` was tagged 2026-06-24 in PDT, which is
+2026-06-25 in UTC; its recorded date is 2026-06-25.
+The field keeps its scaffold-era name because the reconciliation parses that
+exact literal. [RELEASE-REQ-008]
+
+Tag dates are read in UTC. `%(taggerdate)` renders in the reading machine's
+timezone by default, so a tag created near midnight resolves to different days
+for different operators. `v0.4.0-alpha.1` is such a tag: 2026-06-24 in PDT and
+2026-06-25 in UTC. The recorded date is the UTC one, so a local run and a CI run
+agree. [RELEASE-REQ-008]
+
+Release tags must be annotated. A lightweight tag has no tagger date, so the
+check would fall back to the tagged commit's committer date and a tag placed on
+an older commit would report a date that never corresponded to a release. The
+reconciliation rejects lightweight `v*` tags instead. [RELEASE-REQ-008]
 
 Every release-prep branch must audit `docs/topics/` coverage and accuracy before
 the release-prep pull request opens. Coverage is audited topic shelves divided
