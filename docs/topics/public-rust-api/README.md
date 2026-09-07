@@ -25,3 +25,21 @@ Target IR, and result-projection inputs and to inspect decoded canonical values
 and verified projections. Diagnostic spans are available under `diagnostic`.
 These are explicit type exports; implementation modules remain private to the
 facade boundary. [PUBRUST-REQ-001]
+
+## Decision relationships
+
+This current public-API boundary depends on the contracts implemented by its
+explicit exports. It adds a curated entry point; the implementation crate
+continues to serve repository consumers.
+
+| Relationship | Targets |
+| --- | --- |
+| `refines` | none |
+| `supersedes` | none |
+| `depends_on` | [Syntax](../syntax/README.md), [Semantic validation](../semantic-validation/README.md), [Core IR](../core-ir/README.md), [Target IR](../target-ir/README.md), [Result projections](../result-projections/README.md) |
+| `related` | [Rust standards](../rust-standards/README.md), [Release process](../release-process/README.md), [CLI](../cli/README.md) |
+
+The relationship table follows the
+[durable-decision policy](../documentation/README.md#durable-decision-discipline).
+Packaging and registry-publication work remain explicitly planned in the
+[test plan](./test-plan.md); they are not claims of current publication.

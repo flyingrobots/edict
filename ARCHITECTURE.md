@@ -32,7 +32,9 @@ runtime without exposing Wasmtime types through Edict contracts.
 `flyingrobots-edict` exposes the Rust library name `edict`. It is the curated
 public facade for source checking, stable diagnostic classifications, and
 canonical Core, Target IR, and result-projection artifact identity operations.
-It deliberately does not re-export the implementation crate's module tree.
+The [public Rust API topic](docs/topics/public-rust-api/README.md) owns this
+boundary. The facade deliberately does not re-export the implementation crate's
+module tree.
 
 The package remains `publish = false`. Its presence defines and tests the
 intended public Rust boundary; it neither authorizes nor claims crates.io
