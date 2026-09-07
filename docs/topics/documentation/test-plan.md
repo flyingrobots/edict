@@ -34,6 +34,7 @@ Out of scope:
 | DOCS-REQ-004 | policy | Examples distinguish runnable, illustrative, and abridged use; copyable shell commands omit prompts. | docs/topics/documentation/README.md, fixtures/README.md |
 | DOCS-REQ-005 | policy | Contract-bearing changes update affected docs or declare `docs-impact: none`; source-language and Core semantic changes keep the formal language spec, coupled CDDL, and owning evidence current in the same pull request; changed documentation preserves page type. | AGENTS.md, CONTRIBUTING.md, docs/SPEC_edict-language-v1.md, docs/topics/documentation/README.md |
 | DOCS-REQ-006 | policy | Documentation quality uses deterministic checks for software facts and human review for reader-task success. | docs/topics/documentation/README.md, xtask/src/contract_check.rs, xtask/src/tests.rs |
+| DOCS-REQ-007 | policy | Important durable decisions are complete only when their canonical repository owner and affected entry points are current in the same change. | docs/topics/documentation/README.md |
 
 ## Fixtures
 
@@ -56,6 +57,7 @@ Out of scope:
 | DOCS-TP-003 | policy | Coverage policy | DOCS-REQ-003 | Review confirms the documentation shelf contains an Edict coverage matrix. | - | docs/topics/documentation/README.md | Policy detail; do not encode as a Rust test. |
 | DOCS-TP-004 | policy | Example and impact policy | DOCS-REQ-004, DOCS-REQ-005 | Review confirms the documentation shelf states runnable example rules, copyable shell command rules, formal language-spec/CDDL/evidence synchronization, `docs-impact: none`, and page-type preservation. | - | CONTRIBUTING.md, docs/SPEC_edict-language-v1.md, docs/topics/documentation/README.md, docs/topics/documentation/test-plan.md | Policy detail; do not encode as a Rust test. |
 | DOCS-TP-005 | policy | Local gate policy | DOCS-REQ-006 | Review confirms deterministic checks are described as fact checks and behavior tests, with prose quality left to human review. | - | docs/topics/documentation/README.md, docs/topics/documentation/test-plan.md | Tool behavior is covered by existing `contract_graph_*` tests. |
+| DOCS-TP-006 | policy | Durable decision ownership | DOCS-REQ-007 | Review identifies one canonical owner and rejects a change whose accepted decision exists only in chat, memory, PR prose, or a stale owning page. | - | AGENTS.md, docs/topics/documentation/README.md | Human workflow contract; existing link and topic checks verify discovery, not whether prose faithfully records a decision. |
 
 ## Determinism Obligations
 
