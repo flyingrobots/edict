@@ -171,6 +171,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   reviewed golden bytes and exact digests are separate Core IR artifacts.
   [CSPINE-REQ-008]
 
+The authored mutation witnesses compare actual public lawpack authoring and
+compilation results. A changed helper body changes the exact import and Core
+identity; source-only conditional, loop-bound, and loop-body changes also move
+Core identity. An old source pin rejects the changed helper closure. These
+witnesses establish compiler behavior: the current Target lowerer still rejects
+a Core `for` node with `UnsupportedCoreNode` and emits no Target artifact.
+[CSPINE-REQ-023] [CSPINE-REQ-024] [CSPINE-REQ-025]
+
 ## Deferred
 
 The following are not implemented by this compiler-spine slice:
