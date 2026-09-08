@@ -120,13 +120,15 @@ Out of scope:
 
 ## Determinism Obligations
 
-- Tests inspect structured Rust values only.
+- Tests inspect structured Rust values; cross-boundary mutation witnesses also
+  compare deterministic canonical artifact bytes and digests.
 - Compiler context facts are in-memory constants, not environment reads.
 - Maps use deterministic key ordering.
 - No test reads stdout, stderr, logs, wall-clock time, random values, or
   filesystem ordering.
-- Canonical encoder behavior, reviewed golden bytes, and digest determinism are
-  verified in the Core IR shelf.
+- The Core IR shelf owns canonical encoder behavior, reviewed golden bytes, and
+  digest determinism. Cross-boundary compiler witnesses consume those public
+  APIs to verify that authored semantic changes reach artifact identity.
 
 ## Open Gaps
 
