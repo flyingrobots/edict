@@ -114,6 +114,11 @@ The current specification set is:
 - [Design Baseline](./DESIGN_runtime-neutral-edict-sha-lock-assurance.md):
   original runtime-neutral Edict/SHA-lock design packet retained as
   non-normative context.
+- [EXPLAINER - Inside Edict](./EXPLAINER_inside-edict.md): a zero-familiarity
+  walkthrough of the toolchain as implemented in `crates/`, following the
+  `hello-echo` fixture from source through Core IR, Target IR, digests, and the
+  provider sandbox, with a measured ledger of where the README's claims run
+  ahead of the code. Draft; non-normative.
 
 Machine-readable ABIs live in [`abi/`](./abi/) and are the single source of
 truth for the artifacts they describe; prose JSON in the specs is generated from
