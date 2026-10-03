@@ -98,7 +98,7 @@ fn build_accepts_application_request_without_compiler_input_records() {
     })]));
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     let stderr = assert_jsonl_stream(&output.stderr, "stderr");
     let diagnostic = stderr
         .iter()
@@ -137,7 +137,7 @@ fn build_rejects_compiler_input_records_instead_of_ignoring_them() {
     ]));
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     let stderr = assert_jsonl_stream(&output.stderr, "stderr");
     let diagnostic = stderr
         .iter()
@@ -168,7 +168,7 @@ fn build_rejects_unused_directory_extension_settings() {
     })]));
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     let stderr = assert_jsonl_stream(&output.stderr, "stderr");
     let diagnostic = stderr
         .iter()
@@ -196,7 +196,7 @@ fn build_rejects_an_empty_lawpack_path_as_invalid_settings() {
     })]));
 
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     let stderr = assert_jsonl_stream(&output.stderr, "stderr");
     let diagnostic = stderr
         .iter()
@@ -321,7 +321,7 @@ fn lawpack_build_writes_checks_repairs_and_is_cwd_independent() {
     })]);
     let first = run_edict_in_dir(&write_request, &caller_one);
     assert_eq!(first.status.code(), Some(0));
-    assert!(first.stderr.is_empty());
+    assert_eq!(first.stderr, [] as [u8; 0]);
     let output = root.join("vendor/example-text");
     let manifest = fs::read(output.join("manifest.cbor")).expect("read first manifest");
     let exports = fs::read(output.join("exports.cbor")).expect("read first exports");
@@ -335,7 +335,7 @@ fn lawpack_build_writes_checks_repairs_and_is_cwd_independent() {
     })]);
     let check = run_edict_in_dir(&check_request, &caller_two);
     assert_eq!(check.status.code(), Some(0));
-    assert!(check.stderr.is_empty());
+    assert_eq!(check.stderr, [] as [u8; 0]);
     assert_eq!(
         fs::read(output.join("manifest.cbor")).expect("manifest"),
         manifest
@@ -584,7 +584,7 @@ fn project_reserved_type_identity_emits_the_stable_compiler_kind() {
         Some(0),
         "compiler diagnostics are projection data, not process failure"
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr, [] as [u8; 0]);
     let stdout = assert_jsonl_stream(&output.stdout, "stdout");
     let diagnostics = record_of_type(&stdout, "diagnostics");
     let items = diagnostics
