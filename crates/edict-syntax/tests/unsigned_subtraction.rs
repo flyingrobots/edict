@@ -187,10 +187,20 @@ fn unsigned_difference_proof_does_not_leak_between_intents() {
     let second = source("U64", "", "input.upper - input.lower");
     let second = second[second.find("intent measure").unwrap()..]
         .replace("intent measure", "intent unguarded");
-    rejects(
-        &(first + &second),
-        edict_syntax::CompilerErrorKind::UnsupportedSourceShape,
-    );
+    compile_to_core(&parse_module(&first).unwrap(), &context()).expect("guarded control compiles");
+    let unguarded_start = first.len();
+    let combined = first + &second;
+    let errors = compile_to_core(&parse_module(&combined).unwrap(), &context()).unwrap_err();
+    let unsupported = errors
+        .iter()
+        .filter(|error| {
+            error.stage == edict_syntax::CompilerStage::TypeCheck
+                && error.kind == edict_syntax::CompilerErrorKind::UnsupportedSourceShape
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unsupported.len(), 1);
+    assert!(unsupported[0].span.start >= unguarded_start);
+    assert!(unsupported[0].span.end <= combined.len());
 }
 
 #[test]
@@ -213,4 +223,33 @@ fn unsigned_difference_cannot_use_guards_to_evaluate_basis_or_guards() {
         &text,
         edict_syntax::CompilerErrorKind::UnsupportedSourceShape,
     );
+}
+
+#[test]
+fn boolean_connectives_preserve_predicate_structure_in_core() {
+    for (guard, conjunction) in [
+        ("where input.lower <= input.upper && true", true),
+        ("where input.lower <= input.upper || false", false),
+    ] {
+        let core = compile("U64", guard, "input.upper - input.upper");
+        let predicate = &core.intents["measure"].input_constraints[0].predicate;
+        let items = match predicate {
+            edict_syntax::CorePredicate::All(items) if conjunction => items,
+            edict_syntax::CorePredicate::Any(items) if !conjunction => items,
+            _ => panic!("logical connective must retain its Core meaning"),
+        };
+        assert_eq!(items.len(), 2);
+        assert!(matches!(
+            items[0],
+            edict_syntax::CorePredicate::Compare { .. }
+        ));
+        assert_eq!(
+            items[1],
+            if conjunction {
+                edict_syntax::CorePredicate::True
+            } else {
+                edict_syntax::CorePredicate::False
+            }
+        );
+    }
 }
