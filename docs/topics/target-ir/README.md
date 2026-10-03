@@ -319,5 +319,8 @@ those predicates as already-established evidence. Disjunctive and negated
 predicates do not authorize subtraction.
 
 This is Target IR validation, not provider acceptance or Echo execution. The
-remaining adversarial coverage and public application witness are tracked under
-TIR-REQ-046 and issue #212; producer locks remain unchanged.
+adversarial cases and public application witness are tracked under TIR-REQ-046
+and issue #212; producer locks remain unchanged. An isolated Jim application
+copy with a guarded deleted-byte-count expression builds successfully through
+the pinned provider, while execution through the original Echo evaluator still
+returns `UnsupportedProgram`.
