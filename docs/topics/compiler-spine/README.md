@@ -67,6 +67,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   | Digest-bound imported lawpack alias | Bounds supplied by the exported definition | Nominal exported coordinate |
 
   [CSPINE-REQ-019] [CSPINE-REQ-021] [CSPINE-REQ-033]
+- Same-width `U32`/`U64` subtraction lowers to
+  `core.integer.subtract<T>(left, right)` when the operands are identical,
+  the subtrahend is zero, literal operands are ordered, or a checked input
+  constraint directly establishes the required order. Conjunctions supply
+  evidence; disjunctions and negations do not. Evidence becomes available only
+  for the intent body and is cleared between intents, including failed bodies.
+  Signed and mixed-width subtraction remain outside this subset. This is a
+  source-to-Core contract, not target execution support. [CSPINE-REQ-038]
 - An explicit basis expression is checked in the pure pre-body environment
   containing the intent parameter, before body locals exist. The typed
   expression is preserved in Core; this is authoring evidence, not runtime

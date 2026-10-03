@@ -58,7 +58,12 @@ fn guarded_unsigned_difference_preserves_width_order_and_guard() {
                 panic!("authored let must remain a binding")
             };
             assert_eq!(binding.ty, width);
-            let CoreExpr::Call { callee, type_args, args } = value else {
+            let CoreExpr::Call {
+                callee,
+                type_args,
+                args,
+            } = value
+            else {
                 panic!("difference must lower to the generic prelude operation")
             };
             assert_eq!(callee, "core.integer.subtract");
@@ -76,17 +81,28 @@ fn unsigned_difference_accepts_self_zero_and_ordered_constants() {
     for width in ["U32", "U64"] {
         for expression in ["input.upper - input.upper", "input.upper - 0", "9 - 4"] {
             let core = compile(width, "", expression);
-            let CoreNode::Let { binding, value: CoreExpr::Call { args, .. } } =
-                &core.intents["measure"].body.nodes[0]
+            let CoreNode::Let {
+                binding,
+                value: CoreExpr::Call { args, .. },
+            } = &core.intents["measure"].body.nodes[0]
             else {
                 panic!("total arithmetic binding")
             };
             assert_eq!(binding.ty, width);
             if expression == "9 - 4" {
-                assert_eq!(args, &[
-                    CoreExpr::Const(CoreValue::Int { width: width.into(), value: "9".into() }),
-                    CoreExpr::Const(CoreValue::Int { width: width.into(), value: "4".into() }),
-                ]);
+                assert_eq!(
+                    args,
+                    &[
+                        CoreExpr::Const(CoreValue::Int {
+                            width: width.into(),
+                            value: "9".into()
+                        }),
+                        CoreExpr::Const(CoreValue::Int {
+                            width: width.into(),
+                            value: "4".into()
+                        }),
+                    ]
+                );
             }
         }
     }
@@ -94,13 +110,107 @@ fn unsigned_difference_accepts_self_zero_and_ordered_constants() {
 
 #[test]
 fn unsigned_difference_identity_tracks_semantics() {
-    let original = compile("U64", "where input.lower <= input.upper", "input.upper - input.lower");
+    let original = compile(
+        "U64",
+        "where input.lower <= input.upper",
+        "input.upper - input.lower",
+    );
     let original_digest = digest_core_module(&original).unwrap();
     for changed in [
-        compile("U64", "where input.lower <= input.upper", "input.upper - input.upper"),
-        compile("U64", "where input.lower < input.upper", "input.upper - input.lower"),
-        compile("U32", "where input.lower <= input.upper", "input.upper - input.lower"),
+        compile(
+            "U64",
+            "where input.lower <= input.upper",
+            "input.upper - input.upper",
+        ),
+        compile(
+            "U64",
+            "where input.lower < input.upper",
+            "input.upper - input.lower",
+        ),
+        compile(
+            "U32",
+            "where input.lower <= input.upper",
+            "input.upper - input.lower",
+        ),
     ] {
         assert_ne!(original_digest, digest_core_module(&changed).unwrap());
     }
+}
+
+fn rejects(text: &str, kind: edict_syntax::CompilerErrorKind) {
+    let module = parse_module(text).expect("valid rejection fixture");
+    let errors = compile_to_core(&module, &context()).expect_err("unsafe difference must reject");
+    assert!(
+        errors.iter().any(
+            |error| error.stage == edict_syntax::CompilerStage::TypeCheck && error.kind == kind
+        ),
+        "{errors:?}"
+    );
+}
+
+#[test]
+fn unsigned_difference_rejects_unproven_or_wrong_evidence() {
+    use edict_syntax::CompilerErrorKind::UnsupportedSourceShape;
+    for guard in [
+        "",
+        "where input.upper <= input.lower",
+        "where input.lower <= input.other",
+        "where input.lower <= input.upper || true",
+    ] {
+        rejects(
+            &source("U64", guard, "input.upper - input.lower"),
+            UnsupportedSourceShape,
+        );
+    }
+    rejects(&source("U64", "", "4 - 9"), UnsupportedSourceShape);
+    rejects(
+        &source(
+            "I64",
+            "where input.lower <= input.upper",
+            "input.upper - input.lower",
+        ),
+        UnsupportedSourceShape,
+    );
+    rejects(
+        &source("U64", "", "9u64 - 4u32"),
+        edict_syntax::CompilerErrorKind::TypeMismatch,
+    );
+}
+
+#[test]
+fn unsigned_difference_proof_does_not_leak_between_intents() {
+    let first = source(
+        "U64",
+        "where input.lower <= input.upper",
+        "input.upper - input.lower",
+    );
+    let second = source("U64", "", "input.upper - input.lower");
+    let second = second[second.find("intent measure").unwrap()..]
+        .replace("intent measure", "intent unguarded");
+    rejects(
+        &(first + &second),
+        edict_syntax::CompilerErrorKind::UnsupportedSourceShape,
+    );
+}
+
+#[test]
+fn unsigned_difference_cannot_use_guards_to_evaluate_basis_or_guards() {
+    let text = source(
+        "U64",
+        "where input.lower <= input.upper",
+        "input.upper - input.lower",
+    );
+    rejects(
+        &text.replace("basis none", "basis input.upper - input.lower"),
+        edict_syntax::CompilerErrorKind::UnsupportedSourceShape,
+    );
+    let text = source(
+        "U64",
+        "where input.lower <= input.upper && input.upper - input.lower >= 0u64",
+        "input.upper - input.lower",
+    );
+    rejects(
+        &text,
+        edict_syntax::CompilerErrorKind::UnsupportedSourceShape,
+    );
 }

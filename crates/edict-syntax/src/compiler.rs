@@ -20,6 +20,8 @@ use crate::core_ir::{
     InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
     CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
+mod unsigned_subtraction;
+
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
 use crate::token::{IntSuffix, Span};
@@ -716,6 +718,7 @@ struct LetStatement<'a> {
 #[derive(Debug, Clone)]
 struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
+    subtraction_constraints: Vec<CorePredicate>,
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
@@ -727,6 +730,7 @@ impl<'a> TypeChecker<'a> {
     fn new(resolved: &'a ResolvedModule) -> Self {
         Self {
             resolved,
+            subtraction_constraints: Vec::new(),
             errors: Vec::new(),
             named_types: BTreeMap::new(),
             core_types: BTreeMap::new(),
@@ -997,6 +1001,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_intent(&mut self, intent: &ResolvedIntent) -> Option<TypedIntent> {
+        self.subtraction_constraints.clear();
         let source = &intent.source;
         if source.params.len() != 1 {
             self.errors.push(error(
@@ -1045,7 +1050,13 @@ impl<'a> TypeChecker<'a> {
             None => None,
         };
         let input_constraints = self.input_constraints(source, &env);
-        let body = self.check_body(intent, &output_shape, &mut env, &mut locals)?;
+        self.subtraction_constraints = input_constraints
+            .iter()
+            .map(|constraint| constraint.predicate.clone())
+            .collect();
+        let body = self.check_body(intent, &output_shape, &mut env, &mut locals);
+        self.subtraction_constraints.clear();
+        let body = body?;
 
         Some(TypedIntent {
             name: intent.name.clone(),
@@ -3416,6 +3427,24 @@ impl<'a> TypeChecker<'a> {
             } => self
                 .check_predicate(operand, env)
                 .map(|value| CorePredicate::Not(Box::new(value))),
+            Expr::Binary {
+                op: BinOp::And,
+                lhs,
+                rhs,
+                ..
+            } => Some(CorePredicate::All(vec![
+                self.check_predicate(lhs, env)?,
+                self.check_predicate(rhs, env)?,
+            ])),
+            Expr::Binary {
+                op: BinOp::Or,
+                lhs,
+                rhs,
+                ..
+            } => Some(CorePredicate::Any(vec![
+                self.check_predicate(lhs, env)?,
+                self.check_predicate(rhs, env)?,
+            ])),
             Expr::Binary { op, lhs, rhs, .. } => {
                 if let Some(op) = compare_op(*op) {
                     self.check_compare_predicate(op, lhs, rhs, env, expr_span(expr))
@@ -3532,6 +3561,12 @@ impl<'a> TypeChecker<'a> {
                 rhs,
                 span,
             } => self.check_string_concat(lhs, rhs, env, *span),
+            Expr::Binary {
+                op: BinOp::Sub,
+                lhs,
+                rhs,
+                span,
+            } => self.check_unsigned_subtraction(lhs, rhs, env, expected, *span),
             Expr::Record { entries, span } => self.check_record(entries, env, expected, *span),
             Expr::Call {
                 callee,

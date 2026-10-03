@@ -1976,6 +1976,21 @@ All integer arithmetic in the lawful-autonomous lane is overflow-safe and total
   never a silent or runtime-panicking outcome; it is a compile-time rejection or
   a typed `Option` the author must handle.
 
+The current source-to-Core compiler supports a conservative unsigned subtraction
+slice. Operands must have the same `U32` or `U64` type. It accepts `x - x`,
+`x - 0`, ordered literals, and differences whose exact operands are ordered by
+an intent input constraint (`<=`, `<`, `>=`, `>`, or `==`). Conjunctive clauses
+can supply this evidence; disjunction and negation cannot. The compiler does
+not infer transitive relationships or propagate aliases for this proof.
+
+The resulting Core call is `core.integer.subtract<T>(minuend, subtrahend)`;
+width, operand order, and input predicates remain explicit and hash-significant.
+Input constraints justify body arithmetic only: they cannot justify evaluation
+of the basis or of the constraints themselves. Each intent has an isolated
+proof scope. Target lowering and verification must independently support and
+validate this operation before accepting executable output. This compiler
+slice does not imply support for the other arithmetic forms specified above.
+
 Every prelude function must be total over valid input or must expose a typed
 diagnostic that the compiler can force authors to handle.
 
