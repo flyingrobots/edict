@@ -10,6 +10,11 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Lowered same-width unsigned subtraction into Core only when exact operands,
+  ordered literals, or dominating conjunctive input constraints prove no
+  underflow. Proofs are isolated to each intent body; signed, mixed-width, and
+  unproven differences reject. Target support remains a separate boundary.
+
 - Reused release preparation's calendar validator in the policy structural
   guard, rejecting impossible target dates in manually edited policy blocks.
 - Completed the Rust facade value-model exports for Core, Target IR, result
