@@ -2003,17 +2003,17 @@ fn workspace_msrv_matches_the_ci_toolchain() {
             checked_members += 1;
             assert_eq!(
                 package["rust_version"].as_str(),
-                Some("1.94"),
-                "workspace package {} must inherit Rust 1.94",
+                Some("1.95"),
+                "workspace package {} must inherit Rust 1.95",
                 package["name"].as_str().expect("package name")
             );
         }
     }
     assert_eq!(checked_members, workspace_members.len());
     assert!(
-        workflow.contains("rust-version: \"1.94.0\"")
-            && workflow.contains("rust-label: \"msrv 1.94.0\""),
-        "CI must exercise the exact Rust 1.94.0 MSRV"
+        workflow.contains("rust-version: \"1.95.0\"")
+            && workflow.contains("rust-label: \"msrv 1.95.0\""),
+        "CI must exercise the exact Rust 1.95.0 MSRV"
     );
 }
 
