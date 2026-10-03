@@ -307,3 +307,17 @@ The following are not implemented by this slice:
 - v2 chained or composite adapter resolution.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
+
+## Unsigned subtraction boundary
+
+The target lowerer recognizes `core.integer.subtract<U32/U64>` with exactly two
+same-width operands. A target-owned Core walk independently checks that each
+subtraction is total from identical operands, zero, ordered constants, or exact
+operand order in conjunctive input predicates. It does not invoke the source
+compiler's proof routine. Basis and input predicates are checked without using
+those predicates as already-established evidence. Disjunctive and negated
+predicates do not authorize subtraction.
+
+This is Target IR validation, not provider acceptance or Echo execution. The
+remaining adversarial coverage and public application witness are tracked under
+TIR-REQ-046 and issue #212; producer locks remain unchanged.
