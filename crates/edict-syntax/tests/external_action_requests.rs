@@ -179,7 +179,10 @@ fn external_request_expressions_require_closed_helper_authority() {
     let core = compile_source(&baseline_source());
     let control = lower_to_target_ir(&core, &target_facts());
     assert_eq!(control.status, TargetLoweringStatus::Lowered);
-    assert!(control.failures.is_empty());
+    assert_eq!(
+        control.failures,
+        [] as [edict_syntax::TargetLoweringFailure; 0]
+    );
     assert!(control.artifact.is_some());
 
     let unbound_call = || CoreExpr::Call {
@@ -435,7 +438,7 @@ fn validated_patch_request_compiles_as_non_callable_data() {
     assert_application_input_field(&budget.max_attempts, "maxAttempts");
 
     let intent = target.intents.get("observe").expect("patch intent lowers");
-    assert!(intent.steps.is_empty());
+    assert_eq!(intent.steps, [] as [edict_syntax::TargetIrStep; 0]);
     assert_eq!(intent.external_action_requests.len(), 1);
     let target_request = &intent.external_action_requests[0];
     assert_eq!(target_request.id, "observe.request.0");

@@ -154,7 +154,10 @@ fn direct_bounded_effect_signature_types_enter_source_compilation() {
     let report = lower_to_target_ir(&core, preparation.target_ir_facts());
 
     assert_eq!(report.status, TargetLoweringStatus::Lowered);
-    assert!(report.failures.is_empty());
+    assert_eq!(
+        report.failures,
+        Vec::<edict_syntax::TargetLoweringFailure>::new()
+    );
     assert!(report.artifact.is_some());
 }
 
@@ -564,7 +567,7 @@ intent observe(input: ObserveInput)
         .expect("observe intent");
 
     assert_eq!(intent.external_action_requests.len(), 1);
-    assert!(intent.steps.is_empty());
+    assert_eq!(intent.steps, Vec::<edict_syntax::TargetIrStep>::new());
     assert!(
         adapter.effects().is_empty(),
         "request-only profile must not grant target-call authority"
@@ -1108,14 +1111,17 @@ fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
     let control = lower_to_target_ir(&core, &facts);
 
     assert_eq!(control.status, TargetLoweringStatus::Lowered);
-    assert!(control.failures.is_empty());
+    assert_eq!(
+        control.failures,
+        Vec::<edict_syntax::TargetLoweringFailure>::new()
+    );
     assert!(control.artifact.is_some());
     assert_eq!(facts.pure_functions.len(), 1);
     let helper_fact = &facts.pure_functions[0];
     assert_eq!(helper_fact.coordinate(), "hello.echo@1.identityU64");
     assert_eq!(helper_fact.parameter_types(), ["U64"]);
     assert_eq!(helper_fact.return_type(), "U64");
-    assert!(helper_fact.type_parameters().is_empty());
+    assert_eq!(helper_fact.type_parameters(), Vec::<String>::new());
     assert_eq!(helper_fact.lawpack(), &core.imports[0].resource);
 
     let assert_rejects = |case: &str,
@@ -1203,7 +1209,10 @@ fn exact_lawpack_exported_type_enters_pure_helper_signature_closure() {
     );
     let target = lower_to_target_ir(&core, preparation.target_ir_facts());
     assert_eq!(target.status, TargetLoweringStatus::Lowered);
-    assert!(target.failures.is_empty());
+    assert_eq!(
+        target.failures,
+        Vec::<edict_syntax::TargetLoweringFailure>::new()
+    );
     assert!(target.artifact.is_some());
 
     let missing_type_exports = typed_helper_exports(false);
@@ -1354,7 +1363,10 @@ fn inline_structural_record_pure_helper_signature_lowers() {
         "{:?}",
         target.failures
     );
-    assert!(target.failures.is_empty());
+    assert_eq!(
+        target.failures,
+        Vec::<edict_syntax::TargetLoweringFailure>::new()
+    );
     assert!(target.artifact.is_some());
     assert!(
         !core
@@ -1376,7 +1388,10 @@ fn inline_structural_record_effect_signature_lowers() {
         "{:?}",
         target.failures
     );
-    assert!(target.failures.is_empty());
+    assert_eq!(
+        target.failures,
+        Vec::<edict_syntax::TargetLoweringFailure>::new()
+    );
     assert!(target.artifact.is_some());
     assert!(
         !core
