@@ -20,6 +20,11 @@ versions still track specification maturity rather than a released product.
   underflow. Proofs are isolated to each intent body; signed, mixed-width, and
   unproven differences reject. Target support remains a separate boundary.
 
+- Upgraded the capability-denied provider host to exact Wasmtime 48.0.4 for
+  RUSTSEC-2026-0316 and RUSTSEC-2026-0327. The workspace now requires Rust 1.95,
+  matching that dependency's minimum; the explicit host feature set is unchanged.
+  Historical component-fixture producer pins remain unchanged.
+
 - Reused release preparation's calendar validator in the policy structural
   guard, rejecting impossible target dates in manually edited policy blocks.
 - Completed the Rust facade value-model exports for Core, Target IR, result
