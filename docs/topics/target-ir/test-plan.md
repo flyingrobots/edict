@@ -187,15 +187,15 @@ Out of scope:
 
 ## Ordered execution prerequisite (#218)
 
-| Requirement | Status | Contract |
-| --- | --- | --- |
-| TIR-REQ-048 | implemented | Explicit `echo.span-ir/v2` selection preserves an exact execution-order permutation of pure bindings, effects, and guards, with independent source-order authority checks; v1 bytes and pre-step refusals remain unchanged. |
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| TIR-REQ-048 | implemented | Explicit `echo.span-ir/v2` selection preserves an exact execution-order permutation of pure bindings, effects, and guards, with independent source-order authority checks; v1 bytes and pre-step refusals remain unchanged. | issue #218 |
 
-| Case | Status | Evidence required |
-| --- | --- | --- |
-| TIR-TP-068 | implemented | Read/effect followed by dependent guard, intervening pure binding, two effects separated by guard, input-only post-effect guard, and guard payload dependencies retain order in encoded artifacts. |
-| TIR-TP-069 | implemented | Missing, duplicate, forward, or inconsistent local identities reject; malformed order tables, v1/v2 domain confusion, and external requests in the first ordered contract reject. Independent valid reorderings move canonical identity. |
-| TIR-TP-070 | implemented | Public lawpack/source selection produces ordered Target IR; independent CDDL validation agrees; old providers fail closed before package publication. |
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TIR-TP-070 | implemented | Ordered program | TIR-REQ-048 | Effect-result guards, intervening pure bindings, two effects separated by a guard, input-only post-effect guards, and payload dependencies retain exact order. | effect_result_guard_preserves_execution_order, effect_pure_binding_and_guard_keep_interleaving, guard_between_effects_is_not_hoisted_or_delayed, input_only_guard_after_effect_stays_after_effect, payload_only_effect_dependency_keeps_guard_after_effect | crates/edict-syntax/tests/target_ir/ordered.rs | The terminal result follows the complete sequence. |
+| TIR-TP-071 | implemented | Boundary guard | TIR-REQ-048 | Malformed local identities and order permutations refuse; independent valid reorderings move identity; v1 restrictions persist; ordered external requests refuse. | ordered_selection_still_rejects_forward_and_duplicate_producers, encoder_refuses_missing_duplicate_foreign_and_forward_order_entries, ordered_encoder_rejects_cross_table_ids_and_inconsistent_local_references, encoder_binds_valid_independent_orderings_into_identity, ordered_selection_keeps_legacy_guard_refusal, ordered_contract_does_not_silently_drop_external_requests | crates/edict-syntax/tests/target_ir/ordered.rs | Canonical checks are additional to independent Core type and authority validation. |
+| TIR-TP-072 | implemented | Public boundary | TIR-REQ-048 | Public projection exposes the order and referenced bindings, and independent CDDL validation requires the ordered shape. | project_exposes_ordered_effect_binding_and_guard_without_hoisting, ordered_target_ir_schema_requires_explicit_execution_order | crates/edict-cli/tests/jsonl_cli.rs, crates/edict-provider-schema/tests/provider_contract_pack.rs | The separate Docker consumer witness below demonstrates the old-provider refusal; no runtime execution is claimed. |
 
 Executable evidence for TIR-REQ-048: the eleven ordered cases in
 `crates/edict-syntax/tests/target_ir/ordered.rs`,
