@@ -239,10 +239,24 @@ fn boolean_connectives_preserve_predicate_structure_in_core() {
             _ => panic!("logical connective must retain its Core meaning"),
         };
         assert_eq!(items.len(), 2);
-        assert!(matches!(
+        assert_eq!(
             items[0],
-            edict_syntax::CorePredicate::Compare { .. }
-        ));
+            edict_syntax::CorePredicate::Compare {
+                op: edict_syntax::CompareOp::Le,
+                left: CoreExpr::Field {
+                    base: Box::new(CoreExpr::Local {
+                        reference: core.intents["measure"].body.locals[0].clone(),
+                    }),
+                    field: "lower".into(),
+                },
+                right: CoreExpr::Field {
+                    base: Box::new(CoreExpr::Local {
+                        reference: core.intents["measure"].body.locals[0].clone(),
+                    }),
+                    field: "upper".into(),
+                },
+            }
+        );
         assert_eq!(
             items[1],
             if conjunction {
