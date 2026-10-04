@@ -276,3 +276,59 @@ fn target_rejects_negated_evidence_and_underflowing_literals() {
         .collect();
     rejects(&constants);
 }
+
+#[test]
+fn target_checks_nested_operands_without_repeated_validation() {
+    let wrappers: [fn(CoreExpr) -> CoreExpr; 3] = [
+        std::convert::identity,
+        |value| CoreExpr::If {
+            predicate: Box::new(CorePredicate::True),
+            then_value: Box::new(value),
+            else_value: Box::new(CoreExpr::Const(edict_syntax::CoreValue::Int {
+                width: "U64".to_owned(),
+                value: "9".to_owned(),
+            })),
+        },
+        |value| CoreExpr::Field {
+            base: Box::new(CoreExpr::Record {
+                fields: std::collections::BTreeMap::from([("value".to_owned(), value)]),
+            }),
+            field: "value".to_owned(),
+        },
+    ];
+    for wrap in wrappers {
+        for literal in ["9", "18446744073709551616", "-1", "invalid"] {
+            let mut core = core();
+            let mut expression = CoreExpr::Const(edict_syntax::CoreValue::Int {
+                width: "U64".to_owned(),
+                value: literal.to_owned(),
+            });
+            for _ in 0..8 {
+                expression = wrap(CoreExpr::Call {
+                    callee: "core.integer.subtract".to_owned(),
+                    type_args: vec!["U64".to_owned()],
+                    args: vec![
+                        expression,
+                        CoreExpr::Const(edict_syntax::CoreValue::Int {
+                            width: "U64".to_owned(),
+                            value: "0".to_owned(),
+                        }),
+                    ],
+                });
+            }
+            let CoreNode::Let { value, .. } =
+                &mut core.intents.get_mut("measure").unwrap().body.nodes[0]
+            else {
+                panic!("difference binding");
+            };
+            *value = expression;
+            if literal == "9" {
+                let report = lower_to_target_ir(&core, &facts());
+                assert_eq!(report.status, TargetLoweringStatus::Lowered, "{report:?}");
+                assert!(report.artifact.is_some());
+            } else {
+                rejects(&core);
+            }
+        }
+    }
+}

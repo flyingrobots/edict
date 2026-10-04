@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Removed exponential repeated Target IR operand validation for nested unsigned
+  arithmetic, including conditional and record-field operands, while preserving
+  malformed literal and reference rejection.
+
 - Independently validated unsigned subtraction in raw Core before Target IR
   construction, preserving widths and operands and rejecting invalid signatures,
   unproven underflow, and input-proof scope leakage. This does not add Echo
