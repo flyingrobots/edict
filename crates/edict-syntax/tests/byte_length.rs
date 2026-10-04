@@ -208,3 +208,58 @@ fn target_rejects_forged_byte_length_signatures_and_authority() {
             .any(|failure| failure.kind == TargetLoweringFailureKind::InvalidCoreIdentity));
     }
 }
+
+#[test]
+fn target_checks_byte_length_authority_inside_nested_predicates() {
+    for dangling in [false, true] {
+        let mut core = compile("Bytes<max=32>", "len(input.bytes)");
+        let CoreNode::Let { value, .. } =
+            &mut core.intents.get_mut("measure").unwrap().body.nodes[0]
+        else {
+            panic!("length binding");
+        };
+        let CoreExpr::Call { args, .. } = value else {
+            panic!("length call");
+        };
+        let operand = args[0].clone();
+        if dangling {
+            let CoreExpr::Field { base, .. } = &mut args[0] else {
+                panic!("byte operand field");
+            };
+            let CoreExpr::Local { reference } = base.as_mut() else {
+                panic!("byte operand local");
+            };
+            reference.id = "unavailable-inner-input".into();
+        }
+        for _ in 1..8 {
+            *value = CoreExpr::Call {
+                callee: "core.bytes.length".into(),
+                type_args: vec!["Bytes<max=32>".into()],
+                args: vec![CoreExpr::If {
+                    predicate: Box::new(edict_syntax::CorePredicate::Compare {
+                        op: edict_syntax::CompareOp::Ge,
+                        left: value.clone(),
+                        right: CoreExpr::Const(CoreValue::Int {
+                            width: "U64".into(),
+                            value: "0".into(),
+                        }),
+                    }),
+                    then_value: Box::new(operand.clone()),
+                    else_value: Box::new(operand.clone()),
+                }],
+            };
+        }
+        let report = lower_to_target_ir(&core, &facts());
+        if dangling {
+            assert_eq!(report.status, TargetLoweringStatus::Unsupported);
+            assert!(report.artifact.is_none());
+            assert!(report
+                .failures
+                .iter()
+                .any(|failure| { failure.kind == TargetLoweringFailureKind::InvalidCoreIdentity }));
+        } else {
+            assert_eq!(report.status, TargetLoweringStatus::Lowered, "{report:?}");
+            assert!(report.artifact.is_some());
+        }
+    }
+}

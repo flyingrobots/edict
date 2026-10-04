@@ -319,6 +319,12 @@ signatures, dangling operands, coordinate substitution, and narrowed result
 widths reject with `InvalidCoreIdentity` and no target artifact. Runtime
 interpretation remains a separate consumer obligation.
 
+Byte-length type inference reuses the operand's validated coordinate instead of
+performing separate authority and type walks. A deterministic test-only counter
+bounds repeated validation through nested conditional predicates; public tests
+also reject an unavailable local hidden in the innermost length call. These
+checks do not claim a bound on every compiler pass. [TIR-REQ-048] [TIR-REQ-049]
+
 ## Unsigned subtraction boundary
 
 The target lowerer recognizes `core.integer.subtract<U32/U64>` with exactly two
