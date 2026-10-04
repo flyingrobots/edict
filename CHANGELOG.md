@@ -10,6 +10,14 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Avoided exponential repeated byte-length validation through nested conditional
+  predicates while retaining inner local-authority refusal.
+
+- Lowered `len` on bounded structural Bytes to a generic U64 byte-length
+  operation with exact operand identity. Target validation independently
+  checks the signature, byte shape, local authority, and result width before
+  preserving the operation in its pure bindings and projection.
+
 - Removed exponential repeated Target IR operand validation for nested unsigned
   arithmetic, including conditional and record-field operands, while preserving
   malformed literal and reference rejection.

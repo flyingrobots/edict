@@ -68,6 +68,7 @@ Out of scope:
 
 | CSPINE-REQ-038 | implemented | Unsigned subtraction lowers only for equal U32/U64 widths when exact operands, literals, or conjunctive input constraints prove no underflow; operand order and width remain explicit in Core, and input evidence never leaks across intents or into earlier basis/constraint evaluation. | issue #210, EDICT-LANG-INT-SAFETY-001 |
 | CSPINE-REQ-039 | implemented | Boolean conjunction and disjunction retain ordered All/Any predicate structure at the source-to-Core boundary; only conjunctive facts justify subtraction. | issue #210 |
+| CSPINE-REQ-040 | implemented | Prelude len on bounded structural Bytes preserves its exact operand coordinate and yields U64; other families and malformed calls reject structurally. | issue #216, EDICT-LANG-LEN-001 |
 
 ## Fixtures
 
@@ -122,6 +123,7 @@ Out of scope:
 
 | CSPINE-TP-040 | implemented | Arithmetic totality and identity | CSPINE-REQ-003, CSPINE-REQ-007, CSPINE-REQ-038 | Ordered same-width unsigned operands lower with their guard and order intact; self/zero/ordered literals are total; changing operands, guard, or width moves Core identity. Unsafe evidence, signed/mixed-width inputs, and cross-intent evidence reject structurally. | guarded_unsigned_difference_preserves_width_order_and_guard, unsigned_difference_accepts_self_zero_and_ordered_constants, unsigned_difference_identity_tracks_semantics, unsigned_difference_rejects_unproven_or_wrong_evidence, unsigned_difference_proof_does_not_leak_between_intents, unsigned_difference_cannot_use_guards_to_evaluate_basis_or_guards | crates/edict-syntax/tests/unsigned_subtraction.rs | Compiler evidence only. Target acceptance requires independent totality validation and remains separate. |
 | CSPINE-TP-041 | implemented | Predicate semantics | CSPINE-REQ-039 | Source conjunction/disjunction retain their exact connective, order, and child predicates in Core. | boolean_connectives_preserve_predicate_structure_in_core | crates/edict-syntax/tests/unsigned_subtraction.rs | Source-to-Core evidence, not runtime short-circuit proof. |
+| CSPINE-TP-042 | implemented | Bounded byte length | CSPINE-REQ-040 | Bounded/exact/empty bytes preserve operand identity and U64 output; wrong operands, arity/type arguments, and output width reject. The public Jim build advances past UnresolvedFunction. | bounded_byte_length_preserves_operand_type_and_u64_result, byte_length_rejects_wrong_source_operands_and_call_shapes | crates/edict-syntax/tests/byte_length.rs | Runtime support remains separate. |
 
 ## Determinism Obligations
 

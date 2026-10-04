@@ -1690,6 +1690,13 @@ Length and bound units are pinned (`EDICT-LANG-LEN-001`):
   maxima; a concatenation whose derived bound exceeds the destination type bound
   rejects at compile time.
 
+The current compiler and target implementation support the bounded structural
+Bytes specialization through `core.bytes.length<OperandType>(value)`, retaining
+the exact operand coordinate and returning U64. The prelude takes one argument
+and no authored type arguments. Other operand families, including String's
+specified Unicode-scalar specialization, remain unsupported by this lowering;
+they must not be silently measured in byte units instead.
+
 ### Compound Types
 
 - record types;

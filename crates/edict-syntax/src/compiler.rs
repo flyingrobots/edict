@@ -20,6 +20,7 @@ use crate::core_ir::{
     InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
     CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
+mod byte_length;
 mod unsigned_subtraction;
 
 use crate::lowerability::WriteClass;
@@ -3573,7 +3574,13 @@ impl<'a> TypeChecker<'a> {
                 type_args,
                 args,
                 span,
-            } => self.check_pure_call(callee, type_args, args, env, expected, *span),
+            } => {
+                if matches!(callee.as_ref(), Expr::Ident { name, .. } if name == "len") {
+                    self.check_byte_length(type_args, args, env, *span)
+                } else {
+                    self.check_pure_call(callee, type_args, args, env, expected, *span)
+                }
+            }
             Expr::If {
                 cond,
                 then,

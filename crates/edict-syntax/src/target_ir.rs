@@ -4,6 +4,7 @@
 //! effect nodes into in-memory Echo or git-warp review artifacts. It does not
 //! execute a runtime, run a verifier, assemble bundles, or perform admission.
 
+mod byte_length;
 mod unsigned_subtraction;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -1141,6 +1142,13 @@ fn expression_has_closed_authority(
             callee,
             type_args,
             args,
+        } if callee == byte_length::OPERATION => {
+            byte_length::type_coordinate(core, pure_functions, type_args, args, available).is_some()
+        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
         } if callee == unsigned_subtraction::OPERATION => {
             unsigned_subtraction::type_coordinate(core, pure_functions, type_args, args, available)
                 .is_some()
@@ -1210,12 +1218,10 @@ fn expression_fits_declared_type(
                 0,
             )
         }
-        CoreExpr::Call {
-            callee,
-            type_args,
-            args,
-        } if callee == unsigned_subtraction::OPERATION => {
-            unsigned_subtraction::type_coordinate(core, pure_functions, type_args, args, available)
+        CoreExpr::Call { callee, .. }
+            if callee == byte_length::OPERATION || callee == unsigned_subtraction::OPERATION =>
+        {
+            expression_type_coordinate(core, pure_functions, expression, available)
                 .is_some_and(|actual| core_type_fits(core, &actual, expected))
         }
         CoreExpr::Call {
@@ -1440,6 +1446,13 @@ fn expression_type_coordinate(
                 return None;
             };
             Some(coordinate)
+        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if callee == byte_length::OPERATION => {
+            byte_length::type_coordinate(core, pure_functions, type_args, args, available)
         }
         CoreExpr::Call {
             callee,
