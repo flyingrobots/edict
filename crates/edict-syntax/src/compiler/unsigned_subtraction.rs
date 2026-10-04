@@ -36,7 +36,7 @@ impl TypeChecker<'_> {
         }
         let unsigned =
             matches!(&left.ty.kind, TypeKind::Int { width } if width == "U32" || width == "U64");
-        if !unsigned || !proven_order(&left.expr, &right.expr, &self.subtraction_constraints) {
+        if !unsigned || !proven_order(&left.expr, &right.expr, &self.input_proof_constraints) {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::UnsupportedSourceShape,
@@ -71,7 +71,11 @@ fn unconditional_order(left: &CoreExpr, right: &CoreExpr) -> bool {
         || matches!((integer(left), integer(right)), (Some(a), Some(b)) if a >= b)
 }
 
-fn proven_order(left: &CoreExpr, right: &CoreExpr, constraints: &[CorePredicate]) -> bool {
+pub(super) fn proven_order(
+    left: &CoreExpr,
+    right: &CoreExpr,
+    constraints: &[CorePredicate],
+) -> bool {
     unconditional_order(left, right)
         || constraints
             .iter()

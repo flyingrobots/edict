@@ -211,6 +211,16 @@ Executable evidence for TIR-REQ-050: the eleven ordered cases in
 The public witness asserts the structured refusal kinds and absence of output;
 it does not treat compiler Target IR as proof of runtime support.
 
+## Proven byte slicing
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| TIR-REQ-051 | implemented | Target validation independently checks the bounded byte-slice signature, operand authority, result maximum and totality in the evaluation scope before emitting an artifact. | EDICT-LANG-BYTE-SLICE-001 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TIR-TP-075 | implemented | Slice authority and totality | TIR-REQ-051 | Source-produced slices lower with projections; mutated signatures, missing or disjunctive proofs, unavailable operands and pre-proof evaluation reject with InvalidCoreIdentity and no artifact. | byte_slice_preserves_operand_identity_and_weakens_length_bound, byte_slice_accepts_full_and_empty_ranges_without_assumptions, byte_slice_accepts_equivalent_exact_order_evidence, target_rejects_forged_byte_slice_signatures_and_proofs | crates/edict-syntax/tests/byte_slice.rs | Runtime support is a separate provider/evaluator capability. |
+
 ## Open Gaps
 
 - Echo verifier reports.

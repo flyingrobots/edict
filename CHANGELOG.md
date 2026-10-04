@@ -10,6 +10,13 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Added proven half-open `slice` over bounded raw bytes, preserving the operand
+  maximum and explicit U64 endpoints through Core and Target IR. Source and
+  Target independently require exact input-domain proof; invalid signatures,
+  unavailable operands and pre-proof evaluation fail closed. This compiler
+  capability does not supply runtime slicing, UTF-8 semantics or new provider
+  pins.
+
 - Added explicitly selected `echo.span-ir/v2` ordered Target IR for interleaved
   effects, pure bindings, and dependent guards. The canonical artifact binds an
   exact instruction order and rejects malformed dependency references. Legacy

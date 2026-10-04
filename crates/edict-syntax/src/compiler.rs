@@ -21,6 +21,7 @@ use crate::core_ir::{
     CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
 mod byte_length;
+mod byte_slice;
 mod unsigned_subtraction;
 
 use crate::lowerability::WriteClass;
@@ -719,7 +720,7 @@ struct LetStatement<'a> {
 #[derive(Debug, Clone)]
 struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
-    subtraction_constraints: Vec<CorePredicate>,
+    input_proof_constraints: Vec<CorePredicate>,
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
@@ -731,7 +732,7 @@ impl<'a> TypeChecker<'a> {
     fn new(resolved: &'a ResolvedModule) -> Self {
         Self {
             resolved,
-            subtraction_constraints: Vec::new(),
+            input_proof_constraints: Vec::new(),
             errors: Vec::new(),
             named_types: BTreeMap::new(),
             core_types: BTreeMap::new(),
@@ -1002,7 +1003,7 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_intent(&mut self, intent: &ResolvedIntent) -> Option<TypedIntent> {
-        self.subtraction_constraints.clear();
+        self.input_proof_constraints.clear();
         let source = &intent.source;
         if source.params.len() != 1 {
             self.errors.push(error(
@@ -1051,12 +1052,12 @@ impl<'a> TypeChecker<'a> {
             None => None,
         };
         let input_constraints = self.input_constraints(source, &env);
-        self.subtraction_constraints = input_constraints
+        self.input_proof_constraints = input_constraints
             .iter()
             .map(|constraint| constraint.predicate.clone())
             .collect();
         let body = self.check_body(intent, &output_shape, &mut env, &mut locals);
-        self.subtraction_constraints.clear();
+        self.input_proof_constraints.clear();
         let body = body?;
 
         Some(TypedIntent {
@@ -3577,6 +3578,8 @@ impl<'a> TypeChecker<'a> {
             } => {
                 if matches!(callee.as_ref(), Expr::Ident { name, .. } if name == "len") {
                     self.check_byte_length(type_args, args, env, *span)
+                } else if matches!(callee.as_ref(), Expr::Ident { name, .. } if name == "slice") {
+                    self.check_byte_slice(type_args, args, env, *span)
                 } else {
                     self.check_pure_call(callee, type_args, args, env, expected, *span)
                 }
