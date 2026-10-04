@@ -131,7 +131,7 @@ and requires `executionOrder` on every intent. That list references each id
 in `pureBindings`, `steps`, and `requirements` exactly once, in source order.
 Instructions remain in their existing tables; the order list does not duplicate
 their payloads. The result is evaluated after the ordered sequence succeeds.
-[TIR-REQ-048]
+[TIR-REQ-050]
 
 For example, an effect `t.step.0`, derived binding `t.binding.0`, and dependent
 guard `t.require.0` produce this review field:
@@ -149,7 +149,7 @@ Predicate and obstruction payload dependencies count too. Input references must
 be consistent with one another; their declared type is established by Core
 validation, not inferred from the order table. Reordering independent valid
 instructions changes the artifact digest. The existing Core semantic closure,
-basis, constraints, budget, and result are preserved. [TIR-REQ-048]
+basis, constraints, budget, and result are preserved. [TIR-REQ-050]
 
 The published CDDL has a separate ordered root with a required order list.
 Basis and pure bindings still require semantic closure. Schema validation
@@ -157,7 +157,7 @@ establishes structural shape; the encoder and Core validator establish the
 permutation, dependencies, and type authority. External-action requests,
 statement branches, and loops are not supported by this first ordered contract.
 There is no runtime execution or atomicity implementation in this compiler
-change. [TIR-REQ-048]
+change. [TIR-REQ-050]
 
 Selection is explicit in `TargetIrLoweringFacts::target_ir_domain`, the CLI
 projection `target.irDomain`, or a validated lawpack adapter's
@@ -171,7 +171,7 @@ the original read/guard source body and demonstrates both boundaries: v1
 refuses at Target lowering; an experimental v2 selection reaches the pinned
 old Echo provider's schema gate and refuses before provider execution or
 package publication. It does not repin Jim or claim a released Echo v2 target
-contract. [TIR-REQ-048]
+contract. [TIR-REQ-050]
 
 ## Shared expression and identity validation
 
@@ -372,6 +372,12 @@ signatures, dangling operands, coordinate substitution, and narrowed result
 widths reject with `InvalidCoreIdentity` and no target artifact. Runtime
 interpretation remains a separate consumer obligation.
 
+Byte-length type inference reuses the operand's validated coordinate instead of
+performing separate authority and type walks. A deterministic test-only counter
+bounds repeated validation through nested conditional predicates; public tests
+also reject an unavailable local hidden in the innermost length call. These
+checks do not claim a bound on every compiler pass. [TIR-REQ-048] [TIR-REQ-049]
+
 ## Unsigned subtraction boundary
 
 The target lowerer recognizes `core.integer.subtract<U32/U64>` with exactly two
@@ -388,3 +394,12 @@ and issue #212; producer locks remain unchanged. An isolated Jim application
 copy with a guarded deleted-byte-count expression builds successfully through
 the pinned provider, while execution through the original Echo evaluator still
 returns `UnsupportedProgram`.
+
+Operand type inference validates each nested subtraction once per type walk,
+including operands reached through conditionals and record fields. A returned
+type coordinate includes integer-literal and local-reference validation;
+comparison shape inference reuses that judgment instead of validating the same
+subtree again. Test-only visit counters check this work bound without elapsed-time
+thresholds. Public lowering tests retain rejection of nested overflowing,
+negative-unsigned, and malformed integer literals. The existing canonical
+container nesting ceiling still applies. [TIR-REQ-047]

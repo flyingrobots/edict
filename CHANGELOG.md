@@ -16,10 +16,18 @@ versions still track specification maturity rather than a released product.
   v1 artifacts retain their byte identities and pre-step restrictions. The CLI
   exposes the new order and its binding payloads. This compiler capability does
   not add Echo execution support or change existing consumer producer pins.
+
+- Avoided exponential repeated byte-length validation through nested conditional
+  predicates while retaining inner local-authority refusal.
+
 - Lowered `len` on bounded structural Bytes to a generic U64 byte-length
   operation with exact operand identity. Target validation independently
   checks the signature, byte shape, local authority, and result width before
   preserving the operation in its pure bindings and projection.
+
+- Removed exponential repeated Target IR operand validation for nested unsigned
+  arithmetic, including conditional and record-field operands, while preserving
+  malformed literal and reference rejection.
 
 - Independently validated unsigned subtraction in raw Core before Target IR
   construction, preserving widths and operands and rejecting invalid signatures,

@@ -1,8 +1,8 @@
 //! Target-owned totality check over untrusted Core, independent of the compiler proof.
 use super::{
-    expression_has_closed_authority, expression_type_coordinate, BTreeMap, CoreExpr, CoreIntent,
-    CoreModule, CoreNode, CorePredicate, CoreRequireFailureArm, CoreValue, InputConstraint,
-    LocalRef, TargetPureFunctionFact,
+    expression_type_coordinate, BTreeMap, CoreExpr, CoreIntent, CoreModule, CoreNode,
+    CorePredicate, CoreRequireFailureArm, CoreValue, InputConstraint, LocalRef,
+    TargetPureFunctionFact,
 };
 use crate::core_ir::{CompareOp, CoreBlock};
 
@@ -15,6 +15,8 @@ pub(super) fn type_coordinate(
     args: &[CoreExpr],
     available: &BTreeMap<&str, &LocalRef>,
 ) -> Option<String> {
+    #[cfg(test)]
+    tests::VALIDATION_VISITS.with(|count| count.set(count.get() + 1));
     let [width] = type_args else { return None };
     let [left, right] = args else { return None };
     if !matches!(width.as_str(), "U32" | "U64") {
@@ -23,9 +25,7 @@ pub(super) fn type_coordinate(
     [left, right]
         .iter()
         .all(|operand| {
-            expression_has_closed_authority(core, functions, operand, available)
-                && expression_type_coordinate(core, functions, operand, available).as_ref()
-                    == Some(width)
+            expression_type_coordinate(core, functions, operand, available).as_ref() == Some(width)
         })
         .then(|| width.clone())
 }
@@ -172,5 +172,76 @@ fn proves_order(predicate: &CorePredicate, minuend: &CoreExpr, subtrahend: &Core
         | CorePredicate::False
         | CorePredicate::Not(_)
         | CorePredicate::Any(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::Cell;
+
+    std::thread_local! {
+        pub(super) static VALIDATION_VISITS: Cell<usize> = const { Cell::new(0) };
+    }
+
+    fn integer(value: &str) -> CoreExpr {
+        CoreExpr::Const(CoreValue::Int {
+            width: "U64".to_owned(),
+            value: value.to_owned(),
+        })
+    }
+
+    fn assert_bounded_validation(wrap: fn(CoreExpr) -> CoreExpr) {
+        let core = CoreModule {
+            api_version: crate::core_ir::CORE_API_VERSION.to_owned(),
+            coordinate: "arithmetic.work@1".to_owned(),
+            imports: Vec::new(),
+            types: BTreeMap::new(),
+            intents: BTreeMap::new(),
+            required_core_capabilities: Vec::new(),
+        };
+        let depth = 8;
+        let expression = (0..depth).fold(integer("9"), |left, _| {
+            wrap(CoreExpr::Call {
+                callee: OPERATION.to_owned(),
+                type_args: vec!["U64".to_owned()],
+                args: vec![left, integer("0")],
+            })
+        });
+        VALIDATION_VISITS.with(|count| count.set(0));
+        assert_eq!(
+            expression_type_coordinate(&core, &[], &expression, &BTreeMap::new()),
+            Some("U64".to_owned())
+        );
+        let visits = VALIDATION_VISITS.with(Cell::get);
+        println!("{depth} subtraction nodes required {visits} validation visits");
+        assert!(
+            visits <= 4 * depth,
+            "{depth} subtraction nodes required {visits} validation visits"
+        );
+    }
+
+    #[test]
+    fn nested_subtraction_validation_work_is_bounded() {
+        assert_bounded_validation(std::convert::identity);
+    }
+
+    #[test]
+    fn conditional_subtraction_validation_work_is_bounded() {
+        assert_bounded_validation(|value| CoreExpr::If {
+            predicate: Box::new(CorePredicate::True),
+            then_value: Box::new(value),
+            else_value: Box::new(integer("9")),
+        });
+    }
+
+    #[test]
+    fn record_field_subtraction_validation_work_is_bounded() {
+        assert_bounded_validation(|value| CoreExpr::Field {
+            base: Box::new(CoreExpr::Record {
+                fields: BTreeMap::from([("value".to_owned(), value)]),
+            }),
+            field: "value".to_owned(),
+        });
     }
 }

@@ -1433,6 +1433,8 @@ fn expression_string_shape(
     }
 }
 
+// A returned coordinate also establishes operand validity. Callers must not
+// recursively validate the same expression again just to recover its type.
 fn expression_type_coordinate(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
@@ -1441,12 +1443,15 @@ fn expression_type_coordinate(
 ) -> Option<String> {
     match expression {
         CoreExpr::Local { reference }
-            if available.get(reference.id.as_str()).copied() == Some(reference) =>
+            if available.get(reference.id.as_str()).copied() == Some(reference)
+                && resolved_core_type(core, &reference.ty).is_some() =>
         {
             Some(reference.ty.clone())
         }
         CoreExpr::Const(CoreValue::Bool(_)) => Some("Bool".to_owned()),
-        CoreExpr::Const(CoreValue::Int { width, .. }) => Some(width.clone()),
+        CoreExpr::Const(CoreValue::Int { width, value }) => {
+            crate::core_ir::parse_core_integer(width, value).map(|_| width.clone())
+        }
         CoreExpr::Const(CoreValue::String(value)) => Some(format!(
             "String<max={},canonical=raw-utf8>",
             u64::try_from(value.chars().count()).ok()?
@@ -1730,12 +1735,8 @@ fn comparison_operand_shape(
             let else_shape = comparison_operand_shape(core, pure_functions, else_value, available)?;
             join_conditional_shapes(core, &then_shape, &else_shape, 0)
         }
-        _ => {
-            let coordinate =
-                expression_type_coordinate(core, pure_functions, expression, available)?;
-            expression_fits_declared_type(core, pure_functions, expression, &coordinate, available)
-                .then_some(ComparisonOperandShape::Coordinate(coordinate))
-        }
+        _ => expression_type_coordinate(core, pure_functions, expression, available)
+            .map(ComparisonOperandShape::Coordinate),
     }
 }
 
