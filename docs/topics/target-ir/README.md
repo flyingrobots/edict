@@ -308,6 +308,17 @@ The following are not implemented by this slice:
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
 
+## Byte-length boundary
+
+`core.bytes.length` accepts exactly one operand and one exact operand type
+coordinate resolving to bounded structural Bytes, and returns U64. Target
+validation independently checks local authority, operand shape, exact type
+coordinate, and result compatibility before emitting a pure binding or result
+projection. It does not trust the source compiler's earlier checks. Forged
+signatures, dangling operands, coordinate substitution, and narrowed result
+widths reject with `InvalidCoreIdentity` and no target artifact. Runtime
+interpretation remains a separate consumer obligation.
+
 ## Unsigned subtraction boundary
 
 The target lowerer recognizes `core.integer.subtract<U32/U64>` with exactly two

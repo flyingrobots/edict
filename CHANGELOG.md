@@ -10,6 +10,11 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Lowered `len` on bounded structural Bytes to a generic U64 byte-length
+  operation with exact operand identity. Target validation independently
+  checks the signature, byte shape, local authority, and result width before
+  preserving the operation in its pure bindings and projection.
+
 - Independently validated unsigned subtraction in raw Core before Target IR
   construction, preserving widths and operands and rejecting invalid signatures,
   unproven underflow, and input-proof scope leakage. This does not add Echo

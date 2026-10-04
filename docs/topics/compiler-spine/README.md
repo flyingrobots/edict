@@ -203,3 +203,14 @@ requirements, branch-yield conditions, and pure conditionals. This preserves
 predicate structure at source-to-Core; it does not claim target execution
 support. Only conjunction supplies unsigned-subtraction proof evidence.
 [CSPINE-REQ-039]
+
+The prelude call `len(value)` lowers for bounded structural `Bytes`, including
+exact and zero-length bounds and authenticated imported byte aliases. It
+returns U64 and retains the operand's exact coordinate in
+`core.bytes.length<OperandType>(value)`. It takes one value and no authored
+type arguments. Wrong operand families, malformed calls, and incompatible
+result widths reject with structured compiler errors. String scalar length,
+list length, and implicit nominal unwrapping are not implemented by this slice.
+The target validates the emitted primitive independently; compilation alone
+does not establish runtime support or execution evidence.
+[CSPINE-REQ-040]
