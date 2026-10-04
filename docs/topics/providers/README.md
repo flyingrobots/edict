@@ -82,6 +82,14 @@ or one bounded scalar key predicate, and arrays have only fixed members or one
 final variable member. Unsupported assignment shapes reject at construction
 rather than silently narrowing the admitted CDDL language.
 
+A choice of tagged families may first select the family, then apply its own
+required-key dispatch (for example, ordered versus phased Target IR, followed
+by closed versus closure-free shape). A family exposes a literal tag only when
+every alternative requires the same key/value pair. Discriminator discovery
+memoizes rule/depth results and stops at the validation depth boundary, so
+shared schema rule graphs do not expand into an exponential path walk.
+[PROVIDERS-REQ-031]
+
 For a specialized root, Edict looks up each required discriminator directly in
 the current map before any whole-value walk, without depending on CDDL
 declaration order or encoded map-entry order. Missing, duplicate, unknown, or

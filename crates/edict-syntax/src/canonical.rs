@@ -493,6 +493,12 @@ pub fn decode_canonical_cbor(bytes: &[u8]) -> Result<CanonicalValue, CanonicalEr
 }
 
 fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValue, CanonicalError> {
+    if !crate::target_ir::execution_order::artifact_has_valid_execution_order(artifact) {
+        return Err(CanonicalError::new(
+            CanonicalErrorKind::UnsupportedValue,
+            "Target IR execution order is invalid for its selected domain",
+        ));
+    }
     if artifact.source_core_coordinate.is_empty() {
         return Err(CanonicalError::new(
             CanonicalErrorKind::UnsupportedValue,
@@ -542,7 +548,16 @@ fn target_ir_artifact_value(artifact: &TargetIrArtifact) -> Result<CanonicalValu
         }
     }
     let mut entries = vec![
-        ("kind", text("targetIrArtifact")),
+        (
+            "kind",
+            text(
+                if artifact.domain == crate::target_ir::ECHO_ORDERED_SPAN_IR_DOMAIN {
+                    "orderedTargetIrArtifact"
+                } else {
+                    "targetIrArtifact"
+                },
+            ),
+        ),
         ("domain", text(&artifact.domain)),
         (
             "targetProfile",
@@ -649,7 +664,7 @@ fn target_ir_resource_ref_value(resource: &ResourceRef) -> Result<CanonicalValue
     ]))
 }
 
-fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+fn validate_target_ir_intent_identities(intent: &TargetIrIntent) -> Result<(), CanonicalError> {
     let mut binding_ids = BTreeSet::new();
     for binding in &intent.pure_bindings {
         if binding.id.is_empty() || !binding_ids.insert(binding.id.as_str()) {
@@ -702,6 +717,11 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
             ));
         }
     }
+    Ok(())
+}
+
+fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, CanonicalError> {
+    validate_target_ir_intent_identities(intent)?;
     let mut entries = vec![
         ("operationProfile", text(&intent.operation_profile)),
         (
@@ -722,6 +742,12 @@ fn target_ir_intent_value(intent: &TargetIrIntent) -> Result<CanonicalValue, Can
         ),
         ("result", core_expr_value(&intent.result)?),
     ];
+    if let Some(order) = &intent.execution_order {
+        entries.push((
+            "executionOrder",
+            CanonicalValue::Array(order.iter().map(|id| text(id)).collect()),
+        ));
+    }
     if let Some(basis) = &intent.basis {
         entries.push(("basis", core_expr_value(basis)?));
     }

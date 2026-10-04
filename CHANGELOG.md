@@ -10,6 +10,13 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Added explicitly selected `echo.span-ir/v2` ordered Target IR for interleaved
+  effects, pure bindings, and dependent guards. The canonical artifact binds an
+  exact instruction order and rejects malformed dependency references. Legacy
+  v1 artifacts retain their byte identities and pre-step restrictions. The CLI
+  exposes the new order and its binding payloads. This compiler capability does
+  not add Echo execution support or change existing consumer producer pins.
+
 - Avoided exponential repeated byte-length validation through nested conditional
   predicates while retaining inner local-authority refusal.
 

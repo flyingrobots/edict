@@ -5,6 +5,7 @@
 //! execute a runtime, run a verifier, assemble bundles, or perform admission.
 
 mod byte_length;
+pub(crate) mod execution_order;
 mod unsigned_subtraction;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -23,14 +24,22 @@ use crate::{ResultProjectionArtifact, ResultProjectionFailure};
 
 pub const ECHO_DPO_TARGET_PROFILE: &str = "echo.dpo@1";
 pub const ECHO_SPAN_IR_DOMAIN: &str = "echo.span-ir/v1";
+pub const ECHO_ORDERED_SPAN_IR_DOMAIN: &str = "echo.span-ir/v2";
 pub const GITWARP_REF_CRDT_TARGET_PROFILE: &str = "gitwarp.ref_crdt@1";
 pub const GITWARP_COMMIT_REDUCER_IR_DOMAIN: &str = "gitwarp.commit-reducer-ir/v1";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExecutionModel {
+    PreStepGuards,
+    Ordered,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TargetSelection {
     target_ir_domain: &'static str,
     target_intrinsic_prefix: &'static str,
     supports_requirements: bool,
+    execution_model: ExecutionModel,
 }
 
 impl TargetSelection {
@@ -47,11 +56,13 @@ fn target_selection_for_profile(target_profile: &str) -> Option<TargetSelection>
             target_ir_domain: ECHO_SPAN_IR_DOMAIN,
             target_intrinsic_prefix: ECHO_DPO_TARGET_PROFILE,
             supports_requirements: true,
+            execution_model: ExecutionModel::PreStepGuards,
         }),
         GITWARP_REF_CRDT_TARGET_PROFILE => Some(TargetSelection {
             target_ir_domain: GITWARP_COMMIT_REDUCER_IR_DOMAIN,
             target_intrinsic_prefix: GITWARP_REF_CRDT_TARGET_PROFILE,
             supports_requirements: false,
+            execution_model: ExecutionModel::PreStepGuards,
         }),
         _ => None,
     }
@@ -350,6 +361,9 @@ pub struct TargetIrSemanticClosure {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TargetIrIntent {
     pub operation_profile: String,
+    /// Exact instruction-id permutation for explicitly selected ordered Target IR.
+    /// Legacy artifacts omit this field.
+    pub execution_order: Option<Vec<String>>,
     pub basis: Option<CoreExpr>,
     pub input_constraints: Vec<InputConstraint>,
     pub core_evaluation_budget: CoreBudget,
@@ -602,7 +616,7 @@ fn digest_locked_import_set(
 fn validate_target_selection(
     facts: &TargetIrLoweringFacts,
 ) -> Result<TargetSelection, Vec<TargetLoweringFailure>> {
-    let Some(target_selection) = target_selection_for_profile(&facts.target_profile.coordinate)
+    let Some(mut target_selection) = target_selection_for_profile(&facts.target_profile.coordinate)
     else {
         return Err(vec![TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetProfile,
@@ -622,6 +636,12 @@ fn validate_target_selection(
                 .clone()
                 .unwrap_or_else(|| "<missing>".to_owned()),
         }]);
+    }
+    if facts.target_profile.coordinate == ECHO_DPO_TARGET_PROFILE
+        && facts.target_ir_domain == ECHO_ORDERED_SPAN_IR_DOMAIN
+    {
+        target_selection.target_ir_domain = ECHO_ORDERED_SPAN_IR_DOMAIN;
+        target_selection.execution_model = ExecutionModel::Ordered;
     }
     if facts.target_ir_domain != target_selection.target_ir_domain {
         return Err(vec![TargetLoweringFailure {
@@ -1889,7 +1909,29 @@ fn lower_intent(
 
     let mut state = IntentLoweringState::default();
     for (node_index, node) in intent.body.nodes.iter().enumerate() {
+        if context.target_selection.execution_model == ExecutionModel::Ordered
+            && matches!(node, CoreNode::ExternalActionRequest { .. })
+        {
+            failures.push(TargetLoweringFailure {
+                kind: TargetLoweringFailureKind::UnsupportedCoreNode,
+                intent: Some(intent_name.to_owned()),
+                node_index: Some(node_index),
+                detail: "ordered_external_action_request".to_owned(),
+            });
+            continue;
+        }
         lower_node(intent_name, node_index, node, context, &mut state, failures);
+        if context.target_selection.execution_model == ExecutionModel::Ordered {
+            let id = match node {
+                CoreNode::Let { .. } => state.pure_bindings.last().map(|node| &node.id),
+                CoreNode::Effect { .. } => state.steps.last().map(|node| &node.id),
+                CoreNode::Require { .. } => state.requirements.last().map(|node| &node.id),
+                _ => None,
+            };
+            if let Some(id) = id {
+                state.execution_order.push(id.clone());
+            }
+        }
     }
     if state.pure_bindings.is_empty()
         && state.requirements.is_empty()
@@ -1907,6 +1949,8 @@ fn lower_intent(
 
     TargetIrIntent {
         operation_profile: intent.required_operation_profile.clone(),
+        execution_order: (context.target_selection.execution_model == ExecutionModel::Ordered)
+            .then_some(state.execution_order),
         basis: intent.basis.clone(),
         input_constraints: intent.input_constraints.clone(),
         core_evaluation_budget: intent.core_evaluation_budget.clone(),
@@ -1926,6 +1970,7 @@ struct TargetLoweringContext<'a> {
 
 #[derive(Default)]
 struct IntentLoweringState {
+    execution_order: Vec<String>,
     pure_bindings: Vec<TargetIrPureBinding>,
     requirements: Vec<TargetIrRequirement>,
     steps: Vec<TargetIrStep>,
@@ -2047,7 +2092,9 @@ fn lower_require_node(
         });
         return;
     }
-    if require_references_step_output(predicate, arm, &state.step_outputs) {
+    if context.target_selection.execution_model == ExecutionModel::PreStepGuards
+        && require_references_step_output(predicate, arm, &state.step_outputs)
+    {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
             intent: Some(intent_name.to_owned()),
@@ -2056,7 +2103,9 @@ fn lower_require_node(
         });
         return;
     }
-    if !state.steps.is_empty() {
+    if context.target_selection.execution_model == ExecutionModel::PreStepGuards
+        && !state.steps.is_empty()
+    {
         failures.push(TargetLoweringFailure {
             kind: TargetLoweringFailureKind::UnsupportedTargetFeature,
             intent: Some(intent_name.to_owned()),

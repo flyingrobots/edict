@@ -426,6 +426,39 @@ fn project_accepts_dirty_source_and_emits_syntax_core_target_ir_projection() {
 }
 
 #[test]
+fn project_exposes_ordered_effect_binding_and_guard_without_hoisting() {
+    let source = ECHO_SOURCE.replace(
+        "  return { id: input.id };",
+        "  let observed: String<max=16> = receipt.id;\n  require observed != \"\" else domain.WriteRejected;\n  return { id: observed };",
+    );
+    let mut settings = projection_settings(["core", "targetIr", "digests"]);
+    settings["target"]["irDomain"] = json!("echo.span-ir/v2");
+    let output = run_edict(&jsonl([
+        settings,
+        json!({
+            "schema": "edict.compiler.input/v1", "type": "compilerInput",
+            "kind": "source", "name": "ordered.edict", "source": source,
+        }),
+    ]));
+    let stdout = assert_successful_projection_output(&output);
+    let target = record_of_type(&stdout, "targetIr");
+    assert_eq!(target["state"], "available");
+    assert_eq!(target["domain"], "echo.span-ir/v2");
+    let intent = &target["review"]["intents"]["replaceThing"];
+    assert_eq!(
+        intent["executionOrder"],
+        json!([
+            "replaceThing.step.0",
+            "replaceThing.binding.0",
+            "replaceThing.require.0",
+        ])
+    );
+    assert_eq!(intent["pureBindings"][0]["id"], "replaceThing.binding.0");
+    assert_eq!(intent["steps"][0]["id"], "replaceThing.step.0");
+    assert_eq!(intent["requirements"][0]["id"], "replaceThing.require.0");
+}
+
+#[test]
 fn project_exposes_external_requests_as_non_callable_review_data() {
     let output = run_edict(&jsonl([
         projection_settings(["diagnostics", "core", "targetIr"]),

@@ -131,7 +131,7 @@ Out of scope:
 | TIR-TP-023 | implemented | Golden path | TIR-REQ-011 | Echo lowering emits explicit Target IR requirements for terminal and preserved-obstruction Core `require` arms while leaving effect steps unchanged. | echo_target_ir_contains_obstruction_requirement_payload, terminal_and_preserved_requirements_are_target_ir_distinct | crates/edict-syntax/tests/target_ir.rs | Target IR emission remains distinct from Echo acceptance or runtime execution. |
 | TIR-TP-024 | implemented | Mutation sensitivity | TIR-REQ-012 | Requirement reason kind, reason payload value, predicate, and terminal-vs-preserved disposition mutations move the Target IR digest. | target_ir_requirement_mutations_move_digest | crates/edict-syntax/tests/target_ir.rs | Prevents obstruction semantics from collapsing in canonical Target IR bytes. |
 | TIR-TP-025 | implemented | Boundary guard | TIR-REQ-003, TIR-REQ-011 | Targets without obstruction-strand requirement support reject Core `require` nodes with a stable target-feature failure kind and no artifact. | targets_without_obstruction_requirement_support_reject_with_stable_feature_kind | crates/edict-syntax/tests/target_ir.rs | Unsupported feature is not a generic lowering crash. |
-| TIR-TP-026 | implemented | Boundary guard | TIR-REQ-011, TIR-REQ-012 | A Target IR requirement after an emitted target step rejects with a stable target-feature failure kind and no artifact, with a more specific detail when it reads an earlier step output. | requirement_after_target_step_rejects_with_stable_feature_kind, requirement_that_reads_step_output_rejects_with_stable_feature_kind | crates/edict-syntax/tests/target_ir.rs | Intent-level requirements are pre-step guards until the artifact model owns ordered or step-attached guards. |
+| TIR-TP-026 | implemented | Boundary guard | TIR-REQ-011, TIR-REQ-012 | A Target IR requirement after an emitted target step rejects with a stable target-feature failure kind and no artifact, with a more specific detail when it reads an earlier step output. | requirement_after_target_step_rejects_with_stable_feature_kind, requirement_that_reads_step_output_rejects_with_stable_feature_kind | crates/edict-syntax/tests/target_ir.rs | Legacy v1 requirements remain pre-step guards; v2 ordering is covered separately by TIR-REQ-050. |
 | TIR-TP-027 | implemented | Integration | TIR-REQ-013 | Built-in Echo and git-warp lowerer adapters return the same artifacts, canonical bytes, and digests as direct lowering for identical Core and facts. | builtin_echo_lowerer_matches_direct_target_ir, builtin_gitwarp_lowerer_matches_direct_target_ir | crates/edict-syntax/tests/provider_lowering.rs | No Target IR golden moves when the invocation path changes. |
 | TIR-TP-028 | implemented | Boundary guard | TIR-REQ-013 | Matched-profile target and target-profile-digest failures pass through unchanged, while cross-profile lowerer selection rejects with a stable compatibility failure before invocation. | builtin_lowerers_preserve_structured_lowering_failures, builtin_lowerers_preserve_target_profile_digest_failures, builtin_lowerers_reject_mismatched_target_profiles | crates/edict-syntax/tests/provider_lowering.rs | Lowerer selection compatibility remains distinct from target semantic refusal; coordinate matching does not bypass target artifact validation. |
 | TIR-TP-029 | implemented | Schema fidelity | TIR-REQ-014, TIR-REQ-017 | Canonical Echo, git-warp, and typed workspace-request Target IR bytes plus encoder output containing both requirement dispositions satisfy `target-ir-artifact`; null, missing envelope fields, malformed nested Target IR values, and an external request injected into the closure-free legacy artifact reject through the same compiled root. | target_ir_root_matches_reference_encoder, every_published_root_validates_reference_and_rejects_mutation, target_ir_goldens_match_executable_encoder | docs/abi/edict-target-ir.cddl, fixtures/target-ir/canonical/echo-effectful.target-ir.cbor, fixtures/target-ir/canonical/gitwarp-append.target-ir.cbor, fixtures/target-ir/canonical/workspace-snapshot.target-ir.cbor, crates/edict-provider-schema/tests/provider_contract_pack.rs, xtask/src/tests.rs | The schema is derived from the canonical encoder contract, including the rule that external requests require exact semantic authority rather than the legacy compatibility shape. |
@@ -188,6 +188,28 @@ Out of scope:
   `cargo xtask target-ir-goldens --check`.
 - No test reads stdout, stderr, logs, wall-clock time, random values, network
   state, or filesystem ordering.
+
+## Ordered execution prerequisite (#218)
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| TIR-REQ-050 | implemented | Explicit `echo.span-ir/v2` selection preserves an exact execution-order permutation of pure bindings, effects, and guards, with independent source-order authority checks; v1 bytes and pre-step refusals remain unchanged. | issue #218 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TIR-TP-072 | implemented | Ordered program | TIR-REQ-050 | Effect-result guards, intervening pure bindings, two effects separated by a guard, input-only post-effect guards, and payload dependencies retain exact order. | effect_result_guard_preserves_execution_order, effect_pure_binding_and_guard_keep_interleaving, guard_between_effects_is_not_hoisted_or_delayed, input_only_guard_after_effect_stays_after_effect, payload_only_effect_dependency_keeps_guard_after_effect | crates/edict-syntax/tests/target_ir/ordered.rs | The terminal result follows the complete sequence. |
+| TIR-TP-073 | implemented | Boundary guard | TIR-REQ-050 | Malformed local identities and order permutations refuse; independent valid reorderings move identity; v1 restrictions persist; ordered external requests refuse. | ordered_selection_still_rejects_forward_and_duplicate_producers, encoder_refuses_missing_duplicate_foreign_and_forward_order_entries, ordered_encoder_rejects_cross_table_ids_and_inconsistent_local_references, encoder_binds_valid_independent_orderings_into_identity, ordered_selection_keeps_legacy_guard_refusal, ordered_contract_does_not_silently_drop_external_requests | crates/edict-syntax/tests/target_ir/ordered.rs | Canonical checks are additional to independent Core type and authority validation. |
+| TIR-TP-074 | implemented | Public boundary | TIR-REQ-050 | Public projection exposes the order and referenced bindings, and independent CDDL validation requires the ordered shape. | project_exposes_ordered_effect_binding_and_guard_without_hoisting, ordered_target_ir_schema_requires_explicit_execution_order | crates/edict-cli/tests/jsonl_cli.rs, crates/edict-provider-schema/tests/provider_contract_pack.rs | The separate Docker consumer witness below demonstrates the old-provider refusal; no runtime execution is claimed. |
+
+Executable evidence for TIR-REQ-050: the eleven ordered cases in
+`crates/edict-syntax/tests/target_ir/ordered.rs`,
+`ordered_target_ir_schema_requires_explicit_execution_order` in
+`crates/edict-provider-schema/tests/provider_contract_pack.rs`,
+`project_exposes_ordered_effect_binding_and_guard_without_hoisting` in
+`crates/edict-cli/tests/jsonl_cli.rs`, and the public source/lawpack build in
+`scripts/consumer-witnesses/jedit-state-read.py` (run through its Dockerfile).
+The public witness asserts the structured refusal kinds and absence of output;
+it does not treat compiler Target IR as proof of runtime support.
 
 ## Open Gaps
 

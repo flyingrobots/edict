@@ -309,6 +309,44 @@ fn target_ir_root_matches_reference_encoder() {
 }
 
 #[test]
+fn ordered_target_ir_schema_requires_explicit_execution_order() {
+    let pack = assemble(canonical_target_profile_contract_resources());
+    let mut artifact = representative_target_ir("echo.dpo@1");
+    artifact.domain = "echo.span-ir/v2".to_owned();
+    artifact
+        .intents
+        .get_mut("apply")
+        .expect("intent")
+        .execution_order = Some(vec![
+        "apply.require.0".to_owned(),
+        "apply.require.1".to_owned(),
+    ]);
+    let value = encode_target_ir_value(&artifact);
+    pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &value)
+        .expect("v2 schema agrees with encoder");
+    let mut missing = value.clone();
+    let intents = map_value_mut(&mut missing, "intents");
+    remove_map_field(map_value_mut(intents, "apply"), "executionOrder");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &missing),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+    let mut downgrade = value;
+    *map_value_mut(&mut downgrade, "domain") = CanonicalValue::Text("echo.span-ir/v1".to_owned());
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &downgrade),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+
+    let mut missing_closure = encode_target_ir_value(&artifact);
+    remove_map_field(&mut missing_closure, "semanticClosure");
+    assert_eq!(
+        pack.validate_domain(TARGET_IR_ARTIFACT_DIGEST_DOMAIN, &missing_closure),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+}
+
+#[test]
 fn target_ir_root_accepts_only_closed_nonempty_pure_bindings() {
     let pack = assemble(canonical_target_profile_contract_resources());
     let encoded_pure = encoded_target_ir_with_pure_binding();
@@ -923,6 +961,7 @@ fn representative_target_ir(coordinate: &str) -> TargetIrArtifact {
         intents: BTreeMap::from([(
             "apply".to_owned(),
             TargetIrIntent {
+                execution_order: None,
                 operation_profile: "example.operation/v1".to_owned(),
                 basis: Some(CoreExpr::Const(CoreValue::String(
                     "example.basis@1".to_owned(),
