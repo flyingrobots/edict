@@ -4,6 +4,8 @@
 //! effect nodes into in-memory Echo or git-warp review artifacts. It does not
 //! execute a runtime, run a verifier, assemble bundles, or perform admission.
 
+mod unsigned_subtraction;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::core_ir::{
@@ -705,6 +707,13 @@ fn validate_pure_binding_graphs(
                     "Core local table or producer contains an empty or duplicate identity",
                 ));
             }
+            if !unsigned_subtraction::intent_is_total(intent) {
+                return Some(invalid_pure_binding(
+                    intent_name,
+                    None,
+                    "unsigned subtraction is not proven total in its evaluation scope",
+                ));
+            }
             if intent
                 .body
                 .nodes
@@ -1128,6 +1137,14 @@ fn expression_has_closed_authority(
         CoreExpr::Field { .. } => {
             expression_type_coordinate(core, pure_functions, expression, available).is_some()
         }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if callee == unsigned_subtraction::OPERATION => {
+            unsigned_subtraction::type_coordinate(core, pure_functions, type_args, args, available)
+                .is_some()
+        }
         CoreExpr::Call { callee, .. } if callee == "core.string.concat" => {
             expression_string_shape(core, pure_functions, expression, available).is_some()
         }
@@ -1192,6 +1209,14 @@ fn expression_fits_declared_type(
                 &ComparisonOperandShape::Coordinate(expected.to_owned()),
                 0,
             )
+        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if callee == unsigned_subtraction::OPERATION => {
+            unsigned_subtraction::type_coordinate(core, pure_functions, type_args, args, available)
+                .is_some_and(|actual| core_type_fits(core, &actual, expected))
         }
         CoreExpr::Call {
             callee,
@@ -1382,6 +1407,8 @@ fn expression_string_shape(
     }
 }
 
+// A returned coordinate also establishes operand validity. Callers must not
+// recursively validate the same expression again just to recover its type.
 fn expression_type_coordinate(
     core: &CoreModule,
     pure_functions: &[TargetPureFunctionFact],
@@ -1390,12 +1417,15 @@ fn expression_type_coordinate(
 ) -> Option<String> {
     match expression {
         CoreExpr::Local { reference }
-            if available.get(reference.id.as_str()).copied() == Some(reference) =>
+            if available.get(reference.id.as_str()).copied() == Some(reference)
+                && resolved_core_type(core, &reference.ty).is_some() =>
         {
             Some(reference.ty.clone())
         }
         CoreExpr::Const(CoreValue::Bool(_)) => Some("Bool".to_owned()),
-        CoreExpr::Const(CoreValue::Int { width, .. }) => Some(width.clone()),
+        CoreExpr::Const(CoreValue::Int { width, value }) => {
+            crate::core_ir::parse_core_integer(width, value).map(|_| width.clone())
+        }
         CoreExpr::Const(CoreValue::String(value)) => Some(format!(
             "String<max={},canonical=raw-utf8>",
             u64::try_from(value.chars().count()).ok()?
@@ -1410,6 +1440,13 @@ fn expression_type_coordinate(
                 return None;
             };
             Some(coordinate)
+        }
+        CoreExpr::Call {
+            callee,
+            type_args,
+            args,
+        } if callee == unsigned_subtraction::OPERATION => {
+            unsigned_subtraction::type_coordinate(core, pure_functions, type_args, args, available)
         }
         CoreExpr::Call { callee, .. } if callee == "core.string.concat" => {
             expression_string_shape(core, pure_functions, expression, available)
@@ -1665,12 +1702,8 @@ fn comparison_operand_shape(
             let else_shape = comparison_operand_shape(core, pure_functions, else_value, available)?;
             join_conditional_shapes(core, &then_shape, &else_shape, 0)
         }
-        _ => {
-            let coordinate =
-                expression_type_coordinate(core, pure_functions, expression, available)?;
-            expression_fits_declared_type(core, pure_functions, expression, &coordinate, available)
-                .then_some(ComparisonOperandShape::Coordinate(coordinate))
-        }
+        _ => expression_type_coordinate(core, pure_functions, expression, available)
+            .map(ComparisonOperandShape::Coordinate),
     }
 }
 
