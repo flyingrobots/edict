@@ -37,6 +37,13 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 
+Boolean `&&` and `||` predicates lower to ordered Core `All` and `Any` forms
+where predicate checking is used: input constraints, statement conditionals,
+requirements, branch-yield conditions, and pure conditionals. This preserves
+predicate structure at source-to-Core; it does not claim target execution
+support. Only conjunction supplies unsigned-subtraction proof evidence.
+[CSPINE-REQ-039]
+
 - The lowerable subset is deliberately narrow: local record type declarations,
   one-parameter intents, `profile`, `basis none` or one input-derived explicit
   basis, `budget <=`, `where` predicates, pure `let` bindings, one annotated
@@ -196,10 +203,3 @@ The following are not implemented by this compiler-spine slice:
 Those items remain assigned to later lowerability/admission milestones.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
-
-Boolean `&&` and `||` predicates lower to ordered Core `All` and `Any` forms
-where predicate checking is used: input constraints, statement conditionals,
-requirements, branch-yield conditions, and pure conditionals. This preserves
-predicate structure at source-to-Core; it does not claim target execution
-support. Only conjunction supplies unsigned-subtraction proof evidence.
-[CSPINE-REQ-039]
