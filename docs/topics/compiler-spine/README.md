@@ -37,12 +37,20 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 
+Boolean `&&` and `||` predicates lower to ordered Core `All` and `Any` forms
+where predicate checking is used: input constraints, statement conditionals,
+requirements, branch-yield conditions, and pure conditionals. This preserves
+predicate structure at source-to-Core; it does not claim target execution
+support. Only conjunction supplies unsigned-subtraction proof evidence.
+[CSPINE-REQ-039]
+
 - The lowerable subset is deliberately narrow: local record type declarations,
   one-parameter intents, `profile`, `basis none` or one input-derived explicit
   basis, `budget <=`, `where` predicates, pure `let` bindings, one annotated
   effectful `let ... else` shape, lowerable `require ... else` obstruction
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
-  field access, record literals, equality predicates, string concatenation, and
+  field access, record literals, equality predicates and boolean `&&`/`||`
+  connectives, string concatenation, and
   pure conditional expressions whose branches have compatible bounded types,
   and branch-yield lets whose isolated blocks use already-supported
   statements and produce compatible bounded values. Statement conditionals
@@ -67,6 +75,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
   | Digest-bound imported lawpack alias | Bounds supplied by the exported definition | Nominal exported coordinate |
 
   [CSPINE-REQ-019] [CSPINE-REQ-021] [CSPINE-REQ-033]
+- Same-width `U32`/`U64` subtraction lowers to
+  `core.integer.subtract<T>(left, right)` when the operands are identical,
+  the subtrahend is zero, literal operands are ordered, or a checked input
+  constraint directly establishes the required order. Conjunctions supply
+  evidence; disjunctions and negations do not. Evidence becomes available only
+  for the intent body and is cleared between intents, including failed bodies.
+  Signed and mixed-width subtraction remain outside this subset. This is a
+  source-to-Core contract, not target execution support. [CSPINE-REQ-038]
 - An explicit basis expression is checked in the pure pre-body environment
   containing the intent parameter, before body locals exist. The typed
   expression is preserved in Core; this is authoring evidence, not runtime
