@@ -322,7 +322,7 @@ fn target_rejects_forged_byte_slice_signatures_and_proofs() {
                 args[1] = CoreExpr::Const(CoreValue::Int {
                     width: "U32".into(),
                     value: "0".into(),
-                })
+                });
             }
             7 => binding.ty = "Bytes<exact=32>".into(),
             8 => {
@@ -353,7 +353,7 @@ fn target_rejects_forged_byte_slice_signatures_and_proofs() {
                     callee: "core.bytes.slice".into(),
                     type_args: type_args.clone(),
                     args: args.clone(),
-                })
+                });
             }
             13 => {
                 let call = CoreExpr::Call {
