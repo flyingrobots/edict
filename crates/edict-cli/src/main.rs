@@ -1378,6 +1378,26 @@ fn target_ir_intent_review(intent: &TargetIrIntent) -> Value {
         "basis",
         intent.basis.as_ref().map(core_expr_review),
     );
+    insert_optional_review_field(
+        &mut review,
+        "executionOrder",
+        intent.execution_order.as_ref().map(|order| json!(order)),
+    );
+    if !intent.pure_bindings.is_empty() {
+        insert_optional_review_field(
+            &mut review,
+            "pureBindings",
+            Some(json!(intent
+                .pure_bindings
+                .iter()
+                .map(|binding| json!({
+                    "id": binding.id,
+                    "binding": local_ref_review(&binding.binding),
+                    "value": core_expr_review(&binding.value),
+                }))
+                .collect::<Vec<_>>())),
+        );
+    }
     review
 }
 

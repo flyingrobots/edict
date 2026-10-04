@@ -82,6 +82,7 @@ fn target_fixture(core: &CoreModule) -> TargetIrArtifact {
         intents: BTreeMap::from([(
             "echo".to_owned(),
             TargetIrIntent {
+                execution_order: None,
                 operation_profile: intent.required_operation_profile.clone(),
                 basis: intent.basis.clone(),
                 input_constraints: intent.input_constraints.clone(),

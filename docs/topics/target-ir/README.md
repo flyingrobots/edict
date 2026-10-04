@@ -12,7 +12,8 @@ execute a runtime, admit a bundle, or mutate participant state.
 The current target IR implementation is deliberately narrow:
 
 - selected target profile: `echo.dpo@1` or `gitwarp.ref_crdt@1`;
-- selected Target IR artifact domain: `echo.span-ir/v1` or
+- selected Target IR artifact domain: `echo.span-ir/v1`, explicitly ordered
+  `echo.span-ir/v2`, or
   `gitwarp.commit-reducer-ir/v1`;
 - selected source/Core shape: source-ordered pure `let` bindings, the first
   supported effectful Core effect node, Echo `require` guard requirements, and
@@ -114,13 +115,65 @@ git-warp does not currently claim Target IR requirement support. A Core module
 with `require` nodes selected for git-warp rejects before artifact emission with
 `TargetLoweringFailureKind::UnsupportedTargetFeature`.
 
-Intent-level Target IR requirements are pre-step guards. A Core `require` after
+In `echo.span-ir/v1`, intent-level Target IR requirements are pre-step guards. A Core `require` after
 an emitted target step rejects with
 `TargetLoweringFailureKind::UnsupportedTargetFeature` before artifact emission.
 If the requirement predicate or reason payload references a local produced by an
 earlier target step, lowering uses the same stable failure kind with a more
-specific step-output-dependency detail. Ordered or step-attached guards remain a
-future artifact-model change.
+specific step-output-dependency detail. Selecting v1 never silently upgrades
+that contract.
+
+## Explicit ordered execution
+
+`echo.span-ir/v2` under `echo.dpo@1` preserves straight-line interleaving of
+effects, pure bindings, and guards. It uses `kind: "orderedTargetIrArtifact"`
+and requires `executionOrder` on every intent. That list references each id
+in `pureBindings`, `steps`, and `requirements` exactly once, in source order.
+Instructions remain in their existing tables; the order list does not duplicate
+their payloads. The result is evaluated after the ordered sequence succeeds.
+[TIR-REQ-048]
+
+For example, an effect `t.step.0`, derived binding `t.binding.0`, and dependent
+guard `t.require.0` produce this review field:
+
+```json
+{"executionOrder": ["t.step.0", "t.binding.0", "t.require.0"]}
+```
+
+Core-to-Target validation still independently checks types, exact local
+identities, lawpack signatures, input-only metadata authority, and
+producer-before-consumer availability. Canonical encoding additionally rejects
+missing, duplicate, foreign, or forward-dependent order entries, inconsistent
+local references, order fields under legacy domains, and v2 without an order.
+Predicate and obstruction payload dependencies count too. Input references must
+be consistent with one another; their declared type is established by Core
+validation, not inferred from the order table. Reordering independent valid
+instructions changes the artifact digest. The existing Core semantic closure,
+basis, constraints, budget, and result are preserved. [TIR-REQ-048]
+
+The published CDDL has a separate ordered root with a required order list.
+Basis and pure bindings still require semantic closure. Schema validation
+establishes structural shape; the encoder and Core validator establish the
+permutation, dependencies, and type authority. External-action requests,
+statement branches, and loops are not supported by this first ordered contract.
+There is no runtime execution or atomicity implementation in this compiler
+change. [TIR-REQ-048]
+
+Selection is explicit in `TargetIrLoweringFacts::target_ir_domain`, the CLI
+projection `target.irDomain`, or a validated lawpack adapter's
+`acceptedTargetIr`. A provider must independently support the new contract;
+changing an adapter coordinate is not evidence of provider support. Existing
+v1 artifacts, digest fixtures, and protected pre-step refusals remain unchanged.
+The public CLI exposes the order and referenced pure bindings in review data.
+
+The [Jim consumer witness](../../../scripts/consumer-witnesses/README.md) keeps
+the original read/guard source body and demonstrates both boundaries: v1
+refuses at Target lowering; an experimental v2 selection reaches the pinned
+old Echo provider's schema gate and refuses before provider execution or
+package publication. It does not repin Jim or claim a released Echo v2 target
+contract. [TIR-REQ-048]
+
+## Shared expression and identity validation
 
 Each Target IR intent also preserves an explicit Core basis expression when
 present, the Core input constraints, Core evaluation budget, source-ordered

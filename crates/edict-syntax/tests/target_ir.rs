@@ -1011,7 +1011,7 @@ fn unsupported_target_profile_rejects_without_artifact() {
 #[test]
 fn unsupported_target_ir_domain_rejects_without_artifact() {
     let mut facts = echo_facts();
-    facts.target_ir_domain = "echo.span-ir/v2".to_owned();
+    facts.target_ir_domain = "echo.span-ir/v99".to_owned();
 
     let report = lower_to_target_ir(&effectful_core(), &facts);
 
@@ -3956,3 +3956,6 @@ fn replace_required(source: &str, from: &str, to: &str) -> String {
 fn digest_text(hex: char) -> String {
     format!("sha256:{}", hex.to_string().repeat(64))
 }
+
+#[path = "target_ir/ordered.rs"]
+mod ordered;
