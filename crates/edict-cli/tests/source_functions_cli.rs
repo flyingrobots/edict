@@ -45,7 +45,7 @@ fn public_project_compiles_jim_source_functions_to_authenticated_core_and_target
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(output.stderr.is_empty());
+    assert_eq!(output.stderr, Vec::<u8>::new());
     let records: Vec<Value> = String::from_utf8(output.stdout)
         .unwrap()
         .lines()
