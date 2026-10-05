@@ -474,7 +474,7 @@ That's the gap Edict fills.
 ## Build & Run
 
 Edict is not on crates.io yet (the alpha train keeps `publish = false`), so build
-from source. Requires Rust 1.85+.
+from source. Requires Rust 1.96+.
 
 Build the CLI:
 
