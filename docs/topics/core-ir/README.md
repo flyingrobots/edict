@@ -40,6 +40,19 @@ descent, so a long acyclic named chain returns `DepthExceeded` before exhausting
 the stack. Depth failures identify the checked table or graph occurrence; other
 failure kinds retain their specific child paths. [COREIR-REQ-027] [COREIR-REQ-028]
 
+The same validation boundary limits executable graph descent to 128 edges.
+Each basis expression, input predicate, and intent body starts at depth zero.
+Expression and predicate children consume one edge, including transitions
+between those families; entering a nested branch or loop block also consumes
+one. A block's nodes and result retain its current depth. Exceeding the limit
+returns `DepthExceeded` at the first over-limit structural path, before canonical
+or Target traversal. Canonical Core encoding maps that integrity failure to
+`UnsupportedValue`; it does not reach the later canonical container walk
+that would return `NestingLimitExceeded`. This is a separate budget from semantic type expansion
+and canonical CBOR container nesting: passing the graph-depth judgment does
+not promise that the encoded containers fit the canonical nesting budget.
+[COREIR-REQ-029]
+
 The Core module schema does not embed reviewed golden bytes, exact Core
 digests, target IR, or admission bundles. Reviewed Core artifact fixtures live
 outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]

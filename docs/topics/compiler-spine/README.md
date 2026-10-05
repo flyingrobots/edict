@@ -41,7 +41,7 @@ Boolean `&&` and `||` predicates lower to ordered Core `All` and `Any` forms
 where predicate checking is used: input constraints, statement conditionals,
 requirements, branch-yield conditions, and pure conditionals. This preserves
 predicate structure at source-to-Core; it does not claim target execution
-support. Only conjunction supplies unsigned-subtraction proof evidence.
+support. Only conjunction supplies input-domain proof evidence.
 [CSPINE-REQ-039]
 
 The prelude call `len(value)` lowers for bounded structural `Bytes`, including
@@ -54,6 +54,28 @@ list length, and implicit nominal unwrapping are not implemented by this slice.
 The target validates the emitted primitive independently; compilation alone
 does not establish runtime support or execution evidence.
 [CSPINE-REQ-040]
+
+`slice(bytes, start, end)` lowers bounded raw bytes and U64 endpoints to
+`core.bytes.slice<OperandType>(bytes,start,end)`. Its result keeps the operand
+maximum and drops positive minimum/exact length, since empty slices are valid.
+Operand type failures point to the wrong byte or endpoint expression; two wrong
+endpoints receive separate `TypeMismatch` diagnostics. [CSPINE-REQ-042]
+The compiler requires exact evidence of `start <= end <= len(bytes)` from
+conjunctive input constraints or unconditional equal/zero relationships. It
+does not infer aliases, transitive orders, or flow-sensitive guard facts, and
+constraints cannot justify earlier basis or constraint evaluation. Missing
+proof rejects with `UnsupportedSourceShape`; wrong operands or output bounds
+reject with `TypeMismatch`. Raw byte slicing has no UTF-8 semantics.
+[CSPINE-REQ-041]
+
+This compiler boundary carries the declared budget and finite result maximum.
+It does not claim whole-program primitive allocation inference or runtime byte
+copy charging. Public `project` can expose the source-produced artifacts;
+application `build` also crosses a provider packaging and verification boundary.
+A provider can preserve the Core/Target call in an executable-package artifact
+without its consumer evaluator implementing that call. Successful packaging or
+an accepted verifier report therefore does not establish slice execution,
+input-constraint enforcement, or runtime byte-copy charging.
 
 - The lowerable subset is deliberately narrow: local record type declarations,
   one-parameter intents, `profile`, `basis none` or one input-derived explicit

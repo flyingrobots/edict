@@ -157,6 +157,7 @@ const PRELUDE_NAMES: &[&str] = &[
     "hash",
     "len",
     "none",
+    "slice",
     "some",
     "true",
 ];

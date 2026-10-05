@@ -10,6 +10,25 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Byte-slice proof-scope regression checks now identify the exact rejected
+  basis, input-predicate or later-intent call and retain a compiling control.
+
+- Core integrity validation and Target totality now bound combined expression,
+  predicate and nested-block descent at 128 edges. Over-limit public Core
+  returns a structured depth failure before canonical or Target traversal.
+  Canonical encoding maps this earlier integrity failure to `UnsupportedValue`,
+  including nested requests that previously reached its container-depth refusal.
+
+- Byte-slice type diagnostics now identify each invalid operand, including
+  separate errors when both endpoint types are wrong.
+
+- Added proven half-open `slice` over bounded raw bytes, preserving the operand
+  maximum and explicit U64 endpoints through Core and Target IR. Source and
+  Target independently require exact input-domain proof; invalid signatures,
+  unavailable operands and pre-proof evaluation fail closed. This compiler
+  capability does not supply runtime slicing, UTF-8 semantics or new provider
+  pins.
+
 - Added explicitly selected `echo.span-ir/v2` ordered Target IR for interleaved
   effects, pure bindings, and dependent guards. The canonical artifact binds an
   exact instruction order and rejects malformed dependency references. Legacy

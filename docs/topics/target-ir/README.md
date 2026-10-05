@@ -378,6 +378,35 @@ bounds repeated validation through nested conditional predicates; public tests
 also reject an unavailable local hidden in the innermost length call. These
 checks do not claim a bound on every compiler pass. [TIR-REQ-048] [TIR-REQ-049]
 
+## Byte-slice boundary
+
+`core.bytes.slice<OperandType>(bytes,start,end)` takes one exact structural byte
+coordinate and three operands, including two U64 endpoints. Its result is
+`Bytes<max=N>` for the resolved operand maximum N. Target inference validates
+each operand once per inference call and independently checks local authority,
+endpoint widths and the conservative result bound.
+
+A separate Target-owned totality walk requires `start <= end <= len(bytes)`
+from exact conjunctive input evidence or unconditional equal/zero relations.
+It traverses all expression-bearing intent locations, using no input assumptions
+for basis or input-predicate evaluation. Forged signatures, missing proofs,
+foreign locals and incorrect proof scope reject with `InvalidCoreIdentity` and
+no artifact. This walk is shared with subtraction, while the Target proof
+routine remains independent from the source compiler. [TIR-REQ-051]
+
+Public Core integrity validation rejects graph nesting beyond 128 edges before
+Target traversal. The totality walker independently applies that same ceiling,
+carrying one depth counter across expression/predicate transitions and nested
+blocks rather than resetting it at a node-family boundary. Over-limit totality
+checks fail closed. [TIR-REQ-052]
+
+The existing Call schema carries the operation without changing wire shape or
+prior canonical identities. This compiler capability supplies no UTF-8 or rope
+semantics, runtime slice execution, or byte-copy budget charging. A provider may
+accept and package the preserved call while the evaluator still lacks execution
+support; a successful build or verifier report does not discharge those consumer
+obligations.
+
 ## Unsigned subtraction boundary
 
 The target lowerer recognizes `core.integer.subtract<U32/U64>` with exactly two
