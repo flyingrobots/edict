@@ -69,6 +69,9 @@ fn checked_linear_operations_preserve_exact_boundaries() {
 #[test]
 fn multiplication_uses_signed_ties_to_even() {
     for (left, right, expected) in [
+        // Exact scaled product = i64::MAX + 8_365_928 / 2^32.
+        // The fractional remainder rounds down before the range check.
+        (199_032_858_228_936, 199_032_871_303_925, i64::MAX),
         (1, 2_147_483_647, 0),
         (1, 2_147_483_648, 0),
         (1, 2_147_483_649, 1),
