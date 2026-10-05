@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Byte-slice type diagnostics now identify each invalid operand, including
+  separate errors when both endpoint types are wrong.
+
 - Added proven half-open `slice` over bounded raw bytes, preserving the operand
   maximum and explicit U64 endpoints through Core and Target IR. Source and
   Target independently require exact input-domain proof; invalid signatures,

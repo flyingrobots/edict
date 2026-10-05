@@ -58,6 +58,8 @@ does not establish runtime support or execution evidence.
 `slice(bytes, start, end)` lowers bounded raw bytes and U64 endpoints to
 `core.bytes.slice<OperandType>(bytes,start,end)`. Its result keeps the operand
 maximum and drops positive minimum/exact length, since empty slices are valid.
+Operand type failures point to the wrong byte or endpoint expression; two wrong
+endpoints receive separate `TypeMismatch` diagnostics. [CSPINE-REQ-042]
 The compiler requires exact evidence of `start <= end <= len(bytes)` from
 conjunctive input constraints or unconditional equal/zero relationships. It
 does not infer aliases, transitive orders, or flow-sensitive guard facts, and

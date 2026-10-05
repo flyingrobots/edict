@@ -237,6 +237,42 @@ fn byte_slice_rejects_wrong_call_shapes_and_types() {
 }
 
 #[test]
+fn byte_slice_type_errors_identify_each_invalid_operand() {
+    for (ty, expression, operands) in [
+        ("U64", "slice(input.bytes, 0, 0)", vec!["input.bytes"]),
+        ("Bytes<max=32>", "slice(input.bytes, 0u32, 0)", vec!["0u32"]),
+        ("Bytes<max=32>", "slice(input.bytes, 0, 0i64)", vec!["0i64"]),
+        (
+            "Bytes<max=32>",
+            "slice(input.bytes, 0u32, 1i64)",
+            vec!["0u32", "1i64"],
+        ),
+    ] {
+        let text = source(ty, "", expression, "Bytes<max=32>");
+        let call_start = text.find(expression).unwrap();
+        let call_end = call_start + expression.len();
+        let errors = compile_to_core(&parse_module(&text).unwrap(), &context()).unwrap_err();
+        let actual = errors
+            .iter()
+            .filter(|error| {
+                error.kind == CompilerErrorKind::TypeMismatch
+                    && error.span.start >= call_start
+                    && error.span.end <= call_end
+            })
+            .map(|error| (error.span.start, error.span.end))
+            .collect::<Vec<_>>();
+        let expected = operands
+            .iter()
+            .map(|operand| {
+                let start = call_start + expression.find(operand).unwrap();
+                (start, start + operand.len())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected, "{expression}");
+    }
+}
+
+#[test]
 fn byte_slice_proofs_do_not_leak_into_basis_constraints_or_other_intents() {
     let original = source("Bytes<max=32>", GUARD, SLICE, "Bytes<max=32>");
     let second_intent = original[original.find("intent cut").unwrap()..]

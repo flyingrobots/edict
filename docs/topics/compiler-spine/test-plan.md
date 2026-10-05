@@ -70,6 +70,7 @@ Out of scope:
 | CSPINE-REQ-039 | implemented | Boolean conjunction and disjunction retain ordered All/Any predicate structure at the source-to-Core boundary; only conjunctive facts justify subtraction. | issue #210 |
 | CSPINE-REQ-040 | implemented | Prelude len on bounded structural Bytes preserves its exact operand coordinate and yields U64; other families and malformed calls reject structurally. | issue #216, EDICT-LANG-LEN-001 |
 | CSPINE-REQ-041 | implemented | Prelude slice preserves half-open byte operands and the input maximum, dropping minimum/exact length, only when exact input predicates prove ordered U64 endpoints within the same byte value. Proofs cannot justify earlier basis/constraint evaluation or another intent. | EDICT-LANG-BYTE-SLICE-001 |
+| CSPINE-REQ-042 | implemented | Byte-slice operand type diagnostics identify the exact wrong byte, start or end expression; both wrong endpoints each receive a diagnostic. | issue #220 |
 
 ## Fixtures
 
@@ -126,6 +127,7 @@ Out of scope:
 | CSPINE-TP-041 | implemented | Predicate semantics | CSPINE-REQ-039 | Source conjunction/disjunction retain their exact connective, order, and child predicates in Core. | boolean_connectives_preserve_predicate_structure_in_core | crates/edict-syntax/tests/unsigned_subtraction.rs | Source-to-Core evidence, not runtime short-circuit proof. |
 | CSPINE-TP-042 | implemented | Bounded byte length | CSPINE-REQ-040 | Bounded/exact/empty bytes preserve operand identity and U64 output; wrong operands, arity/type arguments, and output width reject. The public Jim build advances past UnresolvedFunction. | bounded_byte_length_preserves_operand_type_and_u64_result, byte_length_rejects_wrong_source_operands_and_call_shapes | crates/edict-syntax/tests/byte_length.rs | Runtime support remains separate. |
 | CSPINE-TP-043 | implemented | Proven byte slicing | CSPINE-REQ-041 | Proven ranges preserve exact operands and conservative result bounds; whole/empty ranges need no assumptions; unproven ranges, wrong signatures, shadowing and proof-scope leakage reject. Source mutations change identity. | byte_slice_preserves_operand_identity_and_weakens_length_bound, byte_slice_accepts_full_and_empty_ranges_without_assumptions, byte_slice_accepts_equivalent_exact_order_evidence, byte_slice_rejects_unproven_ranges, byte_slice_rejects_wrong_call_shapes_and_types, byte_slice_proofs_do_not_leak_into_basis_constraints_or_other_intents, byte_slice_source_name_cannot_be_shadowed, byte_slice_source_mutation_changes_core_identity | crates/edict-syntax/tests/byte_slice.rs | Compiler evidence does not execute byte slicing. |
+| CSPINE-TP-044 | implemented | Operand diagnostics | CSPINE-REQ-042 | Wrong byte/start/end types and two wrong endpoints produce TypeMismatch diagnostics on the exact source operand spans. | byte_slice_type_errors_identify_each_invalid_operand | crates/edict-syntax/tests/byte_slice.rs | No diagnostic-prose oracle. |
 
 ## Determinism Obligations
 

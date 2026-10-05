@@ -1,8 +1,8 @@
 //! Proven half-open slicing over bounded raw bytes.
 use super::{
-    error, integer_shape, unsigned_subtraction::proven_order, BTreeMap, CompilerErrorKind,
-    CompilerStage, CoreExpr, Expr, LocalRef, Span, TypeChecker, TypeKind, TypeRef, TypeShape,
-    TypedValue,
+    error, expr_span, integer_shape, unsigned_subtraction::proven_order, BTreeMap,
+    CompilerErrorKind, CompilerStage, CoreExpr, Expr, LocalRef, Span, TypeChecker, TypeKind,
+    TypeRef, TypeShape, TypedValue,
 };
 
 impl TypeChecker<'_> {
@@ -37,20 +37,24 @@ impl TypeChecker<'_> {
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::TypeMismatch,
                 "slice requires bounded structural Bytes",
-                span,
+                expr_span(&args[0]),
             ));
             return None;
         };
         let index_type = integer_shape("U64");
         let start = self.check_expr_with_expected(start, env, Some(&index_type))?;
         let end = self.check_expr_with_expected(end, env, Some(&index_type))?;
+        for (value, operand) in [(&start, &args[1]), (&end, &args[2])] {
+            if value.ty != index_type {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "slice endpoint must have type U64",
+                    expr_span(operand),
+                ));
+            }
+        }
         if start.ty != index_type || end.ty != index_type {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::TypeMismatch,
-                "slice endpoints must have type U64",
-                span,
-            ));
             return None;
         }
         let coordinate = bytes.ty.value_type_coord();
