@@ -234,7 +234,7 @@ it does not treat compiler Target IR as proof of runtime support.
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| TIR-REQ-052 | implemented | The independent totality walker shares the Core graph depth ceiling across expressions, predicates and nested blocks and fails closed on over-limit graphs. | issue #220, PR #221 review |
+| TIR-REQ-052 | implemented | The independent totality walker shares the Core graph depth ceiling across expressions, predicates and nested blocks and fails closed on over-limit graphs. | issue #220, crates/edict-syntax/src/target_ir/totality.rs |
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |

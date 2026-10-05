@@ -152,7 +152,7 @@ Out of scope:
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| COREIR-REQ-029 | implemented | Public Core integrity validation bounds the combined nesting of expressions, predicates and blocks at 128 edges before canonical or Target traversal, preserving a deterministic DepthExceeded path. | issue #220, PR #221 review |
+| COREIR-REQ-029 | implemented | Public Core integrity validation bounds the combined nesting of expressions, predicates and blocks at 128 edges before canonical or Target traversal, preserving a deterministic DepthExceeded path. | issue #220, crates/edict-syntax/src/core_ir.rs |
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
