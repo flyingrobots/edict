@@ -3534,7 +3534,9 @@ impl<'a> TypeChecker<'a> {
             }
             Expr::Ident { .. } | Expr::Field { .. } | Expr::Call { .. } | Expr::If { .. } => {
                 let expected = TypeShape::canonical_structural(TypeKind::Bool)?;
-                let value = self.check_expr_with_expected(expr, env, Some(&expected))?;
+                // Check the operand on its own terms before applying the
+                // predicate requirement; nested typing failures stay distinct.
+                let value = self.check_expr(expr, env)?;
                 if !compatible(&expected, &value.ty) {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,
