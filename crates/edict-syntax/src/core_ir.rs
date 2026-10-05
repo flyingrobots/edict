@@ -1781,7 +1781,7 @@ mod structural_type_reference_tests {
 
     fn module_with_types(types: BTreeMap<String, CoreType>) -> CoreModule {
         CoreModule {
-            functions: Default::default(),
+            functions: BTreeMap::new(),
             api_version: CORE_API_VERSION.to_owned(),
             coordinate: "integrity.test@1".to_owned(),
             imports: Vec::new(),

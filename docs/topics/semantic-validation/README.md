@@ -53,8 +53,8 @@ error ordering is not part of the Phase 2 contract. Tests assert structured
   contract requires an explicit source clause. [SEMVAL-REQ-005]
 - Singleton intent clauses reject duplicates for `profile`, `implements`,
   `basis`, `footprint`, and `budget`. [SEMVAL-REQ-006]
-- Module-scope import aliases, `type` declarations, `enum` declarations, and
-  `intent` declarations share a source-AST namespace and reject duplicate names.
+- Module-scope import aliases, `type`, `enum`, `fn`, and `intent` declarations
+  share a source-AST namespace and reject duplicate names.
   [SEMVAL-REQ-007]
 - Source binders reject shadowing of visible module/prelude names, parameters,
   and earlier local binders. The check covers function and intent parameters, `let` binders,

@@ -1179,23 +1179,7 @@ impl<'a> TypeChecker<'a> {
         match stmt {
             Stmt::Let {
                 value, els, span, ..
-            } => {
-                let value_cost = self.helper_cost_for_expr(value)?;
-                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
-                let combined = self.checked_helper_cost_add(value_cost, handler_cost, *span)?;
-                let steps = self
-                    .source_value_bounds
-                    .get(&expression_identity(value))
-                    .map_or(0, |bound| bound.0);
-                self.checked_helper_cost_add(
-                    combined,
-                    HelperCost {
-                        steps,
-                        ..HelperCost::default()
-                    },
-                    *span,
-                )
-            }
+            } => self.helper_cost_for_binding(value, els.as_ref(), *span),
             Stmt::Effect { call, els, span } => {
                 let call_cost = self.helper_cost_for_expr(call)?;
                 let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
@@ -1283,6 +1267,29 @@ impl<'a> TypeChecker<'a> {
                 self.checked_helper_cost_add(iter_cost, body_and_loop, *span)
             }
         }
+    }
+
+    fn helper_cost_for_binding(
+        &mut self,
+        value: &Expr,
+        handler: Option<&ObstructionHandler>,
+        span: Span,
+    ) -> Option<HelperCost> {
+        let value_cost = self.helper_cost_for_expr(value)?;
+        let handler_cost = self.helper_cost_for_handler(handler)?;
+        let combined = self.checked_helper_cost_add(value_cost, handler_cost, span)?;
+        let steps = self
+            .source_value_bounds
+            .get(&expression_identity(value))
+            .map_or(0, |bound| bound.0);
+        self.checked_helper_cost_add(
+            combined,
+            HelperCost {
+                steps,
+                ..HelperCost::default()
+            },
+            span,
+        )
     }
 
     fn helper_cost_for_expr(&mut self, expr: &Expr) -> Option<HelperCost> {
@@ -3605,6 +3612,24 @@ impl<'a> TypeChecker<'a> {
         self.check_expr_with_expected(expr, env, None)
     }
 
+    fn check_negated_integer(
+        &mut self,
+        operand: &Expr,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        let Expr::Int { value, suffix, .. } = operand else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "negated expression is outside the initial lowerable subset",
+                span,
+            ));
+            return None;
+        };
+        self.check_integer_literal(&format!("-{value}"), *suffix, expected, span)
+    }
+
     fn check_expr_with_expected(
         &mut self,
         expr: &Expr,
@@ -3631,18 +3656,7 @@ impl<'a> TypeChecker<'a> {
                 op: UnOp::Neg,
                 operand,
                 span,
-            } => {
-                let Expr::Int { value, suffix, .. } = operand.as_ref() else {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        CompilerErrorKind::UnsupportedSourceShape,
-                        "negated expression is outside the initial lowerable subset",
-                        *span,
-                    ));
-                    return None;
-                };
-                self.check_integer_literal(&format!("-{value}"), *suffix, expected, *span)
-            }
+            } => self.check_negated_integer(operand, expected, *span),
             Expr::Field { base, field, span } => self.check_field(base, field, *span, env),
             Expr::Binary {
                 op: BinOp::Add,
@@ -3737,6 +3751,18 @@ impl<'a> TypeChecker<'a> {
                     .check_source_call(name, &signature, type_args, args, env, expected, span);
             }
         }
+        self.check_imported_pure_call(callee, type_args, args, env, expected, span)
+    }
+
+    fn check_imported_pure_call(
+        &mut self,
+        callee: &Expr,
+        type_args: &[TypeRef],
+        args: &[Expr],
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
         let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
         if self
             .resolved

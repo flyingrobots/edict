@@ -1379,9 +1379,7 @@ fn validate_source_function_bodies(
             detail: format!("source function {coordinate}: {detail}"),
         };
         if imported.iter().any(|fact| fact.coordinate == coordinate)
-            || effects
-                .iter()
-                .any(|fact| fact.source_coordinate == coordinate)
+            || effects.iter().any(|fact| fact.coordinate == coordinate)
         {
             return Some(invalid("coordinate collides with imported authority"));
         }
@@ -2468,7 +2466,7 @@ mod tests {
         };
         let unrelated_definition = CoreType::Bool;
         let core = CoreModule {
-            functions: Default::default(),
+            functions: BTreeMap::new(),
             api_version: CORE_API_VERSION.to_owned(),
             coordinate: "examples.closure@1".to_owned(),
             imports: Vec::new(),

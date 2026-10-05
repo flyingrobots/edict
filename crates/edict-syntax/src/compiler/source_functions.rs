@@ -1,5 +1,12 @@
 //! First-order source functions keep executable authority in the source module.
-use super::*;
+use std::collections::BTreeMap;
+
+use super::{
+    compare_op, compatible, error, expr_span, expression_identity, next_local, BinOp,
+    CompilerErrorKind, CompilerStage, CoreExpr, CoreFunction, CorePureBinding, CorePureBlock, Expr,
+    FunctionDecl, HelperCost, LetStatement, LocalRef, Span, Stmt, TypeChecker, TypeKind, TypeRef,
+    TypeShape, TypedValue, UnOp,
+};
 
 const VALUE_CELL_BYTES: u64 = 64;
 

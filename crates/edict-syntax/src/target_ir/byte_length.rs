@@ -42,7 +42,7 @@ mod tests {
     #[test]
     fn nested_byte_length_validation_work_is_bounded() {
         let core = CoreModule {
-            functions: Default::default(),
+            functions: BTreeMap::new(),
             api_version: crate::core_ir::CORE_API_VERSION.to_owned(),
             coordinate: "length.work@1".to_owned(),
             imports: Vec::new(),

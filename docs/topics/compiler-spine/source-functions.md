@@ -51,7 +51,10 @@ function table is source-owned executable authority. It is separate from the
 lawpack-owned signature/cost facts supplied through compiler context.
 An imported call still needs its exact digest-locked owning lawpack, signature,
 type closure and cost evidence; a similarly named source definition cannot
-manufacture that authority.
+manufacture that authority. A shared package coordinate is not a namespace
+ban: a source function can call a disjoint imported export in that package.
+Source-graph membership comes from the declared function table; imported calls
+still require their independently authenticated facts.
 
 An empty table is omitted from canonical Core. Existing function-free bytes
 remain unchanged. Nonempty tables authenticate signatures, bodies and callees;
@@ -60,7 +63,7 @@ are replaced by deterministic positional identities, so alpha-renaming those
 names preserves bytes. Function names remain semantic coordinates.
 
 Public Core validation checks type references, binder identity, ordered lexical
-availability, call arity, recursion and source-call height. Independent Target
+availability, source-call arity, recursion and source-call height. Independent Target
 validation also checks each binding/result type, complete call authority and
 partial-operation totality, including unused function bodies. Caller input
 proofs do not establish a function body's totality. Source-owned executable

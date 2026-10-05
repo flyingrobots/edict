@@ -1,5 +1,12 @@
 //! Source-owned function integrity and context-free call-height summaries.
-use super::*;
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::{
+    is_core_field_name, validate_core_expression_types, validate_core_graph_depth,
+    validate_core_local_type, validate_core_type_reference, CoreExpr, CoreFunction, CoreModule,
+    CorePredicate, CoreTypeIntegrityFailure, CoreTypeIntegrityFailureKind, CoreTypeIntegrityState,
+    LocalRef, MAX_CORE_GRAPH_DEPTH,
+};
 
 pub(super) fn validate_functions(
     module: &CoreModule,
@@ -188,10 +195,13 @@ pub(crate) fn validate_function_graph(
                 type_args,
             } = expression
             {
-                if let Some(target) = callee.strip_prefix(&prefix) {
-                    let Some(called) = functions.get(target) else {
-                        return Err(invalid(&format!("functions.{name}.call.{callee}")));
-                    };
+                // A package prefix can also belong to an imported lawpack.
+                // Only declared source members form this graph; the compiler
+                // and independent Target checker authenticate external calls.
+                let source = callee
+                    .strip_prefix(&prefix)
+                    .and_then(|target| functions.get(target).map(|called| (target, called)));
+                if let Some((target, called)) = source {
                     if !type_args.is_empty() || args.len() != called.params.len() {
                         return Err(invalid(&format!("functions.{name}.call.{callee}")));
                     }
