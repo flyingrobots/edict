@@ -183,7 +183,7 @@ fn existing_string_concat_remains_unchanged() {
         panic!("string concatenation")
     };
     assert_eq!(callee, "core.string.concat");
-    assert!(type_args.is_empty());
+    assert_eq!(type_args, &Vec::<String>::new());
     assert_eq!(
         lower_to_target_ir(&core, &facts()).status,
         TargetLoweringStatus::Lowered
