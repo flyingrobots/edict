@@ -10,6 +10,13 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Adopted pinned Bunny 0.6.0 as the normative checked Q32.32 numeric foundation
+  and exposed raw fixed-point evaluation through the Rust facade, with explicit
+  overflow and division-by-zero failures. Existing integer semantics and Core
+  artifacts are unchanged; fixed-point source syntax and Target instructions
+  remain unsupported. The workspace, CI and current-source consumer witness
+  now require Rust 1.96 for the dependency.
+
 - Added bounded raw-byte `+`, preserving operand order and exact coordinates in
   Core and Target with a checked sum of operand maxima. Overflow, narrowing,
   wrong operand families and forged Target calls fail closed. This generic

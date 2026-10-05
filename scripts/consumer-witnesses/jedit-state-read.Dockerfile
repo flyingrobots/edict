@@ -1,4 +1,4 @@
-FROM rust:1.95.0-bookworm
+FROM rust:1.96.0-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends python3 \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /edict
