@@ -202,7 +202,7 @@ fn build_mutation_application(root: &Path) -> Output {
 fn assert_stale_helper_rejected(root: &Path) {
     let rejected = build_mutation_application(root);
     assert_eq!(rejected.status.code(), Some(2), "{rejected:?}");
-    assert!(rejected.stdout.is_empty());
+    assert_eq!(rejected.stdout, Vec::<u8>::new());
     let records: Vec<Value> = String::from_utf8(rejected.stderr)
         .unwrap()
         .lines()
