@@ -1,5 +1,7 @@
 //! Source-owned function contracts, exercised through actual source compilation.
 //! Runtime argument evaluation belongs to the dependent Echo witness.
+use std::fmt::Write;
+
 use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_core_module,
     lower_to_target_ir, parse_module, validate_core_module_type_integrity, CanonicalValue,
@@ -389,16 +391,20 @@ fn source_function_recursion_is_rejected_even_when_unused() {
 }
 
 fn chain(length: usize) -> String {
-    (0..length)
-        .map(|index| {
-            let result = if index + 1 == length {
-                "value".into()
-            } else {
-                format!("step{}(value)", index + 1)
-            };
-            format!("fn step{index}(value: U64) -> U64 {{ return {result}; }}\n")
-        })
-        .collect()
+    let mut functions = String::new();
+    for index in 0..length {
+        let result = if index + 1 == length {
+            "value".into()
+        } else {
+            format!("step{}(value)", index + 1)
+        };
+        writeln!(
+            functions,
+            "fn step{index}(value: U64) -> U64 {{ return {result}; }}"
+        )
+        .unwrap();
+    }
+    functions
 }
 
 #[test]
@@ -733,7 +739,7 @@ fn repeated_source_diamonds_have_checked_cost_without_expansion() {
     let mut previous = "leaf".to_owned();
     for index in 0..64 {
         let name = format!("diamond{index}");
-        functions.push_str(&format!("fn {name}(value: U64) -> U64 {{ let first = {previous}(value); return {previous}(first); }}\n"));
+        writeln!(functions, "fn {name}(value: U64) -> U64 {{ let first = {previous}(value); return {previous}(first); }}").unwrap();
         previous = name;
     }
     let parsed = parse_module(&source(&functions, "diamond63(input.value)")).unwrap();
@@ -876,16 +882,15 @@ fn source_function_costs_do_not_depend_on_diagnostic_spans() {
 
 #[test]
 fn source_function_costs_include_original_branch_yield_bindings() {
-    let bindings = (0..8)
-        .map(|index| {
-            let value = if index == 0 {
-                "input.value".to_owned()
-            } else {
-                format!("copy{}", index - 1)
-            };
-            format!("let copy{index} = {value};")
-        })
-        .collect::<String>();
+    let mut bindings = String::new();
+    for index in 0..8 {
+        let value = if index == 0 {
+            "input.value".to_owned()
+        } else {
+            format!("copy{}", index - 1)
+        };
+        write!(bindings, "let copy{index} = {value};").unwrap();
+    }
     let authored = source("fn retain(value: U64) -> U64 { return value; }", "input.other")
         .replace("type Input = { value: U64, other: U64, };", "type Input = { value: Bytes<max=1024>, other: U64, };")
         .replace("return { value: input.other };", &format!("let selected = if input.other == 0u64 {{ {bindings} yield copy7; }} else {{ yield input.value; }}; return {{ value: retain(len(selected)) }};"));
