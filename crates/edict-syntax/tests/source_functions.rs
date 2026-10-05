@@ -102,7 +102,7 @@ fn source_function_identity_is_not_an_imported_fact() {
         "fn retain(value: U64) -> U64 { return value; }",
         "retain(input.value)",
     ));
-    assert!(core.imports.is_empty());
+    assert_eq!(core.imports, Vec::<edict_syntax::CoreImport>::new());
     let value = canonical(&core);
     let function = definition(&value, "retain");
     assert_eq!(
@@ -126,7 +126,7 @@ fn source_function_identity_is_not_an_imported_fact() {
     };
     assert_eq!(callee, "functions.example@1.retain");
     assert_eq!(args.len(), 1);
-    assert!(type_args.is_empty());
+    assert_eq!(type_args.as_slice(), [] as [String; 0]);
     let target = lower_to_target_ir(&core, &facts());
     assert_eq!(target.status, TargetLoweringStatus::Lowered, "{target:?}");
     assert_eq!(
@@ -303,7 +303,7 @@ fn caller_expressions_remain_single_ordered_arguments_even_when_unused() {
         };
         assert!(matches!(&args[0], CoreExpr::Field { field, .. } if field == expected));
     }
-    assert!(core.intents["evaluate"].body.nodes.is_empty());
+    assert_eq!(core.intents["evaluate"].body.nodes, Vec::<CoreNode>::new());
 }
 
 #[test]
@@ -798,7 +798,7 @@ fn require_only_source_function_program_binds_the_complete_core_identity() {
     let mut target = facts();
     target.obstruction_coordinates.push("domain.Refused".into());
     let core = compile(&authored);
-    assert!(core.imports.is_empty());
+    assert_eq!(core.imports, Vec::<edict_syntax::CoreImport>::new());
     assert!(core.intents["evaluate"].basis.is_none());
     assert!(core.intents["evaluate"]
         .body
