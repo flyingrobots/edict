@@ -1690,6 +1690,13 @@ Length and bound units are pinned (`EDICT-LANG-LEN-001`):
   maxima; a concatenation whose derived bound exceeds the destination type bound
   rejects at compile time.
 
+The current compiler and target implementation support the bounded structural
+Bytes specialization through `core.bytes.length<OperandType>(value)`, retaining
+the exact operand coordinate and returning U64. The prelude takes one argument
+and no authored type arguments. Other operand families, including String's
+specified Unicode-scalar specialization, remain unsupported by this lowering;
+they must not be silently measured in byte units instead.
+
 ### Compound Types
 
 - record types;
@@ -1927,6 +1934,13 @@ The Edict Core prelude is intentionally small:
 - `len(value) -> U64` (Unicode scalar count for `String`, byte count for
   `Bytes`, element count for `List`/`Map`; see Refined Scalar Types,
   `EDICT-LANG-LEN-001`)
+- `slice(bytes: Bytes<max=N>, start: U64, end: U64) -> Bytes<max=N>`
+  selects the half-open byte range `[start,end)` only when the compiler proves
+  `start <= end <= len(bytes)` (`EDICT-LANG-BYTE-SLICE-001`). The bytes remain
+  raw: slicing does not decode UTF-8, normalize text, clip invalid endpoints,
+  or supply missing bytes. The result drops the operand's positive minimum or
+  exact-length refinement; it may be empty. The source call has three arguments
+  and no authored type arguments.
 - `some<T>(value: T) -> Option<T>`
 - `none<T>() -> Option<T>`
 - `default<T>(value: Option<T>, fallback: T) -> T`
@@ -1950,7 +1964,9 @@ String:
   ordered comparison only if the type pins a canonicalization/collation profile
   no slice, split, trim, case-fold, locale, or regex helper in minimal-v1
 Bytes:
+  +                       # bounded raw-byte concatenation
   == !=
+  slice(bytes, start, end) # proven, bounded half-open byte range
   no implicit string conversion
 ```
 
@@ -1976,8 +1992,57 @@ All integer arithmetic in the lawful-autonomous lane is overflow-safe and total
   never a silent or runtime-panicking outcome; it is a compile-time rejection or
   a typed `Option` the author must handle.
 
+The current source-to-Core compiler supports a conservative unsigned subtraction
+slice. Operands must have the same `U32` or `U64` type. It accepts `x - x`,
+`x - 0`, ordered literals, and differences whose exact operands are ordered by
+an intent input constraint (`<=`, `<`, `>=`, `>`, or `==`). Conjunctive clauses
+can supply this evidence; disjunction and negation cannot. The compiler does
+not infer transitive relationships or propagate aliases for this proof.
+
+The resulting Core call is `core.integer.subtract<T>(minuend, subtrahend)`;
+width, operand order, and input predicates remain explicit and hash-significant.
+Input constraints justify body arithmetic only: they cannot justify evaluation
+of the basis or of the constraints themselves. Each intent has an isolated
+proof scope. Target lowering and verification must independently support and
+validate this operation before accepting executable output. This compiler
+slice does not imply support for the other arithmetic forms specified above.
+
 Every prelude function must be total over valid input or must expose a typed
 diagnostic that the compiler can force authors to handle.
+
+The implemented byte concatenation accepts two bounded structural byte operands
+and preserves their order in `core.bytes.concat<LeftType,RightType>(left,right)`
+(`EDICT-LANG-BYTE-CONCAT-001`). The result has the conservative bound
+`Bytes<max=L+R>`, using the operand maxima even when exact or minimum lengths are
+known. A static sum beyond U64 rejects with `InvalidBound`; incompatible operand
+families and narrower destinations reject with `TypeMismatch`. There is no
+implicit conversion from strings or nominal wrappers. Target independently
+checks signature, exact operand coordinates, local authority, checked sum and
+result compatibility. Compilation or provider acceptance does not prove runtime
+byte-copy budget compliance or execution support for this call.
+The [canonical lowering decision](topics/target-ir/README.md#byte-concatenation-boundary)
+records the implementation relationships for this language rule.
+
+The implemented byte-slice proof uses exact operands in conjunctive intent
+input constraints, identical endpoints, unsigned zero lower bounds, and ordered
+unsigned literals. The upper endpoint must be ordered against `len` of the
+same byte expression and exact operand coordinate. It does not infer alias,
+transitive, negated, disjunctive, or branch-local relationships. Input constraints
+justify body evaluation only, never their own evaluation or the earlier basis.
+An unproven slice rejects before Core with `UnsupportedSourceShape`; wrong
+operand families or endpoint widths reject with `TypeMismatch`.
+
+Core retains the call as `core.bytes.slice<OperandType>(bytes,start,end)` and
+Target independently validates its signature, authority, result bound, and
+evaluation-scope proof. The existing Call encoding carries the operation;
+existing source and artifact identities without it do not change. Public
+`project` may expose Core and Target review artifacts, while application
+`build` additionally crosses provider packaging and verification. A provider may
+preserve the call in a package and accept its artifact relation without a
+consumer evaluator implementing slice execution. Neither successful build,
+accepted report, nor a type maximum proves runtime budget compliance: the
+declared Core budget remains explicit, and the evaluator must independently
+implement byte-copy charging and input-constraint enforcement.
 
 `hash` is a source-level helper, not the artifact hash primitive. The label must
 be a string literal so digest domains are stable and reviewable.

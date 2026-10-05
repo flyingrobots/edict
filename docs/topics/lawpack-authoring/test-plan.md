@@ -52,7 +52,7 @@ directories, so creation of empty coordination state cannot pass invisibly.
 
 ## Mutation Witness Calibration
 
-LAUTH-TP-017 and CSPINE-TP-040 add evidence for existing behavior. Their valid
+LAUTH-TP-017 and CSPINE-TP-046 add evidence for existing behavior. Their valid
 specimens pass without a production repair. The RED observations are deliberate
 fault injections, not a claim that the baseline compiler contained those faults.
 Each temporary change below was applied separately and restored before the
