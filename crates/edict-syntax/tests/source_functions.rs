@@ -1169,17 +1169,37 @@ fn graph_expression_depth_diagnostic_identifies_its_owning_function() {
 
 #[test]
 fn request_value_shapes_are_unsupported_in_source_accounting_not_overflow() {
-    for functions in [
-        "fn hidden(value: ExternalActionRequest<U64>) -> U64 { return 0u64; }",
-        "fn hidden(value: ExternalActionRequest<U64>) -> ExternalActionRequest<U64> { return value; }",
-        "fn hidden(value: List<ExternalActionRequest<U64>, max=0>) -> U64 { return 0u64; }",
-        "type Wrapped = { request: ExternalActionRequest<U64> }; fn hidden(value: Wrapped) -> U64 { return 0u64; }",
+    for (functions, rejects_return_operand) in [
+        ("fn hidden(value: ExternalActionRequest<U64>) -> U64 { return 0u64; }", false),
+        ("fn hidden(value: ExternalActionRequest<U64>) -> ExternalActionRequest<U64> { return value; }", true),
+        ("fn hidden(value: List<ExternalActionRequest<U64>, max=0>) -> U64 { return 0u64; }", false),
+        ("type Wrapped = { request: ExternalActionRequest<U64> }; fn hidden(value: Wrapped) -> U64 { return 0u64; }", false),
     ] {
         let authored = source(functions, "input.value");
-        let errors = compile_to_core(&parse_module(&authored).unwrap(), &context(4096)).unwrap_err();
+        let parsed = parse_module(&authored).unwrap();
+        let function = parsed.decls.iter().find_map(|declaration| match declaration {
+            edict_syntax::ast::Decl::Function(function) if function.name == "hidden" => Some(function),
+            _ => None,
+        }).expect("hidden function in fixture");
+        let expected_span = if rejects_return_operand {
+            // Expression accounting rejects the request identity before
+            // signature accounting reaches the declaration's bounds.
+            let [edict_syntax::ast::Stmt::Return {
+                value: edict_syntax::ast::Expr::Ident { span, .. },
+                ..
+            }] = function.body.stmts.as_slice() else {
+                panic!("request identity must return its parameter")
+            };
+            *span
+        } else {
+            function.span
+        };
+        let errors = compile_to_core(&parsed, &context(4096)).unwrap_err();
         assert_eq!(errors.len(), 1, "{functions}: {errors:?}");
         assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape,
             "unsupported request-containing shapes must not claim arithmetic overflow: {errors:?}");
+        assert_eq!(errors[0].span, expected_span,
+            "the diagnostic must identify the rejected source boundary: {errors:?}");
     }
     for (input, output, expression) in [
         ("ExternalActionRequest<U64>", "U64", "0u64"),
