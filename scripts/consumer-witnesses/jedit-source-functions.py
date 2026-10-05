@@ -71,9 +71,9 @@ def build(binary, root):
                                  preexec_fn=child_limits)
         try:
             child.communicate((json.dumps(request) + "\n").encode(), timeout=120)
-        except BaseException:
+        finally:
+            # Stop surviving descendants before reading or hashing their output.
             stop_group(child)
-            raise
         result = child
     events = []
     for path in streams:

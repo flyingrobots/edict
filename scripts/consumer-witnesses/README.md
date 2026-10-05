@@ -81,3 +81,14 @@ and no application artifacts. `evidence.json` records the input selections,
 compiler/source hashes, source hashes, diagnostics, outputs and log hashes.
 The harness neither updates old provider schema bytes nor claims new runtime
 support. Retain unique evidence before recycling its disposable copies.
+
+The child-lifecycle regression runs in the same admitted guarded worker:
+
+```sh
+python3 -B scripts/consumer-witnesses/test_jedit_source_functions.py
+```
+
+It uses a compiler stand-in that exits successfully while a descendant ignores
+TERM; the witness must stop that descendant before returning artifact hashes.
+The test also kills its owned process group on failure. This is separate from
+`cargo xtask verify` and from the real compiler compatibility witness.
