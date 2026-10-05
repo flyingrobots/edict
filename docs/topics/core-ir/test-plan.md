@@ -167,3 +167,5 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | COREIR-TP-039 | planned | Function identity | COREIR-REQ-030 | Alpha-renamed parameters/locals encode identically; body changes and added unused definitions move identity; function-free Core has no new map. | source_function_local_alpha_renaming_preserves_semantic_identity, source_function_body_and_unused_definition_change_identity, function_free_core_omits_the_new_table | crates/edict-syntax/tests/source_functions.rs | Existing canonical golden checks remain required; malformed public Core and new CDDL publication checks will join this case before implementation is complete. |
+
+| COREIR-TP-040 | planned | Public function graph integrity | COREIR-REQ-030 | Forged captures, forward local references and recursive functions refuse canonical encoding or Target admission. | public_core_function_scope_and_cycle_checks_do_not_trust_the_compiler | crates/edict-syntax/tests/source_functions.rs | Tests mutate compiler-produced Core. |

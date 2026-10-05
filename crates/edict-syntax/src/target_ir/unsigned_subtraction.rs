@@ -91,6 +91,7 @@ mod tests {
 
     fn assert_bounded_validation(wrap: fn(CoreExpr) -> CoreExpr) {
         let core = CoreModule {
+            functions: Default::default(),
             api_version: crate::core_ir::CORE_API_VERSION.to_owned(),
             coordinate: "arithmetic.work@1".to_owned(),
             imports: Vec::new(),

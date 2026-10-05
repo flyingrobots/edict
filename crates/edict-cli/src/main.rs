@@ -1277,7 +1277,7 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
 }
 
 fn core_review(core: &edict_syntax::CoreModule) -> Value {
-    json!({
+    let mut review = json!({
         "apiVersion": core.api_version,
         "coordinate": core.coordinate,
         "imports": core.imports.iter().map(core_import_review).collect::<Vec<_>>(),
@@ -1290,7 +1290,21 @@ fn core_review(core: &edict_syntax::CoreModule) -> Value {
             .map(|(name, intent)| (name.clone(), core_intent_review(intent)))
             .collect::<BTreeMap<_, _>>(),
         "requiredCoreCapabilities": core.required_core_capabilities,
-    })
+    });
+    if !core.functions.is_empty() {
+        review["functions"] = Value::Object(core.functions.iter().map(|(name, function)| (name.clone(), json!({
+            "params": function.params.iter().map(local_ref_review).collect::<Vec<_>>(),
+            "returnType": function.return_type,
+            "body": {
+                "locals": function.body.locals.iter().map(local_ref_review).collect::<Vec<_>>(),
+                "bindings": function.body.bindings.iter().map(|binding| json!({
+                    "kind": "let", "binding": local_ref_review(&binding.binding), "value": core_expr_review(&binding.value)
+                })).collect::<Vec<_>>(),
+                "result": core_expr_review(&function.body.result)
+            }
+        }))).collect());
+    }
+    review
 }
 
 fn core_intent_review(intent: &CoreIntent) -> Value {

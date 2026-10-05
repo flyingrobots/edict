@@ -42,7 +42,7 @@ pub mod artifact {
         encode_result_projection, encode_target_ir_artifact, verify_result_projection,
         CanonicalError, CanonicalErrorKind, CanonicalValue, CompareOp, CoreBlock, CoreBound,
         CoreBudget, CoreDigest, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind,
-        CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
+        CoreFunction, CorePureBlock, CorePureBinding, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
         CoreRequireFailureArm, CoreType, CoreValue, InputConstraint, InputConstraintSource,
         LocalRef, ResourceRef, ResultProjection, ResultProjectionArtifact, ResultProjectionExpr,
         ResultProjectionFailure, ResultProjectionFailureKind, ResultProjectionSource,

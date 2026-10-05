@@ -895,7 +895,7 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
             ));
         }
     }
-    Ok(map([
+    let mut fields = vec![
         ("apiVersion", text(&module.api_version)),
         ("coordinate", text(&module.coordinate)),
         (
@@ -924,6 +924,28 @@ fn core_module_value(module: &CoreModule) -> Result<CanonicalValue, CanonicalErr
             "requiredCoreCapabilities",
             sorted_text_set(module.required_core_capabilities.iter().map(String::as_str)),
         ),
+    ];
+    if !module.functions.is_empty() {
+        fields.push(("functions", string_map_results(module.functions.iter().map(|(name, function)| {
+            Ok((name.as_str(), core_function_value(function)?))
+        }))?));
+    }
+    Ok(map(fields))
+}
+
+fn core_function_value(function: &crate::core_ir::CoreFunction) -> Result<CanonicalValue, CanonicalError> {
+    Ok(map([
+        ("params", array(function.params.iter().map(local_ref_value))),
+        ("returnType", text(&function.return_type)),
+        ("body", map([
+            ("locals", array(function.body.locals.iter().map(local_ref_value))),
+            ("bindings", array_results(function.body.bindings.iter().map(|binding| Ok(map([
+                ("kind", text("let")),
+                ("binding", local_ref_value(&binding.binding)),
+                ("value", core_expr_value(&binding.value)?),
+            ]))))?),
+            ("result", core_expr_value(&function.body.result)?),
+        ])),
     ]))
 }
 

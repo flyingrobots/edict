@@ -5,7 +5,7 @@
 
 use crate::ast::{
     BinOp, Block, BoundRef, BytesRefine, ContinueObstructedArm, Decl, DigestLockedPackageRef,
-    ElseClause, EnumDecl, Expr, FieldConstraint, FieldDecl, Import, ImportKind, IntentClause,
+    ElseClause, EnumDecl, Expr, FieldConstraint, FieldDecl, FunctionDecl, Import, ImportKind, IntentClause,
     IntentDecl, MatchArm, Module, ObstructionArm, ObstructionHandler, ObstructionTarget,
     PackageRef, Param, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
     TypeRef, UnOp, VariantCase, YieldBlock,
@@ -529,9 +529,11 @@ impl Parser {
             Ok(Decl::Enum(self.enum_decl()?))
         } else if self.at_kw("intent") {
             Ok(Decl::Intent(self.intent_decl()?))
+        } else if self.at_kw("fn") {
+            Ok(Decl::Function(self.function_decl()?))
         } else {
             self.err(format!(
-                "expected `type`, `enum`, or `intent` declaration, found {:?}",
+                "expected `type`, `enum`, `fn`, or `intent` declaration, found {:?}",
                 self.peek()
             ))
         }
@@ -792,6 +794,27 @@ impl Parser {
     }
 
     // --- intents ---
+
+    fn function_decl(&mut self) -> Result<FunctionDecl, ParseError> {
+        let start = self.peek_span().start;
+        self.expect_kw("fn")?;
+        let name = self.binder()?;
+        self.expect(&TokenKind::LParen)?;
+        let mut params = Vec::new();
+        while *self.peek() != TokenKind::RParen {
+            let pstart = self.peek_span().start;
+            let name = self.binder()?;
+            self.expect(&TokenKind::Colon)?;
+            let ty = self.type_ref()?;
+            params.push(Param { name, ty, span: Span::new(pstart, self.prev_end()) });
+            if !self.eat(&TokenKind::Comma) { break; }
+        }
+        self.expect(&TokenKind::RParen)?;
+        self.expect(&TokenKind::Arrow)?;
+        let returns = self.type_ref()?;
+        let body = self.block()?;
+        Ok(FunctionDecl { name, params, returns, body, span: Span::new(start, self.prev_end()) })
+    }
 
     fn intent_decl(&mut self) -> Result<IntentDecl, ParseError> {
         let start = self.peek_span().start;

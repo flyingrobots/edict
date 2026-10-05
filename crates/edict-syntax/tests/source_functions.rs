@@ -4,7 +4,8 @@ use edict_syntax::{
     compile_to_core, decode_canonical_cbor, digest_core_module, encode_core_module,
     lower_to_target_ir, parse_module, CanonicalValue, CompilerContext, CompilerErrorKind,
     CoreBudget, CoreExpr, CoreModule, CoreNode, PureFunctionFact, PureHelperCostFact,
-    ResourceRef, TargetIrLoweringFacts, TargetLoweringStatus,
+    ResourceRef, TargetIrLoweringFacts, TargetLoweringStatus, TargetLoweringFailureKind,
+    validate_core_module_type_integrity, CoreTypeIntegrityFailureKind, CoreValue,
 };
 
 const JIM_BASELINE: &str = include_str!("../../../fixtures/lang/functions/range-assembly-baseline.edict");
@@ -26,6 +27,10 @@ fn context(steps: u64) -> CompilerContext {
 
 fn source(functions: &str, expression: &str) -> String {
     format!("package functions.example@1;\n{functions}\ntype Input = {{ value: U64, other: U64, }};\ntype Output = {{ value: U64, }};\nintent evaluate(input: Input) returns Output profile p.read basis none budget <= p.small {{\nreturn {{ value: {expression} }};\n}}")
+}
+
+fn target_source(functions: &str, expression: &str) -> String {
+    source(functions, expression).replace("\nreturn { value:", "\nlet executionAnchor = input.value;\nreturn { value:")
 }
 
 fn compile_with(source: &str, context: &CompilerContext) -> CoreModule {
@@ -82,7 +87,7 @@ fn reject(functions: &str, expression: &str, kind: CompilerErrorKind) {
 
 #[test]
 fn source_function_identity_is_not_an_imported_fact() {
-    let core = compile(&source("fn retain(value: U64) -> U64 { return value; }", "retain(input.value)"));
+    let core = compile(&target_source("fn retain(value: U64) -> U64 { return value; }", "retain(input.value)"));
     assert!(core.imports.is_empty());
     let value = canonical(&core);
     let function = definition(&value, "retain");
@@ -125,7 +130,7 @@ fn jim_range_assembly_calls_an_authored_function_through_core_and_target() {
 
 #[test]
 fn forward_calls_and_ordered_function_locals_keep_lexical_frames() {
-    let core = compile(&source(
+    let core = compile(&target_source(
         "fn outer(value: U64) -> U64 { let first = inner(value); let second = inner(first); return second; }\nfn inner(value: U64) -> U64 { return value; }",
         "outer(input.value)",
     ));
@@ -169,7 +174,10 @@ fn source_calls_remain_in_conditional_and_prebody_positions() {
     let CoreExpr::If { then_value, else_value, .. } = &fields["value"] else { panic!("conditional survives") };
     assert!(matches!(**then_value, CoreExpr::Call { .. }));
     assert!(matches!(**else_value, CoreExpr::Field { .. }));
-    assert_eq!(lower_to_target_ir(&core, &facts()).status, TargetLoweringStatus::Lowered);
+    let report = lower_to_target_ir(&core, &facts());
+    assert!(report.failures.iter().any(|failure| failure.kind == TargetLoweringFailureKind::NoTargetSteps));
+    let executable = compile(&authored.replace("return { value:", "let executionAnchor = input.value;\nreturn { value:"));
+    assert_eq!(lower_to_target_ir(&executable, &facts()).status, TargetLoweringStatus::Lowered);
 }
 
 #[test]
@@ -271,7 +279,7 @@ fn helper_context(cost: u64, budget: u64) -> CompilerContext {
 fn transitive_imported_cost_counts_repeated_calls_and_unused_arguments() {
     let functions = format!("{IMPORT}\nfn costly(value: U64) -> U64 {{ return helpers.bump(value); }}\nfn first(left: U64, right: U64) -> U64 {{ return left; }}");
     let positive = source(&functions, "costly(input.value)");
-    compile_with(&positive, &helper_context(10, 32));
+    compile_with(&positive, &helper_context(10, 128));
     let repeated = source(&functions, "first(costly(input.value), costly(input.other))");
     let parsed = parse_module(&repeated).unwrap();
     let errors = compile_to_core(&parsed, &helper_context(u64::MAX / 2 + 1, u64::MAX)).unwrap_err();
@@ -289,4 +297,160 @@ fn function_free_core_omits_the_new_table() {
     let core = compile(JIM_BASELINE);
     let CanonicalValue::Map(fields) = canonical(&core) else { panic!("module map") };
     assert!(!fields.iter().any(|(key, _)| key == &CanonicalValue::Text("functions".into())));
+}
+
+
+#[test]
+fn boolean_functions_compose_as_values_and_lazy_predicates() {
+    let authored = target_source(
+        "fn isZero(value: U64) -> Bool { return value == 0u64; }\nfn choose(flag: Bool, value: U64) -> U64 { return if flag then value else 0u64; }\nfn both(left: Bool, right: Bool) -> Bool { return left && right; }",
+        "choose(both(isZero(input.value), !isZero(input.other)), input.value)",
+    ).replace("basis none", "basis none where isZero(input.value) || isZero(input.other)");
+    let core = compile(&authored);
+    assert_eq!(lower_to_target_ir(&core, &facts()).status, TargetLoweringStatus::Lowered);
+    assert!(matches!(core.functions["both"].body.result, CoreExpr::If { .. }));
+    assert_eq!(core.intents["evaluate"].input_constraints.len(), 1);
+}
+
+#[test]
+fn source_function_zero_arguments_and_nominal_records_preserve_types() {
+    let authored = target_source(
+        "type Boxed = { value: U64, };\nfn zero() -> U64 { return 0u64; }\nfn boxed(value: U64) -> Boxed { return { value: value }; }\nfn unbox(value: Boxed) -> U64 { return value.value; }",
+        "unbox(boxed(zero()))",
+    );
+    let core = compile(&authored);
+    assert_eq!(core.functions["zero"].params.len(), 0);
+    assert_eq!(lower_to_target_ir(&core, &facts()).status, TargetLoweringStatus::Lowered);
+}
+
+#[test]
+fn independent_target_checks_function_results_calls_and_totality() {
+    let original = compile(&target_source("fn retain(value: U64) -> U64 { let copy = value; return copy; }", "retain(input.value)"));
+    let mut mutations = Vec::new();
+    let mut wrong_binding = original.clone();
+    wrong_binding.functions.get_mut("retain").unwrap().body.bindings[0].value = CoreExpr::Const(CoreValue::Bool(true));
+    mutations.push(wrong_binding);
+    let mut wrong_result = original.clone();
+    wrong_result.functions.get_mut("retain").unwrap().body.result = CoreExpr::Const(CoreValue::Bool(true));
+    mutations.push(wrong_result);
+    let mut unknown_authority = original.clone();
+    unknown_authority.functions.get_mut("retain").unwrap().body.result = CoreExpr::Call { callee: "foreign.pack@1.retain".into(), type_args: vec![], args: vec![] };
+    mutations.push(unknown_authority);
+    let mut wrong_argument = original.clone();
+    let CoreExpr::Record { fields } = &mut wrong_argument.intents.get_mut("evaluate").unwrap().body.result else { panic!("record") };
+    let CoreExpr::Call { args, .. } = fields.get_mut("value").unwrap() else { panic!("call") };
+    args[0] = CoreExpr::Const(CoreValue::Bool(true));
+    mutations.push(wrong_argument);
+    let mut partial = original.clone();
+    let function = partial.functions.get_mut("retain").unwrap();
+    function.body.result = CoreExpr::Call { callee: "core.integer.subtract".into(), type_args: vec!["U64".into()], args: vec![CoreExpr::Const(CoreValue::Int { width: "U64".into(), value: "0".into() }), CoreExpr::Local { reference: function.params[0].clone() }] };
+    mutations.push(partial);
+    for changed in mutations {
+        let report = lower_to_target_ir(&changed, &facts());
+        assert_eq!(report.status, TargetLoweringStatus::Unsupported, "{report:?}");
+        assert!(report.failures.iter().any(|failure| failure.kind == TargetLoweringFailureKind::InvalidCoreIdentity), "{report:?}");
+        assert!(report.artifact.is_none());
+    }
+}
+
+#[test]
+fn public_core_function_scope_and_cycle_checks_do_not_trust_the_compiler() {
+    let original = compile(&target_source("fn retain(value: U64) -> U64 { let copy = value; return copy; }", "retain(input.value)"));
+    let mut captured = original.clone();
+    let function = captured.functions.get_mut("retain").unwrap();
+    let mut forged = function.params[0].clone();
+    forged.id = "caller-only".into();
+    function.body.result = CoreExpr::Local { reference: forged };
+    let mut forward = original.clone();
+    let function = forward.functions.get_mut("retain").unwrap();
+    function.body.bindings[0].value = CoreExpr::Local { reference: function.body.locals[0].clone() };
+    for changed in [captured, forward] {
+        let failure = validate_core_module_type_integrity(&changed).unwrap_err();
+        assert_eq!(failure.kind(), CoreTypeIntegrityFailureKind::InvalidDefinition);
+        assert!(encode_core_module(&changed).is_err());
+    }
+    let mut recursive = original;
+    let function = recursive.functions.get_mut("retain").unwrap();
+    function.body.result = CoreExpr::Call { callee: "functions.example@1.retain".into(), type_args: vec![], args: vec![CoreExpr::Local { reference: function.params[0].clone() }] };
+    assert_eq!(validate_core_module_type_integrity(&recursive).unwrap_err().kind(), CoreTypeIntegrityFailureKind::ReferenceCycle);
+}
+
+#[test]
+fn source_functions_charge_all_imported_cost_dimensions_and_own_storage() {
+    let functions = format!("{IMPORT}\nfn costly(value: U64) -> U64 {{ return helpers.bump(value); }}\nfn twice(value: U64) -> U64 {{ let first = costly(value); return costly(first); }}");
+    let parsed = parse_module(&source(&functions, "twice(input.value)")).unwrap();
+    for dimension in ["allocated", "output"] {
+        let mut context = helper_context(0, u64::MAX);
+        let lawpack = ResourceRef { coordinate: "example.bounds@1".into(), digest: Some(format!("sha256:{}", "1".repeat(64))) };
+        context = context.with_pure_helper_cost("helpers.cost", PureHelperCostFact {
+            lawpack, coordinate: "example.bounds@1.cost".into(), budget: CoreBudget {
+                max_steps: 0,
+                max_allocated_bytes: if dimension == "allocated" { u64::MAX / 2 + 1 } else { 0 },
+                max_output_bytes: if dimension == "output" { u64::MAX / 2 + 1 } else { 0 },
+            },
+        });
+        let errors = compile_to_core(&parsed, &context).unwrap_err();
+        assert!(errors.iter().any(|error| error.kind == CompilerErrorKind::InvalidBound), "{dimension}: {errors:?}");
+    }
+    let parsed = parse_module(&source("fn retain(value: U64) -> U64 { return value; }", "retain(input.value)")).unwrap();
+    let constrained = context(4096).with_budget("p.small", CoreBudget { max_steps: 4096, max_allocated_bytes: 1, max_output_bytes: u64::MAX });
+    assert!(compile_to_core(&parsed, &constrained).unwrap_err().iter().any(|error| error.kind == CompilerErrorKind::InvalidBound));
+}
+
+
+#[test]
+fn source_function_byte_comparison_work_is_in_the_static_budget() {
+    let authored = source(
+        "fn same(left: Bytes<max=1024>, right: Bytes<max=1024>) -> U64 { return if left == right then 0u64 else 1u64; }",
+        "same(input.value, input.other)",
+    ).replace("type Input = { value: U64, other: U64, };", "type Input = { value: Bytes<max=1024>, other: Bytes<max=1024>, };");
+    let parsed = parse_module(&authored).unwrap();
+    let errors = compile_to_core(&parsed, &context(100)).unwrap_err();
+    assert!(errors.iter().any(|error| error.kind == CompilerErrorKind::InvalidBound), "{errors:?}");
+    compile_with(&authored, &context(4096));
+}
+
+#[test]
+fn repeated_source_diamonds_have_checked_cost_without_expansion() {
+    let mut functions = "fn leaf(value: U64) -> U64 { return value; }\n".to_owned();
+    let mut previous = "leaf".to_owned();
+    for index in 0..64 {
+        let name = format!("diamond{index}");
+        functions.push_str(&format!("fn {name}(value: U64) -> U64 {{ let first = {previous}(value); return {previous}(first); }}\n"));
+        previous = name;
+    }
+    let parsed = parse_module(&source(&functions, "diamond63(input.value)")).unwrap();
+    let errors = compile_to_core(&parsed, &context(u64::MAX)).unwrap_err();
+    assert!(errors.iter().any(|error| error.kind == CompilerErrorKind::InvalidBound), "{errors:?}");
+}
+
+#[test]
+fn source_function_imported_calls_require_owned_cost_evidence_even_if_unused() {
+    let functions = format!("{IMPORT}\nfn costly(value: U64) -> U64 {{ return helpers.bump(value); }}");
+    let parsed = parse_module(&source(&functions, "input.value")).unwrap();
+    let missing_fact = compile_to_core(&parsed, &context(4096)).unwrap_err();
+    assert!(missing_fact.iter().any(|error| error.kind == CompilerErrorKind::UnresolvedFunction));
+    let lawpack = ResourceRef { coordinate: "example.bounds@1".into(), digest: Some(format!("sha256:{}", "1".repeat(64))) };
+    let without_cost = context(4096).with_pure_function("helpers.bump", PureFunctionFact {
+        lawpack, coordinate: "example.bounds@1.bump".into(), type_parameters: vec![], parameter_types: vec!["U64".into()], return_type: "U64".into(), cost_template: "example.bounds@1.cost".into(),
+    });
+    let missing_cost = compile_to_core(&parsed, &without_cost).unwrap_err();
+    assert!(missing_cost.iter().any(|error| error.kind == CompilerErrorKind::MissingContextFact), "{missing_cost:?}");
+}
+
+
+#[test]
+fn require_only_source_function_program_binds_the_complete_core_identity() {
+    let authored = source("fn retain(value: U64) -> U64 { return value; }", "input.value")
+        .replace("\nreturn { value:", "\nrequire retain(input.value) == input.value else domain.Refused;\nreturn { value:");
+    let mut target = facts();
+    target.obstruction_coordinates.push("domain.Refused".into());
+    let core = compile(&authored);
+    assert!(core.imports.is_empty());
+    assert!(core.intents["evaluate"].basis.is_none());
+    assert!(core.intents["evaluate"].body.nodes.iter().all(|node| matches!(node, CoreNode::Require { .. })));
+    let report = lower_to_target_ir(&core, &target);
+    assert_eq!(report.status, TargetLoweringStatus::Lowered, "{report:?}");
+    let closure = report.artifact.unwrap().semantic_closure.expect("source-owned code always binds Core identity");
+    assert_eq!(closure.source_core.digest, Some(digest_core_module(&core).unwrap().to_review_string()));
 }

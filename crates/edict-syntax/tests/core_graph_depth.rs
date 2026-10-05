@@ -62,6 +62,7 @@ fn block_chain(depth: usize, result: CoreExpr) -> CoreBlock {
 
 fn module() -> CoreModule {
     CoreModule {
+        functions: Default::default(),
         api_version: "edict.core/v1".into(),
         coordinate: "depth.example@1".into(),
         imports: Vec::new(),

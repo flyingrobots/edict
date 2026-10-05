@@ -25,6 +25,7 @@ fn core_fixture() -> CoreModule {
         reference: input.clone(),
     };
     CoreModule {
+        functions: Default::default(),
         api_version: "edict.core/v1".to_owned(),
         coordinate: "examples.facade@1".to_owned(),
         imports: Vec::new(),
