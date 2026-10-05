@@ -1,8 +1,13 @@
 //! Literal raw vectors for the public checked numeric foundation.
-use edict::numeric::{NumericError, Q32_32};
+use edict::numeric::{NumericError, Q32_32, Q32_32_PROFILE};
 
 fn raw(value: Result<Q32_32, NumericError>) -> Result<i64, NumericError> {
     value.map(Q32_32::raw)
+}
+
+#[test]
+fn public_numeric_profile_has_the_normative_identity() {
+    assert_eq!(Q32_32_PROFILE, "bunny.q32_32.checked/v1");
 }
 
 #[test]
