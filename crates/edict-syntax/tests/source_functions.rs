@@ -975,3 +975,166 @@ fn boolean_predicate_reification_storage_is_budgeted() {
     );
     compile(&authored);
 }
+
+
+#[test]
+fn predicate_operand_diagnostics_are_independent_of_call_syntax() {
+    let functions = format!("{IMPORT}\nfn retain(value: U64) -> U64 {{ return value; }}\nfn yes(value: U64) -> Bool {{ return value == value; }}");
+    for predicate in ["yes(input.value)", "if true then yes(input.value) else false"] {
+        let authored = source(&functions, "input.value")
+            .replace("basis none", &format!("basis none where {predicate}"));
+        compile_with(&authored, &helper_context(1, 4096));
+    }
+    for predicate in ["input.value", "retain(input.value)", "helpers.bump(input.value)"] {
+        let authored = source(&functions, "input.value")
+            .replace("basis none", &format!("basis none where {predicate}"));
+        let start = authored.find(&format!("where {predicate}")).unwrap() + "where ".len();
+        let errors = compile_to_core(&parse_module(&authored).unwrap(), &helper_context(1, 4096))
+            .unwrap_err();
+        assert_eq!(errors.len(), 1, "{predicate}: {errors:?}");
+        assert_eq!(errors[0].kind, CompilerErrorKind::ExpectedPredicate, "{predicate}: {errors:?}");
+        assert_eq!(errors[0].span, edict_syntax::Span::new(start, start + predicate.len()));
+    }
+    let malformed = source(&functions, "input.value")
+        .replace("basis none", "basis none where retain(true)");
+    let errors = compile_to_core(&parse_module(&malformed).unwrap(), &helper_context(1, 4096))
+        .unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].kind, CompilerErrorKind::TypeMismatch,
+        "an invalid argument must retain its intrinsic typing diagnostic: {errors:?}");
+}
+
+#[test]
+fn typed_non_boolean_conditional_predicate_reports_expected_predicate() {
+    let functions = "fn retain(value: U64) -> U64 { return value; }";
+    let predicate = "if true then retain(input.value) else input.other";
+    let authored = source(functions, "input.value")
+        .replace("basis none", &format!("basis none where {predicate}"));
+    let start = authored.find(&format!("where {predicate}")).unwrap() + "where ".len();
+    let errors = compile_to_core(&parse_module(&authored).unwrap(), &context(4096)).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].kind, CompilerErrorKind::ExpectedPredicate, "{errors:?}");
+    assert_eq!(errors[0].span, edict_syntax::Span::new(start, start + predicate.len()));
+}
+
+#[test]
+fn rejected_function_statements_identify_the_offending_statement_span() {
+    for (body, offending) in [
+        ("assert value == value; return value;", "assert value == value;"),
+        ("return value; let copy = value;", "let copy = value;"),
+        ("target.read(value); return value;", "target.read(value);"),
+    ] {
+        let authored = source(&format!("fn hidden(value: U64) -> U64 {{ {body} }}"), "input.value");
+        let start = authored.find(offending).unwrap();
+        let errors = compile_to_core(&parse_module(&authored).unwrap(), &context(4096)).unwrap_err();
+        assert_eq!(errors.len(), 1, "{body}: {errors:?}");
+        assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape, "{errors:?}");
+        assert_eq!(errors[0].span, edict_syntax::Span::new(start, start + offending.len()),
+            "the function declaration is not the offending statement: {errors:?}");
+    }
+}
+
+#[test]
+fn graph_diagnostic_origin_distinguishes_global_work_from_a_function_named_work() {
+    let authored = source("fn work(value: U64) -> U64 { return work(value); }", "input.value");
+    let parsed = parse_module(&authored).unwrap();
+    let edict_syntax::ast::Decl::Function(function) = &parsed.decls[0] else { panic!("function") };
+    let errors = compile_to_core(&parsed, &context(4096)).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape);
+    assert_eq!(errors[0].span, function.span, "a real fn work owns its recursion failure");
+
+    let mut functions = String::new();
+    for index in 0..128 {
+        let next = if index == 127 { "work".to_owned() } else { format!("f{:03}", index + 1) };
+        writeln!(functions, "fn f{index:03}(value: U64) -> U64 {{ return {next}(value); }}").unwrap();
+    }
+    functions.push_str("fn work(value: U64) -> U64 { return value; }");
+    let authored = source(&functions, "input.value");
+    let parsed = parse_module(&authored).unwrap();
+    let function = parsed.decls.iter().find_map(|declaration| match declaration {
+        edict_syntax::ast::Decl::Function(function) if function.name == "work" => Some(function),
+        _ => None,
+    }).unwrap();
+    let errors = compile_to_core(&parsed, &context(4096)).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].kind, CompilerErrorKind::InvalidBound);
+    assert_eq!(errors[0].span, function.span, "a real fn work owns its call-depth failure");
+
+    let mut functions = "fn work(value: U64) -> U64 { return value; }\nfn huge(value: U64) -> U64 {\n".to_owned();
+    for index in 0..65_536 {
+        writeln!(functions, "let copy{index} = value;").unwrap();
+    }
+    functions.push_str("return value; }");
+    let authored = source(&functions, "input.value");
+    let errors = compile_to_core(&parse_module(&authored).unwrap(), &context(u64::MAX)).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].kind, CompilerErrorKind::InvalidBound);
+    assert_eq!(errors[0].span, edict_syntax::Span::new(0, 0),
+        "module-wide work exhaustion must not blame an unrelated fn work: {errors:?}");
+}
+
+#[test]
+fn graph_expression_depth_diagnostic_identifies_its_owning_function() {
+    // This deep-source diagnostic witness needs more than Cargo's default
+    // test-thread stack. It makes no default-stack or CLI resource claim.
+    std::thread::Builder::new()
+        .stack_size(8 * 1024 * 1024)
+        .spawn(|| {
+            let nested = format!("{}value{}", "expression(".repeat(129), ")".repeat(129));
+            let functions = format!("fn expression(value: U64) -> U64 {{ return value; }}\nfn nested(value: U64) -> U64 {{ return {nested}; }}");
+            let authored = source(&functions, "input.value");
+            let parsed = parse_module(&authored).unwrap();
+            let function = parsed.decls.iter().find_map(|declaration| match declaration {
+                edict_syntax::ast::Decl::Function(function) if function.name == "nested" => Some(function),
+                _ => None,
+            }).unwrap();
+            let errors = compile_to_core(&parsed, &context(4096)).unwrap_err();
+            assert_eq!(errors.len(), 1, "{errors:?}");
+            assert_eq!(errors[0].kind, CompilerErrorKind::InvalidBound);
+            assert_eq!(errors[0].span, function.span,
+                "an expression-depth sentinel is not a function identifier: {errors:?}");
+        })
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+#[test]
+fn request_value_shapes_are_unsupported_in_source_accounting_not_overflow() {
+    for functions in [
+        "fn hidden(value: ExternalActionRequest<U64>) -> U64 { return 0u64; }",
+        "fn hidden(value: ExternalActionRequest<U64>) -> ExternalActionRequest<U64> { return value; }",
+        "fn hidden(value: List<ExternalActionRequest<U64>, max=0>) -> U64 { return 0u64; }",
+        "type Wrapped = { request: ExternalActionRequest<U64> }; fn hidden(value: Wrapped) -> U64 { return 0u64; }",
+    ] {
+        let authored = source(functions, "input.value");
+        let errors = compile_to_core(&parse_module(&authored).unwrap(), &context(4096)).unwrap_err();
+        assert_eq!(errors.len(), 1, "{functions}: {errors:?}");
+        assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape,
+            "unsupported request-containing shapes must not claim arithmetic overflow: {errors:?}");
+    }
+    for (input, output, expression) in [
+        ("ExternalActionRequest<U64>", "U64", "0u64"),
+        ("ExternalActionRequest<U64>", "ExternalActionRequest<U64>", "input"),
+        ("List<ExternalActionRequest<U64>, max=0>", "U64", "0u64"),
+    ] {
+        let baseline = format!("package functions.example@1;\nintent evaluate(input: {input}) returns {output} profile p.read basis none budget <= p.small {{ return {expression}; }}");
+        compile_with(&baseline, &context(4096));
+        let authored = baseline.replace(
+            "intent evaluate",
+            "fn unused(value: U64) -> U64 { return value; }\nintent evaluate",
+        );
+        let errors = compile_to_core(&parse_module(&authored).unwrap(), &context(4096)).unwrap_err();
+        assert_eq!(errors.len(), 1, "{authored}: {errors:?}");
+        assert_eq!(errors[0].kind, CompilerErrorKind::UnsupportedSourceShape, "{errors:?}");
+    }
+    let overflow = source(
+        "fn huge(value: String<max=18446744073709551615>) -> U64 { return 0u64; }",
+        "input.value",
+    );
+    let errors = compile_to_core(&parse_module(&overflow).unwrap(), &context(4096)).unwrap_err();
+    assert_eq!(errors.len(), 1, "{errors:?}");
+    assert_eq!(errors[0].kind, CompilerErrorKind::InvalidBound,
+        "genuine numeric overflow retains its stable kind: {errors:?}");
+}
