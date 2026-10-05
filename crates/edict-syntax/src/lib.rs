@@ -80,6 +80,7 @@ pub mod lawpack;
 pub mod lawpack_adapter;
 pub mod lawpack_authoring;
 pub mod lowerability;
+pub mod numeric;
 pub mod parser;
 pub mod provider;
 pub mod provider_invocation;

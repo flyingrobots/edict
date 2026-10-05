@@ -1697,6 +1697,67 @@ and no authored type arguments. Other operand families, including String's
 specified Unicode-scalar specialization, remain unsupported by this lowering;
 they must not be silently measured in byte units instead.
 
+### Fixed-Point Numeric Authority
+
+Bunny is the normative authority for Edict fixed-point arithmetic
+(`EDICT-LANG-FIXED-NUMERIC-001`). Edict's integration profile
+`bunny.q32_32.checked/v1` selects the **checked** Q32.32 subset of
+[`bunny-num` 0.6.0's Numeric Constitution](https://github.com/flyingrobots/bunny/blob/9bf43600d08ff8e2a0ab888713948b409e386513/docs/NUMERIC_CONSTITUTION.md).
+The dependency is pinned exactly; an unreviewed newer Bunny release does not
+change this profile. This Edict integration identifier is distinct from Bunny's
+SDL scalar profile name `q32.32`.
+
+The adopted rules are:
+
+- A value has one signed two's-complement raw `i64`; its mathematical value is
+  `raw / 2^32`. Raw construction and extraction preserve bits. Equality and
+  ordering compare raw values exactly, without epsilon.
+- Addition, subtraction and negation use exact raw arithmetic and reject when
+  the result is outside `i64`.
+- Multiplication and division use Bunny's `i128` intermediates, round to the
+  nearest Q32.32 value with ties to even for either sign, then reject an
+  out-of-range **rounded** result. Quantization may legitimately turn a small
+  nonzero mathematical result into zero.
+- A zero divisor is a distinct domain failure, including `0 / 0`. Checked
+  failure must be explicit; it cannot become saturation, wrapping or a panic.
+- Saturating operators, square root and floating-point conversion APIs are
+  outside this adopted subset. No host float participates in canonical math.
+  A future explicit float-ingress boundary must reject non-finite or
+  out-of-range input using Bunny's validated conversion policy; its rounding
+  and failure behavior require separate conformance evidence.
+
+This does not reinterpret `I32`, `I64`, `U32` or `U64` as fixed-point values.
+Their exact domains, canonical identity, range proofs and signed division's
+truncation-toward-zero rule remain unchanged. There is no implicit conversion
+between an integer and this fixed-point domain.
+
+The current implementation exposes only a checked Rust numeric foundation for
+compiler consumers. It adds no fixed-point source type, literal, prelude
+operation, Core value tag, Target instruction, or provider capability. Existing
+integer artifact tags cannot be used as unmarked fixed-point encodings.
+
+Before a future compiler fold or target implementation can claim this profile,
+its accepted representation and capability must be explicit and hash-bound.
+Compiler and runtime conformance must agree on literal raw-result vectors,
+structured failures and canonical artifact bytes. Bunny's generated
+[`i64-le-q32.32` wire profile](https://github.com/flyingrobots/bunny/blob/9bf43600d08ff8e2a0ab888713948b409e386513/generated/bunny-graphics.manifest.json)
+is an eight-byte little-endian raw representation; it is not an existing Edict
+canonical-CBOR fixed-point tag. A future Edict schema must specify how it binds
+this raw representation and the profile identity without silently repurposing
+integer values. No such wire extension is implemented by this foundation.
+
+A dependency/profile upgrade requires review of results, failures and encoding
+compatibility, with compiler/runtime conformance rerun before adoption. A
+changed arithmetic or identity contract requires an explicit profile/version
+transition; changing a manifest alone is not that transition.
+
+| Relationship | Targets |
+| --- | --- |
+| `refines` | [Core types](#core-types), [Integer safety](#integer-safety) |
+| `supersedes` | none |
+| `depends_on` | [Pinned Bunny Numeric Constitution](https://github.com/flyingrobots/bunny/blob/9bf43600d08ff8e2a0ab888713948b409e386513/docs/NUMERIC_CONSTITUTION.md) |
+| `related` | [Numeric foundation](./topics/numeric-foundation/README.md), [Core IR](./topics/core-ir/README.md), [Target profiles](./topics/target-profiles/README.md) |
+
 ### Compound Types
 
 - record types;
