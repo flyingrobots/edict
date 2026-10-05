@@ -46,7 +46,9 @@ Expression and predicate children consume one edge, including transitions
 between those families; entering a nested branch or loop block also consumes
 one. A block's nodes and result retain its current depth. Exceeding the limit
 returns `DepthExceeded` at the first over-limit structural path, before canonical
-or Target traversal. This is a separate budget from semantic type expansion
+or Target traversal. Canonical Core encoding maps that integrity failure to
+`UnsupportedValue`; it does not reach the later canonical container walk
+that would return `NestingLimitExceeded`. This is a separate budget from semantic type expansion
 and canonical CBOR container nesting: passing the graph-depth judgment does
 not promise that the encoded containers fit the canonical nesting budget.
 [COREIR-REQ-029]
