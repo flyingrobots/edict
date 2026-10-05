@@ -147,3 +147,13 @@ Out of scope:
   full source language coverage is still open.
 - Additional reviewed Core golden fixtures remain open as Core language coverage
   expands beyond the initial pure local-record fixture.
+
+## Executable graph depth
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| COREIR-REQ-029 | implemented | Public Core integrity validation bounds the combined nesting of expressions, predicates and blocks at 128 edges before canonical or Target traversal, preserving a deterministic DepthExceeded path. | issue #220, PR #221 review |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| COREIR-TP-038 | implemented | Graph depth | COREIR-REQ-029 | Depth 128 passes the integrity judgment; 129 fails for expressions, predicates, mixed transitions, nested blocks and mixed block-expression paths. Canonical encoding and Target lowering reject the same over-limit Core. | core_graph_expression_depth_has_an_exact_boundary, core_graph_predicate_depth_has_an_exact_boundary, core_graph_expression_predicate_transitions_share_one_depth_budget, core_graph_nested_blocks_share_the_expression_depth_budget | crates/edict-syntax/tests/core_graph_depth.rs | Stable error kind and exact path; no stress workload or process crash. Canonical CBOR has its own separate container budget. |

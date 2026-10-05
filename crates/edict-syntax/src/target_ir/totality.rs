@@ -3,7 +3,7 @@ use super::{
     byte_slice, unsigned_subtraction, CoreExpr, CoreIntent, CoreNode, CorePredicate,
     CoreRequireFailureArm, InputConstraint,
 };
-use crate::core_ir::CoreBlock;
+use crate::core_ir::{CoreBlock, MAX_CORE_GRAPH_DEPTH};
 
 pub(super) fn intent_is_total(intent: &CoreIntent) -> bool {
     intent
@@ -18,26 +18,37 @@ pub(super) fn intent_is_total(intent: &CoreIntent) -> bool {
 }
 
 fn block_is_total(block: &CoreBlock, constraints: &[InputConstraint]) -> bool {
+    block_is_total_at_depth(block, constraints, 0)
+}
+
+fn block_is_total_at_depth(
+    block: &CoreBlock,
+    constraints: &[InputConstraint],
+    depth: usize,
+) -> bool {
+    if depth > MAX_CORE_GRAPH_DEPTH {
+        return false;
+    }
     block.nodes.iter().all(|node| match node {
-        CoreNode::Let { value, .. } => expression_is_total(value, constraints),
+        CoreNode::Let { value, .. } => expression_is_total_at_depth(value, constraints, depth),
         CoreNode::Require { predicate, arm } => {
             let (CoreRequireFailureArm::Terminal { reason }
             | CoreRequireFailureArm::ContinueObstructed { reason }) = arm;
-            predicate_is_total(predicate, constraints)
+            predicate_is_total_at_depth(predicate, constraints, depth)
                 && reason
                     .payload
                     .values()
-                    .all(|value| expression_is_total(value, constraints))
+                    .all(|value| expression_is_total_at_depth(value, constraints, depth))
         }
         CoreNode::Effect {
             input,
             obstruction_map,
             ..
         } => {
-            expression_is_total(input, constraints)
+            expression_is_total_at_depth(input, constraints, depth)
                 && obstruction_map
                     .values()
-                    .all(|arm| expression_is_total(&arm.value, constraints))
+                    .all(|arm| expression_is_total_at_depth(&arm.value, constraints, depth))
         }
         CoreNode::ExternalActionRequest {
             input,
@@ -53,9 +64,10 @@ fn block_is_total(block: &CoreBlock, constraints: &[InputConstraint]) -> bool {
             &budget.max_attempts,
         ]
         .iter()
-        .all(|value| expression_is_total(value, constraints)),
+        .all(|value| expression_is_total_at_depth(value, constraints, depth)),
         CoreNode::For { iter, body, .. } => {
-            expression_is_total(iter, constraints) && block_is_total(body, constraints)
+            expression_is_total_at_depth(iter, constraints, depth)
+                && block_is_total_at_depth(body, constraints, depth + 1)
         }
         CoreNode::Branch {
             predicate,
@@ -63,48 +75,74 @@ fn block_is_total(block: &CoreBlock, constraints: &[InputConstraint]) -> bool {
             else_block,
             ..
         } => {
-            predicate_is_total(predicate, constraints)
-                && block_is_total(then_block, constraints)
-                && block_is_total(else_block, constraints)
+            predicate_is_total_at_depth(predicate, constraints, depth)
+                && block_is_total_at_depth(then_block, constraints, depth + 1)
+                && block_is_total_at_depth(else_block, constraints, depth + 1)
         }
-    }) && expression_is_total(&block.result, constraints)
+    }) && expression_is_total_at_depth(&block.result, constraints, depth)
 }
 
 fn predicate_is_total(predicate: &CorePredicate, constraints: &[InputConstraint]) -> bool {
+    predicate_is_total_at_depth(predicate, constraints, 0)
+}
+
+fn predicate_is_total_at_depth(
+    predicate: &CorePredicate,
+    constraints: &[InputConstraint],
+    depth: usize,
+) -> bool {
+    if depth > MAX_CORE_GRAPH_DEPTH {
+        return false;
+    }
     match predicate {
         CorePredicate::True | CorePredicate::False => true,
-        CorePredicate::Not(inner) => predicate_is_total(inner, constraints),
+        CorePredicate::Not(inner) => predicate_is_total_at_depth(inner, constraints, depth + 1),
         CorePredicate::All(items) | CorePredicate::Any(items) => items
             .iter()
-            .all(|item| predicate_is_total(item, constraints)),
+            .all(|item| predicate_is_total_at_depth(item, constraints, depth + 1)),
         CorePredicate::Compare { left, right, .. } => {
-            expression_is_total(left, constraints) && expression_is_total(right, constraints)
+            expression_is_total_at_depth(left, constraints, depth + 1)
+                && expression_is_total_at_depth(right, constraints, depth + 1)
         }
     }
 }
 
 fn expression_is_total(expression: &CoreExpr, constraints: &[InputConstraint]) -> bool {
+    expression_is_total_at_depth(expression, constraints, 0)
+}
+
+fn expression_is_total_at_depth(
+    expression: &CoreExpr,
+    constraints: &[InputConstraint],
+    depth: usize,
+) -> bool {
+    if depth > MAX_CORE_GRAPH_DEPTH {
+        return false;
+    }
     match expression {
         CoreExpr::Local { .. } | CoreExpr::Const(_) => true,
-        CoreExpr::Field { base, .. } => expression_is_total(base, constraints),
+        CoreExpr::Field { base, .. } => expression_is_total_at_depth(base, constraints, depth + 1),
         CoreExpr::Record { fields } => fields
             .values()
-            .all(|value| expression_is_total(value, constraints)),
+            .all(|value| expression_is_total_at_depth(value, constraints, depth + 1)),
         CoreExpr::If {
             predicate,
             then_value,
             else_value,
         } => {
-            predicate_is_total(predicate, constraints)
-                && expression_is_total(then_value, constraints)
-                && expression_is_total(else_value, constraints)
+            predicate_is_total_at_depth(predicate, constraints, depth + 1)
+                && expression_is_total_at_depth(then_value, constraints, depth + 1)
+                && expression_is_total_at_depth(else_value, constraints, depth + 1)
         }
         CoreExpr::Call {
             callee,
             type_args,
             args,
         } => {
-            if !args.iter().all(|arg| expression_is_total(arg, constraints)) {
+            if !args
+                .iter()
+                .all(|arg| expression_is_total_at_depth(arg, constraints, depth + 1))
+            {
                 return false;
             }
             match callee.as_str() {
@@ -117,6 +155,90 @@ fn expression_is_total(expression: &CoreExpr, constraints: &[InputConstraint]) -
                 byte_slice::OPERATION => byte_slice::is_total(type_args, args, constraints),
                 _ => true,
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{block_is_total, expression_is_total};
+    use crate::core_ir::{CompareOp, CoreBlock, CoreExpr, CoreNode, CorePredicate, CoreValue};
+
+    fn leaf() -> CoreExpr {
+        CoreExpr::Const(CoreValue::Bool(true))
+    }
+
+    fn fields(depth: usize) -> CoreExpr {
+        (0..depth).fold(leaf(), |base, _| CoreExpr::Field {
+            base: Box::new(base),
+            field: "value".into(),
+        })
+    }
+
+    #[test]
+    fn totality_expression_depth_has_an_exact_boundary() {
+        assert!(expression_is_total(&fields(128), &[]));
+        assert!(!expression_is_total(&fields(129), &[]));
+    }
+
+    #[test]
+    fn totality_mixed_depth_does_not_reset_at_predicates() {
+        let mixed = (0..64).fold(leaf(), |left, _| CoreExpr::If {
+            predicate: Box::new(CorePredicate::Compare {
+                op: CompareOp::Eq,
+                left,
+                right: leaf(),
+            }),
+            then_value: Box::new(leaf()),
+            else_value: Box::new(leaf()),
+        });
+        assert!(expression_is_total(&mixed, &[]));
+        assert!(!expression_is_total(
+            &CoreExpr::Field {
+                base: Box::new(mixed),
+                field: "value".into()
+            },
+            &[]
+        ));
+    }
+
+    fn block() -> CoreBlock {
+        CoreBlock {
+            locals: Vec::new(),
+            nodes: Vec::new(),
+            result: leaf(),
+        }
+    }
+
+    #[test]
+    fn totality_block_depth_has_an_exact_boundary() {
+        for (blocks, expressions) in [(128, 0), (64, 64)] {
+            let nested = (0..blocks).fold(
+                CoreBlock {
+                    result: fields(expressions),
+                    ..block()
+                },
+                |then_block, _| CoreBlock {
+                    nodes: vec![CoreNode::Branch {
+                        binding: None,
+                        predicate: CorePredicate::True,
+                        then_block,
+                        else_block: block(),
+                    }],
+                    ..block()
+                },
+            );
+            assert!(block_is_total(&nested, &[]));
+            let beyond = CoreBlock {
+                nodes: vec![CoreNode::Branch {
+                    binding: None,
+                    predicate: CorePredicate::True,
+                    then_block: nested,
+                    else_block: block(),
+                }],
+                ..block()
+            };
+            assert!(!block_is_total(&beyond, &[]));
         }
     }
 }

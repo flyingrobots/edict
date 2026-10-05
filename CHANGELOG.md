@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Core integrity validation and Target totality now bound combined expression,
+  predicate and nested-block descent at 128 edges. Over-limit public Core
+  returns a structured depth failure before canonical or Target traversal.
+
 - Byte-slice type diagnostics now identify each invalid operand, including
   separate errors when both endpoint types are wrong.
 

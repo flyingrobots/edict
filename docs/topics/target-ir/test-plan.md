@@ -229,3 +229,13 @@ it does not treat compiler Target IR as proof of runtime support.
 - Source-to-target fixture through `fixtures/lang/effects/read-greeting.edict`
   once the compiler spine supports its non-`basis none` Echo source shape.
 - Additional target profiles beyond Echo and git-warp.
+
+## Totality traversal depth
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| TIR-REQ-052 | implemented | The independent totality walker shares the Core graph depth ceiling across expressions, predicates and nested blocks and fails closed on over-limit graphs. | issue #220, PR #221 review |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TIR-TP-076 | implemented | Totality depth | TIR-REQ-052 | Bounded expression, mixed predicate-expression, nested block and mixed block-expression witnesses accept depth 128 and refuse 129. | totality_expression_depth_has_an_exact_boundary, totality_mixed_depth_does_not_reset_at_predicates, totality_block_depth_has_an_exact_boundary | crates/edict-syntax/src/target_ir/totality.rs | Deterministic boolean refusal, independently of the earlier public Core validator. |

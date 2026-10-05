@@ -394,6 +394,12 @@ foreign locals and incorrect proof scope reject with `InvalidCoreIdentity` and
 no artifact. This walk is shared with subtraction, while the Target proof
 routine remains independent from the source compiler. [TIR-REQ-051]
 
+Public Core integrity validation rejects graph nesting beyond 128 edges before
+Target traversal. The totality walker independently applies that same ceiling,
+carrying one depth counter across expression/predicate transitions and nested
+blocks rather than resetting it at a node-family boundary. Over-limit totality
+checks fail closed. [TIR-REQ-052]
+
 The existing Call schema carries the operation without changing wire shape or
 prior canonical identities. This compiler capability supplies no UTF-8 or rope
 semantics, runtime slice execution, or byte-copy budget charging. A provider may
