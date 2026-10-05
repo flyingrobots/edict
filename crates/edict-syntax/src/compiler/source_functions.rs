@@ -73,7 +73,8 @@ impl TypeChecker<'_> {
                     }
                 }
             }
-            Err(failure) => {
+            Err(graph_failure) => {
+                let failure = graph_failure.integrity();
                 let kind = if failure.kind()
                     == crate::core_ir::CoreTypeIntegrityFailureKind::ReferenceCycle
                 {
@@ -81,12 +82,9 @@ impl TypeChecker<'_> {
                 } else {
                     CompilerErrorKind::InvalidBound
                 };
-                let name = failure.path().strip_prefix("functions.").unwrap_or("");
-                let span = self
-                    .resolved
-                    .source_functions
-                    .iter()
-                    .find(|definition| definition.name == name)
+                let span = graph_failure.function_name()
+                    .and_then(|name| self.resolved.source_functions.iter()
+                        .find(|definition| definition.name == name))
                     .map_or(Span::new(0, 0), |definition| definition.span);
                 self.errors.push(error(
                     CompilerStage::TypeCheck,

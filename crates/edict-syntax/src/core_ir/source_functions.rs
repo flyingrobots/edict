@@ -92,7 +92,9 @@ pub(super) fn validate_functions(
             &format!("{path}.body.result"),
         )?;
     }
-    validate_function_graph(&module.coordinate, &module.functions).map(|_| ())
+    validate_function_graph(&module.coordinate, &module.functions)
+        .map(|_| ())
+        .map_err(|failure| failure.integrity)
 }
 
 fn invalid(path: &str) -> CoreTypeIntegrityFailure {
@@ -170,50 +172,43 @@ fn walk_predicate(
     }
 }
 
+/// Diagnostic attribution is private to graph validation. The public integrity
+/// failure retains its existing kind and path, including module-wide sentinels.
+#[derive(Debug)]
+pub(crate) struct FunctionGraphFailure {
+    integrity: CoreTypeIntegrityFailure,
+    function: Option<String>,
+}
+
+impl FunctionGraphFailure {
+    fn attributed(integrity: CoreTypeIntegrityFailure, function: Option<&str>) -> Self {
+        Self {
+            integrity,
+            function: function.map(str::to_owned),
+        }
+    }
+
+    pub(crate) fn integrity(&self) -> &CoreTypeIntegrityFailure {
+        &self.integrity
+    }
+
+    pub(crate) fn function_name(&self) -> Option<&str> {
+        self.function.as_deref()
+    }
+}
+
 /// Check every source-owned definition, including unreachable definitions. Heights
 /// count function frames, so a leaf has height one; completed summaries are not
 /// permission to omit a later caller's edge. This walk never expands the DAG.
 pub(crate) fn validate_function_graph(
     coordinate: &str,
     functions: &BTreeMap<String, CoreFunction>,
-) -> Result<BTreeMap<String, usize>, CoreTypeIntegrityFailure> {
+) -> Result<BTreeMap<String, usize>, FunctionGraphFailure> {
     let mut graph = BTreeMap::new();
     let prefix = format!("{coordinate}.");
     let mut work = 65_536_usize;
     for (name, function) in functions {
-        let mut edges = BTreeSet::new();
-        let mut collect = |expression: &CoreExpr| {
-            work = work.checked_sub(1).ok_or_else(|| {
-                CoreTypeIntegrityFailure::new(
-                    CoreTypeIntegrityFailureKind::DepthExceeded,
-                    "functions.work",
-                )
-            })?;
-            if let CoreExpr::Call {
-                callee,
-                args,
-                type_args,
-            } = expression
-            {
-                // A package prefix can also belong to an imported lawpack.
-                // Only declared source members form this graph; the compiler
-                // and independent Target checker authenticate external calls.
-                let source = callee
-                    .strip_prefix(&prefix)
-                    .and_then(|target| functions.get(target).map(|called| (target, called)));
-                if let Some((target, called)) = source {
-                    if !type_args.is_empty() || args.len() != called.params.len() {
-                        return Err(invalid(&format!("functions.{name}.call.{callee}")));
-                    }
-                    edges.insert(target.to_owned());
-                }
-            }
-            Ok(())
-        };
-        for binding in &function.body.bindings {
-            walk(&binding.value, 0, &mut collect)?;
-        }
-        walk(&function.body.result, 0, &mut collect)?;
+        let edges = function_edges(name, function, functions, &prefix, &mut work)?;
         graph.insert(name.clone(), edges);
     }
     let mut completed = BTreeMap::new();
@@ -224,25 +219,68 @@ pub(crate) fn validate_function_graph(
     Ok(completed)
 }
 
+fn function_edges(
+    name: &str,
+    function: &CoreFunction,
+    functions: &BTreeMap<String, CoreFunction>,
+    prefix: &str,
+    work: &mut usize,
+) -> Result<BTreeSet<String>, FunctionGraphFailure> {
+    let mut edges = BTreeSet::new();
+    let mut exhausted = false;
+    let mut collect = |expression: &CoreExpr| {
+        *work = work.checked_sub(1).ok_or_else(|| {
+            exhausted = true;
+            CoreTypeIntegrityFailure::new(
+                CoreTypeIntegrityFailureKind::DepthExceeded,
+                "functions.work",
+            )
+        })?;
+        if let CoreExpr::Call { callee, args, type_args } = expression {
+            // A package prefix can also belong to an imported lawpack.
+            // Only declared source members form this graph; the compiler
+            // and independent Target checker authenticate external calls.
+            let source = callee
+                .strip_prefix(prefix)
+                .and_then(|target| functions.get(target).map(|called| (target, called)));
+            if let Some((target, called)) = source {
+                if !type_args.is_empty() || args.len() != called.params.len() {
+                    return Err(invalid(&format!("functions.{name}.call.{callee}")));
+                }
+                edges.insert(target.to_owned());
+            }
+        }
+        Ok(())
+    };
+    let walked = function.body.bindings.iter()
+        .try_for_each(|binding| walk(&binding.value, 0, &mut collect))
+        .and_then(|()| walk(&function.body.result, 0, &mut collect));
+    walked.map_err(|failure| {
+        // The work allowance belongs to the complete module, not whichever
+        // function happens to exhaust it or shares its descriptive path.
+        FunctionGraphFailure::attributed(failure, (!exhausted).then_some(name))
+    })?;
+    Ok(edges)
+}
+
 fn height(
     name: &str,
     graph: &BTreeMap<String, BTreeSet<String>>,
     completed: &mut BTreeMap<String, usize>,
     visiting: &mut BTreeSet<String>,
     depth: usize,
-) -> Result<usize, CoreTypeIntegrityFailure> {
-    let path = format!("functions.{name}");
+) -> Result<usize, FunctionGraphFailure> {
+    let failure = |kind| {
+        FunctionGraphFailure::attributed(
+            CoreTypeIntegrityFailure::new(kind, format!("functions.{name}")),
+            Some(name),
+        )
+    };
     if visiting.contains(name) {
-        return Err(CoreTypeIntegrityFailure::new(
-            CoreTypeIntegrityFailureKind::ReferenceCycle,
-            path,
-        ));
+        return Err(failure(CoreTypeIntegrityFailureKind::ReferenceCycle));
     }
     if depth >= MAX_CORE_GRAPH_DEPTH {
-        return Err(CoreTypeIntegrityFailure::new(
-            CoreTypeIntegrityFailureKind::DepthExceeded,
-            path,
-        ));
+        return Err(failure(CoreTypeIntegrityFailureKind::DepthExceeded));
     }
     if let Some(height) = completed.get(name) {
         return Ok(*height);
@@ -253,10 +291,7 @@ fn height(
         let child_height = height(child, graph, completed, visiting, depth + 1)?;
         result = result.max(child_height + 1);
         if result > MAX_CORE_GRAPH_DEPTH {
-            return Err(CoreTypeIntegrityFailure::new(
-                CoreTypeIntegrityFailureKind::DepthExceeded,
-                path,
-            ));
+            return Err(failure(CoreTypeIntegrityFailureKind::DepthExceeded));
         }
     }
     visiting.remove(name);
