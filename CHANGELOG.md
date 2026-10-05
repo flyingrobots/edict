@@ -10,6 +10,9 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Byte-slice proof-scope regression checks now identify the exact rejected
+  basis, input-predicate or later-intent call and retain a compiling control.
+
 - Core integrity validation and Target totality now bound combined expression,
   predicate and nested-block descent at 128 edges. Over-limit public Core
   returns a structured depth failure before canonical or Target traversal.

@@ -275,18 +275,34 @@ fn byte_slice_type_errors_identify_each_invalid_operand() {
 #[test]
 fn byte_slice_proofs_do_not_leak_into_basis_constraints_or_other_intents() {
     let original = source("Bytes<max=32>", GUARD, SLICE, "Bytes<max=32>");
+    compile_to_core(&parse_module(&original).unwrap(), &context()).unwrap();
     let second_intent = original[original.find("intent cut").unwrap()..]
         .replace("intent cut", "intent unguarded")
         .replace(GUARD, "");
-    for invalid in [
-        original.replace("basis none", &format!("basis {SLICE}")),
-        original.replace(GUARD, &format!("{GUARD}, len({SLICE}) >= 0u64")),
-        format!("{original}\n{second_intent}"),
+    for (invalid, use_last_slice) in [
+        (
+            original.replace("basis none", &format!("basis {SLICE}")),
+            false,
+        ),
+        (
+            original.replace(GUARD, &format!("{GUARD}, len({SLICE}) >= 0u64")),
+            false,
+        ),
+        (format!("{original}\n{second_intent}"), true),
     ] {
+        let start = if use_last_slice {
+            invalid.rfind(SLICE)
+        } else {
+            invalid.find(SLICE)
+        }
+        .unwrap();
         let errors = compile_to_core(&parse_module(&invalid).unwrap(), &context()).unwrap_err();
-        assert!(errors
+        let spans = errors
             .iter()
-            .any(|error| error.kind == CompilerErrorKind::UnsupportedSourceShape));
+            .filter(|error| error.kind == CompilerErrorKind::UnsupportedSourceShape)
+            .map(|error| (error.span.start, error.span.end))
+            .collect::<Vec<_>>();
+        assert_eq!(spans, vec![(start, start + SLICE.len())]);
     }
 }
 
