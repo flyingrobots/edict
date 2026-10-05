@@ -1819,7 +1819,7 @@ fn validate_pure_function_call_graph(
                 if height > MAX_HELPER_CALL_DEPTH {
                     return Err(pure_body_failure(
                         "exports.pureFunctions",
-                        "an acyclic pure-helper call graph no deeper than 128 calls",
+                        "an acyclic pure-helper call graph no deeper than 128 helper nodes",
                     ));
                 }
                 visiting.remove(&coordinate);
@@ -1832,7 +1832,7 @@ fn validate_pure_function_call_graph(
             if depth > MAX_HELPER_CALL_DEPTH || !visiting.insert(coordinate.clone()) {
                 return Err(pure_body_failure(
                     "exports.pureFunctions",
-                    "an acyclic pure-helper call graph no deeper than 128 calls",
+                    "an acyclic pure-helper call graph no deeper than 128 helper nodes",
                 ));
             }
             stack.push((coordinate.clone(), true, depth));
