@@ -112,3 +112,13 @@ deterministic regression cases in `crates/edict-syntax/tests/`.
 - Fixture coverage is not exhaustive across every `EDICT-LANG-*` row in
   `docs/REQUIREMENTS.md`; this shelf covers the landed Phase 1 syntax parser
   only.
+
+## Source functions
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| SYNTAX-REQ-015 | planned | Parse typed nongeneric first-order function declarations with ordered statement bodies; preserve spans for definition and call diagnostics. | issue #226 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| SYNTAX-TP-025 | planned | Source functions | SYNTAX-REQ-015 | Identity and Jim byte-assembly declarations reach actual compiler checking; declaration-only acceptance is insufficient. | source_function_identity_is_not_an_imported_fact, jim_range_assembly_calls_an_authored_function_through_core_and_target | fixtures/lang/functions/range-assembly.edict | crates/edict-syntax/tests/source_functions.rs; RED pending guarded execution. |

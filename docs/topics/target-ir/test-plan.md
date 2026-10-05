@@ -253,3 +253,13 @@ it does not treat compiler Target IR as proof of runtime support.
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TIR-TP-077 | implemented | Independent byte concatenation | TIR-REQ-053 | Valid source-produced calls lower; malformed signatures, mismatched coordinates, foreign locals, narrowed results, overflowing sums and nominal wrappers reject without artifacts. | bounded_byte_concat_preserves_order_coordinates_and_summed_maximum, target_rejects_forged_byte_concat_calls, target_rejects_byte_concat_overflow_and_nominal_unwrapping | crates/edict-syntax/tests/byte_concat.rs | The overflow and nominal fixtures first pass public Core type integrity. |
+
+## Source-function authority and totality
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| TIR-REQ-054 | planned | Source calls resolve against the authenticated Core function table rather than fabricated imported facts; calls preserve expression placement, signatures and transitive totality before Target artifacts can be emitted. | issue #226 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TIR-TP-078 | planned | Source functions | TIR-REQ-054 | Real source identity/concatenation/forward calls lower with no imported function facts; partial operations hidden inside source functions refuse. | source_function_identity_is_not_an_imported_fact, jim_range_assembly_calls_an_authored_function_through_core_and_target, forward_calls_and_ordered_function_locals_keep_lexical_frames, transitive_totality_cannot_be_bypassed_by_a_source_function, public_project_compiles_jim_source_functions_to_authenticated_core_and_target | crates/edict-syntax/tests/source_functions.rs, crates/edict-cli/tests/source_functions_cli.rs | Public JSONL projection is a compiler witness; public application old-provider refusal and forged Core/Target controls remain planned. |
