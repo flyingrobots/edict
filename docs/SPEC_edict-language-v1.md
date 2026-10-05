@@ -1964,6 +1964,7 @@ String:
   ordered comparison only if the type pins a canonicalization/collation profile
   no slice, split, trim, case-fold, locale, or regex helper in minimal-v1
 Bytes:
+  +                       # bounded raw-byte concatenation
   == !=
   slice(bytes, start, end) # proven, bounded half-open byte range
   no implicit string conversion
@@ -2008,6 +2009,19 @@ slice does not imply support for the other arithmetic forms specified above.
 
 Every prelude function must be total over valid input or must expose a typed
 diagnostic that the compiler can force authors to handle.
+
+The implemented byte concatenation accepts two bounded structural byte operands
+and preserves their order in `core.bytes.concat<LeftType,RightType>(left,right)`
+(`EDICT-LANG-BYTE-CONCAT-001`). The result has the conservative bound
+`Bytes<max=L+R>`, using the operand maxima even when exact or minimum lengths are
+known. A static sum beyond U64 rejects with `InvalidBound`; incompatible operand
+families and narrower destinations reject with `TypeMismatch`. There is no
+implicit conversion from strings or nominal wrappers. Target independently
+checks signature, exact operand coordinates, local authority, checked sum and
+result compatibility. Compilation or provider acceptance does not prove runtime
+byte-copy budget compliance or execution support for this call.
+The [canonical lowering decision](topics/target-ir/README.md#byte-concatenation-boundary)
+records the implementation relationships for this language rule.
 
 The implemented byte-slice proof uses exact operands in conjunctive intent
 input constraints, identical endpoints, unsigned zero lower bounds, and ordered

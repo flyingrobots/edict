@@ -239,3 +239,13 @@ it does not treat compiler Target IR as proof of runtime support.
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | TIR-TP-076 | implemented | Totality depth | TIR-REQ-052 | Bounded expression, mixed predicate-expression, nested block and mixed block-expression witnesses accept depth 128 and refuse 129. | totality_expression_depth_has_an_exact_boundary, totality_mixed_depth_does_not_reset_at_predicates, totality_block_depth_has_an_exact_boundary | crates/edict-syntax/src/target_ir/totality.rs | Deterministic boolean refusal, independently of the earlier public Core validator. |
+
+## Bounded byte concatenation
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| TIR-REQ-053 | implemented | Target independently validates generic byte-concatenation arity, exact operand coordinates, authority and checked result maximum before artifact emission. | issue #222 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| TIR-TP-077 | implemented | Independent byte concatenation | TIR-REQ-053 | Valid source-produced calls lower; malformed signatures, mismatched coordinates, foreign locals, narrowed results, overflowing sums and nominal wrappers reject without artifacts. | bounded_byte_concat_preserves_order_coordinates_and_summed_maximum, target_rejects_forged_byte_concat_calls, target_rejects_byte_concat_overflow_and_nominal_unwrapping | crates/edict-syntax/tests/byte_concat.rs | The overflow and nominal fixtures first pass public Core type integrity. |

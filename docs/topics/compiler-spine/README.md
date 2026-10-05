@@ -68,6 +68,16 @@ proof rejects with `UnsupportedSourceShape`; wrong operands or output bounds
 reject with `TypeMismatch`. Raw byte slicing has no UTF-8 semantics.
 [CSPINE-REQ-041]
 
+Bounded structural byte operands also support `left + right`, preserving order
+as `core.bytes.concat<LeftType,RightType>(left,right)`. The result is conservatively
+`Bytes<max=L+R>`, where L and R are the operand maxima. Exact or positive minimum
+bounds do not propagate to the result. A sum beyond U64 rejects with
+`InvalidBound`; incompatible operands or a narrower result destination reject
+with `TypeMismatch`. Nominal types are not implicitly unwrapped, and this does
+not add integer addition. [CSPINE-REQ-043]
+The [canonical lowering decision](../target-ir/README.md#byte-concatenation-boundary)
+records its refinement and contract relationships.
+
 This compiler boundary carries the declared budget and finite result maximum.
 It does not claim whole-program primitive allocation inference or runtime byte
 copy charging. Public `project` can expose the source-produced artifacts;
@@ -83,7 +93,7 @@ input-constraint enforcement, or runtime byte-copy charging.
   effectful `let ... else` shape, lowerable `require ... else` obstruction
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
   field access, record literals, equality predicates and boolean `&&`/`||`
-  connectives, string concatenation, and
+  connectives, bounded string and byte concatenation, and
   pure conditional expressions whose branches have compatible bounded types,
   and branch-yield lets whose isolated blocks use already-supported
   statements and produce compatible bounded values. Statement conditionals
