@@ -16,8 +16,11 @@ versions still track specification maturity rather than a released product.
   bounded nonrecursive graphs and independent Target validation. Function-free
   Core bytes and the prior provider publication remain unchanged; providers
   must explicitly adopt the new function-bearing contract. This does not claim
-  Echo runtime support or complete Jim buffer/rope behavior.
-
+  Echo runtime support or complete Jim buffer/rope behavior. Well-typed
+  non-Boolean predicates report `ExpectedPredicate`; rejected pure-function
+  statements and graph failures retain precise source ownership. Request-bearing
+  shapes in function-bearing modules report `UnsupportedSourceShape` rather
+  than arithmetic overflow; this does not broaden their accepted subset.
 
 - Made pure-helper call-depth validation independent of traversal order by
   accounting for each shared suffix's full height. Paths of 128 helpers remain

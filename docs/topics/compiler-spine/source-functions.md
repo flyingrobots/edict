@@ -33,6 +33,10 @@ bodies are checked even if no intent calls them. Effects, requests, reads,
 loops, statement conditionals, `require`, `guarantee`, assertions, statements
 after return and missing returns reject. Assertions are not silently erased:
 this profile has no function-body proof-node lowering.
+Unsupported and post-return statement diagnostics identify the offending
+statement; a missing return identifies the function declaration. Well-typed
+non-Boolean predicate operands report `ExpectedPredicate` after expression
+typing, while malformed expressions retain their own typing diagnostics.
 
 A call retains its arguments once each in source order. It does not inline the
 body, discard an unused argument, duplicate a reused argument, or lift a call
@@ -98,6 +102,18 @@ making runtime evaluation eager. Imported helper steps, allocation and output
 costs compose into the same three budget dimensions. Overflow, missing owned
 cost evidence or exceeding a declared operation budget returns `InvalidBound`
 or the existing missing-fact diagnostic before Core is emitted.
+
+The source-function accounting profile cannot bound `ExternalActionRequest`
+values, including requests nested in nominal types, records or lists. Such
+shapes return `UnsupportedSourceShape` in parameters, results, expressions and
+intent inputs/outputs when a module contains source functions. Even adding an
+unused function can expose this limitation. Function-free request-bearing
+modules retain their existing behavior; genuine numeric bound overflow still
+returns `InvalidBound`.
+
+Graph diagnostics carry their function owner separately from the descriptive
+Core failure path. Module-wide work exhaustion has no function owner; a
+function named `work` or `expression` does not acquire an unrelated failure.
 
 The compiler's source-call height and expression depth are separate measures.
 Imported facts do not expose imported body height. Passing this compiler check
