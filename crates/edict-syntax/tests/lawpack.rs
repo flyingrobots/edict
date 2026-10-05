@@ -2301,6 +2301,127 @@ fn edict_pure_helper_call_graph_depth_is_bounded() {
 }
 
 #[test]
+fn edict_pure_helper_call_graph_depth_is_independent_of_root_order() {
+    let mut observed = Vec::new();
+    let mut expected = Vec::new();
+    for count in [128, 129] {
+        for shallow_first in [false, true] {
+            for reverse_exports in [false, true] {
+                // Coordinate order, not export insertion order, selects DFS roots.
+                let coordinates = (0..count)
+                    .map(|index| {
+                        let key = if shallow_first {
+                            count - 1 - index
+                        } else {
+                            index
+                        };
+                        format!("hello.echo@1.depth{key:03}")
+                    })
+                    .collect::<Vec<_>>();
+                let mut functions = pure_helper_chain(&coordinates);
+                if reverse_exports {
+                    functions.reverse();
+                }
+                observed.push((
+                    count,
+                    shallow_first,
+                    reverse_exports,
+                    pure_helper_graph_outcome(functions),
+                ));
+                expected.push((
+                    count,
+                    shallow_first,
+                    reverse_exports,
+                    if count == 128 {
+                        Ok(())
+                    } else {
+                        Err(vec![LawpackValidationFailureKind::InvalidPureFunctionBody])
+                    },
+                ));
+            }
+        }
+    }
+    assert_eq!(observed, expected);
+}
+
+#[test]
+fn edict_pure_helper_call_graph_depth_includes_shared_suffixes() {
+    let mut observed = Vec::new();
+    let mut expected = Vec::new();
+    for height in [128, 129] {
+        for shallow_first in [false, true] {
+            for reverse_exports in [false, true] {
+                // The root calls a two-helper suffix directly and through a long
+                // prefix. Rename the same graph to visit either edge first.
+                let coordinates = (0..height)
+                    .map(|index| {
+                        let key = if !shallow_first || index == 0 {
+                            index
+                        } else if index >= height - 2 {
+                            index - (height - 3)
+                        } else {
+                            index + 2
+                        };
+                        format!("hello.echo@1.shared{key:03}")
+                    })
+                    .collect::<Vec<_>>();
+                let mut functions = pure_helper_chain(&coordinates);
+                let block = field_mut(field_mut(&mut functions[0], "body"), "body");
+                let binding = local_ref("local:0", "shortPath", "U64");
+                *field_mut(block, "locals") = CanonicalValue::Array(vec![binding.clone()]);
+                *field_mut(block, "bindings") = CanonicalValue::Array(vec![map([
+                    ("kind", text("let")),
+                    ("binding", binding),
+                    ("value", pure_helper_call(&coordinates[height - 2])),
+                ])]);
+                if reverse_exports {
+                    functions.reverse();
+                }
+                observed.push((
+                    height,
+                    shallow_first,
+                    reverse_exports,
+                    pure_helper_graph_outcome(functions),
+                ));
+                expected.push((
+                    height,
+                    shallow_first,
+                    reverse_exports,
+                    if height == 128 {
+                        Ok(())
+                    } else {
+                        Err(vec![LawpackValidationFailureKind::InvalidPureFunctionBody])
+                    },
+                ));
+            }
+        }
+    }
+    assert_eq!(observed, expected);
+}
+
+#[test]
+fn edict_pure_helper_call_graph_depth_is_not_total_helper_count() {
+    let functions = (0..129)
+        .map(|index| {
+            pure_function_with_types(
+                &format!("hello.echo@1.independent{index:03}"),
+                &[],
+                "U64",
+                "edict",
+                (
+                    "body",
+                    pure_body(
+                        Vec::new(),
+                        map([("kind", text("const")), ("value", core_u64(0))]),
+                    ),
+                ),
+            )
+        })
+        .collect();
+    assert_eq!(pure_helper_graph_outcome(functions), Ok(()));
+}
+
+#[test]
 fn edict_pure_helper_call_graph_must_be_acyclic() {
     for (coordinates, callees) in [
         (
@@ -2938,6 +3059,48 @@ fn pure_body(params: Vec<CanonicalValue>, result: CanonicalValue) -> CanonicalVa
             ]),
         ),
     ])
+}
+
+fn pure_helper_call(coordinate: &str) -> CanonicalValue {
+    map([
+        ("kind", text("call")),
+        ("callee", text(coordinate)),
+        ("typeArgs", CanonicalValue::Array(Vec::new())),
+        ("args", CanonicalValue::Array(Vec::new())),
+    ])
+}
+
+fn pure_helper_chain(coordinates: &[String]) -> Vec<CanonicalValue> {
+    coordinates
+        .iter()
+        .enumerate()
+        .map(|(index, coordinate)| {
+            let result = coordinates.get(index + 1).map_or_else(
+                || map([("kind", text("const")), ("value", core_u64(0))]),
+                |callee| pure_helper_call(callee),
+            );
+            pure_function_with_types(
+                coordinate,
+                &[],
+                "U64",
+                "edict",
+                ("body", pure_body(Vec::new(), result)),
+            )
+        })
+        .collect()
+}
+
+fn pure_helper_graph_outcome(
+    functions: Vec<CanonicalValue>,
+) -> Result<(), Vec<LawpackValidationFailureKind>> {
+    let mut exports = hello_echo_exports();
+    array_mut(field_mut(&mut exports, "pureFunctions")).extend(functions);
+    let exports_bytes = encode_canonical_cbor(&exports).expect("encode helper graph");
+    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
+    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode helper graph manifest");
+    decode_lawpack_bundle(&manifest_bytes, &exports_bytes)
+        .map(|_| ())
+        .map_err(|failures| failure_kinds(&failures))
 }
 
 fn core_u64(value: i128) -> CanonicalValue {
