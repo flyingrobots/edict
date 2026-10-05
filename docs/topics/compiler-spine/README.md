@@ -75,6 +75,8 @@ bounds do not propagate to the result. A sum beyond U64 rejects with
 `InvalidBound`; incompatible operands or a narrower result destination reject
 with `TypeMismatch`. Nominal types are not implicitly unwrapped, and this does
 not add integer addition. [CSPINE-REQ-043]
+The [canonical lowering decision](../target-ir/README.md#byte-concatenation-boundary)
+records its refinement and contract relationships.
 
 This compiler boundary carries the declared budget and finite result maximum.
 It does not claim whole-program primitive allocation inference or runtime byte

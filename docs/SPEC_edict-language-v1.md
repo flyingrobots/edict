@@ -2020,6 +2020,8 @@ implicit conversion from strings or nominal wrappers. Target independently
 checks signature, exact operand coordinates, local authority, checked sum and
 result compatibility. Compilation or provider acceptance does not prove runtime
 byte-copy budget compliance or execution support for this call.
+The [canonical lowering decision](topics/target-ir/README.md#byte-concatenation-boundary)
+records the implementation relationships for this language rule.
 
 The implemented byte-slice proof uses exact operands in conjunctive intent
 input constraints, identical endpoints, unsigned zero lower bounds, and ordered

@@ -409,6 +409,8 @@ obligations.
 
 ## Byte-concatenation boundary
 
+This section owns the implemented byte-concatenation lowering decision.
+
 `core.bytes.concat<LeftType,RightType>(left,right)` carries two exact structural
 byte coordinates and ordered operands. Target independently checks both arities,
 resolves both byte bounds without unwrapping nominal types, and infers each
@@ -417,6 +419,13 @@ The checked sum of maxima yields `Bytes<max=L+R>`; positive minimum and exact
 length are not inferred. Overflow, forged signatures, unavailable operands,
 or incompatible destination bounds return `InvalidCoreIdentity` with no
 artifact. [TIR-REQ-053]
+
+| Relationship | Targets |
+| --- | --- |
+| `refines` | [EDICT-LANG-LEN-001](../../SPEC_edict-language-v1.md#refined-scalar-types) |
+| `supersedes` | none |
+| `depends_on` | [`COREIR-REQ-002`](../core-ir/README.md#current-contract), [TIR-REQ-044](#current-contract) |
+| `related` | [`CSPINE-REQ-043`](../compiler-spine/test-plan.md#bounded-byte-concatenation), [TIR-REQ-053](./test-plan.md#bounded-byte-concatenation) |
 
 The existing Call encoding carries this generic operation. It does not add
 text interpretation, application limits, byte-copy charging, or evaluator
