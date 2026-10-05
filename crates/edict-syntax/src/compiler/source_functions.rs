@@ -272,9 +272,7 @@ impl TypeChecker<'_> {
             .iter()
             .chain(std::iter::once(&signature.result))
         {
-            let Some((steps, _)) = value_bound(shape) else {
-                return self.function_bound_failure(definition.span);
-            };
+            let (steps, _) = self.source_value_bound(shape, definition.span)?;
             own = self.checked_helper_cost_add(
                 own,
                 HelperCost {
@@ -285,6 +283,19 @@ impl TypeChecker<'_> {
             )?;
         }
         self.checked_helper_cost_add(nested, own, definition.span)
+    }
+
+    fn source_value_bound(&mut self, shape: &TypeShape, span: Span) -> Option<(u64, u64)> {
+        if contains_external_action_request(shape) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "request-bearing values are not supported by source function accounting",
+                span,
+            ));
+            return None;
+        }
+        value_bound(shape).or_else(|| self.function_bound_failure(span))
     }
 
     fn function_bound_failure<T>(&mut self, span: Span) -> Option<T> {
@@ -303,9 +314,7 @@ impl TypeChecker<'_> {
         shape: &TypeShape,
     ) -> Option<()> {
         let span = expr_span(expr);
-        let Some((cells, bytes)) = value_bound(shape) else {
-            return self.function_bound_failure(span);
-        };
+        let (cells, bytes) = self.source_value_bound(shape, span)?;
         self.source_value_bounds
             .insert(expression_identity(expr), (cells, bytes));
         let mut own = HelperCost {
@@ -435,12 +444,8 @@ impl TypeChecker<'_> {
         output: &TypeShape,
         span: Span,
     ) -> Option<HelperCost> {
-        let Some((input_cells, input_bytes)) = value_bound(input) else {
-            return self.function_bound_failure(span);
-        };
-        let Some((output_cells, output_bytes)) = value_bound(output) else {
-            return self.function_bound_failure(span);
-        };
+        let (input_cells, input_bytes) = self.source_value_bound(input, span)?;
+        let (output_cells, output_bytes) = self.source_value_bound(output, span)?;
         let Some(steps) = input_cells
             .checked_add(output_cells)
             .and_then(|cells| cells.checked_mul(2))
@@ -472,6 +477,16 @@ fn statement_span(statement: &Stmt) -> Span {
         | Stmt::If { span, .. }
         | Stmt::For { span, .. }
         | Stmt::Return { span, .. } => *span,
+    }
+}
+
+fn contains_external_action_request(shape: &TypeShape) -> bool {
+    match &shape.kind {
+        TypeKind::ExternalActionRequest { .. } => true,
+        TypeKind::Nominal { representation, .. } => contains_external_action_request(representation),
+        TypeKind::List { item, .. } => contains_external_action_request(item),
+        TypeKind::Record(fields) => fields.values().any(contains_external_action_request),
+        TypeKind::Bool | TypeKind::Int { .. } | TypeKind::Bytes { .. } | TypeKind::String { .. } => false,
     }
 }
 
