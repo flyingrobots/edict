@@ -164,18 +164,8 @@ impl TypeChecker<'_> {
                     env.insert(name.clone(), (local, shape));
                 }
                 Stmt::Return { value, span } => {
-                    let checked =
-                        self.check_expr_with_expected(value, &env, Some(&signature.result))?;
-                    if !compatible(&signature.result, &checked.ty) {
-                        self.errors.push(error(
-                            CompilerStage::TypeCheck,
-                            CompilerErrorKind::TypeMismatch,
-                            "function result does not match declared return type",
-                            *span,
-                        ));
-                        return None;
-                    }
-                    result = Some(checked.expr);
+                    result =
+                        Some(self.check_source_return(value, &env, &signature.result, *span)?);
                 }
                 _ => {
                     self.unsupported_stmt(
@@ -204,6 +194,26 @@ impl TypeChecker<'_> {
                 result,
             },
         })
+    }
+
+    fn check_source_return(
+        &mut self,
+        value: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: &TypeShape,
+        span: Span,
+    ) -> Option<CoreExpr> {
+        let checked = self.check_expr_with_expected(value, env, Some(expected))?;
+        if !compatible(expected, &checked.ty) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "function result does not match declared return type",
+                span,
+            ));
+            return None;
+        }
+        Some(checked.expr)
     }
 
     #[allow(clippy::too_many_arguments)]
