@@ -407,6 +407,22 @@ accept and package the preserved call while the evaluator still lacks execution
 support; a successful build or verifier report does not discharge those consumer
 obligations.
 
+## Byte-concatenation boundary
+
+`core.bytes.concat<LeftType,RightType>(left,right)` carries two exact structural
+byte coordinates and ordered operands. Target independently checks both arities,
+resolves both byte bounds without unwrapping nominal types, and infers each
+operand once per inference call to validate its coordinate and local authority.
+The checked sum of maxima yields `Bytes<max=L+R>`; positive minimum and exact
+length are not inferred. Overflow, forged signatures, unavailable operands,
+or incompatible destination bounds return `InvalidCoreIdentity` with no
+artifact. [TIR-REQ-053]
+
+The existing Call encoding carries this generic operation. It does not add
+text interpretation, application limits, byte-copy charging, or evaluator
+execution. An accepted provider package is separate evidence from runtime
+support for the preserved call.
+
 ## Unsigned subtraction boundary
 
 The target lowerer recognizes `core.integer.subtract<U32/U64>` with exactly two

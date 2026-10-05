@@ -145,3 +145,13 @@ Out of scope:
   belongs to later lowerability and lawpack work.
 - Bare effect statements, matches, variants, and effect obstruction payloads
   remain outside the lowerable subset.
+
+## Bounded byte concatenation
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| CSPINE-REQ-043 | implemented | Binary byte concatenation preserves operand coordinates/order and derives a checked sum of static maxima without minimum/exact inference; overflow, narrowing and wrong families reject. | issue #222 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-045 | implemented | Byte concatenation | CSPINE-REQ-043 | Unequal/exact/empty bounds and the u64 sum boundary preserve explicit operand order and conservative maximum; nested calls lower, order changes identity, overflow/narrowing/wrong families reject, and string concatenation remains unchanged. | bounded_byte_concat_preserves_order_coordinates_and_summed_maximum, byte_concat_order_and_nesting_are_explicit_in_core_identity, byte_concat_rejects_overflowing_static_sum_without_wrapping, byte_concat_rejects_narrow_destinations_and_wrong_operand_families, existing_string_concat_remains_unchanged | crates/edict-syntax/tests/byte_concat.rs | Compiler evidence only; the authored Jim source and controls own the public build witness. |

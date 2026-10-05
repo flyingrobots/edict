@@ -10,6 +10,11 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Added bounded raw-byte `+`, preserving operand order and exact coordinates in
+  Core and Target with a checked sum of operand maxima. Overflow, narrowing,
+  wrong operand families and forged Target calls fail closed. This generic
+  compiler capability does not add runtime concatenation or text semantics.
+
 - Byte-slice proof-scope regression checks now identify the exact rejected
   basis, input-predicate or later-intent call and retain a compiling control.
 

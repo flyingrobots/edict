@@ -20,6 +20,7 @@ use crate::core_ir::{
     InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
     CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
+mod byte_concat;
 mod byte_length;
 mod byte_slice;
 mod unsigned_subtraction;
@@ -3562,7 +3563,7 @@ impl<'a> TypeChecker<'a> {
                 lhs,
                 rhs,
                 span,
-            } => self.check_string_concat(lhs, rhs, env, *span),
+            } => self.check_concat(lhs, rhs, env, *span),
             Expr::Binary {
                 op: BinOp::Sub,
                 lhs,
@@ -3986,7 +3987,7 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
-    fn check_string_concat(
+    fn check_concat(
         &mut self,
         lhs: &Expr,
         rhs: &Expr,
@@ -3995,13 +3996,19 @@ impl<'a> TypeChecker<'a> {
     ) -> Option<TypedValue> {
         let left = self.check_expr(lhs, env)?;
         let right = self.check_expr(rhs, env)?;
+        if matches!(
+            (&left.ty.kind, &right.ty.kind),
+            (TypeKind::Bytes { .. }, TypeKind::Bytes { .. })
+        ) {
+            return self.check_byte_concat(left, right, span);
+        }
         let (TypeKind::String { max: lmax, .. }, TypeKind::String { max: rmax, .. }) =
             (&left.ty.kind, &right.ty.kind)
         else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::TypeMismatch,
-                "string concatenation requires string operands",
+                "concatenation requires two bounded strings or two bounded bytes",
                 span,
             ));
             return None;
