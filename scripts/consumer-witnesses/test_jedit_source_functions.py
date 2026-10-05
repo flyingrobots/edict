@@ -1,8 +1,6 @@
 """Run in the guarded Docker worker: python3 -B scripts/consumer-witnesses/test_jedit_source_functions.py."""
 import importlib.util
-import os
 from pathlib import Path
-import signal
 import tempfile
 import time
 import unittest
@@ -37,32 +35,23 @@ if pid == 0:
 os.close(writer)
 assert os.read(reader, 5) == b'ready'
 os.close(reader)
-Path('compiler.pgid').write_text(str(os.getpgrp()))
 print(json.dumps({'type': 'status', 'exitCode': 0}), flush=True)
 """)
             compiler.chmod(0o700)
-            try:
-                result = witness.build(compiler, root)
-                self.assertEqual(result["exitCode"], 0)
-                pid = int((root / "descendant.pid").read_text())
-                # A killed orphan may briefly remain a zombie under container PID 1.
-                def running():
-                    try:
-                        state = Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1][0]
-                        return state not in {"Z", "X"}
-                    except FileNotFoundError:
-                        return False
-                deadline = time.monotonic() + 1
-                while running() and time.monotonic() < deadline:
-                    time.sleep(0.01)
-                self.assertFalse(running(), "compiler descendant survived successful build")
-            finally:
-                marker = root / "compiler.pgid"
-                if marker.exists():
-                    try:
-                        os.killpg(int(marker.read_text()), signal.SIGKILL)
-                    except ProcessLookupError:
-                        pass
+            result = witness.build(compiler, root)
+            self.assertEqual(result["exitCode"], 0)
+            pid = int((root / "descendant.pid").read_text())
+            # A killed orphan may briefly remain a zombie under container PID 1.
+            def running() -> bool:
+                try:
+                    state = Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1][0]
+                except FileNotFoundError:
+                    return False
+                return state not in {"Z", "X"}
+            deadline = time.monotonic() + 1
+            while running() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(running(), "compiler descendant survived successful build")
 
 
 if __name__ == "__main__":
