@@ -121,6 +121,7 @@ Out of scope:
 
 | CLI-TP-038 | implemented | Projection completeness | CLI-REQ-013 | Core review projection handles every normative Core type variant, including the intrinsic `Unit` type, without an incomplete match or omitted review shape. | core_type_review_is_total_for_unit | crates/edict-cli/src/main.rs | Keeps the display-only projection exhaustive when the normative Core type algebra grows. |
 | CLI-TP-039 | implemented | Source function projection | CLI-REQ-013 | Public projection exposes the compiler-built source function table and available Core and Target digest records. | public_project_compiles_jim_source_functions_to_authenticated_core_and_target | crates/edict-cli/tests/source_functions_cli.rs | This Rust regression establishes compiler projection; provider/runtime support belongs to Echo752. |
+| CLI-TP-040 | implemented | Deep expression diagnostic process boundary | CLI-REQ-013 | A source with 129 nested typed calls returns one InvalidBound diagnostic in the public projection envelope and a successful project status with one compiler error, without aborting the normal CLI process. | public_project_deep_expression_returns_a_diagnostic_without_aborting | crates/edict-cli/tests/source_functions_cli.rs | Project inspection success is separate from compiler acceptance; this witness does not establish safety for every caller thread stack or arbitrary source depth. |
 
 ## External source-function consumer witness
 
