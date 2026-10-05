@@ -82,9 +82,14 @@ impl TypeChecker<'_> {
                 } else {
                     CompilerErrorKind::InvalidBound
                 };
-                let span = graph_failure.function_name()
-                    .and_then(|name| self.resolved.source_functions.iter()
-                        .find(|definition| definition.name == name))
+                let span = graph_failure
+                    .function_name()
+                    .and_then(|name| {
+                        self.resolved
+                            .source_functions
+                            .iter()
+                            .find(|definition| definition.name == name)
+                    })
                     .map_or(Span::new(0, 0), |definition| definition.span);
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -173,7 +178,10 @@ impl TypeChecker<'_> {
                     result = Some(checked.expr);
                 }
                 _ => {
-                    self.unsupported_stmt(statement_span(statement), "statement in a pure function");
+                    self.unsupported_stmt(
+                        statement_span(statement),
+                        "statement in a pure function",
+                    );
                     return None;
                 }
             }
@@ -483,10 +491,15 @@ fn statement_span(statement: &Stmt) -> Span {
 fn contains_external_action_request(shape: &TypeShape) -> bool {
     match &shape.kind {
         TypeKind::ExternalActionRequest { .. } => true,
-        TypeKind::Nominal { representation, .. } => contains_external_action_request(representation),
+        TypeKind::Nominal { representation, .. } => {
+            contains_external_action_request(representation)
+        }
         TypeKind::List { item, .. } => contains_external_action_request(item),
         TypeKind::Record(fields) => fields.values().any(contains_external_action_request),
-        TypeKind::Bool | TypeKind::Int { .. } | TypeKind::Bytes { .. } | TypeKind::String { .. } => false,
+        TypeKind::Bool
+        | TypeKind::Int { .. }
+        | TypeKind::Bytes { .. }
+        | TypeKind::String { .. } => false,
     }
 }
 

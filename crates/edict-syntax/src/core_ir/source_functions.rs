@@ -236,7 +236,12 @@ fn function_edges(
                 "functions.work",
             )
         })?;
-        if let CoreExpr::Call { callee, args, type_args } = expression {
+        if let CoreExpr::Call {
+            callee,
+            args,
+            type_args,
+        } = expression
+        {
             // A package prefix can also belong to an imported lawpack.
             // Only declared source members form this graph; the compiler
             // and independent Target checker authenticate external calls.
@@ -252,7 +257,10 @@ fn function_edges(
         }
         Ok(())
     };
-    let walked = function.body.bindings.iter()
+    let walked = function
+        .body
+        .bindings
+        .iter()
         .try_for_each(|binding| walk(&binding.value, 0, &mut collect))
         .and_then(|()| walk(&function.body.result, 0, &mut collect));
     walked.map_err(|failure| {
