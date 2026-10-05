@@ -157,3 +157,14 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | COREIR-TP-038 | implemented | Graph depth | COREIR-REQ-029 | Depth 128 passes the integrity judgment; 129 fails for expressions, predicates, mixed transitions, nested blocks and mixed block-expression paths. Canonical encoding and Target lowering reject the same over-limit Core. | core_graph_expression_depth_has_an_exact_boundary, core_graph_predicate_depth_has_an_exact_boundary, core_graph_expression_predicate_transitions_share_one_depth_budget, core_graph_nested_blocks_share_the_expression_depth_budget | crates/edict-syntax/tests/core_graph_depth.rs | Stable error kind and exact path; no stress workload or process crash. Canonical CBOR has its own separate container budget. |
+
+## Source-owned function identity
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| COREIR-REQ-030 | implemented | Source-owned typed pure function tables enter Core identity; the empty table is omitted, alpha-renamed locals preserve identity, and changed bodies or unused definitions change identity. Canonical/type validation checks the complete executable closure. | issue #226 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| COREIR-TP-039 | implemented | Function identity | COREIR-REQ-030 | Alpha-renamed parameters/locals encode identically; body changes and added unused definitions move identity; function-free Core has no new map. | source_function_local_alpha_renaming_preserves_semantic_identity, source_function_body_and_unused_definition_change_identity, function_free_core_omits_the_new_table | crates/edict-syntax/tests/source_functions.rs | Malformed public Core cases also run in this suite; existing golden fixtures remain unchanged. |
+| COREIR-TP-040 | implemented | Public function graph integrity | COREIR-REQ-030 | Forged captures, forward local references and recursive functions refuse canonical encoding or Target admission. | public_core_function_scope_and_cycle_checks_do_not_trust_the_compiler | crates/edict-syntax/tests/source_functions.rs | Tests mutate compiler-produced Core. |

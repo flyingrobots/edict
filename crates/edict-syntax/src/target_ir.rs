@@ -553,7 +553,12 @@ pub(crate) fn semantic_closure_for_core(
             .iter()
             .any(|node| matches!(node, CoreNode::Let { .. }))
     });
-    if !has_explicit_basis && !has_pure_bindings && lawpacks.is_empty() && capabilities.is_empty() {
+    if core.functions.is_empty()
+        && !has_explicit_basis
+        && !has_pure_bindings
+        && lawpacks.is_empty()
+        && capabilities.is_empty()
+    {
         return Ok(None);
     }
 
@@ -712,6 +717,10 @@ fn validate_core_module(
         .collect::<Vec<_>>();
     if !capability_failures.is_empty() {
         return capability_failures;
+    }
+    if let Some(failure) = validate_source_function_bodies(core, pure_functions, effect_signatures)
+    {
+        return vec![failure];
     }
     validate_pure_binding_graphs(core, pure_functions, effect_signatures)
 }
@@ -1197,8 +1206,10 @@ fn expression_has_closed_authority(
             callee,
             type_args,
             args,
-        } => validated_pure_function_fact(core, pure_functions, callee, type_args, args, available)
-            .is_some(),
+        } => {
+            validated_function_return_type(core, pure_functions, callee, type_args, args, available)
+                .is_some()
+        }
         CoreExpr::If {
             predicate,
             then_value,
@@ -1291,8 +1302,10 @@ fn expression_fits_declared_type(
             callee,
             type_args,
             args,
-        } => validated_pure_function_fact(core, pure_functions, callee, type_args, args, available)
-            .is_some_and(|fact| core_type_fits(core, &fact.return_type, expected)),
+        } => {
+            validated_function_return_type(core, pure_functions, callee, type_args, args, available)
+                .is_some_and(|return_type| core_type_fits(core, return_type, expected))
+        }
         CoreExpr::If {
             predicate,
             then_value,
@@ -1315,6 +1328,91 @@ fn expression_fits_declared_type(
                 )
         }
     }
+}
+
+fn validated_function_return_type<'a>(
+    core: &'a CoreModule,
+    imported: &'a [TargetPureFunctionFact],
+    callee: &str,
+    type_args: &[String],
+    args: &[CoreExpr],
+    available: &BTreeMap<&str, &LocalRef>,
+) -> Option<&'a str> {
+    if let Some(name) = callee.strip_prefix(&format!("{}.", core.coordinate)) {
+        if let Some(function) = core.functions.get(name) {
+            if !type_args.is_empty()
+                || args.len() != function.params.len()
+                || imported.iter().any(|fact| fact.coordinate == callee)
+            {
+                return None;
+            }
+            return args
+                .iter()
+                .zip(&function.params)
+                .all(|(argument, parameter)| {
+                    expression_fits_declared_type(
+                        core,
+                        imported,
+                        argument,
+                        &parameter.ty,
+                        available,
+                    )
+                })
+                .then_some(function.return_type.as_str());
+        }
+    }
+    validated_pure_function_fact(core, imported, callee, type_args, args, available)
+        .map(|fact| fact.return_type.as_str())
+}
+
+fn validate_source_function_bodies(
+    core: &CoreModule,
+    imported: &[TargetPureFunctionFact],
+    effects: &[TargetEffectSignatureFact],
+) -> Option<TargetLoweringFailure> {
+    for (name, function) in &core.functions {
+        let coordinate = format!("{}.{name}", core.coordinate);
+        let invalid = |detail: &str| TargetLoweringFailure {
+            kind: TargetLoweringFailureKind::InvalidCoreIdentity,
+            intent: None,
+            node_index: None,
+            detail: format!("source function {coordinate}: {detail}"),
+        };
+        if imported.iter().any(|fact| fact.coordinate == coordinate)
+            || effects.iter().any(|fact| fact.coordinate == coordinate)
+        {
+            return Some(invalid("coordinate collides with imported authority"));
+        }
+        let mut available = function
+            .params
+            .iter()
+            .map(|local| (local.id.as_str(), local))
+            .collect::<BTreeMap<_, _>>();
+        for binding in &function.body.bindings {
+            if !expression_fits_declared_type(
+                core,
+                imported,
+                &binding.value,
+                &binding.binding.ty,
+                &available,
+            ) || !totality::expression_is_total(&binding.value, &[])
+            {
+                return Some(invalid("binding has invalid type, authority, or totality"));
+            }
+            available.insert(binding.binding.id.as_str(), &binding.binding);
+        }
+        if !expression_fits_declared_type(
+            core,
+            imported,
+            &function.body.result,
+            &function.return_type,
+            &available,
+        ) || !totality::expression_is_total(&function.body.result, &[])
+        {
+            return Some(invalid("result has invalid type, authority, or totality"));
+        }
+    }
+    None
 }
 
 fn validated_pure_function_fact<'a>(
@@ -1418,7 +1516,7 @@ fn expression_string_shape(
             type_args,
             args,
         } => {
-            let fact = validated_pure_function_fact(
+            let fact = validated_function_return_type(
                 core,
                 pure_functions,
                 callee,
@@ -1426,8 +1524,7 @@ fn expression_string_shape(
                 args,
                 available,
             )?;
-            let CoreType::String { max, canonical } = resolved_core_type(core, &fact.return_type)?
-            else {
+            let CoreType::String { max, canonical } = resolved_core_type(core, fact)? else {
                 return None;
             };
             Some((max, canonical))
@@ -1524,8 +1621,8 @@ fn expression_type_coordinate(
             type_args,
             args,
         } if callee != "core.string.concat" => {
-            validated_pure_function_fact(core, pure_functions, callee, type_args, args, available)
-                .map(|fact| fact.return_type.clone())
+            validated_function_return_type(core, pure_functions, callee, type_args, args, available)
+                .map(str::to_owned)
         }
         CoreExpr::If {
             predicate,
@@ -2369,6 +2466,7 @@ mod tests {
         };
         let unrelated_definition = CoreType::Bool;
         let core = CoreModule {
+            functions: BTreeMap::new(),
             api_version: CORE_API_VERSION.to_owned(),
             coordinate: "examples.closure@1".to_owned(),
             imports: Vec::new(),

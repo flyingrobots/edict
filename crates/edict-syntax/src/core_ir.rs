@@ -9,6 +9,9 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+mod source_functions;
+pub(crate) use source_functions::validate_function_graph;
+
 /// The Core ABI identifier emitted by this crate.
 pub const CORE_API_VERSION: &str = "edict.core/v1";
 
@@ -28,8 +31,32 @@ pub struct CoreModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub types: BTreeMap<String, CoreType>,
+    pub functions: BTreeMap<String, CoreFunction>,
     pub intents: BTreeMap<String, CoreIntent>,
     pub required_core_capabilities: Vec<String>,
+}
+
+/// One source-owned pure function, authenticated by the containing Core module.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CoreFunction {
+    pub params: Vec<LocalRef>,
+    pub return_type: String,
+    pub body: CorePureBlock,
+}
+
+/// Ordered immutable pure bindings followed by one result expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorePureBlock {
+    pub locals: Vec<LocalRef>,
+    pub bindings: Vec<CorePureBinding>,
+    pub result: CoreExpr,
+}
+
+/// A pure local definition, unable to contain an effect or guard node.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CorePureBinding {
+    pub binding: LocalRef,
+    pub value: CoreExpr,
 }
 
 /// A Core module proven to satisfy the complete type-integrity judgment.
@@ -850,6 +877,7 @@ pub fn validate_core_module_type_integrity(
     for key in module.types.keys() {
         validate_named_core_type_definition(module, &mut state, key, &format!("types.{key}"), 0)?;
     }
+    source_functions::validate_functions(module, &mut state)?;
     for (intent_name, intent) in &module.intents {
         validate_core_intent_types(
             module,
@@ -1753,6 +1781,7 @@ mod structural_type_reference_tests {
 
     fn module_with_types(types: BTreeMap<String, CoreType>) -> CoreModule {
         CoreModule {
+            functions: BTreeMap::new(),
             api_version: CORE_API_VERSION.to_owned(),
             coordinate: "integrity.test@1".to_owned(),
             imports: Vec::new(),

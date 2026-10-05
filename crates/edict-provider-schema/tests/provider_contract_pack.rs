@@ -1181,3 +1181,67 @@ fn assert_sorted_unique<'a>(values: impl IntoIterator<Item = &'a str>) {
     let values = values.into_iter().collect::<Vec<_>>();
     assert!(values.windows(2).all(|pair| pair[0] < pair[1]));
 }
+
+#[test]
+fn source_function_contract_preserves_old_modules_and_requires_new_schema_selection() {
+    let context = CompilerContext::new()
+        .with_operation_profile("text.replaceRange", "continuum.profile.read-only/v1")
+        .with_budget(
+            "text.replaceRangeBudget",
+            CoreBudget {
+                max_steps: 4096,
+                max_allocated_bytes: 65536,
+                max_output_bytes: 4096,
+            },
+        );
+    let values = [
+        include_str!("../../../fixtures/lang/functions/range-assembly-baseline.edict"),
+        include_str!("../../../fixtures/lang/functions/range-assembly.edict"),
+    ]
+    .map(|source| {
+        let core = compile_to_core(&parse_module(source).unwrap(), &context).unwrap();
+        decode_canonical_cbor(&encode_core_module(&core).unwrap()).unwrap()
+    });
+    let old = assemble_provider_contract_pack(input_with(
+        include_bytes!("../../../fixtures/lang/functions/legacy-core.cddl"),
+        TARGET_IR_CDDL,
+        canonical_target_profile_contract_resources(),
+    ))
+    .unwrap();
+    let new = assemble(canonical_target_profile_contract_resources());
+    assert_ne!(old.raw_sha256(), new.raw_sha256());
+    assert_eq!(
+        old.cddl_bytes(),
+        include_bytes!("../../../fixtures/provider-contracts/v1/edict-provider-contracts.cddl")
+    );
+    assert_eq!(
+        old.manifest_bytes(),
+        include_bytes!("../../../fixtures/provider-contracts/v1/manifest.json")
+    );
+    old.validate_domain(CORE_MODULE_DIGEST_DOMAIN, &values[0])
+        .unwrap();
+    assert_eq!(
+        old.validate_domain(CORE_MODULE_DIGEST_DOMAIN, &values[1]),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+    for value in &values {
+        new.validate_domain(CORE_MODULE_DIGEST_DOMAIN, value)
+            .unwrap();
+    }
+    let mut missing_result = values[1].clone();
+    let function = map_value_mut(
+        map_value_mut(&mut missing_result, "functions"),
+        "assembleFragments",
+    );
+    remove_map_field(function, "returnType");
+    assert_eq!(
+        new.validate_domain(CORE_MODULE_DIGEST_DOMAIN, &missing_result),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+    let mut empty_table = values[1].clone();
+    *map_value_mut(&mut empty_table, "functions") = CanonicalValue::Map(vec![]);
+    assert_eq!(
+        new.validate_domain(CORE_MODULE_DIGEST_DOMAIN, &empty_table),
+        Err(ProviderArtifactSchemaValidationErrorKind::SchemaMismatch)
+    );
+}

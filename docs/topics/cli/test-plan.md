@@ -120,6 +120,19 @@ Out of scope:
 | CLI-TP-037 | implemented | Lawpack target support | CLI-REQ-017 | Windows lawpack write and check-only requests return stable mode-specific failures before document or namespace I/O and preserve a pre-existing sentinel tree. | windows_lawpack_build_fails_closed_before_document_io, lawpack_target_support_keeps_check_only_available | crates/edict-cli/src/lawpack_build_windows.rs, crates/edict-cli/src/lawpack_build.rs, .github/workflows/ci.yml | The targeted `windows-latest` runtime gate proves fail-closed containment only; it does not claim a Windows lawpack-build backend. |
 
 | CLI-TP-038 | implemented | Projection completeness | CLI-REQ-013 | Core review projection handles every normative Core type variant, including the intrinsic `Unit` type, without an incomplete match or omitted review shape. | core_type_review_is_total_for_unit | crates/edict-cli/src/main.rs | Keeps the display-only projection exhaustive when the normative Core type algebra grows. |
+| CLI-TP-039 | implemented | Source function projection | CLI-REQ-013 | Public projection exposes the compiler-built source function table and available Core and Target digest records. | public_project_compiles_jim_source_functions_to_authenticated_core_and_target | crates/edict-cli/tests/source_functions_cli.rs | This Rust regression establishes compiler projection; provider/runtime support belongs to Echo752. |
+| CLI-TP-040 | implemented | Deep expression diagnostic process boundary | CLI-REQ-013 | A source with 129 nested typed calls returns one InvalidBound diagnostic in the public projection envelope and a successful project status with one compiler error, without aborting the normal CLI process. | public_project_deep_expression_returns_a_diagnostic_without_aborting | crates/edict-cli/tests/source_functions_cli.rs | Project inspection success is separate from compiler acceptance; this witness does not establish safety for every caller thread stack or arbitrary source depth. |
+
+## External source-function consumer witness
+
+The Docker-only [public Jim build harness](../../../scripts/consumer-witnesses/README.md#source-function-compatibility-witness)
+checks a separate integration boundary: function-free source must build a package
+and verification report, while a called source function must refuse the explicitly
+pinned old provider schema with no outputs. It records exact compiler, input and
+provider identities. This harness requires caller-supplied Jim/provider inputs and
+is not run by the Rust suite or `cargo xtask verify`; execute it separately under
+the shared resource guard. It does not complete the repository-owned provider
+fixture gap in CLI-TP-028 or establish new Echo runtime support.
 
 ## Determinism Obligations
 

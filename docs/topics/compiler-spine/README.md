@@ -37,6 +37,15 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 
+Source-owned pure functions compile with signatures collected before bodies,
+isolated lexical frames, ordered immutable bindings and one terminal return.
+Calls stay explicit and retain ordered arguments, including arguments unused
+by the callee. Every definition is checked, including unused definitions.
+The [source-function reference](source-functions.md) explains authority,
+canonical identity, conservative budgeting and target restrictions.
+[CSPINE-REQ-044] [CSPINE-REQ-045]
+
+
 Boolean `&&` and `||` predicates lower to ordered Core `All` and `Any` forms
 where predicate checking is used: input constraints, statement conditionals,
 requirements, branch-yield conditions, and pure conditionals. This preserves
@@ -88,7 +97,7 @@ an accepted verifier report therefore does not establish slice execution,
 input-constraint enforcement, or runtime byte-copy charging.
 
 - The lowerable subset is deliberately narrow: local record type declarations,
-  one-parameter intents, `profile`, `basis none` or one input-derived explicit
+  first-order nongeneric source functions, one-parameter intents, `profile`, `basis none` or one input-derived explicit
   basis, `budget <=`, `where` predicates, pure `let` bindings, one annotated
   effectful `let ... else` shape, lowerable `require ... else` obstruction
   arms, `return`, bounded strings and bytes, booleans, fixed-width integers,
@@ -131,7 +140,7 @@ input-constraint enforcement, or runtime byte-copy charging.
   expression is preserved in Core; this is authoring evidence, not runtime
   basis resolution or admission. [CSPINE-REQ-020]
 - Core lowering produces structured in-memory `CoreModule` values with module
-  coordinate, imports, types, intents, input constraints, budgets, locals,
+  coordinate, imports, types, source functions, intents, input constraints, budgets, locals,
   ordered nodes, and result expressions. Public `lower_core` runs the shared
   whole-module Core type-integrity judgment before returning, so a caller-built
   `TypedModule` cannot bypass the source checker and publish invalid Core. That

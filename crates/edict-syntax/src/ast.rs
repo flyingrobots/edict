@@ -61,6 +61,17 @@ pub enum Decl {
     Type(TypeDecl),
     Enum(EnumDecl),
     Intent(IntentDecl),
+    Function(FunctionDecl),
+}
+
+/// A nongeneric source-owned pure function. Statement purity is checked by the compiler.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionDecl {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub returns: TypeRef,
+    pub body: Block,
+    pub span: Span,
 }
 
 /// `enum Name { CASE, CASE, ... }` — a closed set of payload-free cases.

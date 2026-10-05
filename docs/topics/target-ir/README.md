@@ -213,7 +213,7 @@ rejects as an identity redefinition before artifact construction. [TIR-REQ-027]
 direct record or record-valued conditional can therefore supply a field without
 inventing a name for its base; predicates, branches, and the selected field
 still pass the same recursive type checks. [TIR-REQ-036]
-Each non-intrinsic pure call must also match exactly one helper fact projected
+Each imported non-intrinsic pure call must also match exactly one helper fact projected
 from a validated lawpack export. Those facts expose read-only identity and
 signature accessors but cannot be constructed or mutated by an external caller.
 Target lowering checks the canonical coordinate, complete non-generic signature,
@@ -228,7 +228,7 @@ also traverses intent basis and constraints, requirement predicates and reason
 payloads, effect inputs and obstruction values, and every external-request
 value. Local references must be available in source order, scalar and declared
 types must remain valid, and every executable call must pass the same exact
-lawpack-helper check. The current Core obstruction arm's nonempty,
+source-function or lawpack-helper check. The current Core obstruction arm's nonempty,
 zero-argument call-shaped constructor remains an opaque application value in
 that specific position; adding arguments makes it executable and subjects it to
 helper authority. Empty `All` and `Any` aggregates reject through this same
@@ -457,3 +457,20 @@ subtree again. Test-only visit counters check this work bound without elapsed-ti
 thresholds. Public lowering tests retain rejection of nested overflowing,
 negative-unsigned, and malformed integer literals. The existing canonical
 container nesting ceiling still applies. [TIR-REQ-047]
+
+
+## Source-owned function authority
+
+Source calls resolve against the complete Core function table, separately from
+imported lawpack facts. Independent Target checking validates every function's
+ordered local frame, binding/result types, exact call signature and totality,
+including definitions unused by intents. A source/imported authority collision
+refuses. Core preflight rejects cycles and source paths over 128 frames; this
+is not a proof of combined imported runtime depth. [TIR-REQ-054]
+
+Calls, ordered arguments and conditional/pre-body placement are copied without
+inlining. Any nonempty source-function table forces the semantic closure to bind
+the exact complete Core digest, even for a require-only intent without imports
+or a basis. Existing `NoTargetSteps` and result-projection restrictions remain.
+Provider schema admission and pure/read runtime function execution require the
+consumer to select and implement the new published contract explicitly.

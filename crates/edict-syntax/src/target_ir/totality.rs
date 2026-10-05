@@ -107,7 +107,7 @@ fn predicate_is_total_at_depth(
     }
 }
 
-fn expression_is_total(expression: &CoreExpr, constraints: &[InputConstraint]) -> bool {
+pub(super) fn expression_is_total(expression: &CoreExpr, constraints: &[InputConstraint]) -> bool {
     expression_is_total_at_depth(expression, constraints, 0)
 }
 

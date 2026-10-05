@@ -7,22 +7,23 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     BinOp, Block, BoundRef, BytesRefine, Decl, DigestLockedPackageRef, ElseClause, Expr, FieldDecl,
-    Import, ImportKind, IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler,
-    ObstructionTarget, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
-    TypeRef, UnOp, YieldBlock,
+    FunctionDecl, Import, ImportKind, IntentClause, IntentDecl, Module, ObstructionArm,
+    ObstructionHandler, ObstructionTarget, RecordEntry, RequireElseArm, ScalarRefine, Stmt,
+    TypeDecl, TypeExpr, TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
     classify_core_type_reference, is_lowercase_sha256_review_digest, parse_core_integer,
     render_self_describing_core_type, validate_core_module_type_integrity, CompareOp, CoreBlock,
-    CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind,
-    CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, CoreType, CoreTypeReference, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
-    CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
+    CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreFunction, CoreImport,
+    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
+    CorePredicate, CorePureBinding, CorePureBlock, CoreRequireFailureArm, CoreType,
+    CoreTypeReference, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
+    CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
 mod byte_concat;
 mod byte_length;
 mod byte_slice;
+mod source_functions;
 mod unsigned_subtraction;
 
 use crate::lowerability::WriteClass;
@@ -254,6 +255,7 @@ pub struct ResolvedModule {
     pub bounds: BTreeMap<String, BoundFact>,
     pub budgets: BTreeMap<String, CoreBudget>,
     pub types: Vec<ResolvedTypeDecl>,
+    pub source_functions: Vec<FunctionDecl>,
     pub intents: Vec<ResolvedIntent>,
 }
 
@@ -280,6 +282,7 @@ pub struct TypedModule {
     pub coordinate: String,
     pub imports: Vec<CoreImport>,
     pub types: BTreeMap<String, CoreType>,
+    pub functions: BTreeMap<String, CoreFunction>,
     pub intents: Vec<TypedIntent>,
 }
 
@@ -335,9 +338,11 @@ pub fn resolve_module(
     let imports = resolve_imports(&module.imports);
     let mut types = Vec::new();
     let mut intents = Vec::new();
+    let mut source_functions = Vec::new();
 
     for decl in &module.decls {
         match decl {
+            Decl::Function(decl) => source_functions.push(decl.clone()),
             Decl::Type(decl) => types.push(ResolvedTypeDecl {
                 name: decl.name.clone(),
                 source: decl.clone(),
@@ -369,6 +374,7 @@ pub fn resolve_module(
             bounds: context.bounds.clone(),
             budgets: context.budgets.clone(),
             types,
+            source_functions,
             intents,
         },
     )
@@ -413,6 +419,7 @@ pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>>
         coordinate: typed.coordinate.clone(),
         imports: typed.imports.clone(),
         types: typed.types.clone(),
+        functions: typed.functions.clone(),
         intents,
         required_core_capabilities: Vec::new(),
     };
@@ -721,6 +728,11 @@ struct LetStatement<'a> {
 #[derive(Debug, Clone)]
 struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
+    function_signatures: BTreeMap<String, source_functions::Signature>,
+    function_costs: BTreeMap<String, HelperCost>,
+    source_expression_costs: BTreeMap<usize, HelperCost>,
+    source_predicate_costs: BTreeMap<usize, HelperCost>,
+    source_value_bounds: BTreeMap<usize, (u64, u64)>,
     input_proof_constraints: Vec<CorePredicate>,
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
@@ -733,6 +745,11 @@ impl<'a> TypeChecker<'a> {
     fn new(resolved: &'a ResolvedModule) -> Self {
         Self {
             resolved,
+            function_signatures: BTreeMap::new(),
+            function_costs: BTreeMap::new(),
+            source_expression_costs: BTreeMap::new(),
+            source_predicate_costs: BTreeMap::new(),
+            source_value_bounds: BTreeMap::new(),
             input_proof_constraints: Vec::new(),
             errors: Vec::new(),
             named_types: BTreeMap::new(),
@@ -744,6 +761,10 @@ impl<'a> TypeChecker<'a> {
 
     fn check(mut self) -> Result<TypedModule, Vec<CompilerError>> {
         self.check_types();
+        let functions = self.check_source_functions();
+        if !self.resolved.source_functions.is_empty() && !self.errors.is_empty() {
+            return Err(self.errors);
+        }
         let mut intents = Vec::new();
         for intent in &self.resolved.intents {
             if let Some(typed) = self.check_intent(intent) {
@@ -754,6 +775,7 @@ impl<'a> TypeChecker<'a> {
             coordinate: self.resolved.coordinate.clone(),
             imports: self.resolved.imports.clone(),
             types: self.core_types,
+            functions,
             intents,
         };
         finish(self.errors, module)
@@ -826,7 +848,9 @@ impl<'a> TypeChecker<'a> {
         match ty {
             TypeRef::Named { path, args } if args.is_empty() && path.len() == 1 => {
                 let name = &path[0];
-                if let Some(width) = builtin_integer_width(name) {
+                if name == "Bool" {
+                    TypeShape::canonical_structural(TypeKind::Bool)
+                } else if let Some(width) = builtin_integer_width(name) {
                     Some(integer_shape(width))
                 } else if let Some(shape) = self.named_types.get(name) {
                     Some(shape.clone())
@@ -1060,6 +1084,9 @@ impl<'a> TypeChecker<'a> {
         let body = self.check_body(intent, &output_shape, &mut env, &mut locals);
         self.input_proof_constraints.clear();
         let body = body?;
+        if !self.resolved.source_functions.is_empty() {
+            self.check_helper_cost_budget(intent)?;
+        }
 
         Some(TypedIntent {
             name: intent.name.clone(),
@@ -1114,6 +1141,13 @@ impl<'a> TypeChecker<'a> {
             };
             cost = self.checked_helper_cost_add(cost, clause_cost, intent.source.span)?;
         }
+        if !self.resolved.source_functions.is_empty() {
+            let input =
+                self.type_ref_shape(&intent.source.params[0].ty, intent.source.params[0].span)?;
+            let output = self.type_ref_shape(&intent.source.returns, intent.source.span)?;
+            let frame = self.source_intent_frame_cost(&input, &output, intent.source.span)?;
+            cost = self.checked_helper_cost_add(cost, frame, intent.source.span)?;
+        }
         if cost.steps > intent.budget.max_steps
             || cost.allocated_bytes > intent.budget.max_allocated_bytes
             || cost.output_bytes > intent.budget.max_output_bytes
@@ -1145,11 +1179,7 @@ impl<'a> TypeChecker<'a> {
         match stmt {
             Stmt::Let {
                 value, els, span, ..
-            } => {
-                let value_cost = self.helper_cost_for_expr(value)?;
-                let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
-                self.checked_helper_cost_add(value_cost, handler_cost, *span)
-            }
+            } => self.helper_cost_for_binding(value, els.as_ref(), *span),
             Stmt::Effect { call, els, span } => {
                 let call_cost = self.helper_cost_for_expr(call)?;
                 let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
@@ -1239,8 +1269,31 @@ impl<'a> TypeChecker<'a> {
         }
     }
 
+    fn helper_cost_for_binding(
+        &mut self,
+        value: &Expr,
+        handler: Option<&ObstructionHandler>,
+        span: Span,
+    ) -> Option<HelperCost> {
+        let value_cost = self.helper_cost_for_expr(value)?;
+        let handler_cost = self.helper_cost_for_handler(handler)?;
+        let combined = self.checked_helper_cost_add(value_cost, handler_cost, span)?;
+        let steps = self
+            .source_value_bounds
+            .get(&expression_identity(value))
+            .map_or(0, |bound| bound.0);
+        self.checked_helper_cost_add(
+            combined,
+            HelperCost {
+                steps,
+                ..HelperCost::default()
+            },
+            span,
+        )
+    }
+
     fn helper_cost_for_expr(&mut self, expr: &Expr) -> Option<HelperCost> {
-        match expr {
+        let children = match expr {
             Expr::Ident { .. }
             | Expr::Int { .. }
             | Expr::Str { .. }
@@ -1320,7 +1373,20 @@ impl<'a> TypeChecker<'a> {
                 }
                 self.checked_helper_cost_add(scrutinee_cost, arm_cost, *span)
             }
-        }
+        }?;
+        let span = expr_span(expr);
+        let own = self
+            .source_expression_costs
+            .get(&expression_identity(expr))
+            .copied()
+            .unwrap_or_default();
+        let predicate = self
+            .source_predicate_costs
+            .get(&expression_identity(expr))
+            .copied()
+            .unwrap_or_default();
+        let own = self.checked_helper_cost_add(own, predicate, span)?;
+        self.checked_helper_cost_add(children, own, span)
     }
 
     fn helper_cost_for_exprs_at<'b, I>(&mut self, exprs: I, span: Span) -> Option<HelperCost>
@@ -1339,6 +1405,9 @@ impl<'a> TypeChecker<'a> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
             return Some(HelperCost::default());
         };
+        if let Some(cost) = self.function_costs.get(&source_coordinate) {
+            return Some(*cost);
+        }
         let Some(fact) = self.resolved.pure_functions.get(&source_coordinate) else {
             return Some(HelperCost::default());
         };
@@ -1407,11 +1476,13 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         block: &crate::ast::YieldBlock,
     ) -> Option<HelperCost> {
-        let statements = Block {
-            stmts: block.stmts.clone(),
-            span: block.span,
-        };
-        let statement_cost = self.helper_cost_for_block(&statements)?;
+        // Keep the original borrowed expressions: their immutable AST identity
+        // keys type/cost summaries, while spans remain diagnostics only.
+        let mut statement_cost = HelperCost::default();
+        for statement in &block.stmts {
+            let cost = self.helper_cost_for_stmt(statement)?;
+            statement_cost = self.checked_helper_cost_add(statement_cost, cost, block.span)?;
+        }
         let value_cost = self.helper_cost_for_expr(&block.value)?;
         self.checked_helper_cost_add(statement_cost, value_cost, block.span)
     }
@@ -3417,7 +3488,7 @@ impl<'a> TypeChecker<'a> {
         expr: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
     ) -> Option<CorePredicate> {
-        match expr {
+        let checked = match expr {
             Expr::Bool { value, .. } => Some(if *value {
                 CorePredicate::True
             } else {
@@ -3461,6 +3532,26 @@ impl<'a> TypeChecker<'a> {
                     None
                 }
             }
+            Expr::Ident { .. } | Expr::Field { .. } | Expr::Call { .. } | Expr::If { .. } => {
+                let expected = TypeShape::canonical_structural(TypeKind::Bool)?;
+                // Check the operand on its own terms before applying the
+                // predicate requirement; nested typing failures stay distinct.
+                let value = self.check_expr(expr, env)?;
+                if !compatible(&expected, &value.ty) {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::ExpectedPredicate,
+                        "predicate value must have type Bool",
+                        expr_span(expr),
+                    ));
+                    return None;
+                }
+                Some(CorePredicate::Compare {
+                    op: CompareOp::Eq,
+                    left: value.expr,
+                    right: CoreExpr::Const(CoreValue::Bool(true)),
+                })
+            }
             _ => {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -3470,7 +3561,11 @@ impl<'a> TypeChecker<'a> {
                 ));
                 None
             }
+        }?;
+        if !self.resolved.source_functions.is_empty() {
+            self.record_source_predicate_cost(expr)?;
         }
+        Some(checked)
     }
 
     fn check_compare_predicate(
@@ -3519,13 +3614,31 @@ impl<'a> TypeChecker<'a> {
         self.check_expr_with_expected(expr, env, None)
     }
 
+    fn check_negated_integer(
+        &mut self,
+        operand: &Expr,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        let Expr::Int { value, suffix, .. } = operand else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                "negated expression is outside the initial lowerable subset",
+                span,
+            ));
+            return None;
+        };
+        self.check_integer_literal(&format!("-{value}"), *suffix, expected, span)
+    }
+
     fn check_expr_with_expected(
         &mut self,
         expr: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         expected: Option<&TypeShape>,
     ) -> Option<TypedValue> {
-        match expr {
+        let checked = match expr {
             Expr::Ident { name, span } => self.check_ident(name, *span, env),
             Expr::Str { value, .. } => string_value(value),
             Expr::Bool { value, .. } => Some(TypedValue {
@@ -3545,18 +3658,7 @@ impl<'a> TypeChecker<'a> {
                 op: UnOp::Neg,
                 operand,
                 span,
-            } => {
-                let Expr::Int { value, suffix, .. } = operand.as_ref() else {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        CompilerErrorKind::UnsupportedSourceShape,
-                        "negated expression is outside the initial lowerable subset",
-                        *span,
-                    ));
-                    return None;
-                };
-                self.check_integer_literal(&format!("-{value}"), *suffix, expected, *span)
-            }
+            } => self.check_negated_integer(operand, expected, *span),
             Expr::Field { base, field, span } => self.check_field(base, field, *span, env),
             Expr::Binary {
                 op: BinOp::Add,
@@ -3591,9 +3693,31 @@ impl<'a> TypeChecker<'a> {
                 els,
                 span,
             } => self.check_pure_conditional(cond, then, els, env, expected, *span),
+            Expr::Binary {
+                op:
+                    BinOp::Eq
+                    | BinOp::Ne
+                    | BinOp::Lt
+                    | BinOp::Le
+                    | BinOp::Gt
+                    | BinOp::Ge
+                    | BinOp::And
+                    | BinOp::Or,
+                ..
+            }
+            | Expr::Unary { op: UnOp::Not, .. } => {
+                let predicate = self.check_predicate(expr, env)?;
+                Some(TypedValue {
+                    expr: CoreExpr::If {
+                        predicate: Box::new(predicate),
+                        then_value: Box::new(CoreExpr::Const(CoreValue::Bool(true))),
+                        else_value: Box::new(CoreExpr::Const(CoreValue::Bool(false))),
+                    },
+                    ty: TypeShape::canonical_structural(TypeKind::Bool)?,
+                })
+            }
             Expr::Binary { .. }
             | Expr::Digest { .. }
-            | Expr::Unary { .. }
             | Expr::IfYield { .. }
             | Expr::VariantLit { .. }
             | Expr::Match { .. } => {
@@ -3605,10 +3729,34 @@ impl<'a> TypeChecker<'a> {
                 ));
                 None
             }
+        };
+        if !self.resolved.source_functions.is_empty() {
+            if let Some(value) = &checked {
+                self.record_source_expression_cost(expr, &value.ty)?;
+            }
         }
+        checked
     }
 
     fn check_pure_call(
+        &mut self,
+        callee: &Expr,
+        type_args: &[TypeRef],
+        args: &[Expr],
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
+        span: Span,
+    ) -> Option<TypedValue> {
+        if let Expr::Ident { name, .. } = callee {
+            if let Some(signature) = self.function_signatures.get(name).cloned() {
+                return self
+                    .check_source_call(name, &signature, type_args, args, env, expected, span);
+            }
+        }
+        self.check_imported_pure_call(callee, type_args, args, env, expected, span)
+    }
+
+    fn check_imported_pure_call(
         &mut self,
         callee: &Expr,
         type_args: &[TypeRef],
@@ -4646,6 +4794,12 @@ fn plain_path_root(expr: &Expr) -> Option<&str> {
 
 fn package_coordinate(path: &[String], version: &str) -> String {
     format!("{}@{version}", path.join("."))
+}
+
+// The resolved AST remains immutably borrowed for the entire check. Addresses
+// are only local memoization keys: they never enter Core, digests or diagnostics.
+fn expression_identity(expr: &Expr) -> usize {
+    std::ptr::from_ref(expr).addr()
 }
 
 fn expr_span(expr: &Expr) -> Span {

@@ -49,3 +49,46 @@ Echo v2 provider. No executable artifact is handwritten, no native edit planner
 is called, and no runtime state read occurs. Original Jim application locks and
 producer pins are not edited. Echo #684 owns subsequent provider/interpreter
 support; Jim #296 owns complete ReplaceRange behavior.
+
+
+## Source-function compatibility witness
+
+`jedit-source-functions.py` uses the same checked-in Jim range-assembly source
+with and without a called pure function. It takes explicit compiler source,
+source hash manifest/revision, original Jim application/vendor tree and old
+provider package/manifest digest arguments. It builds neither dependencies nor
+providers and modifies only two disposable application copies under the caller's
+bounded `--data-root`.
+
+Run it only inside the existing admitted guarded Docker worker; no new image,
+cache or worker is required. See `--help` for required paths. Supply Jim's
+original `edict/replace-range` application, whose lawpack digest matches the
+range-assembly fixtures, rather than the later atom-read probe. The old provider
+must support the function-free byte-assembly control.
+
+The combined vendor/provider input must be at most 16 MiB; there are two copies.
+Each compiler child runs in its own process group with a 120-second timeout and
+TERM/KILL cleanup, disabled core dumps and a hard 1 MiB limit on each written
+file, including stdout, stderr and application artifacts. The outer shared
+guard must still enforce aggregate build/data/log budgets and stop the container
+if monitoring fails. A file cap, timeout or process failure is not accepted as
+the expected semantic refusal.
+
+Success prints `JIM_SOURCE_FUNCTION_OLD_PROVIDER_REFUSAL_CONFIRMED`. The
+function-free control must publish a package/report pair. The function-bearing
+source must return `InvalidProviderInvocation` with `ArtifactSchemaMismatch`
+and no application artifacts. `evidence.json` records the input selections,
+compiler/source hashes, source hashes, diagnostics, outputs and log hashes.
+The harness neither updates old provider schema bytes nor claims new runtime
+support. Retain unique evidence before recycling its disposable copies.
+
+The child-lifecycle regression runs in the same admitted guarded worker:
+
+```sh
+python3 -B scripts/consumer-witnesses/test_jedit_source_functions.py
+```
+
+It uses a compiler stand-in that exits successfully while a descendant ignores
+TERM; the witness must stop that descendant before returning artifact hashes.
+The test also kills its owned process group on failure. This is separate from
+`cargo xtask verify` and from the real compiler compatibility witness.

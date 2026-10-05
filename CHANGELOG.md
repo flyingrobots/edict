@@ -10,6 +10,18 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Added first-order nongeneric source pure functions with ordered typed
+  parameters, immutable bindings and terminal returns. Source-owned Core bodies
+  retain call authority, alpha-normalized identity, conservative checked costs,
+  bounded nonrecursive graphs and independent Target validation. Function-free
+  Core bytes and the prior provider publication remain unchanged; providers
+  must explicitly adopt the new function-bearing contract. This does not claim
+  Echo runtime support or complete Jim buffer/rope behavior. Well-typed
+  non-Boolean predicates report `ExpectedPredicate`; rejected pure-function
+  statements and graph failures retain precise source ownership. Request-bearing
+  shapes in function-bearing modules report `UnsupportedSourceShape` rather
+  than arithmetic overflow; this does not broaden their accepted subset.
+
 - Made pure-helper call-depth validation independent of traversal order by
   accounting for each shared suffix's full height. Paths of 128 helpers remain
   valid; paths of 129 reject with `InvalidPureFunctionBody` even when their

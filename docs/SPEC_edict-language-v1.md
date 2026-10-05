@@ -1602,6 +1602,10 @@ Semantic grammar rules:
   the same type.
 - `yield` is legal only as the final statement of an effect-yield block.
 - `return` is not legal inside an effect-yield block.
+- Pure function calls evaluate arguments left to right exactly once, including
+  arguments unused by the callee, then enter a fresh lexical parameter/local
+  frame. Calls preserve their conditional and pre-body evaluation positions;
+  inlining must not duplicate, discard or eagerly evaluate an argument.
 - Function declarations are pure. `pure-block` cannot contain imported effects,
   `require`, `guarantee`, branch-yield effect expressions, semantic record
   statements, or effect statements.

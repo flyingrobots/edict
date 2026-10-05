@@ -1015,6 +1015,14 @@ fn exact_u64_pure_helper_application() -> (
     edict_syntax::CoreModule,
     edict_syntax::TargetIrLoweringFacts,
 ) {
+    exact_u64_pure_helper_application_with_source(
+        "examples.pure_helper@1",
+        "",
+        "hello.identityU64(input.value)",
+    )
+}
+
+fn exact_u64_pure_helper_exports() -> CanonicalValue {
     let identity_body = map([
         (
             "params",
@@ -1036,35 +1044,73 @@ fn exact_u64_pure_helper_application() -> (
         ),
     ]);
     let mut exports = hello_echo_exports();
-    array_mut(field_mut(&mut exports, "pureFunctions")).push(pure_function_with_types(
+    let mut helper = pure_function_with_types(
         "hello.echo@1.identityU64",
         &["U64"],
         "U64",
         "edict",
         ("body", identity_body),
-    ));
-    let exports_bytes = encode_canonical_cbor(&exports).expect("encode pure-helper exports");
-    let manifest = hello_echo_manifest(digest_value(EXPORTS_COORDINATE, &exports));
-    let manifest_bytes = encode_canonical_cbor(&manifest).expect("encode pure-helper manifest");
-    let bundle =
-        decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load pure-helper lawpack");
+    );
+    replace_field(
+        &mut helper,
+        "costTemplate",
+        text("hello.echo@1.identityBudget"),
+    );
+    array_mut(field_mut(&mut exports, "pureFunctions")).push(helper);
+    exports
+}
+
+fn exact_u64_pure_helper_adapter() -> CanonicalValue {
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode fixture adapter");
+    let budgets = field_mut(&mut adapter, "budgets");
+    replace_field(
+        budgets,
+        "hello.echo@1.smallCreateBudget",
+        map([
+            ("maxSteps", CanonicalValue::Integer(4096)),
+            ("maxAllocatedBytes", CanonicalValue::Integer(65536)),
+            ("maxOutputBytes", CanonicalValue::Integer(4096)),
+        ]),
+    );
+    insert_field(
+        budgets,
+        "hello.echo@1.identityBudget",
+        map([
+            ("maxSteps", CanonicalValue::Integer(16)),
+            ("maxAllocatedBytes", CanonicalValue::Integer(512)),
+            ("maxOutputBytes", CanonicalValue::Integer(64)),
+        ]),
+    );
+    adapter
+}
+
+fn exact_u64_pure_helper_application_with_source(
+    package: &str,
+    functions: &str,
+    expression: &str,
+) -> (
+    edict_syntax::CoreModule,
+    edict_syntax::TargetIrLoweringFacts,
+) {
+    let exports = exact_u64_pure_helper_exports();
+    let adapter = exact_u64_pure_helper_adapter();
+    let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
     let source = format!(
-        "package examples.pure_helper@1;\n\
+        "package {package};\n\
          use lawpack hello.echo@1 digest \"{}\" as hello;\n\
+         {functions}\n\
          type Input = {{ value: U64, }};\n\
          type Output = {{ value: U64, }};\n\
          intent apply(input: Input) returns Output\n\
            profile hello.createGreeting\n\
            basis none\n\
            budget <= hello.smallCreateBudget {{\n\
-           let value: U64 = hello.identityU64(input.value);\n\
+           let value: U64 = {expression};\n\
            return {{ value }};\n\
          }}",
         bundle.manifest_digest_review_string()
     );
     let module = parse_module(&source).expect("parse pure-helper application");
-    let adapter =
-        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load adapter");
     let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
         .expect("derive pure-helper compiler fact");
     let core = compile_to_core(&module, preparation.compiler_context())
@@ -1180,6 +1226,96 @@ fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
     let mut missing_facts = facts.clone();
     missing_facts.pure_functions.clear();
     assert_rejects("missing helper fact", &core, &missing_facts);
+}
+
+#[test]
+fn source_function_can_call_disjoint_import_in_its_own_package_namespace() {
+    for package in ["examples.pure_helper@1", "hello.echo@1"] {
+        let (core, facts) = exact_u64_pure_helper_application_with_source(
+            package,
+            "fn local(value: U64) -> U64 { return hello.identityU64(value); }",
+            "local(input.value)",
+        );
+        let target = lower_to_target_ir(&core, &facts);
+        assert_eq!(
+            target.status,
+            TargetLoweringStatus::Lowered,
+            "{package}: {target:?}"
+        );
+        assert!(target.artifact.is_some());
+        assert!(matches!(
+            &core.functions["local"].body.result,
+            CoreExpr::Call { callee, .. } if callee == "hello.echo@1.identityU64"
+        ));
+
+        let mut missing_facts = facts.clone();
+        missing_facts.pure_functions.clear();
+        let missing = lower_to_target_ir(&core, &missing_facts);
+        assert_eq!(
+            missing.status,
+            TargetLoweringStatus::Unsupported,
+            "{missing:?}"
+        );
+        assert!(missing.artifact.is_none());
+        assert!(missing.failures.iter().any(|failure| {
+            failure.kind == edict_syntax::TargetLoweringFailureKind::InvalidCoreIdentity
+        }));
+
+        let mut unknown = core;
+        let CoreExpr::Call { callee, .. } =
+            &mut unknown.functions.get_mut("local").unwrap().body.result
+        else {
+            panic!("imported helper call");
+        };
+        *callee = "hello.echo@1.unknownExport".to_owned();
+        let report = lower_to_target_ir(&unknown, &facts);
+        assert_eq!(
+            report.status,
+            TargetLoweringStatus::Unsupported,
+            "{report:?}"
+        );
+        assert!(report.artifact.is_none());
+        assert!(report.failures.iter().any(|failure| {
+            failure.kind == edict_syntax::TargetLoweringFailureKind::InvalidCoreIdentity
+        }));
+    }
+}
+
+#[test]
+fn target_rejects_unused_source_function_colliding_with_imported_pure_fact() {
+    let (mut core, facts) =
+        exact_u64_pure_helper_application_with_source("hello.echo@1", "", "input.value");
+    assert_eq!(facts.pure_functions.len(), 1);
+    assert_eq!(
+        facts.pure_functions[0].coordinate(),
+        "hello.echo@1.identityU64"
+    );
+    let control = lower_to_target_ir(&core, &facts);
+    assert_eq!(control.status, TargetLoweringStatus::Lowered, "{control:?}");
+
+    let source = parse_module(
+        "package source.functions@1; fn identityU64(value: U64) -> U64 { return value; }",
+    )
+    .expect("parse an unused source-owned function");
+    let functions = compile_to_core(&source, &edict_syntax::CompilerContext::new())
+        .expect("compile the independent source-owned identity");
+    core.functions = functions.functions;
+    edict_syntax::validate_core_module_type_integrity(&core)
+        .expect("the collision is at the imported-authority boundary, not Core scope");
+
+    let report = lower_to_target_ir(&core, &facts);
+    assert_eq!(
+        report.status,
+        TargetLoweringStatus::Unsupported,
+        "{report:?}"
+    );
+    assert!(report.artifact.is_none());
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(
+        report.failures[0].kind,
+        edict_syntax::TargetLoweringFailureKind::InvalidCoreIdentity
+    );
+    assert_eq!(report.failures[0].intent, None);
 }
 
 #[test]
