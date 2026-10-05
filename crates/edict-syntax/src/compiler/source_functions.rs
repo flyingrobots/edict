@@ -124,7 +124,7 @@ impl TypeChecker<'_> {
         let mut local_index = 0;
         for statement in &definition.body.stmts {
             if result.is_some() {
-                self.unsupported_stmt(definition.span, "statement after function return");
+                self.unsupported_stmt(statement_span(statement), "statement after function return");
                 break;
             }
             match statement {
@@ -175,7 +175,7 @@ impl TypeChecker<'_> {
                     result = Some(checked.expr);
                 }
                 _ => {
-                    self.unsupported_stmt(definition.span, "statement in a pure function");
+                    self.unsupported_stmt(statement_span(statement), "statement in a pure function");
                     return None;
                 }
             }
@@ -460,6 +460,20 @@ impl TypeChecker<'_> {
             allocated_bytes,
             output_bytes,
         })
+    }
+}
+
+fn statement_span(statement: &Stmt) -> Span {
+    match statement {
+        Stmt::Let { span, .. }
+        | Stmt::Effect { span, .. }
+        | Stmt::ExternalActionRequest { span, .. }
+        | Stmt::Require { span, .. }
+        | Stmt::Guarantee { span, .. }
+        | Stmt::Assert { span, .. }
+        | Stmt::If { span, .. }
+        | Stmt::For { span, .. }
+        | Stmt::Return { span, .. } => *span,
     }
 }
 
