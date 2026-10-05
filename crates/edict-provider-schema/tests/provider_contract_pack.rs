@@ -1210,6 +1210,14 @@ fn source_function_contract_preserves_old_modules_and_requires_new_schema_select
     .unwrap();
     let new = assemble(canonical_target_profile_contract_resources());
     assert_ne!(old.raw_sha256(), new.raw_sha256());
+    assert_eq!(
+        old.cddl_bytes(),
+        include_bytes!("../../../fixtures/provider-contracts/v1/edict-provider-contracts.cddl")
+    );
+    assert_eq!(
+        old.manifest_bytes(),
+        include_bytes!("../../../fixtures/provider-contracts/v1/manifest.json")
+    );
     old.validate_domain(CORE_MODULE_DIGEST_DOMAIN, &values[0])
         .unwrap();
     assert_eq!(
