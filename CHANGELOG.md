@@ -10,6 +10,12 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Made pure-helper call-depth validation independent of traversal order by
+  accounting for each shared suffix's full height. Paths of 128 helpers remain
+  valid; paths of 129 reject with `InvalidPureFunctionBody` even when their
+  suffixes were visited earlier. Independent helpers retain separate depth
+  allowances, and recursive helper graphs still reject.
+
 - Adopted pinned Bunny 0.6.0 as the normative checked Q32.32 numeric foundation
   and exposed raw fixed-point evaluation through the Rust facade, with explicit
   overflow and division-by-zero failures. Existing integer semantics and Core
