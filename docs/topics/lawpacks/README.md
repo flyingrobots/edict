@@ -150,8 +150,14 @@ The current executable Rust surfaces touching lawpacks are:
   calls, integer domains, bounded strings and bytes, record fields, variant
   cases and payloads, bounded collection entries, and the final result must all
   have the declared types. Helper calls must also form an acyclic graph no
-  deeper than 128 calls, checked without recursive graph traversal.
-  [LAWPACKS-REQ-014]
+  deeper than 128 helpers on any directed path, including the root and terminal
+  helper. This is a graph-height bound, not a limit on the total number of
+  exports or call occurrences. Canonical coordinate order, export-array order,
+  and shared suffixes do not change acceptance. Iterative validation caches each
+  completed helper's longest suffix height and includes that height in every
+  caller; cycle detection remains separate. A cycle or a path of 129 helpers
+  rejects with `InvalidPureFunctionBody` before compiler facts are exposed.
+  [LAWPACKS-REQ-014] [LAWPACKS-REQ-025]
 - Byte constants preserve the complete exported interval during that check:
 
   | Exported byte form | Accepted length |
