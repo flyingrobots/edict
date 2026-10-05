@@ -2023,10 +2023,12 @@ Target independently validates its signature, authority, result bound, and
 evaluation-scope proof. The existing Call encoding carries the operation;
 existing source and artifact identities without it do not change. Public
 `project` may expose Core and Target review artifacts, while application
-`build` still requires a provider that independently supports the operation.
-Neither compiler output nor a type maximum proves runtime budget compliance:
-the declared Core budget remains explicit, and providers/evaluators must earn
-slice support with byte-copy charging and input-constraint enforcement.
+`build` additionally crosses provider packaging and verification. A provider may
+preserve the call in a package and accept its artifact relation without a
+consumer evaluator implementing slice execution. Neither successful build,
+accepted report, nor a type maximum proves runtime budget compliance: the
+declared Core budget remains explicit, and the evaluator must independently
+implement byte-copy charging and input-constraint enforcement.
 
 `hash` is a source-level helper, not the artifact hash primitive. The label must
 be a string literal so digest domains are stable and reviewable.

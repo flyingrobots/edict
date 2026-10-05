@@ -69,8 +69,11 @@ reject with `TypeMismatch`. Raw byte slicing has no UTF-8 semantics.
 This compiler boundary carries the declared budget and finite result maximum.
 It does not claim whole-program primitive allocation inference or runtime byte
 copy charging. Public `project` can expose the source-produced artifacts;
-application `build` still depends on independent provider support, and an
-unsupported provider must refuse before producing an executable package.
+application `build` also crosses a provider packaging and verification boundary.
+A provider can preserve the Core/Target call in an executable-package artifact
+without its consumer evaluator implementing that call. Successful packaging or
+an accepted verifier report therefore does not establish slice execution,
+input-constraint enforcement, or runtime byte-copy charging.
 
 - The lowerable subset is deliberately narrow: local record type declarations,
   one-parameter intents, `profile`, `basis none` or one input-derived explicit

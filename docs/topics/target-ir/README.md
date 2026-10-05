@@ -396,8 +396,10 @@ routine remains independent from the source compiler. [TIR-REQ-051]
 
 The existing Call schema carries the operation without changing wire shape or
 prior canonical identities. This compiler capability supplies no UTF-8 or rope
-semantics, provider acceptance, runtime slice execution, or byte-copy budget
-charging. Those remain separate consumer obligations.
+semantics, runtime slice execution, or byte-copy budget charging. A provider may
+accept and package the preserved call while the evaluator still lacks execution
+support; a successful build or verifier report does not discharge those consumer
+obligations.
 
 ## Unsigned subtraction boundary
 
