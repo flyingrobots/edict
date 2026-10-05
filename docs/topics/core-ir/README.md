@@ -60,7 +60,7 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
 
 ## Current Contract
 
-- Core modules carry imports, type definitions, intents, and required Core
+- Core modules carry imports, type definitions, source functions, intents, and required Core
   capabilities. Imports are digest-locked `resource-ref` values, but the Core
   module does not contain its own self-hash field. [COREIR-REQ-001]
   [COREIR-REQ-007]
@@ -131,6 +131,13 @@ outside the schema under `fixtures/core/canonical/`. [COREIR-REQ-007]
   runtime basis resolution, and target/admission decisions remain external to
   Core. [COREIR-REQ-009] [COREIR-REQ-018]
   [EDICT-CORE-VERIFIED-EXTERNAL-001]
+- Source-owned functions use an optional nonempty `functions` map. Each entry
+  carries ordered parameters, a return type and an effect-free pure body.
+  Ordered immutable bindings have their own lexical frame; public validation
+  rejects captures, forward references, malformed binders, recursion and source
+  call paths above 128 frames. Empty maps are omitted from canonical encoding;
+  local alpha-renaming preserves identity while signature/body/callee changes
+  and unused definitions remain hash-significant. [COREIR-REQ-030]
 - Edict-authored lawpack pure helper bodies use `core-fn-body`, a pure function
   body shape. They do not reuse the effect-capable `core-block` node algebra.
   [COREIR-REQ-011]

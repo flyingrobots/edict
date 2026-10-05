@@ -114,9 +114,13 @@ Controls whose nested rule graph is opaque through the schema dependency, such
 as `.cbor`, reject with a stable unsupported-control failure rather than being
 accepted without a complete closure proof.
 The checked Rust-neutral artifacts live under
-[`fixtures/provider-contracts/v1/`](../../../fixtures/provider-contracts/v1/):
+[`fixtures/provider-contracts/source-functions-v1/`](../../../fixtures/provider-contracts/source-functions-v1/):
 one self-contained Apache-2.0 CDDL file and one deterministic manifest mapping
-logical contracts and provider artifact domains to exact roots. Neither
+logical contracts and provider artifact domains to exact roots. The prior
+[function-free v1 publication](../../../fixtures/provider-contracts/v1/) remains
+unchanged for explicitly pinned consumers. Source-function consumers select the
+new exact schema and manifest bytes; this does not grant executable backend
+support. Neither
 assembly nor validation discovers repository files, registries, or networks;
 the `xtask` command is the explicit repository adapter that reads source files
 and writes or checks the reviewed artifacts. Pack instance validation is

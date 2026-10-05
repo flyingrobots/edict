@@ -5,10 +5,10 @@
 
 use crate::ast::{
     BinOp, Block, BoundRef, BytesRefine, ContinueObstructedArm, Decl, DigestLockedPackageRef,
-    ElseClause, EnumDecl, Expr, FieldConstraint, FieldDecl, FunctionDecl, Import, ImportKind, IntentClause,
-    IntentDecl, MatchArm, Module, ObstructionArm, ObstructionHandler, ObstructionTarget,
-    PackageRef, Param, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
-    TypeRef, UnOp, VariantCase, YieldBlock,
+    ElseClause, EnumDecl, Expr, FieldConstraint, FieldDecl, FunctionDecl, Import, ImportKind,
+    IntentClause, IntentDecl, MatchArm, Module, ObstructionArm, ObstructionHandler,
+    ObstructionTarget, PackageRef, Param, RecordEntry, RequireElseArm, ScalarRefine, Stmt,
+    TypeDecl, TypeExpr, TypeRef, UnOp, VariantCase, YieldBlock,
 };
 use crate::token::{lex, Span, Token, TokenKind};
 
@@ -806,14 +806,26 @@ impl Parser {
             let name = self.binder()?;
             self.expect(&TokenKind::Colon)?;
             let ty = self.type_ref()?;
-            params.push(Param { name, ty, span: Span::new(pstart, self.prev_end()) });
-            if !self.eat(&TokenKind::Comma) { break; }
+            params.push(Param {
+                name,
+                ty,
+                span: Span::new(pstart, self.prev_end()),
+            });
+            if !self.eat(&TokenKind::Comma) {
+                break;
+            }
         }
         self.expect(&TokenKind::RParen)?;
         self.expect(&TokenKind::Arrow)?;
         let returns = self.type_ref()?;
         let body = self.block()?;
-        Ok(FunctionDecl { name, params, returns, body, span: Span::new(start, self.prev_end()) })
+        Ok(FunctionDecl {
+            name,
+            params,
+            returns,
+            body,
+            span: Span::new(start, self.prev_end()),
+        })
     }
 
     fn intent_decl(&mut self) -> Result<IntentDecl, ParseError> {

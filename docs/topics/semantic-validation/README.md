@@ -43,7 +43,7 @@ error ordering is not part of the Phase 2 contract. Tests assert structured
 
 - Runtime `String` and `Bytes` type references must carry explicit bounds. The
   pass checks nested type references recursively, including `Option`, `List`,
-  `Map`, `CapabilityRef`, variant payloads, intent parameters, intent returns,
+  `Map`, `CapabilityRef`, variant payloads, function/intent parameters and returns,
   typed `let` declarations, and expression type arguments. [SEMVAL-REQ-002]
 - Every intent must declare at least one operation mode: `profile` or
   `implements`. An intent may declare both. [SEMVAL-REQ-003]
@@ -57,7 +57,7 @@ error ordering is not part of the Phase 2 contract. Tests assert structured
   `intent` declarations share a source-AST namespace and reject duplicate names.
   [SEMVAL-REQ-007]
 - Source binders reject shadowing of visible module/prelude names, parameters,
-  and earlier local binders. The check covers intent parameters, `let` binders,
+  and earlier local binders. The check covers function and intent parameters, `let` binders,
   bounded-`for` binders, match-arm binders, obstruction-map binders, ordinary
   blocks, and branch-yield blocks. [SEMVAL-REQ-007]
 - Branch, loop, match-arm, obstruction-map, and branch-yield scopes are

@@ -1015,6 +1015,19 @@ fn exact_u64_pure_helper_application() -> (
     edict_syntax::CoreModule,
     edict_syntax::TargetIrLoweringFacts,
 ) {
+    exact_u64_pure_helper_application_with_source(
+        "examples.pure_helper@1",
+        "hello.identityU64(input.value)",
+    )
+}
+
+fn exact_u64_pure_helper_application_with_source(
+    package: &str,
+    expression: &str,
+) -> (
+    edict_syntax::CoreModule,
+    edict_syntax::TargetIrLoweringFacts,
+) {
     let identity_body = map([
         (
             "params",
@@ -1049,7 +1062,7 @@ fn exact_u64_pure_helper_application() -> (
     let bundle =
         decode_lawpack_bundle(&manifest_bytes, &exports_bytes).expect("load pure-helper lawpack");
     let source = format!(
-        "package examples.pure_helper@1;\n\
+        "package {package};\n\
          use lawpack hello.echo@1 digest \"{}\" as hello;\n\
          type Input = {{ value: U64, }};\n\
          type Output = {{ value: U64, }};\n\
@@ -1057,7 +1070,7 @@ fn exact_u64_pure_helper_application() -> (
            profile hello.createGreeting\n\
            basis none\n\
            budget <= hello.smallCreateBudget {{\n\
-           let value: U64 = hello.identityU64(input.value);\n\
+           let value: U64 = {expression};\n\
            return {{ value }};\n\
          }}",
         bundle.manifest_digest_review_string()
@@ -1180,6 +1193,43 @@ fn target_lowering_requires_exact_lawpack_pure_helper_authority() {
     let mut missing_facts = facts.clone();
     missing_facts.pure_functions.clear();
     assert_rejects("missing helper fact", &core, &missing_facts);
+}
+
+#[test]
+fn target_rejects_unused_source_function_colliding_with_imported_pure_fact() {
+    let (mut core, facts) =
+        exact_u64_pure_helper_application_with_source("hello.echo@1", "input.value");
+    assert_eq!(facts.pure_functions.len(), 1);
+    assert_eq!(
+        facts.pure_functions[0].coordinate(),
+        "hello.echo@1.identityU64"
+    );
+    let control = lower_to_target_ir(&core, &facts);
+    assert_eq!(control.status, TargetLoweringStatus::Lowered, "{control:?}");
+
+    let source = parse_module(
+        "package source.functions@1; fn identityU64(value: U64) -> U64 { return value; }",
+    )
+    .expect("parse an unused source-owned function");
+    let functions = compile_to_core(&source, &edict_syntax::CompilerContext::new())
+        .expect("compile the independent source-owned identity");
+    core.functions = functions.functions;
+    edict_syntax::validate_core_module_type_integrity(&core)
+        .expect("the collision is at the imported-authority boundary, not Core scope");
+
+    let report = lower_to_target_ir(&core, &facts);
+    assert_eq!(
+        report.status,
+        TargetLoweringStatus::Unsupported,
+        "{report:?}"
+    );
+    assert!(report.artifact.is_none());
+    assert_eq!(report.failures.len(), 1);
+    assert_eq!(
+        report.failures[0].kind,
+        edict_syntax::TargetLoweringFailureKind::InvalidCoreIdentity
+    );
+    assert_eq!(report.failures[0].intent, None);
 }
 
 #[test]

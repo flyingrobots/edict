@@ -34,7 +34,8 @@
 //! sealed host-computed output manifests remain separate from external
 //! component dispatch. The crate also exposes an explicit in-process
 //! compatibility seam over the current Echo and git-warp lowerers.
-//! Pure `fn`/`const` declarations, `record` semantic-effect statements,
+//! First-order nongeneric source `fn` declarations lower through typed pure Core
+//! bodies. `const` declarations, `record` semantic-effect statements,
 //! list/map/unit expression literals, full source-language lowering, general
 //! target lowering, and full admission execution tooling are deferred. The
 //! crate exposes the reference canonical Core and Target IR encoders for
@@ -136,10 +137,11 @@ pub use contract_bundle::{
 };
 pub use core_ir::{
     validate_core_module_type_integrity, CompareOp, CoreBlock, CoreBound, CoreBudget, CoreExpr,
-    CoreExternalActionBudget, CoreImport, CoreImportKind, CoreFunction, CorePureBlock, CorePureBinding, CoreIntent, CoreModule, CoreNode,
-    CoreObstructionArm, CoreObstructionReason, CorePredicate, CoreRequireFailureArm, CoreType,
-    CoreTypeIntegrityFailure, CoreTypeIntegrityFailureKind, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef, ValidatedCoreModule, CORE_API_VERSION,
+    CoreExternalActionBudget, CoreFunction, CoreImport, CoreImportKind, CoreIntent, CoreModule,
+    CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate, CorePureBinding,
+    CorePureBlock, CoreRequireFailureArm, CoreType, CoreTypeIntegrityFailure,
+    CoreTypeIntegrityFailureKind, CoreValue, InputConstraint, InputConstraintSource, LocalRef,
+    ResourceRef, ValidatedCoreModule, CORE_API_VERSION,
 };
 pub use highlight::{highlight_source, HighlightRole, HighlightToken};
 pub use lawpack::{

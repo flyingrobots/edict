@@ -7,24 +7,24 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::ast::{
     BinOp, Block, BoundRef, BytesRefine, Decl, DigestLockedPackageRef, ElseClause, Expr, FieldDecl,
-    FunctionDecl, Import, ImportKind, IntentClause, IntentDecl, Module, ObstructionArm, ObstructionHandler,
-    ObstructionTarget, RecordEntry, RequireElseArm, ScalarRefine, Stmt, TypeDecl, TypeExpr,
-    TypeRef, UnOp, YieldBlock,
+    FunctionDecl, Import, ImportKind, IntentClause, IntentDecl, Module, ObstructionArm,
+    ObstructionHandler, ObstructionTarget, RecordEntry, RequireElseArm, ScalarRefine, Stmt,
+    TypeDecl, TypeExpr, TypeRef, UnOp, YieldBlock,
 };
 use crate::core_ir::{
     classify_core_type_reference, is_lowercase_sha256_review_digest, parse_core_integer,
     render_self_describing_core_type, validate_core_module_type_integrity, CompareOp, CoreBlock,
-    CoreFunction, CorePureBlock, CorePureBinding, CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreImport, CoreImportKind,
-    CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason, CorePredicate,
-    CoreRequireFailureArm, CoreType, CoreTypeReference, CoreValue, InputConstraint,
-    InputConstraintSource, LocalRef, ResourceRef, CORE_API_VERSION,
-    CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
+    CoreBound, CoreBudget, CoreExpr, CoreExternalActionBudget, CoreFunction, CoreImport,
+    CoreImportKind, CoreIntent, CoreModule, CoreNode, CoreObstructionArm, CoreObstructionReason,
+    CorePredicate, CorePureBinding, CorePureBlock, CoreRequireFailureArm, CoreType,
+    CoreTypeReference, CoreValue, InputConstraint, InputConstraintSource, LocalRef, ResourceRef,
+    CORE_API_VERSION, CORE_APPLICATION_INPUT_LOCAL_ID, MAX_CORE_TYPE_DEPTH,
 };
 mod byte_concat;
 mod byte_length;
 mod byte_slice;
-mod unsigned_subtraction;
 mod source_functions;
+mod unsigned_subtraction;
 
 use crate::lowerability::WriteClass;
 use crate::semantic::validate_surface;
@@ -730,9 +730,9 @@ struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
     function_signatures: BTreeMap<String, source_functions::Signature>,
     function_costs: BTreeMap<String, HelperCost>,
-    source_expression_costs: BTreeMap<(usize, usize), HelperCost>,
-    source_predicate_costs: BTreeMap<(usize, usize), HelperCost>,
-    source_value_bounds: BTreeMap<(usize, usize), (u64, u64)>,
+    source_expression_costs: BTreeMap<usize, HelperCost>,
+    source_predicate_costs: BTreeMap<usize, HelperCost>,
+    source_value_bounds: BTreeMap<usize, (u64, u64)>,
     input_proof_constraints: Vec<CorePredicate>,
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
@@ -762,7 +762,9 @@ impl<'a> TypeChecker<'a> {
     fn check(mut self) -> Result<TypedModule, Vec<CompilerError>> {
         self.check_types();
         let functions = self.check_source_functions();
-        if !self.resolved.source_functions.is_empty() && !self.errors.is_empty() { return Err(self.errors); }
+        if !self.resolved.source_functions.is_empty() && !self.errors.is_empty() {
+            return Err(self.errors);
+        }
         let mut intents = Vec::new();
         for intent in &self.resolved.intents {
             if let Some(typed) = self.check_intent(intent) {
@@ -1082,7 +1084,9 @@ impl<'a> TypeChecker<'a> {
         let body = self.check_body(intent, &output_shape, &mut env, &mut locals);
         self.input_proof_constraints.clear();
         let body = body?;
-        if !self.resolved.source_functions.is_empty() { self.check_helper_cost_budget(intent)?; }
+        if !self.resolved.source_functions.is_empty() {
+            self.check_helper_cost_budget(intent)?;
+        }
 
         Some(TypedIntent {
             name: intent.name.clone(),
@@ -1138,7 +1142,8 @@ impl<'a> TypeChecker<'a> {
             cost = self.checked_helper_cost_add(cost, clause_cost, intent.source.span)?;
         }
         if !self.resolved.source_functions.is_empty() {
-            let input = self.type_ref_shape(&intent.source.params[0].ty, intent.source.params[0].span)?;
+            let input =
+                self.type_ref_shape(&intent.source.params[0].ty, intent.source.params[0].span)?;
             let output = self.type_ref_shape(&intent.source.returns, intent.source.span)?;
             let frame = self.source_intent_frame_cost(&input, &output, intent.source.span)?;
             cost = self.checked_helper_cost_add(cost, frame, intent.source.span)?;
@@ -1178,9 +1183,18 @@ impl<'a> TypeChecker<'a> {
                 let value_cost = self.helper_cost_for_expr(value)?;
                 let handler_cost = self.helper_cost_for_handler(els.as_ref())?;
                 let combined = self.checked_helper_cost_add(value_cost, handler_cost, *span)?;
-                let value_span = expr_span(value);
-                let steps = self.source_value_bounds.get(&(value_span.start, value_span.end)).map_or(0, |bound| bound.0);
-                self.checked_helper_cost_add(combined, HelperCost { steps, ..HelperCost::default() }, *span)
+                let steps = self
+                    .source_value_bounds
+                    .get(&expression_identity(value))
+                    .map_or(0, |bound| bound.0);
+                self.checked_helper_cost_add(
+                    combined,
+                    HelperCost {
+                        steps,
+                        ..HelperCost::default()
+                    },
+                    *span,
+                )
             }
             Stmt::Effect { call, els, span } => {
                 let call_cost = self.helper_cost_for_expr(call)?;
@@ -1354,8 +1368,16 @@ impl<'a> TypeChecker<'a> {
             }
         }?;
         let span = expr_span(expr);
-        let own = self.source_expression_costs.get(&(span.start, span.end)).copied().unwrap_or_default();
-        let predicate = self.source_predicate_costs.get(&(span.start, span.end)).copied().unwrap_or_default();
+        let own = self
+            .source_expression_costs
+            .get(&expression_identity(expr))
+            .copied()
+            .unwrap_or_default();
+        let predicate = self
+            .source_predicate_costs
+            .get(&expression_identity(expr))
+            .copied()
+            .unwrap_or_default();
         let own = self.checked_helper_cost_add(own, predicate, span)?;
         self.checked_helper_cost_add(children, own, span)
     }
@@ -1376,7 +1398,9 @@ impl<'a> TypeChecker<'a> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
             return Some(HelperCost::default());
         };
-        if let Some(cost) = self.function_costs.get(&source_coordinate) { return Some(*cost); }
+        if let Some(cost) = self.function_costs.get(&source_coordinate) {
+            return Some(*cost);
+        }
         let Some(fact) = self.resolved.pure_functions.get(&source_coordinate) else {
             return Some(HelperCost::default());
         };
@@ -1445,11 +1469,13 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         block: &crate::ast::YieldBlock,
     ) -> Option<HelperCost> {
-        let statements = Block {
-            stmts: block.stmts.clone(),
-            span: block.span,
-        };
-        let statement_cost = self.helper_cost_for_block(&statements)?;
+        // Keep the original borrowed expressions: their immutable AST identity
+        // keys type/cost summaries, while spans remain diagnostics only.
+        let mut statement_cost = HelperCost::default();
+        for statement in &block.stmts {
+            let cost = self.helper_cost_for_stmt(statement)?;
+            statement_cost = self.checked_helper_cost_add(statement_cost, cost, block.span)?;
+        }
         let value_cost = self.helper_cost_for_expr(&block.value)?;
         self.checked_helper_cost_add(statement_cost, value_cost, block.span)
     }
@@ -3503,10 +3529,19 @@ impl<'a> TypeChecker<'a> {
                 let expected = TypeShape::canonical_structural(TypeKind::Bool)?;
                 let value = self.check_expr_with_expected(expr, env, Some(&expected))?;
                 if !compatible(&expected, &value.ty) {
-                    self.errors.push(error(CompilerStage::TypeCheck, CompilerErrorKind::ExpectedPredicate, "predicate value must have type Bool", expr_span(expr)));
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::ExpectedPredicate,
+                        "predicate value must have type Bool",
+                        expr_span(expr),
+                    ));
                     return None;
                 }
-                Some(CorePredicate::Compare { op: CompareOp::Eq, left: value.expr, right: CoreExpr::Const(CoreValue::Bool(true)) })
+                Some(CorePredicate::Compare {
+                    op: CompareOp::Eq,
+                    left: value.expr,
+                    right: CoreExpr::Const(CoreValue::Bool(true)),
+                })
             }
             _ => {
                 self.errors.push(error(
@@ -3518,7 +3553,9 @@ impl<'a> TypeChecker<'a> {
                 None
             }
         }?;
-        if !self.resolved.source_functions.is_empty() { self.record_source_predicate_cost(expr)?; }
+        if !self.resolved.source_functions.is_empty() {
+            self.record_source_predicate_cost(expr)?;
+        }
         Some(checked)
     }
 
@@ -3640,14 +3677,28 @@ impl<'a> TypeChecker<'a> {
                 els,
                 span,
             } => self.check_pure_conditional(cond, then, els, env, expected, *span),
-            Expr::Binary { op: BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge | BinOp::And | BinOp::Or, .. }
+            Expr::Binary {
+                op:
+                    BinOp::Eq
+                    | BinOp::Ne
+                    | BinOp::Lt
+                    | BinOp::Le
+                    | BinOp::Gt
+                    | BinOp::Ge
+                    | BinOp::And
+                    | BinOp::Or,
+                ..
+            }
             | Expr::Unary { op: UnOp::Not, .. } => {
                 let predicate = self.check_predicate(expr, env)?;
-                Some(TypedValue { expr: CoreExpr::If {
-                    predicate: Box::new(predicate),
-                    then_value: Box::new(CoreExpr::Const(CoreValue::Bool(true))),
-                    else_value: Box::new(CoreExpr::Const(CoreValue::Bool(false))),
-                }, ty: TypeShape::canonical_structural(TypeKind::Bool)? })
+                Some(TypedValue {
+                    expr: CoreExpr::If {
+                        predicate: Box::new(predicate),
+                        then_value: Box::new(CoreExpr::Const(CoreValue::Bool(true))),
+                        else_value: Box::new(CoreExpr::Const(CoreValue::Bool(false))),
+                    },
+                    ty: TypeShape::canonical_structural(TypeKind::Bool)?,
+                })
             }
             Expr::Binary { .. }
             | Expr::Digest { .. }
@@ -3682,7 +3733,8 @@ impl<'a> TypeChecker<'a> {
     ) -> Option<TypedValue> {
         if let Expr::Ident { name, .. } = callee {
             if let Some(signature) = self.function_signatures.get(name).cloned() {
-                return self.check_source_call(name, &signature, type_args, args, env, expected, span);
+                return self
+                    .check_source_call(name, &signature, type_args, args, env, expected, span);
             }
         }
         let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
@@ -4714,6 +4766,12 @@ fn plain_path_root(expr: &Expr) -> Option<&str> {
 
 fn package_coordinate(path: &[String], version: &str) -> String {
     format!("{}@{version}", path.join("."))
+}
+
+// The resolved AST remains immutably borrowed for the entire check. Addresses
+// are only local memoization keys: they never enter Core, digests or diagnostics.
+fn expression_identity(expr: &Expr) -> usize {
+    std::ptr::from_ref(expr).addr()
 }
 
 fn expr_span(expr: &Expr) -> Span {

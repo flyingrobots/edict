@@ -83,7 +83,11 @@ pub fn validate_surface(module: &Module) -> Result<(), Vec<SemanticError>> {
             Decl::Enum(_) => {}
             Decl::Function(function) => {
                 if PRELUDE_NAMES.contains(&function.name.as_str()) {
-                    errors.push(error(SemanticErrorKind::ShadowedName, "function shadows a prelude name", function.span));
+                    errors.push(error(
+                        SemanticErrorKind::ShadowedName,
+                        "function shadows a prelude name",
+                        function.span,
+                    ));
                 }
                 let mut names = NameEnv::new(protected_names.clone());
                 names.push_scope();
