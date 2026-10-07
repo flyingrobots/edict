@@ -822,6 +822,46 @@ fn lawpack_adapter_corroborates_footprint_cost_and_failure_obligations() {
 }
 
 #[test]
+fn lawpack_import_rejects_raw_file_hash_with_manifest_domain_obligation() {
+    let bundle =
+        decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
+    let correct = parse_module(CREATE_GREETING_SOURCE).expect("parse exact source");
+    prepare_lawpack_compilation(&correct, &bundle, &adapter)
+        .expect("manifest sidecar digest is accepted");
+    let raw_digest = format!("sha256:{:x}", Sha256::digest(MANIFEST_BYTES));
+    assert_ne!(raw_digest, bundle.manifest_digest_review_string());
+    let source = CREATE_GREETING_SOURCE.replace(MANIFEST_DIGEST.trim(), &raw_digest);
+    let module = parse_module(&source).expect("file digest has valid review syntax");
+    let failures = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect_err("raw file hash does not identify the manifest domain");
+    assert_eq!(
+        adapter_failure_kinds(&failures),
+        vec![LawpackAdapterFailureKind::SourceImportMismatch]
+    );
+    assert_eq!(failures[0].path, "module.imports.hello.digest");
+    assert_eq!(
+        failures[0].obligation,
+        format!(
+            "edict.lawpack/v1 domain-framed manifest digest `{}` (not the raw manifest.cbor file hash)",
+            bundle.manifest_digest_review_string()
+        )
+    );
+}
+
+#[test]
+fn malformed_lawpack_import_digest_retains_parser_kind_and_span() {
+    let source = CREATE_GREETING_SOURCE.replace(MANIFEST_DIGEST.trim(), "sha256:not-a-digest");
+    let failure = parse_module(&source).expect_err("malformed digest rejects before loading");
+    assert_eq!(failure.kind, edict_syntax::ParseErrorKind::InvalidDigest);
+    assert_eq!(
+        &source[failure.span.start..failure.span.end],
+        "\"sha256:not-a-digest\""
+    );
+}
+
+#[test]
 fn lawpack_compilation_requires_the_exact_digest_locked_source_import() {
     let bundle =
         decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load Hello Echo lawpack");

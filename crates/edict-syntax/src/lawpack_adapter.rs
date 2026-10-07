@@ -18,7 +18,7 @@ use crate::compiler::{
 use crate::core_ir::{CoreBudget, ResourceRef};
 use crate::lawpack::{
     LawpackExecutionClass, LawpackResourceRef, LawpackSemanticEffect, LawpackTargetAdapter,
-    ValidatedLawpackBundle,
+    ValidatedLawpackBundle, LAWPACK_API_VERSION,
 };
 use crate::lowerability::WriteClass;
 use crate::target_ir::{
@@ -895,7 +895,9 @@ fn matching_import_alias(
         return Err(one(failure(
             LawpackAdapterFailureKind::SourceImportMismatch,
             format!("module.imports.{}.digest", import.alias),
-            manifest_digest,
+            format!(
+                "{LAWPACK_API_VERSION} domain-framed manifest digest `{manifest_digest}` (not the raw manifest.cbor file hash)"
+            ),
         )));
     }
     Ok(import.alias.clone())

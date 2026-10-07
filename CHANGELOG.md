@@ -13,11 +13,13 @@ versions still track specification maturity rather than a released product.
 - Report `EffectWithoutFailureMapping` for exact imported effects used as pure
   calls, with declared failure names and the call span. Zero-failure effects
   report the unsupported binding shape instead of suggesting an empty map.
-  Unknown-effect
-  `MissingContextFact` diagnostics list available exact-owner effects under the
-  selected alias. This changes primary guidance only; effect authority,
-  signature compatibility, and dependent-error recovery remain unchanged.
+  Unknown-effect `MissingContextFact` diagnostics list available exact-owner
+  effects under the selected alias. This changes primary guidance only; effect
+  authority, signature compatibility, and dependent-error recovery remain unchanged.
 
+- Explain the `edict.lawpack/v1` domain-framed manifest identity in import
+  guidance. `SourceImportMismatch` now names the required domain and exact
+  manifest digest, preserving the failure kind and import digest path.
 
 - Added first-order nongeneric source pure functions with ordered typed
   parameters, immutable bindings and terminal returns. Source-owned Core bodies
