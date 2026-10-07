@@ -28,7 +28,7 @@ F01 keeps required positive-fixture corrections with the compiler check, so its 
 - [ ] [F02A: Identify missing effect mappings and unknown exports](docs/plans/study-feedback/F02A.md) — [#238](https://github.com/flyingrobots/edict/issues/238).
 - [ ] [F02B: Identify the incompatible field in effect signatures](docs/plans/study-feedback/F02B.md) — [#239](https://github.com/flyingrobots/edict/issues/239).
 - [ ] [F02C: Suppress errors that depend on failed compiler bindings](docs/plans/study-feedback/F02C.md) — [#240](https://github.com/flyingrobots/edict/issues/240).
-- [ ] [F03: Emit structured compiler diagnostics for application builds](docs/plans/study-feedback/F03.md) — [#233](https://github.com/flyingrobots/edict/issues/233).
+- [x] [F03: Emit structured compiler diagnostics for application builds](docs/plans/study-feedback/F03.md) — [#233](https://github.com/flyingrobots/edict/issues/233); [PR #245](https://github.com/flyingrobots/edict/pull/245), merged as `618aa4f84ff88a0873849f8d9cfa55e1f340ffb9`.
 - [ ] [F04: Correct README safety guarantees and compiler/runtime status](docs/plans/study-feedback/F04.md) — [#229](https://github.com/flyingrobots/edict/issues/229).
 - [x] [F05: Explain the lawpack import digest and digest-mismatch error](docs/plans/study-feedback/F05.md) — [#234](https://github.com/flyingrobots/edict/issues/234); [PR #244](https://github.com/flyingrobots/edict/pull/244), merged as `67adee201d9da9d8bae608f3906474a6f31314f9`.
 - [ ] [F06: Document a configurable Echo-executable causal-cell lawpack](docs/plans/study-feedback/F06.md) — [#235](https://github.com/flyingrobots/edict/issues/235).
