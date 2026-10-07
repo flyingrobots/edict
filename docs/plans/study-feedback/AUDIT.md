@@ -43,7 +43,7 @@ Do not close a runtime task with compiler-only evidence.
 
 Use the reusable `edict-validation` worker and `rust:1.96.0` image.
 Use the workstation git-locks store and both `host/heavy-work` and `host/docker/edict-validation/` for validation.
-The owned `edict-build-cache` volume holds Cargo dependencies and compiler output within one aggregate 20 GiB budget.
+The owned `edict-build-cache` volume holds Cargo dependencies, the owned Rust toolchain, and compiler output within one aggregate 20 GiB budget. Temporary compiler outputs also enter that accounting.
 The worker root is read-only. Temporary source, test, and scratch paths use bounded tmpfs mounts.
 The task monitor checks host and VM free space, volume use, temporary use, and host logs every two seconds.
 A failed measurement, timeout, or budget breach stops the worker and its child workloads.

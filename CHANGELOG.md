@@ -10,6 +10,17 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Check every ordinary intent result against its declared canonical-CBOR output
+  budget, including UTF-8 expansion, exact headers, nested records/lists, and
+  nominal representations. Oversized or overflowing results now report
+  `InvalidBound` without requiring source functions. Direct external-action
+  request results retain their separate protocol boundary; opaque requests
+  nested in ordinary results reject. Corrected positive fixture budgets and
+  regenerated their dependent digest closures. Old producer locks remain
+  frozen; new compiler/old lawpack combinations can reject impossible results.
+  No runtime input-validation or complete allocation claim is added.
+
+
 - Added first-order nongeneric source pure functions with ordered typed
   parameters, immutable bindings and terminal returns. Source-owned Core bodies
   retain call authority, alpha-normalized identity, conservative checked costs,

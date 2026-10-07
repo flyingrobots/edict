@@ -14,7 +14,7 @@ fn context() -> CompilerContext {
             CoreBudget {
                 max_steps: 64,
                 max_allocated_bytes: 4096,
-                max_output_bytes: 1024,
+                max_output_bytes: u64::MAX,
             },
         )
 }
@@ -33,11 +33,20 @@ fn source(left: &str, right: &str, output: &str, expression: &str) -> String {
 }
 
 fn compile(left: &str, right: &str, output: &str, expression: &str) -> CoreModule {
-    compile_to_core(
-        &parse_module(&source(left, right, output, expression)).unwrap(),
-        &context(),
-    )
-    .expect("bounded byte concatenation compiles")
+    let mut authored = source(left, right, output, expression);
+    // Keep the arithmetic maximum in an intermediate binding. Its encoded
+    // size cannot fit U64. The ordinary output remains bounded and valid even
+    // when the target overflow witness changes the right operand to max=1.
+    if output == "Bytes<max=18446744073709551615>" {
+        authored = authored
+            .replace(
+                "type Output = { bytes: Bytes<max=18446744073709551615>, };",
+                "type Output = { bytes: Bytes<max=1>, };",
+            )
+            .replace("return { bytes };", "return { bytes: input.right };");
+    }
+    compile_to_core(&parse_module(&authored).unwrap(), &context())
+        .expect("bounded byte concatenation compiles")
 }
 
 fn facts() -> TargetIrLoweringFacts {

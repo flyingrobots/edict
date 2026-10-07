@@ -1384,7 +1384,7 @@ fn projection_settings<const N: usize>(emit: [&str; N]) -> Value {
                     "budget": {
                         "maxSteps": 64,
                         "maxAllocatedBytes": 4096,
-                        "maxOutputBytes": 1024
+                        "maxOutputBytes": 4096
                     }
                 }
             ]
@@ -1707,7 +1707,7 @@ fn projection_compiler_context() -> CompilerContext {
             CoreBudget {
                 max_steps: 64,
                 max_allocated_bytes: 4096,
-                max_output_bytes: 1024,
+                max_output_bytes: 4096,
             },
         )
 }
