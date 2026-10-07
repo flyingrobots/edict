@@ -825,12 +825,18 @@ fn run_request(request: &Request) -> Result<i32, CliFailure> {
 
 fn run_build_request(settings: &CompilerSettings) -> Result<i32, CliFailure> {
     if let Some(path) = &settings.application {
-        application_build::build_application(path).map_err(|failure| CliFailure {
-            command: COMMAND_BUILD,
-            kind: failure.kind,
-            line: None,
-            message: failure.message,
-        })?;
+        if let Err(failure) = application_build::build_application(path) {
+            if let Some(diagnostics) = &failure.source_diagnostics {
+                write_application_source_failure(&failure, diagnostics);
+                return Ok(EXIT_CLI_FAILED);
+            }
+            return Err(CliFailure {
+                command: COMMAND_BUILD,
+                kind: failure.kind,
+                line: None,
+                message: failure.message,
+            });
+        }
     } else if let Some(path) = &settings.lawpack {
         lawpack_build::build_lawpack(path, settings.check_only).map_err(|failure| CliFailure {
             command: COMMAND_BUILD,
@@ -2298,6 +2304,96 @@ fn record_value(record: impl Serialize) -> Value {
 fn write_info(record: &Value) {
     let mut stdout = io::stdout().lock();
     write_record(&mut stdout, record);
+}
+
+fn write_application_source_failure(
+    failure: &application_build::ApplicationBuildFailure,
+    diagnostics: &application_build::ApplicationSourceDiagnostics,
+) {
+    use application_build::ApplicationSourceError;
+
+    let path = diagnostics.path.display().to_string();
+    let input = json!({ "kind": "path", "path": path });
+    let positions = application_source_positions(&diagnostics.source, &diagnostics.errors);
+    let mut stderr = io::stderr().lock();
+    for (error, (line, column)) in diagnostics.errors.iter().zip(positions) {
+        let (stage, kind, message) = match error {
+            ApplicationSourceError::Parse(error) => {
+                ("parse", error.kind.code(), error.message.as_str())
+            }
+            ApplicationSourceError::Compiler(error) => (
+                compiler_stage_name(error.stage),
+                compiler_error_kind_name(error.kind),
+                error.message.as_str(),
+            ),
+        };
+        let mut record = diagnostic_record(
+            COMMAND_BUILD,
+            stage,
+            kind,
+            &input,
+            Some(error.span()),
+            None,
+            Some(message),
+        );
+        record["sourceLocation"] = json!({ "path": path, "line": line, "column": column });
+        write_record(&mut stderr, &record);
+    }
+    let summary = CliFailure {
+        command: COMMAND_BUILD,
+        kind: failure.kind,
+        line: None,
+        message: failure.message.clone(),
+    };
+    write_record(&mut stderr, &cli_diagnostic(&summary));
+    write_record(
+        &mut stderr,
+        &status_record(
+            COMMAND_BUILD,
+            "error",
+            0,
+            diagnostics.errors.len() + 1,
+            EXIT_CLI_FAILED,
+        ),
+    );
+}
+
+// Traverse source once in byte-offset order, then restore diagnostic order.
+// This avoids rescanning the whole source for every error or indexing UTF-8.
+fn application_source_positions(
+    source: &str,
+    errors: &[application_build::ApplicationSourceError],
+) -> Vec<(usize, usize)> {
+    let mut offsets = errors
+        .iter()
+        .enumerate()
+        .map(|(ordinal, error)| (error.span().start, ordinal))
+        .collect::<Vec<_>>();
+    offsets.sort_unstable();
+    let mut characters = source.char_indices().peekable();
+    let mut line = 1;
+    let mut column = 1;
+    let mut positions = Vec::with_capacity(offsets.len());
+    for (offset, ordinal) in offsets {
+        while let Some(&(byte, character)) = characters.peek() {
+            if byte >= offset {
+                break;
+            }
+            characters.next();
+            if character == '\n' {
+                line += 1;
+                column = 1;
+            } else {
+                column += 1;
+            }
+        }
+        positions.push((ordinal, line, column));
+    }
+    positions.sort_unstable_by_key(|(ordinal, _, _)| *ordinal);
+    positions
+        .into_iter()
+        .map(|(_, line, column)| (line, column))
+        .collect()
 }
 
 fn write_cli_failure(failure: &CliFailure) {

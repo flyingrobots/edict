@@ -48,6 +48,29 @@ const MAX_EXTERNAL_ACTION_RESOURCES: usize = 192;
 pub(crate) struct ApplicationBuildFailure {
     pub(crate) kind: &'static str,
     pub(crate) message: String,
+    pub(crate) source_diagnostics: Option<ApplicationSourceDiagnostics>,
+}
+
+#[derive(Debug)]
+pub(crate) struct ApplicationSourceDiagnostics {
+    pub(crate) path: PathBuf,
+    pub(crate) source: String,
+    pub(crate) errors: Vec<ApplicationSourceError>,
+}
+
+#[derive(Debug)]
+pub(crate) enum ApplicationSourceError {
+    Parse(edict_syntax::ParseError),
+    Compiler(edict_syntax::CompilerError),
+}
+
+impl ApplicationSourceError {
+    pub(crate) fn span(&self) -> edict_syntax::Span {
+        match self {
+            Self::Parse(error) => error.span,
+            Self::Compiler(error) => error.span,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
@@ -195,12 +218,12 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
         )
     })?;
     let module = parse_module(source).map_err(|error| {
-        failure(
+        source_failure(
             "InvalidApplicationSource",
-            format!(
-                "Edict source `{}` did not parse: {error:?}",
-                source_path.display()
-            ),
+            "Edict application source did not parse",
+            &source_path,
+            source,
+            vec![ApplicationSourceError::Parse(error)],
         )
     })?;
 
@@ -290,10 +313,16 @@ pub(crate) fn build_application(config_path: &Path) -> Result<(), ApplicationBui
                 format!("source and lawpack closure do not corroborate: {failures:?}"),
             )
         })?;
-    let core = compile_to_core(&module, preparation.compiler_context()).map_err(|error| {
-        failure(
+    let core = compile_to_core(&module, preparation.compiler_context()).map_err(|errors| {
+        source_failure(
             "ApplicationCompilationFailed",
-            format!("Edict application did not compile to Core: {error:?}"),
+            "Edict application did not compile to Core",
+            &source_path,
+            source,
+            errors
+                .into_iter()
+                .map(ApplicationSourceError::Compiler)
+                .collect(),
         )
     })?;
     if core.coordinate != config.coordinate {
@@ -2528,6 +2557,25 @@ fn failure(kind: &'static str, message: impl Into<String>) -> ApplicationBuildFa
     ApplicationBuildFailure {
         kind,
         message: message.into(),
+        source_diagnostics: None,
+    }
+}
+
+fn source_failure(
+    kind: &'static str,
+    message: &'static str,
+    path: &Path,
+    source: &str,
+    errors: Vec<ApplicationSourceError>,
+) -> ApplicationBuildFailure {
+    ApplicationBuildFailure {
+        kind,
+        message: message.to_owned(),
+        source_diagnostics: Some(ApplicationSourceDiagnostics {
+            path: path.to_path_buf(),
+            source: source.to_owned(),
+            errors,
+        }),
     }
 }
 
