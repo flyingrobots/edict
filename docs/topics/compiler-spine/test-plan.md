@@ -211,3 +211,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-086 | implemented | Comparison output | CSPINE-REQ-047 | Boolean comparison control compiles; authenticated non-Boolean effect operands in either position report TypeMismatch before failure-map guidance. | effect_comparisons_report_type_mismatch_before_map_guidance | crates/edict-syntax/tests/effect_diagnostics.rs | Preserve ordinary comparison inference. |
+
+## Mixed Failure Authority Guidance
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-087 | implemented | Mixed authority | CSPINE-REQ-047 | A domain-mappable failure remains listed beside each non-domain class; the other coordinate is excluded and the list label states its domain-mappable scope. | mixed_authority_failure_guidance_labels_only_mappable_names | crates/edict-syntax/tests/lawpack.rs | Kind remains EffectWithoutFailureMapping. |

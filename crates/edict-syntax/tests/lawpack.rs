@@ -3691,3 +3691,48 @@ fn failure_guidance_names_only_domain_mappable_coordinates() {
         assert!(!errors[0].message.contains("with `else`"));
     }
 }
+
+#[test]
+fn mixed_authority_failure_guidance_labels_only_mappable_names() {
+    for class in [
+        "participantOwned",
+        "integrityFault",
+        "resourceFault",
+        "internalFault",
+    ] {
+        let mut exports = hello_echo_exports();
+        let effect = first_array_item_mut(field_mut(&mut exports, "effects"));
+        let failures = field_mut(effect, "effectFailures");
+        let mut extra = first_map_value_mut(failures).clone();
+        replace_field(&mut extra, "authorityClass", text(class));
+        map_mut(failures).push((text("platformFailure"), extra));
+        let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("adapter");
+        let implementation = first_map_value_mut(field_mut(&mut adapter, "effectImplementations"));
+        let mappings = field_mut(implementation, "failureMappings");
+        let CanonicalValue::Text(original_target) = first_map_value_mut(mappings) else {
+            panic!("target coordinate")
+        };
+        let target = format!("{original_target}.platform");
+        map_mut(mappings).push((text("platformFailure"), text(&target)));
+        let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
+        let source = CREATE_GREETING_SOURCE.replace(
+            MANIFEST_DIGEST.trim(),
+            &bundle.manifest_digest_review_string(),
+        );
+        let mapping = "\n    else { alreadyExists(existing) => hello.AlreadyExists }";
+        assert_eq!(source.matches(mapping).count(), 1);
+        let bare = source.replace(mapping, "");
+        let module = parse_module(&bare).expect("mixed-authority source");
+        let prepared = prepare_lawpack_compilation(&module, &bundle, &adapter)
+            .expect("authenticate mixed failures");
+        let errors = compile_to_core(&module, prepared.compiler_context())
+            .expect_err("bare binding needs map");
+        assert_eq!(
+            errors[0].kind,
+            CompilerErrorKind::EffectWithoutFailureMapping
+        );
+        assert!(errors[0].message.contains("alreadyExists"));
+        assert!(!errors[0].message.contains("platformFailure"));
+        assert!(errors[0].message.contains("domain-mappable failures:"));
+    }
+}

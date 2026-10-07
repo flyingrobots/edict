@@ -5133,7 +5133,7 @@ fn effect_mapping_error(
             .cloned()
             .collect::<Vec<_>>()
             .join(", ");
-        format!("use an annotated effect binding with `else`; declared failures: {failures}")
+        format!("use an annotated effect binding with `else`; domain-mappable failures: {failures}")
     };
     error(
         CompilerStage::TypeCheck,

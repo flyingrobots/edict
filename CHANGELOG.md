@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Label filtered effect failure guidance as domain-mappable failures; mixed authority classes remain excluded from the advised map.
+
 - Check direct bare effect comparison outputs against their peer before failure-map guidance, preserving symmetric comparison rules.
 
 ### Changed
