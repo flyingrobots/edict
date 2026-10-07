@@ -2201,7 +2201,7 @@ fn help_record() -> Value {
             },
             ExitCodeRecord {
                 code: EXIT_CLI_FAILED,
-                meaning: "CLI input or usage was invalid",
+                meaning: "CLI input or usage was invalid, or a build failed",
             },
         ],
         request_schemas: &[edict_cli::COMPILER_SETTINGS_SCHEMA, INPUT_SCHEMA],
