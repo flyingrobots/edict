@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Use authenticated contextual input/output types for effect diagnostics; distinguish validated empty effect surfaces and name only domain-mappable failures in map guidance.
+
 - Validate bare semantic-effect input expressions and exported input types before failure-map guidance.
 
 - Check intent profile permissions before failure-map guidance in all bare effect expression positions.

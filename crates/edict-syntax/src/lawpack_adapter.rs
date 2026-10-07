@@ -17,8 +17,8 @@ use crate::compiler::{
 };
 use crate::core_ir::{CoreBudget, ResourceRef};
 use crate::lawpack::{
-    LawpackExecutionClass, LawpackResourceRef, LawpackSemanticEffect, LawpackTargetAdapter,
-    ValidatedLawpackBundle, LAWPACK_API_VERSION,
+    LawpackAuthorityClass, LawpackExecutionClass, LawpackResourceRef, LawpackSemanticEffect,
+    LawpackTargetAdapter, ValidatedLawpackBundle, LAWPACK_API_VERSION,
 };
 use crate::lowerability::WriteClass;
 use crate::target_ir::{
@@ -224,7 +224,17 @@ pub fn prepare_lawpack_compilation(
         coordinate: format!("{}@{}", bundle.manifest().id, bundle.manifest().version),
         digest: Some(bundle.manifest_digest_review_string()),
     };
-    let mut compiler_context = CompilerContext::new();
+    let export_names = bundle
+        .exports()
+        .effects
+        .iter()
+        .map(|effect| local_coordinate(&alias, &prefix, &effect.coordinate))
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    let mut compiler_context = CompilerContext::new().with_authenticated_effect_exports(
+        alias.clone(),
+        lawpack.clone(),
+        export_names,
+    );
     let mut operation_profiles = BTreeSet::new();
     let type_shapes = exported_type_shapes(bundle, &lawpack);
 
@@ -395,6 +405,14 @@ fn project_effects(
                     input_type: exported.input_type.clone(),
                     output_type: exported.output_type.clone(),
                     failure_payload_types: failure_payload_types.clone(),
+                    domain_mappable_failures: exported
+                        .effect_failures
+                        .iter()
+                        .filter(|(_, failure)| {
+                            failure.authority_class == LawpackAuthorityClass::DomainMappable
+                        })
+                        .map(|(name, _)| name.clone())
+                        .collect(),
                 },
             );
         effect_signatures.push(TargetEffectSignatureFact::from_validated_lawpack_export(

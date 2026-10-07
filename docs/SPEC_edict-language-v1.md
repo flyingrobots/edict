@@ -2770,6 +2770,9 @@ helpers. A bare nongeneric effect in a pure-call position within an intent body 
 must use the supported annotated effect binding and its required mapping.
 Bare effect input expressions and their authenticated input types are checked
 before failure-map guidance. Their existing primary error kinds and spans remain.
+Authenticated input types provide context for integer literals. Bare effect
+outputs must satisfy the surrounding expected type. Failure-map advice names
+only domain-mappable coordinates; other failure classes remain platform-owned.
 Generic semantic effects remain unsupported in both bare and mapped calls.
 Explicit effect type arguments also report `UnsupportedSourceShape` in mapped
 and bare forms before failure-map guidance.

@@ -62,6 +62,13 @@ lawpack exports nothing. Valid mapped calls remain unchanged.
 Before failure-map guidance, the compiler checks the effect argument and its
 authenticated input type. Wrong types and unresolved argument expressions retain
 their primary diagnostic kinds and spans.
+Authenticated signatures supply contextual input types in mapped and bare calls,
+including scalar and record integer literals. A bare effect also checks its
+output against any surrounding expected type before map guidance.
+Guidance lists only `domainMappable` failure coordinates. Effects with no such
+coordinates report the current unsupported no-map binding shape. Validated empty
+export surfaces are distinguished from absent authentication information; declared
+but unprojected exports are not described as an empty lawpack.
 [CSPINE-REQ-047]
 
 

@@ -228,3 +228,42 @@ fn bare_effect_arguments_report_primary_input_errors() {
         }
     }
 }
+
+#[test]
+fn bare_effect_output_checks_surrounding_expected_type() {
+    let start = SOURCE
+        .find("{\n  let receipt:")
+        .expect("intent body begins");
+    for nested in [false, true] {
+        let prefix = if nested {
+            SOURCE[..start]
+                .replace(
+                    "intent createGreeting",
+                    "type NestedResult = { receipt: GreetingCreated, };\n\nintent createGreeting",
+                )
+                .replace("returns GreetingCreated", "returns NestedResult")
+        } else {
+            SOURCE[..start].to_owned()
+        };
+        let value = if nested {
+            "{ receipt: hello.createGreeting(input), }"
+        } else {
+            "hello.createGreeting(input)"
+        };
+        let source = format!("{prefix}{{\n return {value};\n}}\n");
+        let control = if nested {
+            source.replace("receipt: GreetingCreated", "receipt: hello.GreetingReceipt")
+        } else {
+            source.replace("returns GreetingCreated", "returns hello.GreetingReceipt")
+        };
+        assert_eq!(
+            compile(&control).expect_err("bare control needs a map")[0].kind,
+            CompilerErrorKind::EffectWithoutFailureMapping
+        );
+        let errors = compile(&source).expect_err("effect output is incompatible");
+        assert_eq!(errors[0].kind, CompilerErrorKind::TypeMismatch);
+        assert!(source[errors[0].span.start..errors[0].span.end]
+            .contains("hello.createGreeting(input)"));
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+}

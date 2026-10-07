@@ -84,6 +84,13 @@ pub(crate) struct EffectSignatureFact {
     pub(crate) input_type: String,
     pub(crate) output_type: String,
     pub(crate) failure_payload_types: BTreeMap<String, String>,
+    pub(crate) domain_mappable_failures: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AuthenticatedEffectExports {
+    lawpack: ResourceRef,
+    names: BTreeSet<String>,
 }
 
 /// Canonical identity and Core definition for one imported lawpack type.
@@ -130,6 +137,7 @@ pub struct CompilerContext {
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
     effect_signatures: BTreeMap<String, EffectSignatureFact>,
+    authenticated_effect_exports: BTreeMap<String, AuthenticatedEffectExports>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
     pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -193,6 +201,18 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub(crate) fn with_authenticated_effect_exports(
+        mut self,
+        alias: String,
+        lawpack: ResourceRef,
+        names: BTreeSet<String>,
+    ) -> Self {
+        self.authenticated_effect_exports
+            .insert(alias, AuthenticatedEffectExports { lawpack, names });
+        self
+    }
+
+    #[must_use]
     pub(crate) fn with_effect_signature(
         mut self,
         source_effect_coordinate: impl Into<String>,
@@ -250,6 +270,7 @@ pub struct ResolvedModule {
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
     pub(crate) effect_signatures: BTreeMap<String, EffectSignatureFact>,
+    authenticated_effect_exports: BTreeMap<String, AuthenticatedEffectExports>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
     pub pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     pub type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -369,6 +390,7 @@ pub fn resolve_module(
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
             effect_signatures: context.effect_signatures.clone(),
+            authenticated_effect_exports: context.authenticated_effect_exports.clone(),
             pure_functions: context.pure_functions.clone(),
             pure_helper_costs: context.pure_helper_costs.clone(),
             type_shapes: context.type_shapes.clone(),
@@ -3087,9 +3109,9 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        let input = self.check_expr(arg, env)?;
-        let signature = self.resolved.effect_signatures.get(&effect).cloned();
-        if let Some(signature) = signature {
+        let (input, signature) = if let Some(signature) =
+            self.resolved.effect_signatures.get(&effect).cloned()
+        {
             if !self.fact_matches_source_import(&effect, &signature.coordinate, &signature.lawpack)
             {
                 self.errors.push(error(
@@ -3102,28 +3124,21 @@ impl<'a> TypeChecker<'a> {
             }
             if !signature.type_parameters.is_empty() {
                 self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::UnsupportedSourceShape,
-                    format!("generic semantic effects such as `{effect}` are not supported by source compilation"),
-                    span,
-                ));
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        format!("generic semantic effects such as `{effect}` are not supported by source compilation"),
+                        span,
+                    ));
                 return None;
             }
-            let expected_input = self.effect_input_shape(&effect, &signature, span)?;
-            let Some(effect_output) =
-                self.shape_for_helper_coordinate(&signature.output_type, &signature.lawpack)
-            else {
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::UnresolvedType,
-                    format!(
-                        "effect `{effect}` output type `{}` is outside its exact exported type closure",
-                        signature.output_type
-                    ),
-                    span,
-                ));
-                return None;
-            };
+            let expected = self.effect_input_shape(&effect, &signature, span)?;
+            let input = self.check_expr_with_expected(arg, env, Some(&expected))?;
+            (input, Some((signature, expected)))
+        } else {
+            (self.check_expr(arg, env)?, None)
+        };
+        if let Some((signature, expected_input)) = signature {
+            let effect_output = self.effect_output_shape(&effect, &signature, span)?;
             if !compatible(&expected_input, &input.ty) || !compatible(binding_shape, &effect_output)
             {
                 self.errors.push(error(
@@ -3761,7 +3776,7 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<TypedValue> {
         let (source_coordinate, fact) =
-            self.resolve_pure_function(callee, type_args, args, env, span)?;
+            self.resolve_pure_function(callee, type_args, args, env, expected, span)?;
         if self
             .resolved
             .effect_write_classes
@@ -3909,6 +3924,18 @@ impl<'a> TypeChecker<'a> {
             .map(|(source, _)| source.as_str())
             .collect::<Vec<_>>();
         if available.is_empty() {
+            if let Some(surface) = self
+                .resolved
+                .authenticated_effect_exports
+                .get(alias)
+                .filter(|surface| surface.lawpack == import.resource)
+            {
+                if surface.names.is_empty() {
+                    return format!("effect `{effect}` has no compiler context fact; imported lawpack `{}` has no authenticated effect exports", import.resource.coordinate);
+                }
+                let names = surface.names.iter().cloned().collect::<Vec<_>>().join(", ");
+                return format!("effect `{effect}` has no compiler context fact; authenticated effect exports from imported lawpack `{}` lack compiler signatures in this context: {names}", import.resource.coordinate);
+            }
             return format!(
                 "effect `{effect}` has no compiler context fact; missing authenticated effect export information for imported lawpack `{}`",
                 import.resource.coordinate
@@ -3968,6 +3995,24 @@ impl<'a> TypeChecker<'a> {
             })
     }
 
+    fn effect_output_shape(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        span: Span,
+    ) -> Option<TypeShape> {
+        self.shape_for_helper_coordinate(&signature.output_type, &signature.lawpack)
+            .or_else(|| {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!("effect `{effect}` output type `{}` is outside its exact exported type closure", signature.output_type),
+                    span,
+                ));
+                None
+            })
+    }
+
     fn check_bare_effect_input(
         &mut self,
         effect: &str,
@@ -3976,8 +4021,8 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         span: Span,
     ) -> Option<()> {
-        let input = self.check_expr(arg, env)?;
         let expected = self.effect_input_shape(effect, signature, span)?;
+        let input = self.check_expr_with_expected(arg, env, Some(&expected))?;
         if compatible(&expected, &input.ty) {
             Some(())
         } else {
@@ -3997,6 +4042,7 @@ impl<'a> TypeChecker<'a> {
         type_args: &[TypeRef],
         args: &[Expr],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<(String, PureFunctionFact)> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
@@ -4047,24 +4093,20 @@ impl<'a> TypeChecker<'a> {
                     return None;
                 }
                 self.check_bare_effect_input(&source_coordinate, signature, &args[0], env, span)?;
-                let failures = signature
-                    .failure_payload_types
-                    .keys()
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let guidance = if signature.failure_payload_types.is_empty() {
-                    "no declared failures; effect bindings without a failure map are not supported"
-                        .to_owned()
-                } else {
-                    format!("use an annotated effect binding with `else`; declared failures: {failures}")
-                };
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::EffectWithoutFailureMapping,
-                    format!("effect `{source_coordinate}` is not a pure helper; {guidance}"),
-                    span,
-                ));
+                let output = self.effect_output_shape(&source_coordinate, signature, span)?;
+                if expected.is_some_and(|expected| !compatible(expected, &output)) {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::TypeMismatch,
+                        format!(
+                            "effect `{source_coordinate}` output does not match the expected type"
+                        ),
+                        span,
+                    ));
+                    return None;
+                }
+                self.errors
+                    .push(effect_mapping_error(&source_coordinate, signature, span));
                 return None;
             }
         }
@@ -4983,6 +5025,32 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::VariantLit { span, .. }
         | Expr::Match { span, .. } => *span,
     }
+}
+
+fn effect_mapping_error(
+    effect: &str,
+    signature: &EffectSignatureFact,
+    span: Span,
+) -> CompilerError {
+    let guidance = if signature.failure_payload_types.is_empty() {
+        "no declared failures; effect bindings without a failure map are not supported".to_owned()
+    } else if signature.domain_mappable_failures.is_empty() {
+        "no domain-mappable failures; effect bindings without an authored failure map are not supported".to_owned()
+    } else {
+        let failures = signature
+            .domain_mappable_failures
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("use an annotated effect binding with `else`; declared failures: {failures}")
+    };
+    error(
+        CompilerStage::TypeCheck,
+        CompilerErrorKind::EffectWithoutFailureMapping,
+        format!("effect `{effect}` is not a pure helper; {guidance}"),
+        span,
+    )
 }
 
 fn effect_profile_error(
