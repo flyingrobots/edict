@@ -546,8 +546,9 @@ printf '%s\n' \
 ```
 
 For an application-owned lawpack definition, write publication is supported on
-Apple platforms, Linux, Android, and Redox. Windows lawpack builds, including
-check-only mode, return `LawpackOutputWriteUnsupported` before document I/O.
+Apple platforms, Linux, Android, and Redox. Windows lawpack builds refuse before
+document I/O: write mode returns `LawpackOutputWriteUnsupported`, and check-only
+mode returns `LawpackCheckUnsupported`.
 See the [lawpack build platform contract](./docs/topics/cli/README.md#lawpack-builds)
 for other platform restrictions. On a supported platform:
 
