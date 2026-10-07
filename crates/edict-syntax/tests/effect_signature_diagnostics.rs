@@ -185,7 +185,7 @@ fn signature_mismatch_context_is_structured_at_the_input_root() {
         detail.position,
         edict_syntax::SignatureMismatchPosition::Input
     );
-    assert!(detail.path.is_empty());
+    assert_eq!(detail.path, Vec::<SignaturePathSegment>::new());
     assert!(detail
         .expected_type
         .as_deref()
