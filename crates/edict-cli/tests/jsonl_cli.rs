@@ -1294,6 +1294,18 @@ fn help_flag_emits_info_record() {
             Some("check operation compiler or validation diagnostics were produced"),
             "{flag} help must scope exit 1 to the check operation"
         );
+        let exit_two = record
+            .get("exitCodes")
+            .and_then(Value::as_array)
+            .expect("help record carries exitCodes")
+            .iter()
+            .find(|entry| entry.get("code").and_then(Value::as_i64) == Some(2))
+            .expect("help record documents exit code 2");
+        assert_eq!(
+            exit_two.get("meaning").and_then(Value::as_str),
+            Some("CLI input or usage was invalid, or a build failed"),
+            "{flag} help must include build failures in exit 2"
+        );
         assert_eq!(
             record.get("docs").and_then(Value::as_str),
             Some("docs/topics/cli/README.md"),
