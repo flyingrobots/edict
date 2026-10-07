@@ -14,7 +14,7 @@ Logs retain their original bytes. A file's location in this directory does not m
 | [pr241-width-green.txt](pr241-width-green.txt) | GREEN | All eight accepted imported integer widths fit/reject at their encoding boundary. |
 | [pr241-guard-red.txt](pr241-guard-red.txt) | RED | Optimized Python removes assertions and admits a bad free-space condition. |
 | [pr241-guard-green.txt](pr241-guard-green.txt) | GREEN | Optimized guard refuses all six invalid resource measurements. |
-| [pr241-oracles-green.txt](pr241-oracles-green.txt) | GREEN | Overflow branches and exact source-template mutation witnesses. |
+| [pr241-oracles-interrupted-measurement.txt](pr241-oracles-interrupted-measurement.txt) | Interrupted | The resource guard stopped a measurement race. Not GREEN evidence. |
 | [f01-goldens.txt](f01-goldens.txt) | Generated fixtures | Regeneration alone is not checking. The admitted full gate subsequently checks these outputs. |
 
 [F01-validation.json](F01-validation.json) records exact commands, source versions, final-run relationships, and measured resource use.
@@ -22,3 +22,10 @@ Logs retain their original bytes. A file's location in this directory does not m
 [guard-optimization-regression.py.txt](guard-optimization-regression.py.txt) executes refusal behavior under optimized Python in Docker.
 
 The original study is source-preserved separately. Its runtime claims are not inferred from these compiler logs.
+
+The guard reserves 128 MiB within the existing build budget for Cargo's transient metadata journal.
+A missing journal is expected after deletion; all other measurement failures still stop the worker.
+
+Literal command output retains terminal blank lines through a scoped Git attribute.
+Ordinary source retains the existing EOF whitespace check.
+[literal-evidence-regression.py.txt](literal-evidence-regression.py.txt) verifies both behaviors in an isolated Git fixture.
