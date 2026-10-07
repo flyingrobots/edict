@@ -47,6 +47,7 @@ pub enum CompilerErrorKind {
     UnsupportedSourceShape,
     UnresolvedType,
     UnresolvedFunction,
+    EffectWithoutFailureMapping,
     InvalidBound,
     UnknownField,
     TypeMismatch,
@@ -2994,7 +2995,7 @@ impl<'a> TypeChecker<'a> {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::MissingContextFact,
-                format!("effect `{effect}` has no compiler context fact"),
+                self.missing_effect_context_message(&effect),
                 span,
             ));
             return false;
@@ -3890,6 +3891,39 @@ impl<'a> TypeChecker<'a> {
             })
     }
 
+    fn missing_effect_context_message(&self, effect: &str) -> String {
+        let Some((alias, _)) = effect.split_once('.') else {
+            return format!("effect `{effect}` has no compiler context fact");
+        };
+        let Some(import) = self.resolved.imports.iter().find(|import| {
+            import.kind == CoreImportKind::Lawpack && import.alias.as_deref() == Some(alias)
+        }) else {
+            return format!("effect `{effect}` has no compiler context fact");
+        };
+        let available = self
+            .resolved
+            .effect_signatures
+            .iter()
+            .filter(|(source, fact)| {
+                source
+                    .split_once('.')
+                    .is_some_and(|(source_alias, _)| source_alias == alias)
+                    && fact.lawpack == import.resource
+                    && self.fact_matches_source_import(source, &fact.coordinate, &fact.lawpack)
+            })
+            .map(|(source, _)| source.as_str())
+            .collect::<Vec<_>>();
+        let exports = if available.is_empty() {
+            "none".to_owned()
+        } else {
+            available.join(", ")
+        };
+        format!(
+            "effect `{effect}` has no compiler context fact; imported lawpack `{}` has these available effect exports: {exports}",
+            import.resource.coordinate
+        )
+    }
+
     fn resolve_pure_function(
         &mut self,
         callee: &Expr,
@@ -3904,6 +3938,32 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
+        if let Some(signature) = self
+            .resolved
+            .effect_signatures
+            .get(&source_coordinate)
+            .cloned()
+        {
+            if self.fact_matches_source_import(
+                &source_coordinate,
+                &signature.coordinate,
+                &signature.lawpack,
+            ) {
+                let failures = signature
+                    .failure_payload_types
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::EffectWithoutFailureMapping,
+                    format!("effect `{source_coordinate}` is not a pure helper; use an annotated effect binding with `else`; declared failures: {failures}"),
+                    span,
+                ));
+                return None;
+            }
+        }
         let Some(fact) = self
             .resolved
             .pure_functions

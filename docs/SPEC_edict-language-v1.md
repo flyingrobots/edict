@@ -2762,6 +2762,17 @@ If these crates temporarily live in the Wesley workspace, they should carry an
 explicit extraction note and must not be imported by `wesley-core` in a way that
 makes Edict, Continuum, or Echo part of generic GraphQL lowering.
 
+### Implemented Effect Diagnostic Boundary
+
+The source compiler distinguishes exact imported semantic effects from pure
+helpers. A bare effect in a pure-call position reports
+`EffectWithoutFailureMapping` and names the declared failure variants. Authors
+must use the supported annotated effect binding and its required mapping.
+An unknown effect reports `MissingContextFact` with available exact-owner
+exports under the selected source alias. This diagnostic guidance does not
+provide a capability or alter effect/profile compatibility. Dependent-error
+recovery remains a separate compiler behavior.
+
 ### Edict Source Pipeline
 
 ```text

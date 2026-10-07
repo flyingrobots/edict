@@ -1263,6 +1263,7 @@ fn compiler_error_kind_name(kind: CompilerErrorKind) -> &'static str {
         CompilerErrorKind::UnsupportedSourceShape => "UnsupportedSourceShape",
         CompilerErrorKind::UnresolvedType => "UnresolvedType",
         CompilerErrorKind::UnresolvedFunction => "UnresolvedFunction",
+        CompilerErrorKind::EffectWithoutFailureMapping => "EffectWithoutFailureMapping",
         CompilerErrorKind::InvalidBound => "InvalidBound",
         CompilerErrorKind::UnknownField => "UnknownField",
         CompilerErrorKind::TypeMismatch => "TypeMismatch",

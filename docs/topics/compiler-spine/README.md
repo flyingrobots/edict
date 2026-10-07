@@ -37,6 +37,15 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 
+A bare call that resolves to an exact imported semantic effect reports
+`EffectWithoutFailureMapping`, rather than classifying it as an unresolved pure
+helper. The diagnostic names the declared failures and retains the call span.
+An unknown effect retains `MissingContextFact` and lists available effects from
+its exact imported owner and source alias. Unrelated write-class facts do not
+become exported capability guidance. Valid mapped calls remain unchanged.
+[CSPINE-REQ-047]
+
+
 Source-owned pure functions compile with signatures collected before bodies,
 isolated lexical frames, ordered immutable bindings and one terminal return.
 Calls stay explicit and retain ordered arguments, including arguments unused

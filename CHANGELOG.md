@@ -10,6 +10,13 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Report `EffectWithoutFailureMapping` for exact imported effects used as pure
+  calls, with declared failure names and the call span. Unknown-effect
+  `MissingContextFact` diagnostics list available exact-owner effects under the
+  selected alias. This changes primary guidance only; effect authority,
+  signature compatibility, and dependent-error recovery remain unchanged.
+
+
 - Added first-order nongeneric source pure functions with ordered typed
   parameters, immutable bindings and terminal returns. Source-owned Core bodies
   retain call authority, alpha-normalized identity, conservative checked costs,
