@@ -130,7 +130,7 @@ fn application_build_emits_compiler_records_and_preserves_output_on_failure() {
     fs::write(output_dir.join("retained.bin"), b"previous output").expect("previous bytes");
     let output = build(&config);
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     let stream = records(&output.stderr);
     let diagnostic_summary = summary(&stream, "ApplicationCompilationFailed");
     let compiler: Vec<_> = stream
@@ -187,7 +187,7 @@ fn application_build_emits_parser_eof_location_without_publishing() {
     fs::write(&path, source).expect("write EOF source");
     let output = build(&config);
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     let stream = records(&output.stderr);
     summary(&stream, "InvalidApplicationSource");
     let parsed = edict_syntax::parse_module(source).expect_err("EOF fixture has a parser error");
