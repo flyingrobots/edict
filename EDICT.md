@@ -1269,7 +1269,7 @@ intent <name>(input: <Type>)
 | --- | --- |
 | Parser (20) | `Lex`, `ExpectedToken`, `ExpectedKeyword`, `ExpectedIdentifier`, `ExpectedExpression`, `InvalidInteger`, `InvalidDigest`, `InvalidVersion`, `ReservedKeyword`, `UnsupportedSyntax`, `InvalidName`, `EmptyEnum`, `EmptyObstructionMap`, `EmptyMatch`, `MissingRequiredField`, `DuplicateField`, `NonCallEffect`, `NonCallExternalActionOperation`, `ReturnInYieldBlock`, `InvalidTypeCall` |
 | Semantic (7) | `UnboundedScalar`, `MissingOperationMode`, `MissingBudget`, `MissingBasis`, `DuplicateIntentClause`, `DuplicateName`, `ShadowedName` |
-| Compiler (11) | `SurfaceValidation`, `MissingContextFact`, `UnsupportedSourceShape`, `UnresolvedType`, `UnknownField`, `TypeMismatch`, `ExpectedPredicate`, `ProfileEffectMismatch`, `UnrequestableExternalOperation`, `DuplicateObstructionFailure`, `DuplicateObstructionPayloadField` |
+| Compiler (16) | `SurfaceValidation`, `MissingContextFact`, `UnsupportedSourceShape`, `UnresolvedType`, `UnresolvedFunction`, `EffectWithoutFailureMapping`, `InvalidBound`, `UnknownField`, `TypeMismatch`, `ExpectedPredicate`, `ProfileEffectMismatch`, `UnrequestableExternalOperation`, `DuplicateObstructionFailure`, `DuplicateObstructionPayloadField`, `ReservedTypeIdentity`, `InvalidCoreTypeIntegrity` |
 | CLI exit codes | `0` ok · `1` compiler/validation diagnostics · `2` invalid CLI input |
 
 ### D.5 Digest domains
