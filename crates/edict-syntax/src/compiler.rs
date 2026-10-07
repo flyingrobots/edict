@@ -3778,7 +3778,8 @@ impl<'a> TypeChecker<'a> {
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
-        let (source_coordinate, fact) = self.resolve_pure_function(callee, type_args, span)?;
+        let (source_coordinate, fact) =
+            self.resolve_pure_function(callee, type_args, args.len(), span)?;
         if self
             .resolved
             .effect_write_classes
@@ -3942,6 +3943,7 @@ impl<'a> TypeChecker<'a> {
         &mut self,
         callee: &Expr,
         type_args: &[TypeRef],
+        argument_count: usize,
         span: Span,
     ) -> Option<(String, PureFunctionFact)> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
@@ -3964,6 +3966,15 @@ impl<'a> TypeChecker<'a> {
                         CompilerStage::TypeCheck,
                         CompilerErrorKind::UnsupportedSourceShape,
                         "semantic effect calls do not support effect type arguments",
+                        span,
+                    ));
+                    return None;
+                }
+                if argument_count != 1 {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "semantic effect calls support exactly one effect argument",
                         span,
                     ));
                     return None;

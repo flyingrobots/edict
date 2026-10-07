@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Reject unsupported effect call arity before recommending failure-map syntax.
+
 - Reject explicit semantic-effect type arguments before suggesting an unsupported failure-map rewrite.
 
 - Report `EffectWithoutFailureMapping` for exact imported effects used as pure

@@ -144,3 +144,22 @@ fn effect_guidance_refuses_pure_functions_and_intent_clauses() {
         assert!(!cause.message.contains("with `else`"));
     }
 }
+
+#[test]
+fn effect_arity_refuses_mapping_guidance() {
+    let mapping = "\n    else { alreadyExists(existing) => hello.AlreadyExists }";
+    assert_eq!(SOURCE.matches(mapping).count(), 1);
+    for args in ["", "input, input"] {
+        let call = format!("hello.createGreeting({args})");
+        let mapped = SOURCE.replace("hello.createGreeting(input)", &call);
+        for source in [mapped.clone(), mapped.replace(mapping, "")] {
+            let errors = compile(&source).expect_err("effect arity is unsupported");
+            let cause = &errors[0];
+            assert_eq!(cause.kind, CompilerErrorKind::UnsupportedSourceShape);
+            assert_eq!(cause.stage, CompilerStage::TypeCheck);
+            assert!(source[cause.span.start..cause.span.end].contains(&call));
+            assert!(cause.message.contains("exactly one effect argument"));
+            assert!(!cause.message.contains("with `else`"));
+        }
+    }
+}
