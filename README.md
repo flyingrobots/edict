@@ -545,7 +545,11 @@ printf '%s\n' \
   | /path/to/edict/target/debug/edict
 ```
 
-For an application-owned lawpack definition:
+For an application-owned lawpack definition, write publication is supported on
+Apple platforms, Linux, Android, and Redox. Windows lawpack builds, including
+check-only mode, return `LawpackOutputWriteUnsupported` before document I/O.
+See the [lawpack build platform contract](./docs/topics/cli/README.md#lawpack-builds)
+for other platform restrictions. On a supported platform:
 
 ```sh
 printf '%s\n' \
