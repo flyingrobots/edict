@@ -2768,6 +2768,8 @@ The source compiler distinguishes exact imported semantic effects from pure
 helpers. A bare nongeneric effect in a pure-call position within an intent body reports
 `EffectWithoutFailureMapping` and names the declared failure variants. Authors
 must use the supported annotated effect binding and its required mapping.
+Bare effect input expressions and their authenticated input types are checked
+before failure-map guidance. Their existing primary error kinds and spans remain.
 Generic semantic effects remain unsupported in both bare and mapped calls.
 Explicit effect type arguments also report `UnsupportedSourceShape` in mapped
 and bare forms before failure-map guidance.

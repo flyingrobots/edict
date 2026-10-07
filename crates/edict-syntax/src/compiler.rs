@@ -3109,20 +3109,7 @@ impl<'a> TypeChecker<'a> {
                 ));
                 return None;
             }
-            let Some(expected_input) =
-                self.shape_for_helper_coordinate(&signature.input_type, &signature.lawpack)
-            else {
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::UnresolvedType,
-                    format!(
-                        "effect `{effect}` input type `{}` is outside its exact exported type closure",
-                        signature.input_type
-                    ),
-                    span,
-                ));
-                return None;
-            };
+            let expected_input = self.effect_input_shape(&effect, &signature, span)?;
             let Some(effect_output) =
                 self.shape_for_helper_coordinate(&signature.output_type, &signature.lawpack)
             else {
@@ -3774,7 +3761,7 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<TypedValue> {
         let (source_coordinate, fact) =
-            self.resolve_pure_function(callee, type_args, args.len(), span)?;
+            self.resolve_pure_function(callee, type_args, args, env, span)?;
         if self
             .resolved
             .effect_write_classes
@@ -3960,11 +3947,56 @@ impl<'a> TypeChecker<'a> {
         )
     }
 
+    fn effect_input_shape(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        span: Span,
+    ) -> Option<TypeShape> {
+        self.shape_for_helper_coordinate(&signature.input_type, &signature.lawpack)
+            .or_else(|| {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "effect `{effect}` input type `{}` is outside its exact exported type closure",
+                        signature.input_type
+                    ),
+                    span,
+                ));
+                None
+            })
+    }
+
+    fn check_bare_effect_input(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        arg: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<()> {
+        let input = self.check_expr(arg, env)?;
+        let expected = self.effect_input_shape(effect, signature, span)?;
+        if compatible(&expected, &input.ty) {
+            Some(())
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!("effect `{effect}` call does not match its exported signature"),
+                span,
+            ));
+            None
+        }
+    }
+
     fn resolve_pure_function(
         &mut self,
         callee: &Expr,
         type_args: &[TypeRef],
-        argument_count: usize,
+        args: &[Expr],
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
         span: Span,
     ) -> Option<(String, PureFunctionFact)> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
@@ -3976,7 +4008,8 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        if let Some(signature) = self.resolved.effect_signatures.get(&source_coordinate) {
+        let resolved = self.resolved;
+        if let Some(signature) = resolved.effect_signatures.get(&source_coordinate) {
             if self.fact_matches_source_import(
                 &source_coordinate,
                 &signature.coordinate,
@@ -3991,7 +4024,7 @@ impl<'a> TypeChecker<'a> {
                     ));
                     return None;
                 }
-                if argument_count != 1 {
+                if args.len() != 1 {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,
                         CompilerErrorKind::UnsupportedSourceShape,
@@ -4013,6 +4046,7 @@ impl<'a> TypeChecker<'a> {
                     self.errors.push(failure);
                     return None;
                 }
+                self.check_bare_effect_input(&source_coordinate, signature, &args[0], env, span)?;
                 let failures = signature
                     .failure_payload_types
                     .keys()

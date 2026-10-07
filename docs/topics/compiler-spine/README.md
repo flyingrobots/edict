@@ -59,6 +59,9 @@ become exported capability guidance. Available names describe authenticated
 signatures in the supplied compiler context. When those signatures are absent,
 the diagnostic reports missing export information; it does not claim the
 lawpack exports nothing. Valid mapped calls remain unchanged.
+Before failure-map guidance, the compiler checks the effect argument and its
+authenticated input type. Wrong types and unresolved argument expressions retain
+their primary diagnostic kinds and spans.
 [CSPINE-REQ-047]
 
 

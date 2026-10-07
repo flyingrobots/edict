@@ -206,3 +206,25 @@ fn bare_return_effect_checks_profile_before_mapping_guidance() {
         assert!(!cause.message.contains("with `else`"));
     }
 }
+
+#[test]
+fn bare_effect_arguments_report_primary_input_errors() {
+    let mapping = "\n    else { alreadyExists(existing) => hello.AlreadyExists }";
+    assert_eq!(SOURCE.matches(mapping).count(), 1);
+    for (argument, expected) in [
+        ("true", CompilerErrorKind::TypeMismatch),
+        ("missing", CompilerErrorKind::UnresolvedType),
+        ("input.absent", CompilerErrorKind::UnknownField),
+    ] {
+        let call = format!("hello.createGreeting({argument})");
+        let mapped = SOURCE.replace("hello.createGreeting(input)", &call);
+        for source in [mapped.clone(), mapped.replace(mapping, "")] {
+            let errors = compile(&source).expect_err("invalid effect input must reject");
+            let cause = &errors[0];
+            assert_eq!(cause.kind, expected, "{argument}: {errors:?}");
+            assert_eq!(cause.stage, CompilerStage::TypeCheck);
+            assert!(source[cause.span.start..cause.span.end].contains(argument));
+            assert!(!cause.message.contains("with `else`"));
+        }
+    }
+}
