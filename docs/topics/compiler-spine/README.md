@@ -40,7 +40,7 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 A bare call in an intent body that resolves to an exact nongeneric semantic
 effect reports
 `EffectWithoutFailureMapping`, rather than classifying it as an unresolved pure
-helper. The diagnostic names the declared failures and retains the call span.
+helper. The diagnostic names the domain-mappable failures and retains the call span.
 Generic semantic effects and effects in pure contexts, including source-owned
 functions and intent clauses, report `UnsupportedSourceShape` rather than
 recommending an unavailable effect binding. Explicit effect type arguments
@@ -63,7 +63,10 @@ Before failure-map guidance, the compiler checks the effect argument and its
 authenticated input type. Wrong types and unresolved argument expressions retain
 their primary diagnostic kinds and spans.
 Authenticated signatures supply contextual input types in mapped and bare calls,
-including scalar and record integer literals. A bare effect also checks its
+including scalar and record integer literals. Predicate operands carry a separate
+effect-output requirement, so non-Boolean direct and conditional effect values
+report `ExpectedPredicate` before map guidance. Ordinary nested operand typing
+retains its existing constraints. A bare effect also checks its
 output against any surrounding expected type before map guidance.
 Guidance lists only `domainMappable` failure coordinates. Effects with no such
 coordinates report the current unsupported no-map binding shape. Validated empty

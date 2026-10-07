@@ -748,6 +748,33 @@ struct LetStatement<'a> {
     span: Span,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum EffectOutputExpectation<'a> {
+    Value(Option<&'a TypeShape>),
+    Predicate,
+}
+
+impl<'a> EffectOutputExpectation<'a> {
+    fn value(self) -> Option<&'a TypeShape> {
+        match self {
+            Self::Value(shape) => shape,
+            Self::Predicate => None,
+        }
+    }
+
+    fn rejection(self, output: &TypeShape) -> Option<CompilerErrorKind> {
+        match self {
+            Self::Value(Some(expected)) if !compatible(expected, output) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Predicate if !matches!(output.kind, TypeKind::Bool) => {
+                Some(CompilerErrorKind::ExpectedPredicate)
+            }
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct EffectBindingProfile {
     name: String,
@@ -3546,7 +3573,11 @@ impl<'a> TypeChecker<'a> {
                 let expected = TypeShape::canonical_structural(TypeKind::Bool)?;
                 // Check the operand on its own terms before applying the
                 // predicate requirement; nested typing failures stay distinct.
-                let value = self.check_expr(expr, env)?;
+                let value = self.check_expr_with_effect_expectation(
+                    expr,
+                    env,
+                    EffectOutputExpectation::Predicate,
+                )?;
                 if !compatible(&expected, &value.ty) {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,
@@ -3648,6 +3679,16 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         expected: Option<&TypeShape>,
     ) -> Option<TypedValue> {
+        self.check_expr_with_effect_expectation(expr, env, EffectOutputExpectation::Value(expected))
+    }
+
+    fn check_expr_with_effect_expectation(
+        &mut self,
+        expr: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expectation: EffectOutputExpectation<'_>,
+    ) -> Option<TypedValue> {
+        let expected = expectation.value();
         let checked = match expr {
             Expr::Ident { name, span } => self.check_ident(name, *span, env),
             Expr::Str { value, .. } => string_value(value),
@@ -3694,7 +3735,7 @@ impl<'a> TypeChecker<'a> {
                 } else if matches!(callee.as_ref(), Expr::Ident { name, .. } if name == "slice") {
                     self.check_byte_slice(type_args, args, env, *span)
                 } else {
-                    self.check_pure_call(callee, type_args, args, env, expected, *span)
+                    self.check_pure_call(callee, type_args, args, env, expectation, *span)
                 }
             }
             Expr::If {
@@ -3702,7 +3743,7 @@ impl<'a> TypeChecker<'a> {
                 then,
                 els,
                 span,
-            } => self.check_pure_conditional(cond, then, els, env, expected, *span),
+            } => self.check_pure_conditional(cond, then, els, env, expectation, *span),
             Expr::Binary {
                 op:
                     BinOp::Eq
@@ -3754,16 +3795,23 @@ impl<'a> TypeChecker<'a> {
         type_args: &[TypeRef],
         args: &[Expr],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        expected: Option<&TypeShape>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
         if let Expr::Ident { name, .. } = callee {
             if let Some(signature) = self.function_signatures.get(name).cloned() {
-                return self
-                    .check_source_call(name, &signature, type_args, args, env, expected, span);
+                return self.check_source_call(
+                    name,
+                    &signature,
+                    type_args,
+                    args,
+                    env,
+                    expectation.value(),
+                    span,
+                );
             }
         }
-        self.check_imported_pure_call(callee, type_args, args, env, expected, span)
+        self.check_imported_pure_call(callee, type_args, args, env, expectation, span)
     }
 
     fn check_imported_pure_call(
@@ -3772,11 +3820,12 @@ impl<'a> TypeChecker<'a> {
         type_args: &[TypeRef],
         args: &[Expr],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        expected: Option<&TypeShape>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
         let (source_coordinate, fact) =
-            self.resolve_pure_function(callee, type_args, args, env, expected, span)?;
+            self.resolve_pure_function(callee, type_args, args, env, expectation, span)?;
+        let expected = expectation.value();
         if self
             .resolved
             .effect_write_classes
@@ -4042,7 +4091,7 @@ impl<'a> TypeChecker<'a> {
         type_args: &[TypeRef],
         args: &[Expr],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        expected: Option<&TypeShape>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<(String, PureFunctionFact)> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
@@ -4094,10 +4143,10 @@ impl<'a> TypeChecker<'a> {
                 }
                 self.check_bare_effect_input(&source_coordinate, signature, &args[0], env, span)?;
                 let output = self.effect_output_shape(&source_coordinate, signature, span)?;
-                if expected.is_some_and(|expected| !compatible(expected, &output)) {
+                if let Some(kind) = expectation.rejection(&output) {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,
-                        CompilerErrorKind::TypeMismatch,
+                        kind,
                         format!(
                             "effect `{source_coordinate}` output does not match the expected type"
                         ),
@@ -4192,9 +4241,10 @@ impl<'a> TypeChecker<'a> {
         then: &Expr,
         els: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        expected: Option<&TypeShape>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
+        let expected = expectation.value();
         let predicate = self.check_predicate(cond, env)?;
         let (then_value, else_value) = match expected {
             Some(expected) => (
@@ -4202,18 +4252,18 @@ impl<'a> TypeChecker<'a> {
                 self.check_expr_with_expected(els, env, Some(expected))?,
             ),
             None if is_bare_integer_literal(then) => {
-                let else_value = self.check_expr_with_expected(els, env, None)?;
+                let else_value = self.check_expr_with_effect_expectation(els, env, expectation)?;
                 let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
                 (then_value, else_value)
             }
             None if is_bare_integer_literal(els) => {
-                let then_value = self.check_expr_with_expected(then, env, None)?;
+                let then_value = self.check_expr_with_effect_expectation(then, env, expectation)?;
                 let else_value = self.check_expr_with_expected(els, env, Some(&then_value.ty))?;
                 (then_value, else_value)
             }
             None => (
-                self.check_expr_with_expected(then, env, None)?,
-                self.check_expr_with_expected(els, env, None)?,
+                self.check_expr_with_effect_expectation(then, env, expectation)?,
+                self.check_expr_with_effect_expectation(els, env, expectation)?,
             ),
         };
 

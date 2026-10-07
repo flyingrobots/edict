@@ -2766,7 +2766,7 @@ makes Edict, Continuum, or Echo part of generic GraphQL lowering.
 
 The source compiler distinguishes exact imported semantic effects from pure
 helpers. A bare nongeneric effect in a pure-call position within an intent body reports
-`EffectWithoutFailureMapping` and names the declared failure variants. Authors
+`EffectWithoutFailureMapping` and names the domain-mappable failure variants. Authors
 must use the supported annotated effect binding and its required mapping.
 Bare effect input expressions and their authenticated input types are checked
 before failure-map guidance. Their existing primary error kinds and spans remain.

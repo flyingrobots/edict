@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Propagate predicate output requirements into direct and conditional effect calls before failure-map guidance; describe only domain-mappable names in the current contract.
+
 - Use authenticated contextual input/output types for effect diagnostics; distinguish validated empty effect surfaces and name only domain-mappable failures in map guidance.
 
 - Validate bare semantic-effect input expressions and exported input types before failure-map guidance.

@@ -267,3 +267,26 @@ fn bare_effect_output_checks_surrounding_expected_type() {
         assert!(!errors[0].message.contains("with `else`"));
     }
 }
+
+#[test]
+fn effect_predicates_report_expected_predicate_before_map_guidance() {
+    for assertion in [
+        "hello.createGreeting(input)",
+        "if true then hello.createGreeting(input) else hello.createGreeting(input)",
+    ] {
+        let source = SOURCE.replace(
+            "  let receipt:",
+            &format!("  require {assertion} else hello.AlreadyExists;\n  let receipt:"),
+        );
+        let control = source.replace(
+            &format!("require {assertion} else hello.AlreadyExists;"),
+            "require true else hello.AlreadyExists;",
+        );
+        compile(&control).expect("Boolean predicate control compiles");
+        let errors = compile(&source).expect_err("effect receipt is not a predicate");
+        assert_eq!(errors[0].kind, CompilerErrorKind::ExpectedPredicate);
+        assert!(source[errors[0].span.start..errors[0].span.end]
+            .contains("hello.createGreeting(input)"));
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+}
