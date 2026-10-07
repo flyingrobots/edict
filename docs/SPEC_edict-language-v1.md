@@ -2768,6 +2768,8 @@ The source compiler distinguishes exact imported semantic effects from pure
 helpers. A bare effect in a pure-call position reports
 `EffectWithoutFailureMapping` and names the declared failure variants. Authors
 must use the supported annotated effect binding and its required mapping.
+An effect with no declared failures reports that bindings without a failure map
+are unsupported; the diagnostic does not suggest an empty `else` map.
 An unknown effect reports `MissingContextFact` with available exact-owner
 exports under the selected source alias. This diagnostic guidance does not
 provide a capability or alter effect/profile compatibility. Dependent-error

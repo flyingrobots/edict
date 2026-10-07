@@ -162,6 +162,39 @@ fn direct_bounded_effect_signature_types_enter_source_compilation() {
 }
 
 #[test]
+fn bare_effect_without_declared_failures_reports_binding_limitation() {
+    let mut exports = hello_echo_exports();
+    let effect = first_array_item_mut(field_mut(&mut exports, "effects"));
+    map_mut(field_mut(effect, "effectFailures")).clear();
+    let mut adapter = decode_canonical_cbor(ADAPTER_BYTES).expect("decode adapter");
+    let implementation = first_map_value_mut(field_mut(&mut adapter, "effectImplementations"));
+    map_mut(field_mut(implementation, "failureMappings")).clear();
+    let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);
+    let mapping = "\n    else { alreadyExists(existing) => hello.AlreadyExists }";
+    assert_eq!(CREATE_GREETING_SOURCE.matches(mapping).count(), 1);
+    let source = CREATE_GREETING_SOURCE
+        .replace(
+            MANIFEST_DIGEST.trim(),
+            &bundle.manifest_digest_review_string(),
+        )
+        .replace(mapping, "");
+    let module = parse_module(&source).expect("bare zero-failure effect parses");
+    let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+        .expect("authenticate a zero-failure signature");
+    let errors = compile_to_core(&module, preparation.compiler_context())
+        .expect_err("bare semantic effects remain unsupported");
+    let cause = &errors[0];
+    assert_eq!(cause.kind, CompilerErrorKind::EffectWithoutFailureMapping);
+    assert_eq!(cause.stage, CompilerStage::TypeCheck);
+    assert!(source[cause.span.start..cause.span.end].contains("hello.createGreeting"));
+    assert!(cause.message.contains("no declared failures"));
+    assert!(cause
+        .message
+        .contains("effect bindings without a failure map are not supported"));
+    assert!(!cause.message.contains("with `else`"));
+}
+
+#[test]
 fn lawpack_effect_signature_requires_exported_type_closure() {
     let mut exports = hello_echo_exports();
     array_mut(field_mut(&mut exports, "types")).clear();

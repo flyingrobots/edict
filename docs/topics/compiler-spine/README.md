@@ -40,6 +40,8 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 A bare call that resolves to an exact imported semantic effect reports
 `EffectWithoutFailureMapping`, rather than classifying it as an unresolved pure
 helper. The diagnostic names the declared failures and retains the call span.
+For a zero-failure effect, it reports that bindings without a failure map are
+unsupported instead of suggesting an empty `else` map.
 An unknown effect retains `MissingContextFact` and lists available effects from
 its exact imported owner and source alias. Unrelated write-class facts do not
 become exported capability guidance. Valid mapped calls remain unchanged.

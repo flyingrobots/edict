@@ -3955,10 +3955,16 @@ impl<'a> TypeChecker<'a> {
                     .cloned()
                     .collect::<Vec<_>>()
                     .join(", ");
+                let guidance = if signature.failure_payload_types.is_empty() {
+                    "no declared failures; effect bindings without a failure map are not supported"
+                        .to_owned()
+                } else {
+                    format!("use an annotated effect binding with `else`; declared failures: {failures}")
+                };
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
                     CompilerErrorKind::EffectWithoutFailureMapping,
-                    format!("effect `{source_coordinate}` is not a pure helper; use an annotated effect binding with `else`; declared failures: {failures}"),
+                    format!("effect `{source_coordinate}` is not a pure helper; {guidance}"),
                     span,
                 ));
                 return None;
