@@ -22,7 +22,7 @@
     "command": "cargo xtask verify",
     "exit": 0,
     "log": "f01-verify-final.txt",
-    "note": "A later test-only refinement keeps the target overflow witness ordinary output valid after mutation. Re-run the gate on committed head."
+    "note": "Superseded by final_candidate, which verifies the committed candidate with explicit workspace invalidation and strict measurement failures."
   },
   "resources": {
     "worker": "edict-validation",
@@ -34,11 +34,11 @@
     "data_limit_gib": 4,
     "log_limit_mib": 128,
     "timeout_seconds": 2400,
-    "measured_build_accounted_bytes": 3244806144,
-    "measured_data_bytes": 11948032,
-    "measured_host_logs_bytes": 456947,
-    "host_free_bytes": 730108497920,
-    "vm_free_bytes": 694226198528,
+    "measured_build_accounted_bytes": 3088490496,
+    "measured_data_bytes": 12165120,
+    "measured_host_logs_bytes": 741545,
+    "host_free_bytes": 730393092096,
+    "vm_free_bytes": 694197497856,
     "root_layer_baseline_bytes": 237568,
     "enforcement": "readonly root; /work 128MiB, /tmp 512MiB, /data 3GiB exec tmpfs; fail-closed 2-second aggregate monitor; 3 x 1MiB Docker logs"
   },
@@ -54,5 +54,16 @@
     "No whole-program primitive allocation claim.",
     "Direct ExternalActionRequest outputs retain their separate existing protocol boundary.",
     "Old pinned producer witnesses remain frozen; corrected fixture digests are intentionally new."
-  ]
+  ],
+  "final_candidate": {
+    "source_commit": "cfcf61e597abb5ab6bb392af143a18093879d66f",
+    "command": "cargo test --locked -p edict-syntax --test byte_concat --test return_budget && cargo xtask verify",
+    "exit": 0,
+    "default_feature_regressions": "12 passed (7 byte_concat and 5 return_budget)",
+    "full_gate": "passed on committed source",
+    "log": "f01-admitted-final.txt",
+    "cache_discipline": "Invalidate all six owned workspace packages and xtask before each source snapshot. Retain third-party dependency artifacts. A timestamp-stale default-feature result was rejected; this fresh run supersedes it.",
+    "measurement_discipline": "du and df failures propagate. A monitoring exception stops the entire owned worker."
+  },
+  "guard_sha256": "0dfd87faa0af3ee677d38722bb2e04b8a749626e5a7265fb6d727fc8bff37631"
 }

@@ -15,7 +15,7 @@ def stop():
 def metrics():
     stat=json.loads(read(['docker','inspect','--size',WORKER]))[0]
     host=shutil.disk_usage(SCRATCH).free
-    out=read(['docker','exec',WORKER,'sh','-c','du -sk /cache /tmp /work /data; df -Pk /cache'])
+    out=read(['docker','exec',WORKER,'sh','-c','du -sk /cache /tmp /work /data && df -Pk /cache'])
     lines=out.splitlines(); sizes=[int(line.split()[0])*1024 for line in lines[:4]]
     vm=int(lines[-1].split()[3])*1024
     logs=sum(p.stat().st_size for p in SCRATCH.glob('*.log'))
@@ -58,6 +58,13 @@ def prepare():
         run(['docker','exec','-i',WORKER,'tar','xf','-','-C','/work/edict'],stdin=source_tar)
     run(['docker','exec',WORKER,'rm','/work/source.bundle'])
     (SCRATCH/'source.tar').unlink(); (SCRATCH/'source.bundle').unlink()
+    # Copy snapshots can carry timestamps older than another revision's build.
+    # Invalidate only this workspace's artifacts in the stable target; retain
+    # all downloaded and compiled third-party dependencies.
+    run(['docker','exec','--env','RUSTUP_HOME=/cache/rustup','--workdir','/work/edict',WORKER,
+         'cargo','clean','-p','edict-syntax','-p','edict-cli','-p','edict-provider-schema',
+         '-p','edict-provider-host-wasmtime','-p','flyingrobots-edict','-p','xtask'])
+    guard(metrics())
 
 process=None
 try:
