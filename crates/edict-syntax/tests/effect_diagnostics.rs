@@ -163,3 +163,46 @@ fn effect_arity_refuses_mapping_guidance() {
         }
     }
 }
+
+#[test]
+fn bare_return_effect_checks_profile_before_mapping_guidance() {
+    let start = SOURCE
+        .find("{\n  let receipt:")
+        .expect("intent body begins");
+    let prefix = &SOURCE[..start];
+    for nested in [false, true] {
+        let (output, value) = if nested {
+            ("NestedReceipt", "{ receipt: hello.createGreeting(input), }")
+        } else {
+            ("hello.GreetingReceipt", "hello.createGreeting(input)")
+        };
+        let prefix = prefix.replace("returns GreetingCreated", &format!("returns {output}"));
+        let prefix = if nested {
+            prefix.replace("intent createGreeting", "type NestedReceipt = { receipt: hello.GreetingReceipt, };\n\nintent createGreeting")
+        } else {
+            prefix
+        };
+        let source = format!("{prefix}{{\n  return {value};\n}}\n");
+        let module = parse_module(&source).expect("bare return source parses");
+        let bundle = decode_lawpack_bundle(MANIFEST, EXPORTS).expect("load lawpack");
+        let adapter = decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER).expect("load adapter");
+        let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+            .expect("prepare exact return effect");
+        let allowed = compile_to_core(&module, preparation.compiler_context())
+            .expect_err("allowed bare effect still lacks a map");
+        assert_eq!(
+            allowed[0].kind,
+            CompilerErrorKind::EffectWithoutFailureMapping
+        );
+        let denied = preparation
+            .compiler_context()
+            .clone()
+            .with_operation_profile_write_classes("hello.createGreeting", []);
+        let errors = compile_to_core(&module, &denied).expect_err("profile forbids the effect");
+        let cause = &errors[0];
+        assert_eq!(cause.kind, CompilerErrorKind::ProfileEffectMismatch);
+        assert_eq!(cause.stage, CompilerStage::TypeCheck);
+        assert!(source[cause.span.start..cause.span.end].contains("hello.createGreeting(input)"));
+        assert!(!cause.message.contains("with `else`"));
+    }
+}

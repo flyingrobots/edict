@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Check intent profile permissions before failure-map guidance in all bare effect expression positions.
+
 - Reject unsupported effect call arity before recommending failure-map syntax.
 
 - Reject explicit semantic-effect type arguments before suggesting an unsupported failure-map rewrite.

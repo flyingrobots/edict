@@ -727,6 +727,12 @@ struct LetStatement<'a> {
 }
 
 #[derive(Debug, Clone)]
+struct EffectBindingProfile {
+    name: String,
+    allowed_write_classes: Option<BTreeSet<WriteClass>>,
+}
+
+#[derive(Debug, Clone)]
 struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
     function_signatures: BTreeMap<String, source_functions::Signature>,
@@ -735,7 +741,7 @@ struct TypeChecker<'a> {
     source_predicate_costs: BTreeMap<usize, HelperCost>,
     source_value_bounds: BTreeMap<usize, (u64, u64)>,
     input_proof_constraints: Vec<CorePredicate>,
-    effect_bindings_available: bool,
+    effect_binding_profile: Option<EffectBindingProfile>,
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
@@ -753,7 +759,7 @@ impl<'a> TypeChecker<'a> {
             source_predicate_costs: BTreeMap::new(),
             source_value_bounds: BTreeMap::new(),
             input_proof_constraints: Vec::new(),
-            effect_bindings_available: false,
+            effect_binding_profile: None,
             errors: Vec::new(),
             named_types: BTreeMap::new(),
             core_types: BTreeMap::new(),
@@ -1084,9 +1090,12 @@ impl<'a> TypeChecker<'a> {
             .iter()
             .map(|constraint| constraint.predicate.clone())
             .collect();
-        self.effect_bindings_available = true;
+        self.effect_binding_profile = Some(EffectBindingProfile {
+            name: intent.profile.clone(),
+            allowed_write_classes: intent.allowed_write_classes.clone(),
+        });
         let body = self.check_body(intent, &output_shape, &mut env, &mut locals);
-        self.effect_bindings_available = false;
+        self.effect_binding_profile = None;
         self.input_proof_constraints.clear();
         let body = body?;
         if !self.resolved.source_functions.is_empty() {
@@ -3004,31 +3013,17 @@ impl<'a> TypeChecker<'a> {
             ));
             return false;
         };
-        let Some(allowed_write_classes) = &intent.allowed_write_classes else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::MissingContextFact,
-                format!(
-                    "operation profile `{}` has no write-class compiler context fact",
-                    intent.profile
-                ),
-                span,
-            ));
-            return false;
-        };
-        if allowed_write_classes.contains(write_class) {
-            true
-        } else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::ProfileEffectMismatch,
-                format!(
-                    "effect `{effect}` requires write class {write_class:?}, which profile `{}` does not allow",
-                    intent.profile
-                ),
-                span,
-            ));
+        if let Some(failure) = effect_profile_error(
+            &effect,
+            write_class,
+            &intent.profile,
+            intent.allowed_write_classes.as_ref(),
+            span,
+        ) {
+            self.errors.push(failure);
             false
+        } else {
+            true
         }
     }
 
@@ -3939,6 +3934,32 @@ impl<'a> TypeChecker<'a> {
         )
     }
 
+    fn bare_effect_profile_error(&self, effect: &str, span: Span) -> Option<CompilerError> {
+        let Some(profile) = self.effect_binding_profile.as_ref() else {
+            return Some(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                format!("semantic effect `{effect}` is unavailable in this pure context"),
+                span,
+            ));
+        };
+        let Some(write_class) = self.resolved.effect_write_classes.get(effect) else {
+            return Some(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                self.missing_effect_context_message(effect),
+                span,
+            ));
+        };
+        effect_profile_error(
+            effect,
+            write_class,
+            &profile.name,
+            profile.allowed_write_classes.as_ref(),
+            span,
+        )
+    }
+
     fn resolve_pure_function(
         &mut self,
         callee: &Expr,
@@ -3988,13 +4009,8 @@ impl<'a> TypeChecker<'a> {
                     ));
                     return None;
                 }
-                if !self.effect_bindings_available {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        CompilerErrorKind::UnsupportedSourceShape,
-                        format!("semantic effect `{source_coordinate}` is unavailable in this pure context"),
-                        span,
-                    ));
+                if let Some(failure) = self.bare_effect_profile_error(&source_coordinate, span) {
+                    self.errors.push(failure);
                     return None;
                 }
                 let failures = signature
@@ -4932,6 +4948,35 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::IfYield { span, .. }
         | Expr::VariantLit { span, .. }
         | Expr::Match { span, .. } => *span,
+    }
+}
+
+fn effect_profile_error(
+    effect: &str,
+    write_class: &WriteClass,
+    profile: &str,
+    allowed_write_classes: Option<&BTreeSet<WriteClass>>,
+    span: Span,
+) -> Option<CompilerError> {
+    let Some(allowed) = allowed_write_classes else {
+        return Some(error(
+            CompilerStage::TypeCheck,
+            CompilerErrorKind::MissingContextFact,
+            format!("operation profile `{profile}` has no write-class compiler context fact"),
+            span,
+        ));
+    };
+    if allowed.contains(write_class) {
+        None
+    } else {
+        Some(error(
+            CompilerStage::TypeCheck,
+            CompilerErrorKind::ProfileEffectMismatch,
+            format!(
+                "effect `{effect}` requires write class {write_class:?}, which profile `{profile}` does not allow"
+            ),
+            span,
+        ))
     }
 }
 
