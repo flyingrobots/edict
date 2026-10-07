@@ -20,6 +20,9 @@ versions still track specification maturity rather than a released product.
   frozen; new compiler/old lawpack combinations can reject impossible results.
   No runtime input-validation or complete allocation claim is added.
 
+- Explain the `edict.lawpack/v1` domain-framed manifest identity in import
+  guidance. `SourceImportMismatch` now names the required domain and exact
+  manifest digest, preserving the failure kind and import digest path.
 
 - Added first-order nongeneric source pure functions with ordered typed
   parameters, immutable bindings and terminal returns. Source-owned Core bodies
