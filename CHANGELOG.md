@@ -10,6 +10,15 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Application builds emit individual structured parser and compiler diagnostics
+  with byte spans and separate source file/line/scalar-column locations. Existing
+  summaries and build exit code remain; terminal counts include each emitted
+  error. Diagnostic and event schemas now include build records.
+
+- Explain the `edict.lawpack/v1` domain-framed manifest identity in import
+  guidance. `SourceImportMismatch` now names the required domain and exact
+  manifest digest, preserving the failure kind and import digest path.
+
 - Added first-order nongeneric source pure functions with ordered typed
   parameters, immutable bindings and terminal returns. Source-owned Core bodies
   retain call authority, alpha-normalized identity, conservative checked costs,

@@ -27,6 +27,29 @@ use lawpack hello.optics@1 digest "sha256:<64 lowercase hex>" as hello;
 The parser preserves the import as a lawpack import with the package coordinate,
 version label, alias, and digest review string. [LAWPACKS-REQ-001]
 
+The import digest identifies the canonical manifest in the `edict.lawpack/v1`
+domain. It is SHA-256 of the canonical CBOR tuple
+`["edict.digest/v1", "edict.lawpack/v1", manifest]`, where `manifest` is the decoded
+canonical value. It is not SHA-256 of the raw `manifest.cbor` file. Copy the
+review string from `manifest.sha256` beside a generated lawpack; the public
+`ValidatedLawpackBundle::manifest_digest_review_string` API returns the same
+identity. A mismatch retains `SourceImportMismatch` and the import digest path,
+and its obligation identifies the required domain and exact digest.
+[LAWPACKS-REQ-026]
+
+For the shipped portable capability, run this command from the repository root
+to print a source import with the matching generated manifest identity:
+
+```sh
+printf 'use lawpack causal.cell@1 digest "%s" as cells;\n' "$(cat fixtures/lawpack/causal-cell/manifest.sha256)"
+```
+
+The output is one `use lawpack` declaration with the sidecar's full `sha256:`
+review string. Regenerate the closure through its owned generator when changing
+its manifest or adapter; copy the resulting manifest digest into the source.
+An exports, adapter, or target-configuration sidecar identifies that artifact,
+and cannot replace the manifest digest in a source import.
+
 The machine-readable lawpack manifest and export surface are specified in
 [`docs/abi/edict-lawpack.cddl`](../../abi/edict-lawpack.cddl), with explanatory
 reference material in

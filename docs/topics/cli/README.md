@@ -260,6 +260,32 @@ diagnostic and terminal status records carry that command. Invalid `project`
 settings therefore report `command: "project"` rather than falling back to the
 `check` command. [CLI-REQ-006, CLI-REQ-007]
 
+### Application Source Diagnostics
+
+A failed application build emits one `edict.cli.diagnostic/v1` record for each
+parser or compiler error on stderr, followed by its existing
+`InvalidApplicationSource` or `ApplicationCompilationFailed` summary and one
+terminal status record. Each source record retains the originating stage and
+kind, its message, and the source span. The summary does not embed a Debug
+vector of compiler errors. The terminal `errors` count includes every source
+record and the summary; `checked` stays zero, and the existing build exit code
+is `2`. A failed source build writes no output and preserves prior artifacts.
+[CLI-REQ-018]
+
+`span.start` and `span.end` are zero-based UTF-8 byte offsets, with an exclusive
+end. `sourceLocation` contains the canonical source path, a one-based source
+line, and a one-based Unicode-scalar column. An empty EOF span has the location
+immediately after the last source character. CRLF advances the source line once.
+These coordinates refer to the source loaded for this build. The top-level
+`line` field, when present, continues to identify a JSONL request record; it is
+not a source line or column. [CLI-REQ-018]
+
+The diagnostic and event schemas now admit `build`; the diagnostic schema also
+admits compiler stages and the optional `sourceLocation` object. Check and
+project stream shapes are unchanged. Clients that validate build records must
+use the matching checked schemas. Schema validation is exercised by the public
+binary tests and is not added to the shipped CLI runtime. [CLI-REQ-018]
+
 ## Stream Contract Artifacts
 
 Every record family on the CLI boundary has a checked-in JSON Schema. These
@@ -290,7 +316,8 @@ the checked-in schemas as the accepted wire shape.
   failures emitted as projection records.
 - `1`: compiler or validation diagnostics were produced for at least one
   source input in the `check` operation.
-- `2`: CLI input or usage was invalid before compiler validation could run.
+- `2`: CLI input or usage was invalid, or a build failed, including source
+  parsing or compilation. Build failures keep this existing exit code.
 
 ## Golden Fixtures
 
