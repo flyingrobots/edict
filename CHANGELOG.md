@@ -20,6 +20,11 @@ versions still track specification maturity rather than a released product.
   frozen; new compiler/old lawpack combinations can reject impossible results.
   No runtime input-validation or complete allocation claim is added.
 
+- Application builds emit individual structured parser and compiler diagnostics
+  with byte spans and separate source file/line/scalar-column locations. Existing
+  summaries and build exit code remain; terminal counts include each emitted
+  error. Diagnostic and event schemas now include build records.
+
 - Explain the `edict.lawpack/v1` domain-framed manifest identity in import
   guidance. `SourceImportMismatch` now names the required domain and exact
   manifest digest, preserving the failure kind and import digest path.

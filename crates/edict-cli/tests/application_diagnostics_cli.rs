@@ -1,0 +1,396 @@
+//! Application build failures preserve each source diagnostic through the public binary.
+use std::fs;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use edict_syntax::{TARGET_PROVIDER_ABI, TARGET_PROVIDER_MANIFEST_API_VERSION};
+use serde_json::{json, Value};
+
+static SEQUENCE: AtomicUsize = AtomicUsize::new(0);
+
+fn test_ok<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
+    result.unwrap_or_else(|error| panic!("{context}: {error:?}"))
+}
+
+fn resource_json(coordinate: &str, digest: char) -> Value {
+    json!({"coordinate":coordinate,"digest":format!("sha256:{}", digest.to_string().repeat(64))})
+}
+
+fn temp_tree(label: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!(
+        "edict-build-diag-{label}-{}-{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    fs::create_dir_all(&root).expect("create owned fixture root");
+    root
+}
+
+fn run(request: &Value) -> std::process::Output {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_edict"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn public Edict binary");
+    writeln!(child.stdin.take().expect("stdin pipe"), "{request}").expect("write request");
+    child
+        .wait_with_output()
+        .expect("collect public binary output")
+}
+
+fn build(config: &Path) -> std::process::Output {
+    run(
+        &json!({"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":"build","application":config}),
+    )
+}
+
+fn records(bytes: &[u8]) -> Vec<Value> {
+    std::str::from_utf8(bytes)
+        .expect("UTF8 JSONL")
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("structured JSONL record"))
+        .collect()
+}
+
+fn validate_stream(stream: &[Value]) {
+    let diagnostic: Value = serde_json::from_str(include_str!(
+        "../../../docs/schemas/edict.cli-diagnostic.v1.schema.json"
+    ))
+    .expect("diagnostic schema");
+    let event: Value = serde_json::from_str(include_str!(
+        "../../../docs/schemas/edict.cli-event.v1.schema.json"
+    ))
+    .expect("event schema");
+    let diagnostic =
+        jsonschema::validator_for(&diagnostic).expect("compile self-contained diagnostic schema");
+    let event = jsonschema::validator_for(&event).expect("compile self-contained event schema");
+    for record in stream {
+        let validator = match record["type"].as_str() {
+            Some("diagnostic") => &diagnostic,
+            Some("status") => &event,
+            other => panic!("unexpected build/error stream record: {other:?}"),
+        };
+        validator.validate(record).unwrap_or_else(|error| {
+            panic!("record violates authoritative schema: {error}; {record}")
+        });
+    }
+}
+
+fn summary<'a>(stream: &'a [Value], kind: &str) -> &'a Value {
+    stream
+        .iter()
+        .find(|record| record["kind"] == kind)
+        .unwrap_or_else(|| panic!("expected {kind} phase; actual records {stream:?}"))
+}
+
+fn assert_location(record: &Value, path: &Path, source: &str, start: usize) {
+    assert_eq!(record["command"], "build");
+    assert_eq!(record["span"]["start"], start);
+    let end = usize::try_from(record["span"]["end"].as_u64().expect("byte end"))
+        .expect("span fits this platform");
+    assert!(end >= start && end <= source.len());
+    assert_eq!(
+        record["sourceLocation"]["path"],
+        fs::canonicalize(path)
+            .expect("canonical source path")
+            .display()
+            .to_string()
+    );
+    let before = &source[..start];
+    let line = before.bytes().filter(|byte| *byte == b'\n').count() + 1;
+    let column = before
+        .rsplit('\n')
+        .next()
+        .expect("current line")
+        .chars()
+        .count()
+        + 1;
+    assert_eq!(record["sourceLocation"]["line"], line);
+    assert_eq!(record["sourceLocation"]["column"], column);
+    assert!(
+        record.get("line").is_none(),
+        "source rows must not overload request-line coordinates"
+    );
+}
+
+#[test]
+fn application_build_emits_compiler_records_and_preserves_output_on_failure() {
+    let root = temp_tree("compiler");
+    let config = write_external_action_application(&root);
+    let path = root.join("src/observe-workspace.edict");
+    let original = fs::read_to_string(&path).expect("read valid source");
+    assert_eq!(original.matches("  return pending;").count(), 1);
+    let source = original.replace("  return pending;", "  let marker = \"🦀\"; let wrong: U64 = true;\n  let missing = unknownValue;\n  return pending;").replace('\n', "\r\n");
+    fs::write(&path, &source).expect("write invalid compiler source");
+    let output_dir = root.join(".build/application");
+    fs::create_dir_all(&output_dir).expect("prepare previous output");
+    fs::write(output_dir.join("retained.bin"), b"previous output").expect("previous bytes");
+    let output = build(&config);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    let stream = records(&output.stderr);
+    let diagnostic_summary = summary(&stream, "ApplicationCompilationFailed");
+    let compiler: Vec<_> = stream
+        .iter()
+        .filter(|record| record["stage"] == "typeCheck")
+        .collect();
+    assert_eq!(
+        compiler.len(),
+        2,
+        "each compiler error needs its own record: {stream:?}"
+    );
+    for (kind, anchor) in [
+        ("TypeMismatch", "let wrong"),
+        ("UnresolvedType", "unknownValue"),
+    ] {
+        let record = compiler
+            .iter()
+            .find(|record| record["kind"] == kind)
+            .expect("stable compiler kind");
+        assert_location(
+            record,
+            &path,
+            &source,
+            source.find(anchor).expect("error anchor"),
+        );
+    }
+    assert!(!diagnostic_summary["message"]
+        .as_str()
+        .expect("summary message")
+        .contains("[CompilerError"));
+    assert_eq!(stream.last().expect("terminal record")["errors"], 3);
+    assert_eq!(stream.last().expect("terminal record")["checked"], 0);
+    assert_eq!(stream.last().expect("terminal record")["exitCode"], 2);
+    validate_stream(&stream);
+    assert_eq!(
+        fs::read(output_dir.join("retained.bin")).expect("retained output"),
+        b"previous output"
+    );
+    assert_eq!(
+        fs::read_dir(&output_dir)
+            .expect("owned output listing")
+            .count(),
+        1
+    );
+    fs::remove_dir_all(root).expect("clean owned tree");
+}
+
+#[test]
+fn application_build_emits_parser_eof_location_without_publishing() {
+    let root = temp_tree("parser-eof");
+    let config = write_external_action_application(&root);
+    let path = root.join("src/observe-workspace.edict");
+    let source = "// 🦀\r\npackage examples.broken@1;\r\nintent broken(";
+    fs::write(&path, source).expect("write EOF source");
+    let output = build(&config);
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(output.stdout, [] as [u8; 0]);
+    let stream = records(&output.stderr);
+    summary(&stream, "InvalidApplicationSource");
+    let parsed = edict_syntax::parse_module(source).expect_err("EOF fixture has a parser error");
+    assert_eq!(parsed.span.start, source.len());
+    assert_eq!(parsed.span.end, source.len());
+    let record = stream
+        .iter()
+        .find(|record| record["stage"] == "parse")
+        .expect("individual parser record");
+    assert_eq!(record["kind"], parsed.kind.code());
+    assert_location(record, &path, source, source.len());
+    assert_eq!(stream.last().expect("terminal status")["errors"], 2);
+    validate_stream(&stream);
+    assert!(!root.join(".build").exists());
+    fs::remove_dir_all(root).expect("clean owned tree");
+}
+
+#[test]
+fn diagnostic_schemas_preserve_check_and_project_streams() {
+    for operation in ["check", "project"] {
+        let request = if operation == "check" {
+            format!(
+                "{}\n{}",
+                json!({"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":operation}),
+                json!({"schema":"edict.compiler.input/v1","type":"compilerInput","kind":"source","name":"bad","source":"not source"})
+            )
+        } else {
+            json!({"schema":"edict.compiler.settings/v1","type":"compilerSettings","operation":operation}).to_string()
+        };
+        let mut child = Command::new(env!("CARGO_BIN_EXE_edict"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn binary");
+        writeln!(child.stdin.take().expect("stdin"), "{request}").expect("write request");
+        let output = child
+            .wait_with_output()
+            .expect("collect compatibility control");
+        assert!(!output.status.success());
+        validate_stream(&records(&output.stderr));
+    }
+}
+
+fn write_application_fixture_resources(root: &Path) {
+    let source_directory = root.join("src");
+    let lawpack_directory = root.join("vendor/workspace-snapshot");
+    let provider_directory = root.join("provider");
+    let provider_generated = provider_directory.join("generated/primary");
+    for directory in [&source_directory, &lawpack_directory, &provider_generated] {
+        test_ok(
+            fs::create_dir_all(directory),
+            "create application fixture tree",
+        );
+    }
+
+    for (path, bytes) in [
+        (
+            source_directory.join("observe-workspace.edict"),
+            include_bytes!(
+                "../../../fixtures/lawpack/workspace-snapshot/observe-workspace.edict"
+            )
+            .as_slice(),
+        ),
+        (
+            lawpack_directory.join("manifest.cbor"),
+            include_bytes!("../../../fixtures/lawpack/workspace-snapshot/manifest.cbor")
+                .as_slice(),
+        ),
+        (
+            lawpack_directory.join("exports.cbor"),
+            include_bytes!("../../../fixtures/lawpack/workspace-snapshot/exports.cbor")
+                .as_slice(),
+        ),
+        (
+            lawpack_directory.join("adapter.cbor"),
+            include_bytes!("../../../fixtures/lawpack/workspace-snapshot/adapter.cbor")
+                .as_slice(),
+        ),
+        (
+            lawpack_directory.join("request-profile-configuration.cbor"),
+            include_bytes!(
+                "../../../fixtures/lawpack/workspace-snapshot/request-profile-configuration.cbor"
+            )
+            .as_slice(),
+        ),
+        (
+            lawpack_directory.join("input-schema.cbor"),
+            include_bytes!("../../../fixtures/lawpack/workspace-snapshot/input-schema.cbor")
+                .as_slice(),
+        ),
+        (
+            lawpack_directory.join("settlement-schema.cbor"),
+            include_bytes!(
+                "../../../fixtures/lawpack/workspace-snapshot/settlement-schema.cbor"
+            )
+            .as_slice(),
+        ),
+        (
+            lawpack_directory.join("reconciliation-law.cbor"),
+            include_bytes!(
+                "../../../fixtures/lawpack/workspace-snapshot/reconciliation-law.cbor"
+            )
+            .as_slice(),
+        ),
+        (
+            provider_generated.join("target-profile.echo-dpo.cbor"),
+            include_bytes!(
+                "../../../fixtures/providers/echo-target-profile/generated/primary/target-profile.echo-dpo.cbor"
+            )
+            .as_slice(),
+        ),
+    ] {
+        test_ok(fs::write(path, bytes), "write application fixture");
+    }
+}
+
+fn application_fixture_provider_manifest() -> Value {
+    serde_json::json!({
+        "apiVersion": TARGET_PROVIDER_MANIFEST_API_VERSION,
+        "providerAbi": TARGET_PROVIDER_ABI,
+        "provider": resource_json("echo.edict-provider@1", '1'),
+        "artifacts": [
+            {
+                "role": "target-profile.echo-dpo",
+                "artifactKind": "targetProfile",
+                "resource": {
+                    "coordinate": "echo.dpo@1",
+                    "digest": "sha256:2e2494121aecf5e6a2d920f5fb85408825d394765fad41484c416397c920fb04"
+                },
+                "source": {
+                    "kind": "generated",
+                    "semanticSource": resource_json("echo.semantic-schema@1", '2'),
+                    "generator": resource_json("echo-wesley-gen.provider-artifact-generator@1", '3')
+                }
+            },
+            {
+                "role": "schema.echo-provider-artifacts",
+                "artifactKind": "artifactSchema",
+                "resource": resource_json("echo.provider-artifacts.cddl@1", '4'),
+                "source": {
+                    "kind": "generated",
+                    "semanticSource": resource_json("echo.semantic-schema@1", '2'),
+                    "generator": resource_json("echo-wesley-gen.provider-artifact-generator@1", '3')
+                }
+            }
+        ],
+        "schemaBindings": [{
+            "domain": "echo.generated-artifact/v1",
+            "schemaRole": "schema.echo-provider-artifacts",
+            "format": "selfContainedCddlV1",
+            "rootRule": "generated-artifact"
+        }]
+    })
+}
+
+fn write_external_action_application(root: &Path) -> PathBuf {
+    write_application_fixture_resources(root);
+    let provider_directory = root.join("provider");
+    let provider_manifest = application_fixture_provider_manifest();
+    test_ok(
+        fs::write(
+            provider_directory.join("provider-manifest.echo.json"),
+            test_ok(
+                serde_json::to_vec_pretty(&provider_manifest),
+                "encode provider manifest",
+            ),
+        ),
+        "write provider manifest",
+    );
+
+    let application = serde_json::json!({
+        "schema": "edict.application/v1",
+        "buildKind": "externalAction",
+        "coordinate": "examples.workspace_observer@1",
+        "sources": ["src/observe-workspace.edict"],
+        "lawpacks": [{
+            "manifest": "vendor/workspace-snapshot/manifest.cbor",
+            "exports": "vendor/workspace-snapshot/exports.cbor",
+            "adapter": "vendor/workspace-snapshot/adapter.cbor",
+            "targetConfiguration": "vendor/workspace-snapshot/request-profile-configuration.cbor"
+        }],
+        "externalActionResources": [
+            {"artifact": "vendor/workspace-snapshot/input-schema.cbor"},
+            {"artifact": "vendor/workspace-snapshot/settlement-schema.cbor"},
+            {"artifact": "vendor/workspace-snapshot/reconciliation-law.cbor"}
+        ],
+        "target": {
+            "profile": "echo.dpo@1",
+            "providerPackage": "provider"
+        },
+        "outputDirectory": ".build/application"
+    });
+    let config_path = root.join("edict.application.json");
+    test_ok(
+        fs::write(
+            &config_path,
+            test_ok(
+                serde_json::to_vec_pretty(&application),
+                "encode application manifest",
+            ),
+        ),
+        "write application manifest",
+    );
+    config_path
+}
