@@ -37,13 +37,14 @@
     "data_limit_gib": 4,
     "log_limit_mib": 128,
     "timeout_seconds": 2400,
-    "measured_build_accounted_bytes": 3088490496,
-    "measured_data_bytes": 12165120,
-    "measured_host_logs_bytes": 741545,
-    "host_free_bytes": 730393092096,
-    "vm_free_bytes": 694197497856,
+    "measured_build_accounted_bytes": 3256713216,
+    "measured_data_bytes": 12345344,
+    "measured_host_logs_bytes": 1038979,
+    "host_free_bytes": 730171899904,
+    "vm_free_bytes": 693917229056,
     "root_layer_baseline_bytes": 237568,
-    "enforcement": "readonly root; /work 128MiB, /tmp 512MiB, /data 3GiB exec tmpfs; fail-closed 2-second aggregate monitor; 3 x 1MiB Docker logs"
+    "enforcement": "readonly root; /work 128MiB, /tmp 512MiB, /data 3GiB exec tmpfs; fail-closed 2-second aggregate monitor; 3 x 1MiB Docker logs",
+    "cargo_journal_reservation_bytes": 134217728
   },
   "source_sha256": {
     "crates/edict-syntax/src/compiler.rs": "651f97862034bdfa36a7495c447c95d688a4334e3ad51a317a3ea4697256fcf2",
@@ -68,12 +69,36 @@
     "cache_discipline": "Invalidate all six owned workspace packages and xtask before each source snapshot. Retain third-party dependency artifacts. A timestamp-stale default-feature result was rejected; this fresh run supersedes it.",
     "measurement_discipline": "du and df failures propagate. A monitoring exception stops the entire owned worker."
   },
-  "guard_sha256": "1c0b5f0214f14d55c3182072075ddbb62ba2ab526c45f234aa655d7327ccd002",
+  "guard_sha256": "11455d63b43e8b1ff79c25f209d482c05595323456f9ca726cb3414e61752c40",
   "guard_optimization": {
     "command": "python3 -O docs/plans/study-feedback/evidence/guard-optimization-regression.py.txt",
     "red_log": "pr241-guard-red.txt",
     "green_log": "pr241-guard-green.txt",
     "green_result": "optimized code refuses all six limit violations",
     "fix_commit": "386d8d2"
+  },
+  "reviewed_revision": {
+    "source_commit": "a89260c",
+    "command": "python3 -O docs/plans/study-feedback/evidence/guard-optimization-regression.py.txt && python3 docs/plans/study-feedback/evidence/literal-evidence-regression.py.txt && cargo test --locked -p edict-syntax --test byte_concat --test return_budget && cargo xtask verify",
+    "exit": 0,
+    "log": "pr241-reviewed-full-gate.txt",
+    "focused_count": 13,
+    "source_changes": [
+      "All eight imported Core integer widths retain encoding bounds.",
+      "List-header and record accumulation overflow cases are covered.",
+      "Each overflow source-template mutation matches exactly once."
+    ],
+    "guard_changes": [
+      "Optimized Python retains explicit safety exceptions.",
+      "A 128MiB conservative Cargo journal reservation remains within the existing aggregate build budget.",
+      "Deleted tracked source paths are omitted and removed from the owned disposable snapshot."
+    ],
+    "runtime_claims": "No new runtime ingress validation or Keep operation integration."
+  },
+  "reviewed_source_sha256": {
+    "crates/edict-syntax/src/compiler.rs": "651f97862034bdfa36a7495c447c95d688a4334e3ad51a317a3ea4697256fcf2",
+    "crates/edict-syntax/src/compiler/return_budget.rs": "014a6ed7a0a113f10720a956505a4c1b0c9dca36672b09929b46fc2348bbcd1f",
+    "crates/edict-syntax/tests/return_budget.rs": "97495be170005326317c079523b324354f5137c7831a1ccdc766361268f476fa",
+    "xtask/tests/literal_evidence.rs": "001cd8bc314c6807e9e2735c95a463d4b049db036049b7a88870234f16f3dbc2"
   }
 }

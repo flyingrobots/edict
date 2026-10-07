@@ -29,3 +29,6 @@ A missing journal is expected after deletion; all other measurement failures sti
 Literal command output retains terminal blank lines through a scoped Git attribute.
 Ordinary source retains the existing EOF whitespace check.
 [literal-evidence-regression.py.txt](literal-evidence-regression.py.txt) verifies both behaviors in an isolated Git fixture.
+
+The [reviewed full gate](pr241-reviewed-full-gate.txt) passes all thirteen focused compiler tests, both Python behavior probes, and cargo xtask verify.
+It supersedes intermediate verification for the current review fixes.
