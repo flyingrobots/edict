@@ -3626,6 +3626,44 @@ fn effect_inputs_use_authenticated_contextual_types() {
 }
 
 #[test]
+fn effect_comparison_literals_follow_exported_numeric_output() {
+    for (width, valid, invalid) in [("U64", "1", "-1"), ("I64", "-1", "9223372036854775808")] {
+        let mut exports = hello_echo_exports();
+        let effect = first_array_item_mut(field_mut(&mut exports, "effects"));
+        replace_field(effect, "inputType", text("U64"));
+        replace_field(effect, "outputType", text(width));
+        let (bundle, adapter) = bundle_and_adapter(
+            &exports,
+            &decode_canonical_cbor(ADAPTER_BYTES).expect("adapter"),
+        );
+        let base = format!("package examples.numeric_compare@1;\nuse lawpack hello.echo@1 digest \"{}\" as hello;\nintent apply(input: U64) returns {width}\n profile hello.createGreeting\n basis none\n budget <= hello.smallCreateBudget {{\n let receipt: {width} = hello.createGreeting(input)\n else {{ alreadyExists(existing) => hello.AlreadyExists }};\n require receipt == {valid} else hello.AlreadyExists;\n return receipt;\n}}", bundle.manifest_digest_review_string());
+        let compile = |source: &str| {
+            let module = parse_module(source).expect("numeric comparison source");
+            let prepared =
+                prepare_lawpack_compilation(&module, &bundle, &adapter).expect("numeric signature");
+            compile_to_core(&module, prepared.compiler_context())
+        };
+        compile(&base).expect("mapped numeric comparison control compiles");
+        for (literal, expected) in [
+            (valid, CompilerErrorKind::EffectWithoutFailureMapping),
+            (invalid, CompilerErrorKind::TypeMismatch),
+        ] {
+            for comparison in [
+                format!("hello.createGreeting(input) == {literal}"),
+                format!("{literal} == hello.createGreeting(input)"),
+            ] {
+                let source = base.replace(&format!("receipt == {valid}"), &comparison);
+                let errors = compile(&source).expect_err("bare effect or bad literal rejects");
+                assert_eq!(
+                    errors[0].kind, expected,
+                    "{width}: {comparison}: {errors:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn authenticated_empty_effect_surface_is_not_missing_information() {
     let (exports, adapter) = request_only_adapter(Some("hello.echo@1.smallCreateBudget"), true);
     let (bundle, adapter) = bundle_and_adapter(&exports, &adapter);

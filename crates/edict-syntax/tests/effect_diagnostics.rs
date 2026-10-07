@@ -313,3 +313,26 @@ fn effect_comparisons_report_type_mismatch_before_map_guidance() {
         assert!(!errors[0].message.contains("with `else`"));
     }
 }
+
+#[test]
+fn effect_integer_comparisons_report_incompatibility_before_map_guidance() {
+    for comparison in [
+        "hello.createGreeting(input) == 1",
+        "1 == hello.createGreeting(input)",
+        "hello.createGreeting(input) == -1",
+        "-1 == hello.createGreeting(input)",
+    ] {
+        let source = SOURCE.replace(
+            "  let receipt:",
+            &format!("  require {comparison} else hello.AlreadyExists;\n  let receipt:"),
+        );
+        let control = source.replace(
+            &format!("require {comparison} else hello.AlreadyExists;"),
+            "require 1u64 == 1 else hello.AlreadyExists;",
+        );
+        compile(&control).expect("integer comparison control compiles");
+        let errors = compile(&source).expect_err("record receipt cannot compare to integer");
+        assert_eq!(errors[0].kind, CompilerErrorKind::TypeMismatch);
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+}

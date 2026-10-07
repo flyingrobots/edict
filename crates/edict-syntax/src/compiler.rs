@@ -753,13 +753,14 @@ enum EffectOutputExpectation<'a> {
     Value(Option<&'a TypeShape>),
     Predicate,
     Comparison(&'a TypeShape),
+    ComparisonLiteral(&'a Expr),
 }
 
 impl<'a> EffectOutputExpectation<'a> {
     fn value(self) -> Option<&'a TypeShape> {
         match self {
             Self::Value(shape) => shape,
-            Self::Predicate | Self::Comparison(_) => None,
+            Self::Predicate | Self::Comparison(_) | Self::ComparisonLiteral(_) => None,
         }
     }
 
@@ -772,6 +773,9 @@ impl<'a> EffectOutputExpectation<'a> {
                 Some(CompilerErrorKind::ExpectedPredicate)
             }
             Self::Comparison(peer) if !comparable(peer, output) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::ComparisonLiteral(_) if !matches!(output.kind, TypeKind::Int { .. }) => {
                 Some(CompilerErrorKind::TypeMismatch)
             }
             _ => None,
@@ -3621,6 +3625,24 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         span: Span,
     ) -> Option<CorePredicate> {
+        // A bare effect always rejects in this value position. Validate its
+        // own guards and exported numeric output before inferring its peer.
+        if self.is_authenticated_effect_call(lhs) && is_bare_integer_literal(rhs) {
+            self.check_expr_with_effect_expectation(
+                lhs,
+                env,
+                EffectOutputExpectation::ComparisonLiteral(rhs),
+            )?;
+            return None;
+        }
+        if self.is_authenticated_effect_call(rhs) && is_bare_integer_literal(lhs) {
+            self.check_expr_with_effect_expectation(
+                rhs,
+                env,
+                EffectOutputExpectation::ComparisonLiteral(lhs),
+            )?;
+            return None;
+        }
         let (left, right) = match (is_bare_integer_literal(lhs), is_bare_integer_literal(rhs)) {
             (true, false) => {
                 let right = self.check_expr(rhs, env)?;
@@ -4193,6 +4215,9 @@ impl<'a> TypeChecker<'a> {
                         span,
                     ));
                     return None;
+                }
+                if let EffectOutputExpectation::ComparisonLiteral(peer) = expectation {
+                    self.check_expr_with_expected(peer, env, Some(&output))?;
                 }
                 self.errors
                     .push(effect_mapping_error(&source_coordinate, signature, span));

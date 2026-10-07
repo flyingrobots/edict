@@ -303,3 +303,5 @@ Those items remain assigned to later lowerability/admission milestones.
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
 
 A direct authenticated bare effect used as a comparison operand is checked against its typed peer before failure-map guidance. The requirement uses symmetric comparability, preserving ordinary comparison compatibility. Existing integer-literal inference remains unchanged. This rule covers direct effect calls; it does not establish general recovery for multiple invalid operands or dependent bindings.
+
+When the peer of a direct authenticated effect comparison is an unsuffixed integer literal, the compiler validates the effect's guards and exported output first. Non-integer outputs report TypeMismatch. Numeric outputs provide the peer literal's width and range check before failure-map guidance. Signed and unsigned literal inference otherwise retains its existing rules.

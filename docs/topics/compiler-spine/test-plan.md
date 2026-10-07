@@ -217,3 +217,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-087 | implemented | Mixed authority | CSPINE-REQ-047 | A domain-mappable failure remains listed beside each non-domain class; the other coordinate is excluded and the list label states its domain-mappable scope. | mixed_authority_failure_guidance_labels_only_mappable_names | crates/edict-syntax/tests/lawpack.rs | Kind remains EffectWithoutFailureMapping. |
+
+## Effect Comparison Literal Inference
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-088 | implemented | Contextual comparison literals | CSPINE-REQ-047 | Direct authenticated effects beside signed or unsigned bare literals check output compatibility before map guidance; valid numeric outputs preserve literal inference and primary argument/profile errors. | effect_integer_comparisons_report_incompatibility_before_map_guidance, effect_comparison_literals_follow_exported_numeric_output | crates/edict-syntax/tests/effect_diagnostics.rs, crates/edict-syntax/tests/lawpack.rs | Valid numeric control still requires a mapped binding. |
