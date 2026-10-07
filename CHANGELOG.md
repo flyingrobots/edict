@@ -11,7 +11,9 @@ versions still track specification maturity rather than a released product.
 ### Changed
 
 - Report `EffectWithoutFailureMapping` for exact imported effects used as pure
-  calls, with declared failure names and the call span. Zero-failure effects
+  calls in intent bodies, with declared failure names and the call span. Generic
+  effects and effects in pure contexts report `UnsupportedSourceShape`,
+  preserving their unsupported execution boundary. Zero-failure effects
   report the unsupported binding shape instead of suggesting an empty map.
   Unknown-effect `MissingContextFact` diagnostics list available exact-owner
   effects under the selected alias. This changes primary guidance only; effect

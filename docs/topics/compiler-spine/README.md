@@ -37,9 +37,14 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 
-A bare call that resolves to an exact imported semantic effect reports
+A bare call in an intent body that resolves to an exact nongeneric semantic
+effect reports
 `EffectWithoutFailureMapping`, rather than classifying it as an unresolved pure
 helper. The diagnostic names the declared failures and retains the call span.
+Generic semantic effects and effects in pure contexts, including source-owned
+functions and intent clauses, report `UnsupportedSourceShape` rather than
+recommending an unavailable effect binding. Mapping guidance is enabled only
+while checking an intent body and is restored afterward.
 For a zero-failure effect, it reports that bindings without a failure map are
 unsupported instead of suggesting an empty `else` map.
 An unknown effect in an explicit effect binding retains `MissingContextFact`

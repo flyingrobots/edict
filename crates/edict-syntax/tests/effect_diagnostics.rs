@@ -123,3 +123,24 @@ intent t(input: Input) returns Output
         .contains("missing authenticated effect export information"));
     assert!(!cause.message.contains("exports: none"));
 }
+
+#[test]
+fn effect_guidance_refuses_pure_functions_and_intent_clauses() {
+    let function = "fn illegal(input: hello.CreateGreetingInput) -> hello.GreetingReceipt {\n  return hello.createGreeting(input);\n}\n\n";
+    assert_eq!(SOURCE.matches("intent createGreeting").count(), 1);
+    let function_source = SOURCE.replace(
+        "intent createGreeting",
+        &format!("{function}intent createGreeting"),
+    );
+    assert_eq!(SOURCE.matches("basis input.basis").count(), 1);
+    let basis_source = SOURCE.replace("basis input.basis", "basis hello.createGreeting(input)");
+    for source in [function_source, basis_source] {
+        let errors = compile(&source).expect_err("semantic effects cannot run in a pure context");
+        let cause = &errors[0];
+        assert_eq!(cause.kind, CompilerErrorKind::UnsupportedSourceShape);
+        assert_eq!(cause.stage, CompilerStage::TypeCheck);
+        assert!(source[cause.span.start..cause.span.end].contains("hello.createGreeting(input)"));
+        assert!(cause.message.contains("unavailable in this pure context"));
+        assert!(!cause.message.contains("with `else`"));
+    }
+}

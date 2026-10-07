@@ -2765,9 +2765,12 @@ makes Edict, Continuum, or Echo part of generic GraphQL lowering.
 ### Implemented Effect Diagnostic Boundary
 
 The source compiler distinguishes exact imported semantic effects from pure
-helpers. A bare effect in a pure-call position reports
+helpers. A bare nongeneric effect in a pure-call position within an intent body reports
 `EffectWithoutFailureMapping` and names the declared failure variants. Authors
 must use the supported annotated effect binding and its required mapping.
+Generic semantic effects remain unsupported in both bare and mapped calls.
+Effects in source-owned pure functions and intent clauses report
+`UnsupportedSourceShape` without recommending a binding that is illegal there.
 An effect with no declared failures reports that bindings without a failure map
 are unsupported; the diagnostic does not suggest an empty `else` map.
 An unknown effect in an explicit effect binding reports `MissingContextFact`

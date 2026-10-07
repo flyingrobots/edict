@@ -735,6 +735,7 @@ struct TypeChecker<'a> {
     source_predicate_costs: BTreeMap<usize, HelperCost>,
     source_value_bounds: BTreeMap<usize, (u64, u64)>,
     input_proof_constraints: Vec<CorePredicate>,
+    effect_bindings_available: bool,
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
@@ -752,6 +753,7 @@ impl<'a> TypeChecker<'a> {
             source_predicate_costs: BTreeMap::new(),
             source_value_bounds: BTreeMap::new(),
             input_proof_constraints: Vec::new(),
+            effect_bindings_available: false,
             errors: Vec::new(),
             named_types: BTreeMap::new(),
             core_types: BTreeMap::new(),
@@ -1082,7 +1084,9 @@ impl<'a> TypeChecker<'a> {
             .iter()
             .map(|constraint| constraint.predicate.clone())
             .collect();
+        self.effect_bindings_available = true;
         let body = self.check_body(intent, &output_shape, &mut env, &mut locals);
+        self.effect_bindings_available = false;
         self.input_proof_constraints.clear();
         let body = body?;
         if !self.resolved.source_functions.is_empty() {
@@ -3092,12 +3096,20 @@ impl<'a> TypeChecker<'a> {
         let signature = self.resolved.effect_signatures.get(&effect).cloned();
         if let Some(signature) = signature {
             if !self.fact_matches_source_import(&effect, &signature.coordinate, &signature.lawpack)
-                || !signature.type_parameters.is_empty()
             {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
                     CompilerErrorKind::MissingContextFact,
                     format!("effect `{effect}` has no exact non-generic lawpack signature"),
+                    span,
+                ));
+                return None;
+            }
+            if !signature.type_parameters.is_empty() {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                    format!("generic semantic effects such as `{effect}` are not supported by source compilation"),
                     span,
                 ));
                 return None;
@@ -3946,6 +3958,24 @@ impl<'a> TypeChecker<'a> {
                 &signature.coordinate,
                 &signature.lawpack,
             ) {
+                if !signature.type_parameters.is_empty() {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        format!("generic semantic effects such as `{source_coordinate}` are not supported by source compilation"),
+                        span,
+                    ));
+                    return None;
+                }
+                if !self.effect_bindings_available {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        format!("semantic effect `{source_coordinate}` is unavailable in this pure context"),
+                        span,
+                    ));
+                    return None;
+                }
                 let failures = signature
                     .failure_payload_types
                     .keys()
