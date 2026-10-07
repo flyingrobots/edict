@@ -146,3 +146,39 @@ fn return_budget_unicode_record_maximum_matches_canonical_encoder() {
         compile_to_core(&parsed, &context(u64::try_from(actual.len() - 1).unwrap())).unwrap_err();
     assert_eq!(errors[0].kind, CompilerErrorKind::InvalidBound);
 }
+
+#[test]
+fn return_budget_supports_every_accepted_imported_integer_width() {
+    let parsed = parse_module("package return_budget.example@1; use lawpack bounds.example@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as bounds; intent run(input: bounds.Small) returns bounds.Small profile p.read basis none budget <= p.small { return input; }").unwrap();
+    for (width, maximum) in [
+        ("I8", 2),
+        ("U8", 2),
+        ("I16", 3),
+        ("U16", 3),
+        ("I32", 5),
+        ("U32", 5),
+        ("I64", 9),
+        ("U64", 9),
+    ] {
+        let fact = TypeShapeFact {
+            lawpack: ResourceRef {
+                coordinate: "bounds.example@1".to_owned(),
+                digest: Some(
+                    "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+                        .to_owned(),
+                ),
+            },
+            coordinate: "bounds.example@1.Small".to_owned(),
+            definition: width.to_owned(),
+        };
+        compile_to_core(&parsed, &context(maximum).with_type_shape(fact.clone()))
+            .expect("every accepted Core integer width has a canonical bound");
+        let errors =
+            compile_to_core(&parsed, &context(maximum - 1).with_type_shape(fact)).unwrap_err();
+        assert_eq!(
+            errors[0].kind,
+            CompilerErrorKind::InvalidBound,
+            "{width}: {errors:?}"
+        );
+    }
+}

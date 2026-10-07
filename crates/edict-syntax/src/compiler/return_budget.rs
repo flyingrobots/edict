@@ -1,4 +1,4 @@
-//! Canonical result-size bounds apply to every intent, independently of helpers.
+//! Canonical result-size bounds apply to ordinary intent results, independently of helpers.
 use super::{
     error, CompilerErrorKind, CompilerStage, ResolvedIntent, TypeChecker, TypeKind, TypeShape,
 };
@@ -48,6 +48,8 @@ fn encoded_maximum(shape: &TypeShape) -> Result<u64, BoundFailure> {
     match &shape.kind {
         TypeKind::Bool => Ok(1),
         TypeKind::Int { width } => match width.as_str() {
+            "I8" | "U8" => Ok(2),
+            "I16" | "U16" => Ok(3),
             "I32" | "U32" => Ok(5),
             "I64" | "U64" => Ok(9),
             _ => Err(BoundFailure::Unsupported),

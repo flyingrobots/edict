@@ -195,3 +195,7 @@ Out of scope:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-062 | implemented | Nominal encoding bound | CSPINE-REQ-046 | The exact authenticated nominal representation fits at 26 bytes and rejects at 25. | return_budget_preserves_imported_nominal_representation_bounds | crates/edict-syntax/tests/return_budget.rs | Nominal authority remains intact. |
 | CSPINE-TP-063 | implemented | Canonical encoder witness | CSPINE-REQ-046 | The worst-case Unicode record has 16,662 canonical bytes, fits at that budget, and rejects one byte below it. | return_budget_unicode_record_maximum_matches_canonical_encoder | crates/edict-syntax/tests/return_budget.rs | Uses the independent public canonical encoder. |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-064 | implemented | Imported integer families | CSPINE-REQ-046 | Every accepted Core integer width fits at its canonical maximum and rejects one byte below it, including authenticated I8/U8/I16/U16 exports. | return_budget_supports_every_accepted_imported_integer_width | crates/edict-syntax/tests/return_budget.rs | Does not broaden source builtin scalar syntax. |
