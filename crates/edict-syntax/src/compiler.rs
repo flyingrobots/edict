@@ -3938,12 +3938,7 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        if let Some(signature) = self
-            .resolved
-            .effect_signatures
-            .get(&source_coordinate)
-            .cloned()
-        {
+        if let Some(signature) = self.resolved.effect_signatures.get(&source_coordinate) {
             if self.fact_matches_source_import(
                 &source_coordinate,
                 &signature.coordinate,
