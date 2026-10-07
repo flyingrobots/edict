@@ -78,3 +78,48 @@ fn bare_unknown_call_remains_unresolved_function() {
     assert_eq!(cause.stage, CompilerStage::TypeCheck);
     assert!(source[cause.span.start..cause.span.end].contains("hello.update(input)"));
 }
+
+#[test]
+fn legacy_context_without_signatures_does_not_claim_no_exports() {
+    let source = r#"package a.b@1;
+use lawpack hello.echo@1 digest "sha256:1111111111111111111111111111111111111111111111111111111111111111" as hello;
+type Input = { id: String<max=16>, };
+type Receipt = { id: String<max=16>, };
+type Output = { id: String<max=16>, };
+intent t(input: Input) returns Output
+  profile p.effectful
+  basis none
+  budget <= p.tiny {
+  let receipt: Receipt = hello.known(input.id)
+    else { rejected(reason) => domain.WriteRejected };
+  return { id: input.id };
+}"#;
+    let context = edict_syntax::CompilerContext::new()
+        .with_operation_profile("p.effectful", "test.effectful@1")
+        .with_operation_profile_write_classes("p.effectful", [WriteClass::Create])
+        .with_budget(
+            "p.tiny",
+            edict_syntax::CoreBudget {
+                max_steps: 100,
+                max_allocated_bytes: 512,
+                max_output_bytes: 512,
+            },
+        )
+        .with_effect_write_class("hello.known", WriteClass::Create);
+    let known = parse_module(source).expect("legacy effect source parses");
+    compile_to_core(&known, &context)
+        .expect("legacy write-class context still compiles its known effect");
+    assert_eq!(source.matches("hello.known(input.id)").count(), 1);
+    let unknown = source.replace("hello.known(input.id)", "hello.unknown(input.id)");
+    let module = parse_module(&unknown).expect("unknown legacy effect parses");
+    let errors =
+        compile_to_core(&module, &context).expect_err("unknown effect has no write-class fact");
+    let cause = &errors[0];
+    assert_eq!(cause.kind, CompilerErrorKind::MissingContextFact);
+    assert_eq!(cause.stage, CompilerStage::TypeCheck);
+    assert!(unknown[cause.span.start..cause.span.end].contains("hello.unknown(input.id)"));
+    assert!(cause
+        .message
+        .contains("missing authenticated effect export information"));
+    assert!(!cause.message.contains("exports: none"));
+}

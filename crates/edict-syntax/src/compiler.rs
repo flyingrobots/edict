@@ -3913,14 +3913,16 @@ impl<'a> TypeChecker<'a> {
             })
             .map(|(source, _)| source.as_str())
             .collect::<Vec<_>>();
-        let exports = if available.is_empty() {
-            "none".to_owned()
-        } else {
-            available.join(", ")
-        };
+        if available.is_empty() {
+            return format!(
+                "effect `{effect}` has no compiler context fact; missing authenticated effect export information for imported lawpack `{}`",
+                import.resource.coordinate
+            );
+        }
         format!(
-            "effect `{effect}` has no compiler context fact; imported lawpack `{}` has these available effect exports: {exports}",
-            import.resource.coordinate
+            "effect `{effect}` has no compiler context fact; available authenticated effect exports in this compiler context for imported lawpack `{}`: {}",
+            import.resource.coordinate,
+            available.join(", ")
         )
     }
 

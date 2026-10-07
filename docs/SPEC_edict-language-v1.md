@@ -2774,7 +2774,9 @@ An unknown effect in an explicit effect binding reports `MissingContextFact`
 with available exact-owner exports under the selected source alias. A bare
 unknown call retains `UnresolvedFunction`; an unknown coordinate does not
 establish whether the author intended an effect or a pure helper. This diagnostic guidance does not
-provide a capability or alter effect/profile compatibility. Dependent-error
+provide a capability or alter effect/profile compatibility. If the context has
+no authenticated export signatures, the diagnostic reports missing information
+rather than asserting an empty lawpack export surface. Dependent-error
 recovery remains a separate compiler behavior.
 
 ### Edict Source Pipeline

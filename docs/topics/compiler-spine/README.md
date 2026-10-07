@@ -46,7 +46,10 @@ An unknown effect in an explicit effect binding retains `MissingContextFact`
 and lists available effects from its exact imported owner and source alias.
 A bare unknown call retains `UnresolvedFunction`; the compiler does not infer
 whether an unknown coordinate denotes an effect or a pure helper. Unrelated write-class facts do not
-become exported capability guidance. Valid mapped calls remain unchanged.
+become exported capability guidance. Available names describe authenticated
+signatures in the supplied compiler context. When those signatures are absent,
+the diagnostic reports missing export information; it does not claim the
+lawpack exports nothing. Valid mapped calls remain unchanged.
 [CSPINE-REQ-047]
 
 
