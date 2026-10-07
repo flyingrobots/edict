@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Check direct bare effect comparison outputs against their peer before failure-map guidance, preserving symmetric comparison rules.
+
 ### Changed
 
 - Propagate predicate output requirements into direct and conditional effect calls before failure-map guidance; describe only domain-mappable names in the current contract.

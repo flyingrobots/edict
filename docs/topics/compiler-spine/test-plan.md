@@ -205,3 +205,9 @@ Out of scope:
 | CSPINE-TP-083 | implemented | Authenticated empty surface | CSPINE-REQ-047 | A validated lawpack with zero effects reports a known empty authenticated surface, while legacy contexts retain missing-information guidance. | authenticated_empty_effect_surface_is_not_missing_information | crates/edict-syntax/tests/lawpack.rs | Exact imported owner remains required. |
 | CSPINE-TP-084 | implemented | Mappable failure guidance | CSPINE-REQ-047 | Non-domain failures are omitted from map advice; effects with no domain-mappable failures identify the current no-map binding limitation. | failure_guidance_names_only_domain_mappable_coordinates | crates/edict-syntax/tests/lawpack.rs | Does not enable zero-map source bindings. |
 | CSPINE-TP-085 | implemented | Effect predicate expectation | CSPINE-REQ-047 | Non-Boolean effect outputs in direct and conditional predicates report ExpectedPredicate before map advice; Boolean controls compile. | effect_predicates_report_expected_predicate_before_map_guidance | crates/edict-syntax/tests/effect_diagnostics.rs | Input failures and pure-helper checks remain separate. |
+
+## Effect Comparison Diagnostic Priority
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-086 | implemented | Comparison output | CSPINE-REQ-047 | Boolean comparison control compiles; authenticated non-Boolean effect operands in either position report TypeMismatch before failure-map guidance. | effect_comparisons_report_type_mismatch_before_map_guidance | crates/edict-syntax/tests/effect_diagnostics.rs | Preserve ordinary comparison inference. |

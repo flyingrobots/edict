@@ -752,13 +752,14 @@ struct LetStatement<'a> {
 enum EffectOutputExpectation<'a> {
     Value(Option<&'a TypeShape>),
     Predicate,
+    Comparison(&'a TypeShape),
 }
 
 impl<'a> EffectOutputExpectation<'a> {
     fn value(self) -> Option<&'a TypeShape> {
         match self {
             Self::Value(shape) => shape,
-            Self::Predicate => None,
+            Self::Predicate | Self::Comparison(_) => None,
         }
     }
 
@@ -769,6 +770,9 @@ impl<'a> EffectOutputExpectation<'a> {
             }
             Self::Predicate if !matches!(output.kind, TypeKind::Bool) => {
                 Some(CompilerErrorKind::ExpectedPredicate)
+            }
+            Self::Comparison(peer) if !comparable(peer, output) => {
+                Some(CompilerErrorKind::TypeMismatch)
             }
             _ => None,
         }
@@ -3628,7 +3632,24 @@ impl<'a> TypeChecker<'a> {
                 let right = self.check_expr_with_expected(rhs, env, Some(&left.ty))?;
                 (left, right)
             }
-            _ => (self.check_expr(lhs, env)?, self.check_expr(rhs, env)?),
+            _ if self.is_authenticated_effect_call(lhs) => {
+                let right = self.check_expr(rhs, env)?;
+                let left = self.check_expr_with_effect_expectation(
+                    lhs,
+                    env,
+                    EffectOutputExpectation::Comparison(&right.ty),
+                )?;
+                (left, right)
+            }
+            _ => {
+                let left = self.check_expr(lhs, env)?;
+                let right = self.check_expr_with_effect_expectation(
+                    rhs,
+                    env,
+                    EffectOutputExpectation::Comparison(&left.ty),
+                )?;
+                (left, right)
+            }
         };
         if comparable(&left.ty, &right.ty) {
             Some(CorePredicate::Compare {
@@ -3645,6 +3666,25 @@ impl<'a> TypeChecker<'a> {
             ));
             None
         }
+    }
+
+    fn is_authenticated_effect_call(&self, expr: &Expr) -> bool {
+        let Expr::Call { callee, .. } = expr else {
+            return false;
+        };
+        let Some(coordinate) = plain_callee_coordinate(callee) else {
+            return false;
+        };
+        self.resolved
+            .effect_signatures
+            .get(&coordinate)
+            .is_some_and(|signature| {
+                self.fact_matches_source_import(
+                    &coordinate,
+                    &signature.coordinate,
+                    &signature.lawpack,
+                )
+            })
     }
 
     fn check_expr(

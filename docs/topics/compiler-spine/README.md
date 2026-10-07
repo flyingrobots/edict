@@ -301,3 +301,5 @@ The following are not implemented by this compiler-spine slice:
 Those items remain assigned to later lowerability/admission milestones.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
+
+A direct authenticated bare effect used as a comparison operand is checked against its typed peer before failure-map guidance. The requirement uses symmetric comparability, preserving ordinary comparison compatibility. Existing integer-literal inference remains unchanged. This rule covers direct effect calls; it does not establish general recovery for multiple invalid operands or dependent bindings.

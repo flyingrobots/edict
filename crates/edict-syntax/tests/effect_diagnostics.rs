@@ -290,3 +290,26 @@ fn effect_predicates_report_expected_predicate_before_map_guidance() {
         assert!(!errors[0].message.contains("with `else`"));
     }
 }
+
+#[test]
+fn effect_comparisons_report_type_mismatch_before_map_guidance() {
+    for comparison in [
+        "hello.createGreeting(input) == true",
+        "true == hello.createGreeting(input)",
+    ] {
+        let source = SOURCE.replace(
+            "  let receipt:",
+            &format!("  require {comparison} else hello.AlreadyExists;\n  let receipt:"),
+        );
+        let control = source.replace(
+            &format!("require {comparison} else hello.AlreadyExists;"),
+            "require true == true else hello.AlreadyExists;",
+        );
+        compile(&control).expect("Boolean comparison control compiles");
+        let errors = compile(&source).expect_err("effect receipt cannot compare to Boolean");
+        assert_eq!(errors[0].kind, CompilerErrorKind::TypeMismatch);
+        assert!(source[errors[0].span.start..errors[0].span.end]
+            .contains("hello.createGreeting(input)"));
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+}
