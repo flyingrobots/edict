@@ -7,6 +7,38 @@ plan that keeps those artifacts visible from the repository.
 Dates are target dates, not promises. A release can move, but the GitHub
 milestone and this roadmap must move together.
 
+## Author Study Repair Plan
+
+This plan addresses the confirmed flaws in the [2026-10-06 author study](docs/studies/2026-10-06-edict-feedback.md).
+The [claim audit](docs/plans/study-feedback/AUDIT.md) records confirmed facts, rejected claims, and evidence limits.
+These tasks complete the study response. They do not complete every planned Edict release.
+
+The compiler needs a return-size check for every intent, accurate effect diagnostics, and structured application-build errors.
+The entry documentation needs current CLI/runtime boundaries and clear import-digest instructions.
+An application-owned causal-cell example must replace the apparent need to change fixture constants.
+CAS and key-bound enforcement require compatible generic Echo changes before Edict can ship their artifacts.
+The plan preserves existing release sections and their separate scope.
+
+Execute the tasks in this order. Each task has one issue and one independently mergeable outcome.
+F01, F02, F03, F04, F05, and F08 have no Edict implementation prerequisites.
+F06 requires F01. F07 requires F01 and compatible Echo CAS support.
+F08 requires compatible Echo key-bound support. External edges remain unresolved until their integration evidence exists.
+The order below is a work sequence, not a claim that every adjacent task is a prerequisite.
+
+- [ ] [F01: Enforce canonical return-size bounds for every intent](docs/plans/study-feedback/F01.md) — [#231](https://github.com/flyingrobots/edict/issues/231).
+- [ ] [F02: Report the effect call cause without dependent diagnostic errors](docs/plans/study-feedback/F02.md) — [#232](https://github.com/flyingrobots/edict/issues/232).
+- [ ] [F03: Emit structured compiler diagnostics for application builds](docs/plans/study-feedback/F03.md) — [#233](https://github.com/flyingrobots/edict/issues/233).
+- [ ] [F04: Correct README safety guarantees and compiler/runtime status](docs/plans/study-feedback/F04.md) — [#229](https://github.com/flyingrobots/edict/issues/229).
+- [ ] [F05: Explain the lawpack import digest and digest-mismatch error](docs/plans/study-feedback/F05.md) — [#234](https://github.com/flyingrobots/edict/issues/234).
+- [ ] [F06: Document a configurable Echo-executable causal-cell lawpack](docs/plans/study-feedback/F06.md) — [#235](https://github.com/flyingrobots/edict/issues/235).
+- [ ] [F07: Add an executable causal-cell compare-and-set capability](docs/plans/study-feedback/F07.md) — [#236](https://github.com/flyingrobots/edict/issues/236).
+- [ ] [F08: Preserve and enforce causal-cell key bounds at the Echo boundary](docs/plans/study-feedback/F08.md) — [#237](https://github.com/flyingrobots/edict/issues/237).
+
+Each behavior task requires RED, GREEN, and `cargo xtask verify` on the final candidate.
+Each PR requires Code Lawyer, independent agy-review, required bot review, green CI, and no actionable unresolved findings.
+Record the merged PR and integration commit in the task before checking its box.
+Do not mark a blocked or compiler-only result as a completed runtime fix.
+
 ## Release Gates
 
 Every release cut must satisfy these gates on the release commit:
