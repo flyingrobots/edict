@@ -232,6 +232,38 @@ fn generic_effect_reports_unsupported_shape_before_mapping_guidance() {
 }
 
 #[test]
+fn authored_effect_type_arguments_refuse_mapping_guidance() {
+    let bundle = decode_lawpack_bundle(MANIFEST_BYTES, EXPORTS_BYTES).expect("load lawpack");
+    let adapter =
+        decode_lawpack_adapter(&bundle, "echo.dpo@1", ADAPTER_BYTES).expect("load exact adapter");
+    let mapped = CREATE_GREETING_SOURCE.replace(
+        "hello.createGreeting(input)",
+        "hello.createGreeting<U64>(input)",
+    );
+    assert_eq!(
+        mapped.matches("hello.createGreeting<U64>(input)").count(),
+        1
+    );
+    let mapping = "\n    else { alreadyExists(existing) => hello.AlreadyExists }";
+    assert_eq!(mapped.matches(mapping).count(), 1);
+    for source in [mapped.clone(), mapped.replace(mapping, "")] {
+        let module = parse_module(&source).expect("authored type arguments parse");
+        let preparation = prepare_lawpack_compilation(&module, &bundle, &adapter)
+            .expect("authenticate nongeneric effect");
+        let errors = compile_to_core(&module, preparation.compiler_context())
+            .expect_err("effect type arguments remain unsupported");
+        let cause = &errors[0];
+        assert_eq!(cause.kind, CompilerErrorKind::UnsupportedSourceShape);
+        assert_eq!(cause.stage, CompilerStage::TypeCheck);
+        assert!(
+            source[cause.span.start..cause.span.end].contains("hello.createGreeting<U64>(input)")
+        );
+        assert!(cause.message.contains("type arguments"));
+        assert!(!cause.message.contains("with `else`"));
+    }
+}
+
+#[test]
 fn valid_function_does_not_poison_intent_effect_guidance() {
     let mut adapter_value = decode_canonical_cbor(ADAPTER_BYTES).expect("decode control adapter");
     let budget = field_mut(

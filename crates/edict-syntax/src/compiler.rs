@@ -3778,7 +3778,7 @@ impl<'a> TypeChecker<'a> {
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
-        let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
+        let (source_coordinate, fact) = self.resolve_pure_function(callee, type_args, span)?;
         if self
             .resolved
             .effect_write_classes
@@ -3941,6 +3941,7 @@ impl<'a> TypeChecker<'a> {
     fn resolve_pure_function(
         &mut self,
         callee: &Expr,
+        type_args: &[TypeRef],
         span: Span,
     ) -> Option<(String, PureFunctionFact)> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
@@ -3958,6 +3959,15 @@ impl<'a> TypeChecker<'a> {
                 &signature.coordinate,
                 &signature.lawpack,
             ) {
+                if !type_args.is_empty() {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "semantic effect calls do not support effect type arguments",
+                        span,
+                    ));
+                    return None;
+                }
                 if !signature.type_parameters.is_empty() {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,

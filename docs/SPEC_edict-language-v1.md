@@ -2769,6 +2769,8 @@ helpers. A bare nongeneric effect in a pure-call position within an intent body 
 `EffectWithoutFailureMapping` and names the declared failure variants. Authors
 must use the supported annotated effect binding and its required mapping.
 Generic semantic effects remain unsupported in both bare and mapped calls.
+Explicit effect type arguments also report `UnsupportedSourceShape` in mapped
+and bare forms before failure-map guidance.
 Effects in source-owned pure functions and intent clauses report
 `UnsupportedSourceShape` without recommending a binding that is illegal there.
 An effect with no declared failures reports that bindings without a failure map

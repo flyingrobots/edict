@@ -10,6 +10,8 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Reject explicit semantic-effect type arguments before suggesting an unsupported failure-map rewrite.
+
 - Report `EffectWithoutFailureMapping` for exact imported effects used as pure
   calls in intent bodies, with declared failure names and the call span. Generic
   effects and effects in pure contexts report `UnsupportedSourceShape`,

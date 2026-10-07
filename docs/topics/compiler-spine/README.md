@@ -43,7 +43,8 @@ effect reports
 helper. The diagnostic names the declared failures and retains the call span.
 Generic semantic effects and effects in pure contexts, including source-owned
 functions and intent clauses, report `UnsupportedSourceShape` rather than
-recommending an unavailable effect binding. Mapping guidance is enabled only
+recommending an unavailable effect binding. Explicit effect type arguments
+also report `UnsupportedSourceShape` in mapped and bare forms. Mapping guidance is enabled only
 while checking an intent body and is restored afterward.
 For a zero-failure effect, it reports that bindings without a failure map are
 unsupported instead of suggesting an empty `else` map.
