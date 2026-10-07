@@ -10,6 +10,10 @@ versions still track specification maturity rather than a released product.
 
 ### Changed
 
+- Explain the `edict.lawpack/v1` domain-framed manifest identity in import
+  guidance. `SourceImportMismatch` now names the required domain and exact
+  manifest digest, preserving the failure kind and import digest path.
+
 - Added first-order nongeneric source pure functions with ordered typed
   parameters, immutable bindings and terminal returns. Source-owned Core bodies
   retain call authority, alpha-normalized identity, conservative checked costs,
