@@ -15,13 +15,16 @@
     "tests_failed": 5
   },
   "green": {
-    "command": "cargo test --locked -p edict-syntax --tests",
-    "result": "passed, including all five return_budget tests"
+    "command": "cargo test --locked -p edict-syntax --test byte_concat --test return_budget && cargo xtask verify",
+    "source_commit": "cfcf61e597abb5ab6bb392af143a18093879d66f",
+    "log": "f01-admitted-final.txt",
+    "result": "12 focused regressions and full workspace gate passed",
+    "note": "Exact admitted command; broader syntax tests also occur inside cargo xtask verify."
   },
   "full_gate": {
     "command": "cargo xtask verify",
     "exit": 0,
-    "log": "f01-verify-final.txt",
+    "log": "f01-verify-superseded-cache-sensitive.txt",
     "note": "Superseded by final_candidate, which verifies the committed candidate with explicit workspace invalidation and strict measurement failures."
   },
   "resources": {
@@ -65,5 +68,12 @@
     "cache_discipline": "Invalidate all six owned workspace packages and xtask before each source snapshot. Retain third-party dependency artifacts. A timestamp-stale default-feature result was rejected; this fresh run supersedes it.",
     "measurement_discipline": "du and df failures propagate. A monitoring exception stops the entire owned worker."
   },
-  "guard_sha256": "0dfd87faa0af3ee677d38722bb2e04b8a749626e5a7265fb6d727fc8bff37631"
+  "guard_sha256": "1c0b5f0214f14d55c3182072075ddbb62ba2ab526c45f234aa655d7327ccd002",
+  "guard_optimization": {
+    "command": "python3 -O docs/plans/study-feedback/evidence/guard-optimization-regression.py.txt",
+    "red_log": "pr241-guard-red.txt",
+    "green_log": "pr241-guard-green.txt",
+    "green_result": "optimized code refuses all six limit violations",
+    "fix_commit": "386d8d2"
+  }
 }

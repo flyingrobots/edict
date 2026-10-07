@@ -1,0 +1,24 @@
+# F01 Validation Evidence
+
+This index separates passed runs, failed runs, and superseded observations.
+Logs retain their original bytes. A file's location in this directory does not make it passing evidence.
+
+| Artifact | Observed result | Scope and limit |
+| --- | --- | --- |
+| [F01-red.txt](F01-red.txt) | RED: 3 failed | Initial tests existed before implementation. This scope remains historical evidence. |
+| [f01-red-parent.txt](f01-red-parent.txt) | RED: 5 failed | Final original regression functions on planning parent 313442b. It does not supersede the initial three-test scope. |
+| [f01-partial-syntax-missing-clippy.txt](f01-partial-syntax-missing-clippy.txt) | Partial: syntax passed, clippy unavailable | Failed setup for the strict check. Not full-gate evidence. |
+| [f01-verify-superseded-cache-sensitive.txt](f01-verify-superseded-cache-sensitive.txt) | Exit 0, superseded | This run lacked explicit workspace artifact invalidation. Do not use it as fresh-source proof. |
+| [f01-admitted-final.txt](f01-admitted-final.txt) | GREEN | Fresh default-feature regressions and full cargo xtask verify on cfcf61e. Does not approve later review fixes. |
+| [pr241-width-red.txt](pr241-width-red.txt) | RED | Imported I8 output incorrectly reports UnsupportedSourceShape. |
+| [pr241-width-green.txt](pr241-width-green.txt) | GREEN | All eight accepted imported integer widths fit/reject at their encoding boundary. |
+| [pr241-guard-red.txt](pr241-guard-red.txt) | RED | Optimized Python removes assertions and admits a bad free-space condition. |
+| [pr241-guard-green.txt](pr241-guard-green.txt) | GREEN | Optimized guard refuses all six invalid resource measurements. |
+| [pr241-oracles-green.txt](pr241-oracles-green.txt) | GREEN | Overflow branches and exact source-template mutation witnesses. |
+| [f01-goldens.txt](f01-goldens.txt) | Generated fixtures | Regeneration alone is not checking. The admitted full gate subsequently checks these outputs. |
+
+[F01-validation.json](F01-validation.json) records exact commands, source versions, final-run relationships, and measured resource use.
+[guard-runner.py.txt](guard-runner.py.txt) retains the project helper. It is not an installed general runner.
+[guard-optimization-regression.py.txt](guard-optimization-regression.py.txt) executes refusal behavior under optimized Python in Docker.
+
+The original study is source-preserved separately. Its runtime claims are not inferred from these compiler logs.
