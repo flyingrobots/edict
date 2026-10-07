@@ -50,3 +50,11 @@ A failed measurement, timeout, or budget breach stops the worker and its child w
 The workload timeout is 2,400 seconds. The worker has four CPUs, 12 GiB memory, and a 512-process limit.
 The log budget is 128 MiB, including three bounded 1 MiB Docker log files.
 This source audit is not test evidence. Validation receipts will record actual usage and results.
+
+## Keep Context Supplied After the Initial Audit
+
+The user directs CAS design to Keep, Echo's eventual storage backend.
+Keep `001ae2a5babdbdab11c0c8c4fec3829dfc44f1dd` describes content-addressed storage and conditional retention publication.
+Its reference adapter is explicitly non-durable. Its transition planner checks expected generations and predecessor identity without I/O.
+[F07](F07.md) records the source and separates storage identity from the application's compare-and-set effect.
+This context does not establish a current Echo-to-Keep integration or prove durability for the new effect.
