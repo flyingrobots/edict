@@ -188,7 +188,7 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-059 | implemented | Output budget | CSPINE-REQ-046 | Exact-fit output compiles; one byte below its maximum reports InvalidBound. The cases cover all supported output families, nested shapes, and header transitions without source functions. | return_budget_exact_fit_accepts_and_one_byte_less_rejects | crates/edict-syntax/tests/return_budget.rs | Includes four-byte Unicode scalar expansion. |
-| CSPINE-TP-060 | implemented | Bound overflow | CSPINE-REQ-046 | A return-size multiplication or addition overflow reports InvalidBound before Core exists. | return_budget_overflow_rejects_before_core | crates/edict-syntax/tests/return_budget.rs | Independent of source-function accounting. |
+| CSPINE-TP-060 | implemented | Bound overflow | CSPINE-REQ-046 | A string multiplication, payload/header addition, list multiplication, list-header addition, or record accumulation overflow reports InvalidBound before Core exists. | return_budget_overflow_rejects_before_core | crates/edict-syntax/tests/return_budget.rs | Independent of source-function accounting. |
 | CSPINE-TP-061 | implemented | Unsupported output | CSPINE-REQ-046 | An ordinary result containing opaque requests reports UnsupportedSourceShape instead of claiming a canonical bound. Request-only protocol returns and request-bearing inputs with bounded ordinary outputs remain accepted. | return_budget_refuses_opaque_requests_but_preserves_bounded_outputs | crates/edict-syntax/tests/return_budget.rs | No request runtime encoding is inferred. |
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |

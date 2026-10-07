@@ -70,12 +70,19 @@ fn return_budget_exact_fit_accepts_and_one_byte_less_rejects() {
 
 #[test]
 fn return_budget_overflow_rejects_before_core() {
-    for output in [
-        "String<max=18446744073709551615>",
-        "Bytes<max=18446744073709551615>",
-        "List<U64, max=18446744073709551615>",
+    for (declarations, output) in [
+        ("", "String<max=18446744073709551615>"),
+        ("", "Bytes<max=18446744073709551615>"),
+        ("", "List<U64, max=18446744073709551615>"),
+        // Payload multiplication fits U64, but the list header does not.
+        ("", "List<U64, max=2049638230412172401>"),
+        // Each field fits; the record's checked accumulation does not.
+        (
+            "type Result = { first: String<max=4611686018427387899>, second: U64 };",
+            "Result",
+        ),
     ] {
-        let parsed = parse_module(&source("", output)).expect("overflow source parses");
+        let parsed = parse_module(&source(declarations, output)).expect("overflow source parses");
         let errors =
             compile_to_core(&parsed, &context(u64::MAX)).expect_err("size overflow rejects");
         assert_eq!(errors[0].kind, CompilerErrorKind::InvalidBound);
