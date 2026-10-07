@@ -3142,7 +3142,7 @@ impl<'a> TypeChecker<'a> {
                 SignatureMismatchPosition::Input,
                 &expected_input,
                 &input.ty,
-                span,
+                expr_span(call),
             )
             .or_else(|| {
                 signature_diagnostic::mismatch(
@@ -3150,7 +3150,7 @@ impl<'a> TypeChecker<'a> {
                     SignatureMismatchPosition::Receipt,
                     binding_shape,
                     &effect_output,
-                    span,
+                    expr_span(call),
                 )
             }) {
                 self.errors.push(failure);

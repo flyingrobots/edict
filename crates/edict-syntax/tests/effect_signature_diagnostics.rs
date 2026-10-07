@@ -105,7 +105,11 @@ fn assert_signature_cause(source: &str, path: &str, expected: &str, actual: &str
     let cause = &errors[0];
     assert_eq!(cause.kind, CompilerErrorKind::TypeMismatch);
     assert_eq!(cause.stage, CompilerStage::TypeCheck);
-    assert!(source[cause.span.start..cause.span.end].contains("hello.createGreeting(input)"));
+    let call = "hello.createGreeting(input)";
+    assert_eq!(source.matches(call).count(), 1);
+    let start = source.find(call).expect("effect call");
+    assert_eq!(cause.span.start, start);
+    assert_eq!(cause.span.end, start + call.len());
     assert!(
         cause.message.contains(path),
         "missing field path: {cause:?}"
