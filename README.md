@@ -6,7 +6,7 @@ Authored Edict has no ambient filesystem, network, or database access. Imported 
 
 ## Edict in 10 Seconds
 
-The current application build crosses four boundaries. Each boundary has a distinct owner.
+The implemented compiler-to-runtime path has four boundaries. Application build ends at provider packaging. Runtime admission is a separate step.
 
 ```mermaid
 flowchart LR
