@@ -2770,8 +2770,10 @@ helpers. A bare effect in a pure-call position reports
 must use the supported annotated effect binding and its required mapping.
 An effect with no declared failures reports that bindings without a failure map
 are unsupported; the diagnostic does not suggest an empty `else` map.
-An unknown effect reports `MissingContextFact` with available exact-owner
-exports under the selected source alias. This diagnostic guidance does not
+An unknown effect in an explicit effect binding reports `MissingContextFact`
+with available exact-owner exports under the selected source alias. A bare
+unknown call retains `UnresolvedFunction`; an unknown coordinate does not
+establish whether the author intended an effect or a pure helper. This diagnostic guidance does not
 provide a capability or alter effect/profile compatibility. Dependent-error
 recovery remains a separate compiler behavior.
 

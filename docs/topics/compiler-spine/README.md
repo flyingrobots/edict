@@ -42,8 +42,10 @@ A bare call that resolves to an exact imported semantic effect reports
 helper. The diagnostic names the declared failures and retains the call span.
 For a zero-failure effect, it reports that bindings without a failure map are
 unsupported instead of suggesting an empty `else` map.
-An unknown effect retains `MissingContextFact` and lists available effects from
-its exact imported owner and source alias. Unrelated write-class facts do not
+An unknown effect in an explicit effect binding retains `MissingContextFact`
+and lists available effects from its exact imported owner and source alias.
+A bare unknown call retains `UnresolvedFunction`; the compiler does not infer
+whether an unknown coordinate denotes an effect or a pure helper. Unrelated write-class facts do not
 become exported capability guidance. Valid mapped calls remain unchanged.
 [CSPINE-REQ-047]
 

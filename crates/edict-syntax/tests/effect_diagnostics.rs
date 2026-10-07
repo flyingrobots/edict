@@ -63,3 +63,18 @@ fn mapped_effect_controls_remain_valid() {
         .replace("cells.echo@1", "hello.echo@1");
     compile(&renamed).expect("exact owner remains valid through renamed alias");
 }
+
+#[test]
+fn bare_unknown_call_remains_unresolved_function() {
+    let mapping = "\n    else { alreadyExists(existing) => hello.AlreadyExists }";
+    assert_eq!(SOURCE.matches(mapping).count(), 1);
+    assert_eq!(SOURCE.matches("hello.createGreeting(input)").count(), 1);
+    let source = SOURCE
+        .replace(mapping, "")
+        .replace("hello.createGreeting(input)", "hello.update(input)");
+    let errors = compile(&source).expect_err("unknown bare call has no helper fact");
+    let cause = &errors[0];
+    assert_eq!(cause.kind, CompilerErrorKind::UnresolvedFunction);
+    assert_eq!(cause.stage, CompilerStage::TypeCheck);
+    assert!(source[cause.span.start..cause.span.end].contains("hello.update(input)"));
+}
