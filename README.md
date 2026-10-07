@@ -573,7 +573,7 @@ is the external compiler-to-runtime witness. Its
 pins the exact Edict and Echo commits. Use those clean producer checkouts with
 its `tests/build.sh` and `tests/runtime.sh`; different producer pairs require
 their own evidence. The witness invokes Echo's generic
-[`cargo xtask run-edict-operation`](https://github.com/flyingrobots/echo/blob/a93e9d82e89455ed1fa0b63447c88de544b9da26/xtask/src/run_edict_operation.rs).
+[`cargo xtask run-edict-operation`](https://github.com/flyingrobots/echo/blob/490134c0753a3df6a74da366cc71c1248764dc5a/xtask/src/run_edict_operation.rs).
 This pointer does not claim that current producer heads match the locked pair.
 
 ### Using the library
