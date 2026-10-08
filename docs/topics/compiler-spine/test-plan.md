@@ -183,7 +183,7 @@ Out of scope:
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| CSPINE-REQ-049 | implemented | Failed lexical bindings suppress dependent errors while independent sibling/statement errors remain visible; failed returns differ from absent returns and poisoned values never lower into Core. | issue #240 |
+| CSPINE-REQ-049 | planned | Failed lexical bindings suppress dependent errors while independent sibling/statement errors remain visible; failed returns differ from absent returns and poisoned values never lower into Core. | issue #240 |
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -236,3 +236,7 @@ Out of scope:
 | CSPINE-TP-101 | implemented | Source function recovery | CSPINE-REQ-049 | Failed function locals suppress dependent uses while later independent locals remain diagnosed; a present failed return is not reported absent. | source_function_failed_locals_preserve_later_causes | crates/edict-syntax/tests/binding_recovery.rs | Invalid functions cannot produce Core. |
 
 | CSPINE-TP-102 | implemented | Require failure arms | CSPINE-REQ-049 | Failed predicates do not hide terminal/continuing payload causes; invalid continuing reason and payload are checked independently. | poisoned_require_predicate_keeps_failure_payload_causes, invalid_require_reason_keeps_independent_payload_cause | crates/edict-syntax/tests/binding_recovery.rs | No Core require is built from missing parts. |
+
+| CSPINE-TP-103 | implemented | Record family mismatch | CSPINE-REQ-049 | A record containing a poisoned field still reports its independent non-record annotation mismatch; the same record remains compatible with a record annotation. | poisoned_record_retains_non_record_annotation_mismatch | crates/edict-syntax/tests/binding_recovery.rs | PR247 Codex finding, separate from field-width failures. |
+
+CSPINE-REQ-049 remains planned as a complete requirement: the implemented cases above establish only their named paths. PR247 review still identifies missing comparison, conditional, invalid-annotation initializer, later-call-argument, failed-request-binder and contextual-yield recovery. Loop, byte-prelude and reason-root paths also require audit. These are acceptance gaps, not certified exclusions.

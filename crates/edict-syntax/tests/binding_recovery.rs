@@ -418,3 +418,20 @@ fn invalid_require_reason_keeps_independent_payload_cause() {
         "missingIndependentPayload"
     );
 }
+
+#[test]
+fn poisoned_record_retains_non_record_annotation_mismatch() {
+    let valid = insert_bindings("  let failed = true;\n  let chosen: Bool = { item: failed };");
+    check_kinds(&valid, &[CompilerErrorKind::TypeMismatch]);
+    let compatible = valid.replace("chosen: Bool", "chosen");
+    compile(&compatible).expect("valid record family control");
+    let source = valid.replace("let failed = true;", "let failed = missingRecordCause;");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert!(source[errors[1].span.start..errors[1].span.end].contains("{ item: failed }"));
+}

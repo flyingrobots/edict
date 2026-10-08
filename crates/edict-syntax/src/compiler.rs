@@ -4321,6 +4321,13 @@ impl<'a> TypeChecker<'a> {
                         ));
                     }
                 }
+            } else if expected.is_some() {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "record value does not match its non-record expected type",
+                    span,
+                ));
             }
             return None;
         }
