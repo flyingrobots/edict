@@ -761,6 +761,8 @@ enum EffectOutputExpectation<'a> {
     Value(Option<&'a TypeShape>),
     Predicate,
     Concatenation,
+    ConcatenationPeer(&'a Expr),
+    String,
     Bytes,
     Unsigned(Option<&'a TypeShape>),
     Comparison(&'a TypeShape),
@@ -778,6 +780,8 @@ impl<'a> EffectOutputExpectation<'a> {
             Self::Value(shape) | Self::Unsigned(shape) => shape,
             Self::Predicate
             | Self::Concatenation
+            | Self::ConcatenationPeer(_)
+            | Self::String
             | Self::Bytes
             | Self::Comparison(_)
             | Self::ComparisonLiteral(_)
@@ -814,7 +818,7 @@ impl<'a> EffectOutputExpectation<'a> {
             Self::Value(Some(expected)) if !compatible(expected, output) => {
                 Some(CompilerErrorKind::TypeMismatch)
             }
-            Self::Concatenation
+            Self::Concatenation | Self::ConcatenationPeer(_)
                 if !matches!(
                     output.kind,
                     TypeKind::String { .. } | TypeKind::Bytes { .. }
@@ -826,6 +830,9 @@ impl<'a> EffectOutputExpectation<'a> {
                 if !matches!(&output.kind, TypeKind::Int { width } if width == "U32" || width == "U64")
                     || expected.is_some_and(|shape| !compatible(shape, output)) =>
             {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::String if !matches!(output.kind, TypeKind::String { .. }) => {
                 Some(CompilerErrorKind::TypeMismatch)
             }
             Self::Bytes if !matches!(output.kind, TypeKind::Bytes { .. }) => {
@@ -4359,7 +4366,44 @@ impl<'a> TypeChecker<'a> {
         if let EffectOutputExpectation::ComparisonLiteral(peer) = terminal {
             self.check_expr_with_expected(peer, env, Some(projected))?;
         }
+        if let EffectOutputExpectation::ConcatenationPeer(peer) = terminal {
+            self.check_effect_concat_peer(projected, peer, env)?;
+        }
         Some(())
+    }
+
+    fn check_effect_concat_peer(
+        &mut self,
+        output: &TypeShape,
+        peer: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<()> {
+        let family = if matches!(output.kind, TypeKind::Bytes { .. }) {
+            EffectOutputExpectation::Bytes
+        } else {
+            EffectOutputExpectation::String
+        };
+        let mut probe = self.clone();
+        probe.errors.clear();
+        if let Some(value) = probe.check_expr_with_effect_expectation(peer, env, family) {
+            if let Some(kind) = family.rejection(&value.ty) {
+                probe.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    kind,
+                    "concatenation requires matching string or byte operand families",
+                    expr_span(peer),
+                ));
+            }
+        }
+        probe
+            .errors
+            .retain(|error| error.kind != CompilerErrorKind::EffectWithoutFailureMapping);
+        if probe.errors.is_empty() {
+            Some(())
+        } else {
+            self.errors.extend(probe.errors);
+            None
+        }
     }
 
     fn shape_for_helper_coordinate(
@@ -4585,13 +4629,14 @@ impl<'a> TypeChecker<'a> {
         let left = self.check_expr_with_effect_expectation(
             lhs,
             env,
-            EffectOutputExpectation::Concatenation,
+            EffectOutputExpectation::ConcatenationPeer(rhs),
         )?;
-        let right = self.check_expr_with_effect_expectation(
-            rhs,
-            env,
-            EffectOutputExpectation::Concatenation,
-        )?;
+        let family = match left.ty.kind {
+            TypeKind::Bytes { .. } => EffectOutputExpectation::Bytes,
+            TypeKind::String { .. } => EffectOutputExpectation::String,
+            _ => EffectOutputExpectation::Concatenation,
+        };
+        let right = self.check_expr_with_effect_expectation(rhs, env, family)?;
         if matches!(
             (&left.ty.kind, &right.ty.kind),
             (TypeKind::Bytes { .. }, TypeKind::Bytes { .. })

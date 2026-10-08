@@ -259,3 +259,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-124 | implemented | Unsigned effect operands | CSPINE-REQ-047 | Non-unsigned effect outputs used in subtraction report TypeMismatch before mapping guidance in either operand position. | effect_subtraction_rejects_incompatible_outputs_before_mapping | crates/edict-syntax/tests/effect_diagnostics.rs | Exact authenticated output and field projections; valid pure subtraction control. |
+
+## Matching Concatenation Families
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-125 | implemented | Mixed effect concatenation | CSPINE-REQ-047 | String effect projections and byte operands report TypeMismatch before mapping guidance in either order. | effect_concatenation_requires_matching_operand_families | crates/edict-syntax/tests/effect_diagnostics.rs | Valid byte/string controls; authenticated effect signature. |

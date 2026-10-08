@@ -448,3 +448,37 @@ fn effect_subtraction_rejects_incompatible_outputs_before_mapping() {
         assert!(!errors[0].message.contains("with `else`"));
     }
 }
+
+#[test]
+fn effect_concatenation_requires_matching_operand_families() {
+    let source = SOURCE.replace("intent createGreeting(input: hello.CreateGreetingInput)", "type WrappedInput = { request: hello.CreateGreetingInput, bytes: Bytes<max=1>, };\nintent createGreeting(input: WrappedInput)")
+        .replace("basis input.basis", "basis input.request.basis")
+        .replace("hello.createGreeting(input)", "hello.createGreeting(input.request)")
+        .replace("message: input.message", "message: input.request.message");
+    compile(&source).expect("wrapped authenticated effect input control");
+    for control in [
+        "input.bytes + input.bytes",
+        "input.request.key + input.request.key",
+    ] {
+        compile(&source.replace(
+            "  let receipt:",
+            &format!("  let joined = {control};\n  let receipt:"),
+        ))
+        .expect("matching family control");
+    }
+    for expression in [
+        "hello.createGreeting(input.request).key + input.bytes",
+        "input.bytes + hello.createGreeting(input.request).key",
+    ] {
+        let invalid = source.replace(
+            "  let receipt:",
+            &format!("  let joined = {expression};\n  let receipt:"),
+        );
+        let errors = compile(&invalid).expect_err("mixed families cannot concatenate");
+        assert_eq!(
+            errors[0].kind,
+            CompilerErrorKind::TypeMismatch,
+            "{expression}: {errors:?}"
+        );
+    }
+}

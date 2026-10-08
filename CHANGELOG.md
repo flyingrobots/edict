@@ -8,7 +8,7 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
-- Check effect output families for concatenation, length, slicing and unsigned subtraction before failure-mapping advice, including exported field projections.
+- Check effect output families for concatenation, length, slicing and unsigned subtraction before failure-mapping advice, including exported field projections and mismatched string/byte concatenation peers.
 
 - Check authenticated effect result field paths and their enclosing type constraints before failure-map guidance.
 
