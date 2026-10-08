@@ -3839,3 +3839,7 @@ The snapshot intent uses a semantic query effect because a pure lawpack helper
 cannot observe history state. If a future lawpack exposes a proof-only plan
 constructor, it must be named and classified as a non-runtime symbolic plan; it
 must not smuggle state-dependent output through a pure helper.
+
+## Exported effect signature mismatch detail
+
+An explicit mapped effect binding with incompatible authenticated input or receipt types reports `TypeMismatch` at the effect call span. Optional structured context identifies the input or receipt position and the deterministic first incompatible structural path. Expected input is the exported signature; expected receipt is the authored binding annotation. Actual input is the argument type; actual receipt is the exported output. Record fields compare in lexical depth-first order, missing/extra fields have an absent corresponding type, and nominal identity remains distinct. This diagnostic detail changes no type compatibility or effect authority.

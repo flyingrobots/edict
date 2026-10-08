@@ -8,6 +8,10 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Signature mismatch spans identify exactly the effect call, excluding its enclosing binding and failure handler.
+
+- Add typed first-difference detail to explicit effect signature `TypeMismatch` diagnostics, retaining the kind and call span. Build diagnostics expose optional `signatureMismatch` metadata; strict schema consumers must update their schema. `edict-syntax::CompilerError` struct-literal users must initialize its new optional field.
+
 ### Changed
 
 - Check every ordinary intent result against its declared canonical-CBOR output

@@ -394,3 +394,85 @@ fn write_external_action_application(root: &Path) -> PathBuf {
     );
     config_path
 }
+
+#[test]
+fn application_signature_mismatch_has_structured_field_context() {
+    let root = temp_tree("signature");
+    let config = write_external_action_application(&root);
+    let vendor = root.join("vendor/hello-echo");
+    fs::create_dir_all(&vendor).expect("create exact lawpack fixture");
+    for (name, bytes) in [
+        (
+            "manifest.cbor",
+            include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor").as_slice(),
+        ),
+        (
+            "exports.cbor",
+            include_bytes!("../../../fixtures/lawpack/hello-echo/exports.cbor").as_slice(),
+        ),
+        (
+            "adapter.cbor",
+            include_bytes!("../../../fixtures/lawpack/hello-echo/adapter.cbor").as_slice(),
+        ),
+        (
+            "configuration.cbor",
+            include_bytes!(
+                "../../../fixtures/lawpack/hello-echo/echo-operation-configuration.cbor"
+            )
+            .as_slice(),
+        ),
+    ] {
+        fs::write(vendor.join(name), bytes).expect("write exact lawpack resource");
+    }
+    let mut application: Value =
+        serde_json::from_slice(&fs::read(&config).expect("read config")).expect("config JSON");
+    application
+        .as_object_mut()
+        .expect("config object")
+        .remove("buildKind");
+    application["coordinate"] = json!("examples.hello_echo@1");
+    application["lawpacks"] = json!([{"manifest":"vendor/hello-echo/manifest.cbor","exports":"vendor/hello-echo/exports.cbor","adapter":"vendor/hello-echo/adapter.cbor","targetConfiguration":"vendor/hello-echo/configuration.cbor"}]);
+    application["externalActionResources"] = json!([]);
+    fs::write(
+        &config,
+        serde_json::to_vec(&application).expect("encode fixture config"),
+    )
+    .expect("write config");
+    let declaration = "type WideInput = { basis: String<max=128>, key: String<max=65>, message: String<max=256>, };\n\n";
+    let source = include_str!("../../../fixtures/lawpack/hello-echo/create-greeting.edict")
+        .replace(
+            "type GreetingCreated",
+            &format!("{declaration}type GreetingCreated"),
+        )
+        .replace("input: hello.CreateGreetingInput", "input: WideInput");
+    fs::write(root.join("src/observe-workspace.edict"), source).expect("write mismatch source");
+    let output = build(&config);
+    assert_eq!(output.status.code(), Some(2));
+    let stream = records(&output.stderr);
+    summary(&stream, "ApplicationCompilationFailed");
+    let cause = stream
+        .iter()
+        .find(|r| {
+            r["kind"] == "TypeMismatch"
+                && r["message"]
+                    .as_str()
+                    .is_some_and(|m| m.contains("input.key"))
+        })
+        .expect("field mismatch cause");
+    assert_eq!(cause["signatureMismatch"]["position"], "input");
+    assert_eq!(
+        cause["signatureMismatch"]["path"],
+        json!([{"kind":"field","name":"key"}])
+    );
+    assert_eq!(
+        cause["signatureMismatch"]["expectedType"],
+        "String<max=64,canonical=raw-utf8>"
+    );
+    assert_eq!(
+        cause["signatureMismatch"]["actualType"],
+        "String<max=65,canonical=raw-utf8>"
+    );
+    validate_stream(&stream);
+    assert!(!root.join(".build/application").exists());
+    fs::remove_dir_all(root).expect("remove owned fixture");
+}
