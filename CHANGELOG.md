@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Add application-owned configurable-cell authoring support with checked Unicode/byte limits, derived result budgets, and repeatable public lawpack-publication witnesses.
+
 - Correct the retained study validation helper to remove staged deletions and old rename paths from copied validation snapshots.
 
 - Signature mismatch spans identify exactly the effect call, excluding its enclosing binding and failure handler.
