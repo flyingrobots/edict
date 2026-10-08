@@ -462,3 +462,75 @@ fn poisoned_comparison_operand_keeps_independent_peer() {
         );
     }
 }
+
+#[test]
+fn poisoned_pure_conditionals_preserve_independent_arms() {
+    let valid = insert_bindings(
+        "  let failed = true;\n  let chosen: Bool = if failed then true else false;",
+    );
+    compile(&valid).expect("valid annotated conditional control");
+    let source = valid
+        .replace(
+            "let failed = true;",
+            "let failed = missingConditionalCause;",
+        )
+        .replace("then true else false", "then missingThen else missingElse");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+        ],
+    );
+    let origins: Vec<_> = errors
+        .iter()
+        .map(|e| &source[e.span.start..e.span.end])
+        .collect();
+    assert_eq!(
+        origins,
+        ["missingConditionalCause", "missingThen", "missingElse"]
+    );
+    for annotation in [": Bool", ""] {
+        let valid = insert_bindings(&format!(
+            "  let failed = true;\n  let chosen{annotation} = if true then failed else false;"
+        ));
+        compile(&valid).expect("valid conditional arm control");
+        let source = valid
+            .replace("let failed = true;", "let failed = missingArmCause;")
+            .replace("else false", "else missingIndependentArm");
+        let errors = check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::UnresolvedType,
+            ],
+        );
+        assert_eq!(
+            &source[errors[1].span.start..errors[1].span.end],
+            "missingIndependentArm"
+        );
+    }
+}
+
+#[test]
+fn poisoned_conditional_arm_keeps_independent_expected_type_error() {
+    let valid = insert_bindings(
+        "  let failed = true;\n  let chosen: Bool = if true then failed else false;",
+    );
+    compile(&valid).expect("valid conditional type control");
+    let source = valid
+        .replace("let failed = true;", "let failed = missingArmTypeCause;")
+        .replace("else false", "else \"wrong\"");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "\"wrong\""
+    );
+}

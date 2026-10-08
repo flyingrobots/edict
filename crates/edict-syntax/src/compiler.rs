@@ -4042,28 +4042,52 @@ impl<'a> TypeChecker<'a> {
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
-        let predicate = self.check_predicate(cond, env)?;
+        let predicate = self.check_predicate(cond, env);
         let (then_value, else_value) = match expected {
             Some(expected) => (
-                self.check_expr_with_expected(then, env, Some(expected))?,
-                self.check_expr_with_expected(els, env, Some(expected))?,
+                self.check_expr_with_expected(then, env, Some(expected)),
+                self.check_expr_with_expected(els, env, Some(expected)),
             ),
             None if is_bare_integer_literal(then) => {
-                let else_value = self.check_expr_with_expected(els, env, None)?;
-                let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
+                let else_value = self.check_expr_with_expected(els, env, None);
+                let then_value = else_value
+                    .as_ref()
+                    .and_then(|value| self.check_expr_with_expected(then, env, Some(&value.ty)));
                 (then_value, else_value)
             }
             None if is_bare_integer_literal(els) => {
-                let then_value = self.check_expr_with_expected(then, env, None)?;
-                let else_value = self.check_expr_with_expected(els, env, Some(&then_value.ty))?;
+                let then_value = self.check_expr_with_expected(then, env, None);
+                let else_value = then_value
+                    .as_ref()
+                    .and_then(|value| self.check_expr_with_expected(els, env, Some(&value.ty)));
                 (then_value, else_value)
             }
             None => (
-                self.check_expr_with_expected(then, env, None)?,
-                self.check_expr_with_expected(els, env, None)?,
+                self.check_expr_with_expected(then, env, None),
+                self.check_expr_with_expected(els, env, None),
             ),
         };
 
+        if then_value.is_none() || else_value.is_none() {
+            if let Some(expected) = expected {
+                for (value, source) in [(&then_value, then), (&else_value, els)] {
+                    if value
+                        .as_ref()
+                        .is_some_and(|value| !compatible(expected, &value.ty))
+                    {
+                        self.errors.push(error(
+                            CompilerStage::TypeCheck,
+                            CompilerErrorKind::TypeMismatch,
+                            "conditional arm does not match its expected type",
+                            expr_span(source),
+                        ));
+                    }
+                }
+            }
+            return None;
+        }
+        let then_value = then_value?;
+        let else_value = else_value?;
         let ty = self.join_branch_shapes(
             expected,
             &then_value.ty,
@@ -4077,7 +4101,7 @@ impl<'a> TypeChecker<'a> {
 
         Some(TypedValue {
             expr: CoreExpr::If {
-                predicate: Box::new(predicate),
+                predicate: Box::new(predicate?),
                 then_value: Box::new(then_value.expr),
                 else_value: Box::new(else_value.expr),
             },
