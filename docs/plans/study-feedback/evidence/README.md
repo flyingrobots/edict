@@ -69,3 +69,23 @@ is recorded in [F06](../F06.md); no runtime execution is claimed.
 the explicit pinned-provider test (one passed, six filtered out). The release
 date checker reported the preexisting v0.1.0-alpha.1 missing policy surface as
 an advisory; the gate exited zero.
+
+## F06 review: temporary workspace ownership
+
+[RED](f06-tempdir-red.txt) reproduces the old manual-directory lifetime: a
+caught assertion panic leaves its artifact tree behind. [GREEN](f06-tempdir-green.txt)
+checks automatic cleanup during unwinding, distinct live workspace paths,
+preservation of a peer workspace and cleanup on normal drop. Both public-build
+loops use the same `tempfile::TempDir` helper. The dependency is test-only; it
+does not enter compiler/runtime production dependencies.
+
+The first GREEN test command passed, but its guard's subsequent lockfile export
+failed because Docker copy could not access the tmpfs path. That whole guarded
+run is not counted as a successful gate. A later full gate identified the
+provider-fixture source fingerprint change from Cargo.lock; regeneration used
+the pinned generator and changed only inventory sourceDigest, with all component
+bytes unchanged. Interrupted measurement runs are also excluded from GREEN.
+
+[Final verification](f06-tempdir-verify.txt): full `cargo xtask verify` and the
+explicit real-provider test passed after regeneration. Seven ordinary tests
+pass; the explicit provider test passes with seven filtered out.

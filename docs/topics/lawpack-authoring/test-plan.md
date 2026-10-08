@@ -96,3 +96,7 @@ preserve prior outputs. The first smaller-cap experiment contradicted the prior
 blanket refusal hypothesis. Parameter consistency remains enforced by the helper;
 compilation and provider verification do not prove execution or general ingress
 validation. The evidence and plan preserve this correction explicitly.
+
+| Case ID | Status | Kind | Requirements | Scenario and oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| LAUTH-TP-021 | implemented | Test workspace lifetime | LAUTH-REQ-009 | Owned public-build test directories are unique and removed on unwinding, without deleting another live workspace. | configurable_cell_test_directories_cleanup_on_unwind | crates/edict-cli/tests/configurable_causal_cell.rs | PR248 review finding; no runtime behavior change. |

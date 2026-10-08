@@ -150,11 +150,8 @@ fn configurable_cell_public_authoring_matches_in_memory_artifacts() {
             serde_json::from_value(doc["lawpack"].clone()).unwrap();
         let expected = author_lawpack(&definition, &[]).unwrap();
         for copy in 0..2 {
-            let root = std::env::temp_dir().join(format!(
-                "edict-configurable-{}-{value_scalars}-{copy}",
-                std::process::id()
-            ));
-            std::fs::create_dir(&root).expect("create owned application tree");
+            let directory = test_directory(&format!("edict-configurable-{value_scalars}-{copy}-"));
+            let root = directory.path().to_path_buf();
             std::fs::write(
                 root.join("edict.lawpack.json"),
                 serde_json::to_vec(&doc).unwrap(),
@@ -180,7 +177,6 @@ fn configurable_cell_public_authoring_matches_in_memory_artifacts() {
                     artifact.path()
                 );
             }
-            std::fs::remove_dir_all(root).unwrap();
         }
     }
 }
@@ -276,11 +272,8 @@ fn configurable_cell_real_provider_accepts_both_variants() {
         ("1024", "4096", 0),
         ("1024", "4096", 1),
     ] {
-        let root = std::env::temp_dir().join(format!(
-            "edict-real-cell-{}-{bytes}-{copy}",
-            std::process::id()
-        ));
-        fs::create_dir(&root).unwrap();
+        let directory = test_directory(&format!("edict-real-cell-{bytes}-{copy}-"));
+        let root = directory.path().to_path_buf();
         fs::create_dir(root.join("src")).unwrap();
         copy_provider_tree(&provider, &root.join("provider"));
         let document = command::render(&["lawpack", "64", scalars, bytes]).unwrap();
@@ -319,7 +312,6 @@ fn configurable_cell_real_provider_accepts_both_variants() {
         check_invalid_configurations(&root, scalars, bytes, &package, &report);
         check_independent_byte_cap(&root, scalars, bytes, &package, &report);
         check_invalid_closures(&root, scalars, bytes, &digest, &package, &report);
-        fs::remove_dir_all(root).unwrap();
     }
 }
 
@@ -551,4 +543,41 @@ fn map_field<'a>(value: &'a CanonicalValue, key: &str) -> &'a CanonicalValue {
         .iter()
         .find_map(|(name, value)| (name == &CanonicalValue::Text(key.into())).then_some(value))
         .expect("required program field")
+}
+
+fn test_directory(prefix: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir()
+        .expect("create owned test workspace")
+}
+
+#[test]
+fn configurable_cell_test_directories_cleanup_on_unwind() {
+    let directory = test_directory("edict-cell-unwind");
+    let path = directory.path().to_path_buf();
+    let peer = test_directory("edict-cell-unwind");
+    assert_ne!(path, peer.path());
+    std::fs::write(peer.path().join("artifact"), b"peer").unwrap();
+    std::fs::write(path.join("artifact"), b"owned temporary artifact").unwrap();
+    let unwind = std::panic::catch_unwind(move || {
+        let _owned = directory;
+        panic!("simulated assertion failure");
+    });
+    assert!(unwind.is_err());
+    let leaked = path.exists();
+    if leaked {
+        std::fs::remove_dir_all(&path).unwrap();
+    }
+    assert!(!leaked, "owned test tree must be removed during unwinding");
+    assert_eq!(
+        std::fs::read(peer.path().join("artifact")).unwrap(),
+        b"peer"
+    );
+    let peer_path = peer.path().to_path_buf();
+    drop(peer);
+    assert!(
+        !peer_path.exists(),
+        "normal drop also removes owned workspace"
+    );
 }
