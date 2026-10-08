@@ -760,6 +760,8 @@ struct LetStatement<'a> {
 enum EffectOutputExpectation<'a> {
     Value(Option<&'a TypeShape>),
     Predicate,
+    Concatenation,
+    Bytes,
     Comparison(&'a TypeShape),
     ComparisonLiteral(&'a Expr),
     Field {
@@ -774,6 +776,8 @@ impl<'a> EffectOutputExpectation<'a> {
         match self {
             Self::Value(shape) => shape,
             Self::Predicate
+            | Self::Concatenation
+            | Self::Bytes
             | Self::Comparison(_)
             | Self::ComparisonLiteral(_)
             | Self::Field { .. } => None,
@@ -807,6 +811,17 @@ impl<'a> EffectOutputExpectation<'a> {
     fn rejection(self, output: &TypeShape) -> Option<CompilerErrorKind> {
         match self {
             Self::Value(Some(expected)) if !compatible(expected, output) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Concatenation
+                if !matches!(
+                    output.kind,
+                    TypeKind::String { .. } | TypeKind::Bytes { .. }
+                ) =>
+            {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Bytes if !matches!(output.kind, TypeKind::Bytes { .. }) => {
                 Some(CompilerErrorKind::TypeMismatch)
             }
             Self::Predicate if !matches!(output.kind, TypeKind::Bool) => {
@@ -4560,8 +4575,16 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         span: Span,
     ) -> Option<TypedValue> {
-        let left = self.check_expr(lhs, env)?;
-        let right = self.check_expr(rhs, env)?;
+        let left = self.check_expr_with_effect_expectation(
+            lhs,
+            env,
+            EffectOutputExpectation::Concatenation,
+        )?;
+        let right = self.check_expr_with_effect_expectation(
+            rhs,
+            env,
+            EffectOutputExpectation::Concatenation,
+        )?;
         if matches!(
             (&left.ty.kind, &right.ty.kind),
             (TypeKind::Bytes { .. }, TypeKind::Bytes { .. })

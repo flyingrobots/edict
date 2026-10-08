@@ -247,3 +247,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-096 | implemented | Exported result projection | CSPINE-REQ-047 | Missing and non-record field selectors on authenticated effect outputs report UnknownField or TypeMismatch before mapping advice; valid selectors retain map guidance and preserve enclosing predicate/comparison requirements. | effect_field_selection_validates_the_exported_record_before_map_guidance, effect_field_selection_preserves_predicate_and_comparison_requirements | crates/edict-syntax/tests/effect_diagnostics.rs | Exact selector spans; no invented Core effect value. |
+
+## Effect Operator Families
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-123 | implemented | Operator effect diagnostics | CSPINE-REQ-047 | Exported effect output families are checked before mapping advice for concatenation, length and slicing, including field projections. | effect_operator_families_reject_before_mapping_guidance | crates/edict-syntax/tests/effect_diagnostics.rs | Exact authenticated fixture; valid string projection retains mapping requirement. |

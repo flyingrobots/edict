@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Check effect output families for concatenation, length and slicing before failure-mapping advice, including exported field projections.
+
 - Check authenticated effect result field paths and their enclosing type constraints before failure-map guidance.
 
 - Check unsuffixed comparison literals against authenticated effect output types and numeric ranges before advising a failure map.

@@ -387,3 +387,37 @@ fn effect_field_selection_preserves_predicate_and_comparison_requirements() {
         assert!(!errors[0].message.contains("with `else`"));
     }
 }
+
+#[test]
+fn effect_operator_families_reject_before_mapping_guidance() {
+    compile(SOURCE).expect("mapped authenticated effect control");
+    for expression in [
+        "hello.createGreeting(input) + \"x\"",
+        "\"x\" + hello.createGreeting(input)",
+        "len(hello.createGreeting(input))",
+        "slice(hello.createGreeting(input), 0u64, 0u64)",
+        "len(hello.createGreeting(input).key)",
+        "slice(hello.createGreeting(input).key, 0u64, 0u64)",
+    ] {
+        let source = SOURCE.replace(
+            "  let receipt:",
+            &format!("  let invalid = {expression};\n  let receipt:"),
+        );
+        let errors = compile(&source)
+            .expect_err("record/string effect output cannot satisfy operator family");
+        assert_eq!(
+            errors[0].kind,
+            CompilerErrorKind::TypeMismatch,
+            "{expression}: {errors:?}"
+        );
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+    let source = SOURCE.replace(
+        "  let receipt:",
+        "  let validFamily = hello.createGreeting(input).key + \"x\";\n  let receipt:",
+    );
+    assert_eq!(
+        compile(&source).expect_err("valid string family still needs map")[0].kind,
+        CompilerErrorKind::EffectWithoutFailureMapping
+    );
+}
