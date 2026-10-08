@@ -77,7 +77,7 @@ binaries (exit `101`). With production source restored, the commands pass three
 syntax witnesses and one public CLI witness. Compiler output identity is the
 oracle; these tests do not execute helper bodies, loops, or provider packages.
 
-## Configurable Causal-Cell Example (Planned)
+## Configurable Causal-Cell Example
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
