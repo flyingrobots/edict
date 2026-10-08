@@ -972,3 +972,67 @@ fn poisoned_slice_operands_preserve_independent_causes() {
     );
     assert_eq!(&source[errors[2].span.start..errors[2].span.end], "false");
 }
+
+#[test]
+fn poisoned_loop_iterators_preserve_independent_body_causes() {
+    let valid = "package recovery.loops@1; intent evaluate(input: List<Bool, max=4>) returns Bool profile p.read basis none budget <= p.large { let failed = input; for item in failed bounded 4 { let dependent = item; let independent = false; } return true; }";
+    compile_function_recovery(valid).expect("valid bounded loop control");
+    let source = valid
+        .replace("let failed = input;", "let failed = missingIteratorCause;")
+        .replace(
+            "let independent = false;",
+            "let independent = missingLoopBody;",
+        );
+    let errors =
+        compile_function_recovery(&source).expect_err("invalid iterator cannot produce Core");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingLoopBody"
+    );
+    let source = source.replace("return true;", "let outside = item; return true;");
+    let errors =
+        compile_function_recovery(&source).expect_err("loop binder cannot escape its body");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    assert_eq!(&source[errors[2].span.start..errors[2].span.end], "item");
+    let wrong_family = valid
+        .replace("let failed = input;", "let failed = true;")
+        .replace(
+            "let independent = false;",
+            "let independent = missingWrongFamilyBody;",
+        );
+    let errors = compile_function_recovery(&wrong_family)
+        .expect_err("invalid iterator family still checks body");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::TypeMismatch,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    let wrong_bound = valid
+        .replace("bounded 4", "bounded 1")
+        .replace("let independent = false;", "let independent: U64 = item;");
+    let errors = compile_function_recovery(&wrong_bound)
+        .expect_err("known item type survives a bad bound for diagnostics");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::InvalidBound,
+            CompilerErrorKind::TypeMismatch
+        ]
+    );
+}

@@ -1883,6 +1883,7 @@ impl<'a> TypeChecker<'a> {
         state: &mut BodyState,
     ) {
         let Some(iter_value) = self.check_expr(iter, env) else {
+            self.check_failed_for_body(intent, output_shape, var, body, env, state, None);
             return;
         };
         let TypeKind::List { item, max } = &iter_value.ty.kind else {
@@ -1892,9 +1893,11 @@ impl<'a> TypeChecker<'a> {
                 "bounded for requires a statically bounded list",
                 span,
             ));
+            self.check_failed_for_body(intent, output_shape, var, body, env, state, None);
             return;
         };
         let Some((value, core_bound)) = self.resolve_loop_bound(bound, span) else {
+            self.check_failed_for_body(intent, output_shape, var, body, env, state, Some(item));
             return;
         };
         if value < *max {
@@ -1904,11 +1907,13 @@ impl<'a> TypeChecker<'a> {
                 format!("loop bound {value} is below iterable maximum {max}"),
                 span,
             ));
+            self.check_failed_for_body(intent, output_shape, var, body, env, state, Some(item));
             return;
         }
         let Some((loop_steps, accumulated_steps)) =
             self.charge_loop_work(intent, state, value, span)
         else {
+            self.check_failed_for_body(intent, output_shape, var, body, env, state, Some(item));
             return;
         };
 
@@ -1924,6 +1929,75 @@ impl<'a> TypeChecker<'a> {
             accumulated_steps,
             ..BodyState::default()
         };
+        self.check_for_body_stmts(
+            intent,
+            output_shape,
+            body,
+            &mut nested_env,
+            &mut nested_locals,
+            &mut nested_state,
+        );
+        state.local_index = nested_state.local_index;
+        state.obstruction_index = nested_state.obstruction_index;
+        state.accumulated_steps = nested_state.accumulated_steps;
+        state.nodes.push(CoreNode::For {
+            binder,
+            iter: iter_value.expr,
+            bound: core_bound,
+            body: CoreBlock {
+                locals: nested_locals,
+                nodes: nested_state.nodes,
+                result: CoreExpr::Const(CoreValue::Null),
+            },
+        });
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn check_failed_for_body(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        var: &str,
+        body: &Block,
+        env: &LocalEnvironment,
+        state: &BodyState,
+        known_item: Option<&TypeShape>,
+    ) {
+        let mut nested_env = env.clone();
+        let mut nested_locals = Vec::new();
+        let mut nested_state = BodyState {
+            local_index: state.local_index,
+            obstruction_index: state.obstruction_index,
+            step_factor: state.step_factor,
+            accumulated_steps: state.accumulated_steps,
+            ..BodyState::default()
+        };
+        if let Some(item) = known_item {
+            let binder = next_local(&mut nested_state.local_index, item.coord.clone());
+            nested_env.insert(var.to_owned(), (binder.clone(), item.clone()));
+            nested_locals.push(binder);
+        } else {
+            nested_env.poison(var);
+        }
+        self.check_for_body_stmts(
+            intent,
+            output_shape,
+            body,
+            &mut nested_env,
+            &mut nested_locals,
+            &mut nested_state,
+        );
+    }
+
+    fn check_for_body_stmts(
+        &mut self,
+        intent: &ResolvedIntent,
+        output_shape: &TypeShape,
+        body: &Block,
+        nested_env: &mut LocalEnvironment,
+        nested_locals: &mut Vec<LocalRef>,
+        nested_state: &mut BodyState,
+    ) {
         for stmt in &body.stmts {
             if let Stmt::Return { span, .. } = stmt {
                 self.errors.push(error(
@@ -1938,24 +2012,11 @@ impl<'a> TypeChecker<'a> {
                 intent,
                 output_shape,
                 stmt,
-                &mut nested_env,
-                &mut nested_locals,
-                &mut nested_state,
+                nested_env,
+                nested_locals,
+                nested_state,
             );
         }
-        state.local_index = nested_state.local_index;
-        state.obstruction_index = nested_state.obstruction_index;
-        state.accumulated_steps = nested_state.accumulated_steps;
-        state.nodes.push(CoreNode::For {
-            binder,
-            iter: iter_value.expr,
-            bound: core_bound,
-            body: CoreBlock {
-                locals: nested_locals,
-                nodes: nested_state.nodes,
-                result: CoreExpr::Const(CoreValue::Null),
-            },
-        });
     }
 
     fn resolve_loop_bound(&mut self, bound: &BoundRef, span: Span) -> Option<(u64, CoreBound)> {
