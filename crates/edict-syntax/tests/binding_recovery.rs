@@ -749,6 +749,13 @@ fn check_call_argument_recovery(source_owned: bool) {
 }
 
 fn compile_call_recovery(source: &str) -> Result<CoreModule, Vec<CompilerError>> {
+    compile_call_recovery_with_parameter(source, "Bool")
+}
+
+fn compile_call_recovery_with_parameter(
+    source: &str,
+    parameter: &str,
+) -> Result<CoreModule, Vec<CompilerError>> {
     let module = parse_module(source).expect("call recovery source parses");
     let lawpack = edict_syntax::ResourceRef {
         coordinate: "recovery.helpers@1".into(),
@@ -770,7 +777,7 @@ fn compile_call_recovery(source: &str) -> Result<CoreModule, Vec<CompilerError>>
                     lawpack: lawpack.clone(),
                     coordinate: "recovery.helpers@1.pair".into(),
                     type_parameters: vec![],
-                    parameter_types: vec!["Bool".into(), "Bool".into()],
+                    parameter_types: vec![parameter.into(), "Bool".into()],
                     return_type: "Bool".into(),
                     cost_template: "recovery.helpers@1.cost".into(),
                 },
@@ -1163,5 +1170,32 @@ fn failed_request_clauses_preserve_independent_causes() {
                 "missingAttempts"
             ]
         );
+    }
+}
+
+#[test]
+fn unavailable_imported_parameter_preserves_argument_causes() {
+    let valid = "package recovery.calls@1; use lawpack recovery.helpers@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers; intent evaluate(input: Bool) returns Bool profile p.read basis none budget <= p.large { let result = helpers.pair(true, false); return result; }";
+    compile_call_recovery(valid).expect("valid imported helper control");
+    for argument in ["missingArgument", "0", "18446744073709551616u64"] {
+        let source = valid.replace("pair(true, false)", &format!("pair({argument}, false)"));
+        let errors =
+            compile_call_recovery_with_parameter(&source, "recovery.helpers@1.MissingType")
+                .expect_err("unavailable signature never produces Core");
+        let expected = match argument {
+            "missingArgument" => vec![
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::UnresolvedType,
+            ],
+            "0" => vec![CompilerErrorKind::UnresolvedType],
+            _ => vec![
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::TypeMismatch,
+            ],
+        };
+        assert_eq!(errors.iter().map(|e| e.kind).collect::<Vec<_>>(), expected);
+        if errors.len() > 1 {
+            assert_eq!(&source[errors[1].span.start..errors[1].span.end], argument);
+        }
     }
 }

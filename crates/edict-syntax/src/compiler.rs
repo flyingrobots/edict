@@ -3968,6 +3968,7 @@ impl<'a> TypeChecker<'a> {
                     ),
                     span,
                 ));
+                self.check_expr_with_unavailable_expected_type(arg, env);
                 accepted = false;
                 continue;
             };

@@ -255,3 +255,9 @@ CSPINE-REQ-049 remains planned pending the complete production-path audit and fi
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-118 | implemented | Request clause recovery | CSPINE-REQ-049 | Failed request annotation or operation does not hide independent authority, basis or budget errors; no invalid request lowers. | failed_request_clauses_preserve_independent_causes | crates/edict-syntax/tests/binding_recovery.rs | Valid digest-locked request control and exact kind/span vectors. |
+
+## Unavailable Imported Parameter Context
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-119 | implemented | Imported argument recovery | CSPINE-REQ-049 | Unavailable imported parameter types retain independent argument errors without inventing bare literal widths. | unavailable_imported_parameter_preserves_argument_causes | crates/edict-syntax/tests/binding_recovery.rs | Explicit trusted compiler facts; compiler boundary only. |
