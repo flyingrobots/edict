@@ -220,6 +220,20 @@ fn poisoned_concatenation_does_not_hide_an_independent_operand_error() {
 }
 
 #[test]
+fn poisoned_concatenation_does_not_hide_an_independent_operand_type_error() {
+    let source =
+        insert_bindings("  let failed = missingConcatTypeCause;\n  let combined = failed + true;");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert_eq!(&source[errors[1].span.start..errors[1].span.end], "true");
+}
+
+#[test]
 fn failed_yield_branch_does_not_hide_an_independent_other_branch() {
     let source = insert_bindings("  let chosen: Bool = if true {\n    let failed = missingYield;\n    yield failed;\n  } else {\n    let independent = missingElse;\n    yield true;\n  };");
     let errors = check_kinds(

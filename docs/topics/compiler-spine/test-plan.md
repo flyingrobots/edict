@@ -216,3 +216,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-089 | implemented | Exact call span | CSPINE-REQ-048 | Both input and receipt mismatches identify exactly the call expression byte range, excluding the binding annotation, failure handler and semicolon. | input_signature_error_identifies_first_incompatible_field, receipt_signature_error_identifies_first_incompatible_field | crates/edict-syntax/tests/effect_signature_diagnostics.rs | Containment is insufficient evidence. |
+
+## Independent Concatenation Type Errors
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-097 | implemented | Independent operand type | CSPINE-REQ-049 | A Boolean concatenation operand beside a poisoned local retains its own TypeMismatch at the Boolean expression. | poisoned_concatenation_does_not_hide_an_independent_operand_type_error | crates/edict-syntax/tests/binding_recovery.rs | Do not infer a type for the failed peer. |

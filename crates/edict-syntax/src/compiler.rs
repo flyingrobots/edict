@@ -4192,6 +4192,24 @@ impl<'a> TypeChecker<'a> {
     ) -> Option<TypedValue> {
         let left = self.check_expr(lhs, env);
         let right = self.check_expr(rhs, env);
+        if left.is_none() || right.is_none() {
+            for (value, expression) in [(&left, lhs), (&right, rhs)] {
+                if value.as_ref().is_some_and(|value| {
+                    !matches!(
+                        value.ty.kind,
+                        TypeKind::String { .. } | TypeKind::Bytes { .. }
+                    )
+                }) {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::TypeMismatch,
+                        "concatenation operand must be a bounded string or bounded bytes",
+                        expr_span(expression),
+                    ));
+                }
+            }
+            return None;
+        }
         let (left, right) = (left?, right?);
         if matches!(
             (&left.ty.kind, &right.ty.kind),
