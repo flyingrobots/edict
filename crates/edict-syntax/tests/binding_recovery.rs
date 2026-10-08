@@ -842,3 +842,96 @@ intent evaluate(input: RequestInput) returns ExternalActionRequest<Bytes<max=655
         "missingRequestPeer"
     );
 }
+
+#[test]
+fn invalid_annotations_preserve_independent_initializer_causes() {
+    let valid = insert_bindings("  let chosen: Bool = true;");
+    compile(&valid).expect("valid annotated initializer control");
+    let source = valid.replace(
+        "chosen: Bool = true",
+        "chosen: MissingRecoveryType = missingAnnotationPeer",
+    );
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+        ],
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingAnnotationPeer"
+    );
+    let valid = "package recovery.annotations@1; fn recover() -> Bool { let chosen: Bool = true; return true; } intent evaluate(input: Bool) returns Bool profile p.read basis none budget <= p.large { let anchor = input; return anchor; }";
+    compile_function_recovery(valid).expect("valid function annotation control");
+    let source = valid.replace(
+        "chosen: Bool = true",
+        "chosen: MissingRecoveryType = missingFunctionAnnotationPeer",
+    );
+    let errors = compile_function_recovery(&source).expect_err("invalid function annotation");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingFunctionAnnotationPeer"
+    );
+}
+
+#[test]
+fn invalid_annotation_yields_preserve_both_branch_causes() {
+    let valid = insert_bindings("  let chosen: U64 = if true { let left = true; yield 0; } else { let right = false; yield 1; };");
+    compile(&valid).expect("valid annotated integer yield control");
+    let source = valid
+        .replace("chosen: U64", "chosen: MissingRecoveryType")
+        .replace("let left = true;", "let left = missingAnnotationLeft;")
+        .replace("let right = false;", "let right = missingAnnotationRight;");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+        ],
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingAnnotationLeft"
+    );
+    assert_eq!(
+        &source[errors[2].span.start..errors[2].span.end],
+        "missingAnnotationRight"
+    );
+}
+
+#[test]
+fn unavailable_annotations_do_not_invent_literal_width() {
+    let source = insert_bindings("  let chosen: MissingRecoveryType = 0;");
+    check_kinds(&source, &[CompilerErrorKind::UnresolvedType]);
+    let independent =
+        insert_bindings("  let chosen: MissingRecoveryType = 0;\n  let independent = 1;");
+    let errors = check_kinds(
+        &independent,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert_eq!(&independent[errors[1].span.start..errors[1].span.end], "1");
+    let source = source.replace(" = 0;", " = 18446744073709551616u64;");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "18446744073709551616u64"
+    );
+}

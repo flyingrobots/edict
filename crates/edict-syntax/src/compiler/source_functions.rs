@@ -201,7 +201,13 @@ impl TypeChecker<'_> {
         env: &LocalEnvironment,
     ) -> Option<(TypedValue, TypeShape)> {
         let annotation = match stmt.ty {
-            Some(ty) => Some(self.type_ref_shape(ty, stmt.span)?),
+            Some(ty) => match self.type_ref_shape(ty, stmt.span) {
+                Some(shape) => Some(shape),
+                None => {
+                    self.check_expr_with_unavailable_expected_type(stmt.value, env);
+                    return None;
+                }
+            },
             None => None,
         };
         let value = self.check_expr_with_expected(stmt.value, env, annotation.as_ref())?;

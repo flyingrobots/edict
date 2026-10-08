@@ -274,7 +274,9 @@ Obstruction payload shorthand suppresses dependent reads of failed locals while 
 
 Both real contextual-yield branches and pure-conditional arms are checked despite earlier failures. Shape probes remain observational and never publish diagnostics or replace authoritative branch checks. Authored record and payload keys retain their identity independently of successfully typed values; missing or extra closed-record fields and duplicate payload fields remain diagnosable. Unsigned subtraction keeps independently checkable operand errors without inventing an underflow proof.
 
-Recovery remains incomplete in invalid-annotation initializers, later call arguments and failed request binders. Loop and byte-prelude paths remain under audit. The test plan records the complete requirement as planned and names the implemented cases; passing those cases does not establish the remaining paths.
+Invalid annotations retain independently checkable initializer errors in intent, source-function and yield bindings. A scoped unavailable-context check suppresses only unsuffixed integer-width errors that need that missing annotation; explicit suffix range failures and later independent statements retain their errors. Later source/imported helper arguments are checked after a failed peer, and failed external-action requests poison their binders. No missing annotation supplies a substitute type or authorizes a binding.
+
+Loop and byte-prelude paths remain under audit. The test plan records the complete requirement as planned and names the implemented cases; passing those cases does not establish the remaining paths.
 
 [CSPINE-REQ-049]
 

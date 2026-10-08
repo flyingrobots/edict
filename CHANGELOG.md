@@ -8,7 +8,7 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
-- Recover failed lexical let bindings without reporting dependent name errors or inventing Core values. Preserve independent record siblings and non-record annotation mismatches, branches, annotated yield branches, logical/comparison/concatenation operands, require failure arms and later source-function statements; distinguish failed returns from absent returns. Preserve contextual-yield and conditional siblings, closed-record key mismatches, poisoned reason-root suppression, subtraction siblings and duplicate payload names. Recovery in other reviewed paths remains incomplete.
+- Recover failed lexical let bindings without reporting dependent name errors or inventing Core values. Preserve independent record siblings and non-record annotation mismatches, branches, annotated yield branches, logical/comparison/concatenation operands, require failure arms and later source-function statements; distinguish failed returns from absent returns. Preserve contextual-yield and conditional siblings, closed-record key mismatches, poisoned reason-root suppression, subtraction siblings and duplicate payload names. Preserve later helper arguments and independent invalid-annotation initializer errors, and poison failed external-action request binders. Loop and byte-prelude paths remain under audit.
 
 - Signature mismatch spans identify exactly the effect call, excluding its enclosing binding and failure handler.
 

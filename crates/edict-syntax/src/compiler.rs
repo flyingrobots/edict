@@ -775,6 +775,7 @@ struct TypeChecker<'a> {
     core_types: BTreeMap<String, CoreType>,
     inferred_yield_shapes: BTreeMap<usize, TypeShape>,
     inferred_yield_envs: BTreeMap<usize, LocalEnvironment>,
+    expected_type_unavailable: bool,
 }
 
 impl<'a> TypeChecker<'a> {
@@ -792,6 +793,7 @@ impl<'a> TypeChecker<'a> {
             core_types: BTreeMap::new(),
             inferred_yield_shapes: BTreeMap::new(),
             inferred_yield_envs: BTreeMap::new(),
+            expected_type_unavailable: false,
         }
     }
 
@@ -2454,7 +2456,10 @@ impl<'a> TypeChecker<'a> {
         let annotation_shape = match stmt.ty {
             Some(annotation) => match self.type_ref_shape(annotation, stmt.span) {
                 Some(shape) => Some(shape),
-                None => return,
+                None => {
+                    self.check_expr_with_unavailable_expected_type(stmt.value, env);
+                    return;
+                }
             },
             None => None,
         };
@@ -2490,13 +2495,10 @@ impl<'a> TypeChecker<'a> {
         state: &mut BodyState,
     ) {
         let predicate = self.check_predicate(pred, env);
-        let annotation_shape = match stmt.ty {
-            Some(annotation) => match self.type_ref_shape(annotation, stmt.span) {
-                Some(shape) => Some(shape),
-                None => return,
-            },
-            None => None,
-        };
+        let annotation_shape = stmt
+            .ty
+            .and_then(|annotation| self.type_ref_shape(annotation, stmt.span));
+        let expected_unavailable = stmt.ty.is_some() && annotation_shape.is_none();
         let baseline_steps = state.accumulated_steps;
         let Some((then_block, then_shape, else_block, else_shape)) = self
             .check_branch_yield_blocks(
@@ -2508,11 +2510,9 @@ impl<'a> TypeChecker<'a> {
                 state,
                 baseline_steps,
                 annotation_shape.as_ref(),
+                expected_unavailable,
             )
         else {
-            return;
-        };
-        let Some(predicate) = predicate else {
             return;
         };
         let Some(binding_shape) = self.join_branch_shapes(
@@ -2528,6 +2528,12 @@ impl<'a> TypeChecker<'a> {
             return;
         };
 
+        if expected_unavailable {
+            return;
+        }
+        let Some(predicate) = predicate else {
+            return;
+        };
         let binding = next_local(&mut state.local_index, binding_shape.coord.clone());
         state.nodes.push(CoreNode::Branch {
             binding: Some(binding.clone()),
@@ -2550,6 +2556,7 @@ impl<'a> TypeChecker<'a> {
         state: &mut BodyState,
         baseline_steps: u64,
         annotation_shape: Option<&TypeShape>,
+        expected_unavailable: bool,
     ) -> Option<(CoreBlock, TypeShape, CoreBlock, TypeShape)> {
         let joint_shape = if annotation_shape.is_none()
             && contains_contextual_bare_integer(&then_source.value)
@@ -2573,6 +2580,7 @@ impl<'a> TypeChecker<'a> {
             env,
             state,
             shared_expected.or(inferred_else_shape.as_ref()),
+            expected_unavailable,
         );
         let then_steps = state.accumulated_steps;
         state.accumulated_steps = baseline_steps;
@@ -2581,8 +2589,15 @@ impl<'a> TypeChecker<'a> {
                 .then(|| then_result.as_ref().map(|(_, shape)| shape))
                 .flatten()
         });
-        let else_result =
-            self.check_yield_block(intent, output_shape, else_source, env, state, else_expected);
+        let else_result = self.check_yield_block(
+            intent,
+            output_shape,
+            else_source,
+            env,
+            state,
+            else_expected,
+            expected_unavailable,
+        );
         state.accumulated_steps = then_steps.max(state.accumulated_steps);
         let (then_block, then_shape) = then_result?;
         let (else_block, else_shape) = else_result?;
@@ -2826,6 +2841,7 @@ impl<'a> TypeChecker<'a> {
         env: &LocalEnvironment,
         state: &mut BodyState,
         expected: Option<&TypeShape>,
+        expected_unavailable: bool,
     ) -> Option<(CoreBlock, TypeShape)> {
         let error_count = self.errors.len();
         let mut nested_env = env.clone();
@@ -2856,7 +2872,11 @@ impl<'a> TypeChecker<'a> {
                 &mut nested_state,
             );
         }
-        let value = self.check_expr_with_expected(&block.value, &nested_env, expected)?;
+        let value = if expected_unavailable && expected.is_none() {
+            self.check_expr_with_unavailable_expected_type(&block.value, &nested_env)
+        } else {
+            self.check_expr_with_expected(&block.value, &nested_env, expected)
+        }?;
         state.local_index = nested_state.local_index;
         state.obstruction_index = nested_state.obstruction_index;
         state.accumulated_steps = nested_state.accumulated_steps;
@@ -4034,6 +4054,18 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
+    fn check_expr_with_unavailable_expected_type(
+        &mut self,
+        expr: &Expr,
+        env: &LocalEnvironment,
+    ) -> Option<TypedValue> {
+        let previous = self.expected_type_unavailable;
+        self.expected_type_unavailable = true;
+        let value = self.check_expr(expr, env);
+        self.expected_type_unavailable = previous;
+        value
+    }
+
     fn check_integer_literal(
         &mut self,
         value: &str,
@@ -4041,6 +4073,9 @@ impl<'a> TypeChecker<'a> {
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
+        if suffix.is_none() && expected.is_none() && self.expected_type_unavailable {
+            return None;
+        }
         let width = if let Some(suffix) = suffix {
             integer_suffix_width(suffix)
         } else {
