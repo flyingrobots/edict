@@ -2318,13 +2318,14 @@ impl<'a> TypeChecker<'a> {
         mode: ReasonPayloadMode,
     ) -> Option<BTreeMap<String, CoreExpr>> {
         let mut fields = BTreeMap::new();
+        let mut authored_names = BTreeSet::new();
         let mut accepted = true;
         for entry in entries {
             match entry {
                 RecordEntry::Field { name, .. } | RecordEntry::Shorthand { name, .. }
                     if mode == ReasonPayloadMode::SkipReasonField && name == "reason" => {}
                 RecordEntry::Field { name, value } => {
-                    if fields.contains_key(name) {
+                    if !authored_names.insert(name) {
                         self.errors.push(error(
                             CompilerStage::TypeCheck,
                             CompilerErrorKind::DuplicateObstructionPayloadField,
@@ -2341,7 +2342,7 @@ impl<'a> TypeChecker<'a> {
                     }
                 }
                 RecordEntry::Shorthand { name, span } => {
-                    if fields.contains_key(name) {
+                    if !authored_names.insert(name) {
                         self.errors.push(error(
                             CompilerStage::TypeCheck,
                             CompilerErrorKind::DuplicateObstructionPayloadField,

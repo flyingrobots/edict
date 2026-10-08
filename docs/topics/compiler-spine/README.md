@@ -272,7 +272,9 @@ Records continue checking independent siblings after a failed value. Statement b
 
 Obstruction payload shorthand suppresses dependent reads of failed locals while genuinely unknown names still fail. Logical and comparison predicate operands, require failure arms and source-function statements retain their independently checkable causes after earlier failures. A record containing an unavailable field still reports an incompatible non-record annotation. These checks collect diagnostics without constructing missing Core parts.
 
-Recovery remains incomplete in contextual-yield inference, pure-conditional operands, invalid-annotation initializers, later call arguments and failed request binders. The test plan records the complete requirement as planned and names the implemented cases; passing those cases does not establish the remaining paths.
+Both real contextual-yield branches and pure-conditional arms are checked despite earlier failures. Shape probes remain observational and never publish diagnostics or replace authoritative branch checks. Authored record and payload keys retain their identity independently of successfully typed values; missing or extra closed-record fields and duplicate payload fields remain diagnosable. Unsigned subtraction keeps independently checkable operand errors without inventing an underflow proof.
+
+Recovery remains incomplete in invalid-annotation initializers, later call arguments and failed request binders. Loop and byte-prelude paths remain under audit. The test plan records the complete requirement as planned and names the implemented cases; passing those cases does not establish the remaining paths.
 
 [CSPINE-REQ-049]
 

@@ -673,3 +673,30 @@ fn poisoned_subtraction_operand_preserves_independent_peer() {
     );
     assert_eq!(&source[errors[1].span.start..errors[1].span.end], "false");
 }
+
+#[test]
+fn poisoned_payload_fields_retain_duplicate_key_errors() {
+    let valid = insert_bindings(
+        "  let failed = true;\n  require true else example.Failure({ failed, other: true });",
+    );
+    compile(&valid).expect("valid unique payload control");
+    for payload in [
+        "{ failed, failed: true }",
+        "{ payload: failed, payload: true }",
+        "{ failed: failed, failed }",
+    ] {
+        let live = valid.replace("{ failed, other: true }", payload);
+        check_kinds(
+            &live,
+            &[CompilerErrorKind::DuplicateObstructionPayloadField],
+        );
+        let source = live.replace("let failed = true;", "let failed = missingDuplicateCause;");
+        check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::DuplicateObstructionPayloadField,
+            ],
+        );
+    }
+}
