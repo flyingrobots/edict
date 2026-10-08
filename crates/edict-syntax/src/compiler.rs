@@ -2295,6 +2295,9 @@ impl<'a> TypeChecker<'a> {
                 ));
                 return None;
             }
+            if env.poisoned.contains(root) {
+                return None;
+            }
             if env.contains_key(root) {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,

@@ -560,3 +560,29 @@ fn contextual_yield_inference_preserves_both_branch_causes() {
         assert_eq!(origins, ["missingContextualThen", "missingContextualElse"]);
     }
 }
+
+#[test]
+fn poisoned_reason_roots_keep_only_independent_causes() {
+    let valid = insert_bindings(
+        "  require true else continue obstructed { reason: example.Failure, payload: true };",
+    );
+    compile(&valid).expect("stable reason coordinate control");
+    for reason in ["failed", "failed.detail"] {
+        let source = insert_bindings(&format!("  let failed = missingReasonCause;\n  require true else continue obstructed {{ reason: {reason}, payload: missingReasonPeer }};"));
+        let errors = check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::UnresolvedType,
+            ],
+        );
+        assert_eq!(
+            &source[errors[1].span.start..errors[1].span.end],
+            "missingReasonPeer"
+        );
+    }
+    let live = insert_bindings(
+        "  let live = true;\n  require true else continue obstructed { reason: live };",
+    );
+    check_kinds(&live, &[CompilerErrorKind::UnsupportedSourceShape]);
+}
