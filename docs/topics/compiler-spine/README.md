@@ -291,3 +291,8 @@ Explicit mapped effect bindings report `TypeMismatch` at the exact call span whe
 This is an implementation-crate Rust API addition: code constructing `CompilerError` with a struct literal must initialize `signature_mismatch`, usually to `None`. The curated facade adds no named re-export of the new context types. Bare-call classification and dependent-error suppression remain separate work.
 
 [CSPINE-REQ-048]
+
+Source and imported helper calls retain independent supplied-argument diagnostics
+after an argument-count mismatch. Known parameter positions retain their type
+context; extra arguments are checked without inventing an expected type. Invalid
+calls produce no Core value. [CSPINE-TP-124]

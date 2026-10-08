@@ -262,10 +262,9 @@ impl TypeChecker<'_> {
                 "source function argument count does not match signature",
                 span,
             ));
-            return None;
         }
         let mut arguments = Vec::new();
-        let mut accepted = true;
+        let mut accepted = args.len() == signature.params.len();
         for (argument, parameter) in args.iter().zip(&signature.params) {
             let Some(value) = self.check_expr_with_expected(argument, env, Some(parameter)) else {
                 accepted = false;
@@ -282,6 +281,9 @@ impl TypeChecker<'_> {
                 continue;
             }
             arguments.push(value.expr);
+        }
+        for argument in args.iter().skip(signature.params.len()) {
+            self.check_expr_with_unavailable_expected_type(argument, env);
         }
         if expected.is_some_and(|expected| !compatible(expected, &signature.result)) {
             self.errors.push(error(

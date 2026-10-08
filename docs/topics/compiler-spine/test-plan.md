@@ -285,3 +285,9 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-123 | implemented | Effect profile recovery | CSPINE-REQ-049 | A known disallowed effect profile does not hide an independently unresolved argument; valid effect control compiles and a profile-only failure emits only ProfileEffectMismatch. | disallowed_effect_profile_preserves_independent_binding_errors | crates/edict-syntax/tests/binding_recovery.rs | Explicit read-only compiler profile fact with the authenticated existing lawpack. |
+
+## Helper Arity Recovery
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-124 | implemented | Helper argument count | CSPINE-REQ-049 | Source/imported calls retain independent supplied-argument errors after an arity mismatch; poisoned arguments add no dependent error and extra bare literals acquire no invented width. | source_call_arity_failure_keeps_argument_causes, imported_call_arity_failure_keeps_argument_causes | crates/edict-syntax/tests/binding_recovery.rs | Valid controls, missing/excess argument cases, exact kinds and origins. |

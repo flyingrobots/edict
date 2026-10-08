@@ -1306,3 +1306,53 @@ fn disallowed_effect_profile_preserves_independent_binding_errors() {
         "missingProfileArgument"
     );
 }
+
+#[test]
+fn source_call_arity_failure_keeps_argument_causes() {
+    check_call_arity_recovery(true);
+}
+
+#[test]
+fn imported_call_arity_failure_keeps_argument_causes() {
+    check_call_arity_recovery(false);
+}
+
+fn check_call_arity_recovery(source_owned: bool) {
+    let declaration = if source_owned {
+        "fn pair(left: Bool, right: Bool) -> Bool { return left; }"
+    } else {
+        "use lawpack recovery.helpers@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;"
+    };
+    let call = if source_owned { "pair" } else { "helpers.pair" };
+    let valid = format!("package recovery.calls@1; {declaration} intent evaluate(input: Bool) returns Bool profile p.read basis none budget <= p.large {{ let failed = true; let result = {call}(failed, false); return result; }}");
+    compile_call_recovery(&valid).expect("valid arity control");
+    for (arguments, origins) in [
+        ("missingArityPeer", vec!["missingArityPeer"]),
+        (
+            "failed, missingArityPeer, missingArityExtra",
+            vec!["missingArityPeer", "missingArityExtra"],
+        ),
+        ("failed, false, 1", vec![]),
+    ] {
+        let source = valid
+            .replace("let failed = true;", "let failed = missingArityCause;")
+            .replace("(failed, false)", &format!("({arguments})"));
+        let errors = compile_call_recovery(&source).expect_err("invalid arity cannot produce Core");
+        let mut kinds = vec![
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ];
+        kinds.extend(origins.iter().map(|_| CompilerErrorKind::UnresolvedType));
+        assert_eq!(
+            errors.iter().map(|error| error.kind).collect::<Vec<_>>(),
+            kinds
+        );
+        assert_eq!(
+            &source[errors[0].span.start..errors[0].span.end],
+            "missingArityCause"
+        );
+        for (error, origin) in errors[2..].iter().zip(origins) {
+            assert_eq!(&source[error.span.start..error.span.end], origin);
+        }
+    }
+}

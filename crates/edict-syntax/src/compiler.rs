@@ -3934,7 +3934,6 @@ impl<'a> TypeChecker<'a> {
                 ),
                 span,
             ));
-            return None;
         }
 
         let core_args = self.check_imported_arguments(args, env, &fact, &source_coordinate, span);
@@ -3981,7 +3980,7 @@ impl<'a> TypeChecker<'a> {
         span: Span,
     ) -> Option<Vec<CoreExpr>> {
         let mut core_args = Vec::with_capacity(args.len());
-        let mut accepted = true;
+        let mut accepted = args.len() == fact.parameter_types.len();
         for (arg, parameter_type) in args.iter().zip(&fact.parameter_types) {
             let Some(parameter_shape) =
                 self.shape_for_helper_coordinate(parameter_type, &fact.lawpack)
@@ -4014,6 +4013,10 @@ impl<'a> TypeChecker<'a> {
                 continue;
             }
             core_args.push(value.expr);
+        }
+
+        for arg in args.iter().skip(fact.parameter_types.len()) {
+            self.check_expr_with_unavailable_expected_type(arg, env);
         }
 
         accepted.then_some(core_args)
