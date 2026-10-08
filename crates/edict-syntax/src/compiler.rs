@@ -3640,7 +3640,11 @@ impl<'a> TypeChecker<'a> {
                 let right = self.check_expr_with_expected(rhs, env, Some(&left.ty))?;
                 (left, right)
             }
-            _ => (self.check_expr(lhs, env)?, self.check_expr(rhs, env)?),
+            _ => {
+                let left = self.check_expr(lhs, env);
+                let right = self.check_expr(rhs, env);
+                (left?, right?)
+            }
         };
         if comparable(&left.ty, &right.ty) {
             Some(CorePredicate::Compare {

@@ -270,9 +270,9 @@ The compiler keeps lexical failure markers separate from typed local values. A f
 
 Records continue checking independent siblings after a failed value. Statement branches are checked even when their condition fails, and annotated yield branches and concatenation operands are checked independently. Invalid composites produce no typed value. A syntactically present failed return differs from an absent return, preventing a redundant missing-return error. A truly absent return retains its error.
 
-Obstruction payload shorthand suppresses dependent reads of failed locals while genuinely unknown names still fail. Logical predicate operands, require failure arms and source-function statements retain their independently checkable causes after earlier failures. A record containing an unavailable field still reports an incompatible non-record annotation. These checks collect diagnostics without constructing missing Core parts.
+Obstruction payload shorthand suppresses dependent reads of failed locals while genuinely unknown names still fail. Logical and comparison predicate operands, require failure arms and source-function statements retain their independently checkable causes after earlier failures. A record containing an unavailable field still reports an incompatible non-record annotation. These checks collect diagnostics without constructing missing Core parts.
 
-Recovery remains incomplete in contextual-yield inference, comparison and pure-conditional operands, invalid-annotation initializers, later call arguments and failed request binders. The test plan records the complete requirement as planned and names the implemented cases; passing those cases does not establish the remaining paths.
+Recovery remains incomplete in contextual-yield inference, pure-conditional operands, invalid-annotation initializers, later call arguments and failed request binders. The test plan records the complete requirement as planned and names the implemented cases; passing those cases does not establish the remaining paths.
 
 [CSPINE-REQ-049]
 

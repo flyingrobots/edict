@@ -435,3 +435,30 @@ fn poisoned_record_retains_non_record_annotation_mismatch() {
     );
     assert!(source[errors[1].span.start..errors[1].span.end].contains("{ item: failed }"));
 }
+
+#[test]
+fn poisoned_comparison_operand_keeps_independent_peer() {
+    for op in ["==", "!=", "<", "<=", ">", ">="] {
+        let valid = insert_bindings(&format!(
+            "  let failed = 1u64;\n  if failed {op} 2u64 {{ let branch = true; }}"
+        ));
+        compile(&valid).expect("valid typed comparison control");
+        let source = valid
+            .replace("let failed = 1u64;", "let failed = missingComparisonCause;")
+            .replace(
+                &format!("failed {op} 2u64"),
+                &format!("failed {op} missingComparisonPeer"),
+            );
+        let errors = check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::UnresolvedType,
+            ],
+        );
+        assert_eq!(
+            &source[errors[1].span.start..errors[1].span.end],
+            "missingComparisonPeer"
+        );
+    }
+}
