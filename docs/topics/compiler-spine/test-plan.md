@@ -183,7 +183,7 @@ Out of scope:
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| CSPINE-REQ-047 | implemented | A bare exact nongeneric imported effect in an intent body reports EffectWithoutFailureMapping with its declared failure names or its unsupported zero-failure binding shape; an unknown explicit effect binding reports MissingContextFact with available effects from its exact imported lawpack owner. | issue #238 |
+| CSPINE-REQ-047 | implemented | A bare exact nongeneric imported effect in an intent body reports EffectWithoutFailureMapping with its domain-mappable failure names or its unsupported no-map binding shape; an unknown explicit effect binding reports MissingContextFact with available effects from its exact imported lawpack owner. | issue #238 |
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
