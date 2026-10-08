@@ -1435,3 +1435,27 @@ fn duplicate_obstruction_maps_preserve_independent_arm_errors() {
         }
     }
 }
+
+#[test]
+fn independent_string_bound_overflow_is_a_diagnostic() {
+    let valid = insert_bindings("  let huge: String<max=18446744073709551359> = input.message; let joined = huge + input.message;");
+    compile(&valid).expect("exact U64 maximum string bound sum control");
+    let direct = insert_bindings(
+        "  let huge: String<max=18446744073709551615> = input.message; let joined = huge + huge;",
+    );
+    check_kinds(&direct, &[CompilerErrorKind::InvalidBound]);
+    for expression in ["failed + (huge + huge)", "(huge + huge) + failed"] {
+        let source = insert_bindings(&format!("  let huge: String<max=18446744073709551615> = input.message; let failed = missingOverflowCause; let joined = {expression};"));
+        let errors = check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::InvalidBound,
+            ],
+        );
+        assert_eq!(
+            &source[errors[1].span.start..errors[1].span.end],
+            "huge + huge"
+        );
+    }
+}

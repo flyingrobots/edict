@@ -4410,7 +4410,15 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        let max = lmax + rmax;
+        let Some(max) = lmax.checked_add(*rmax) else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::InvalidBound,
+                "string concatenation maximum exceeds U64",
+                span,
+            ));
+            return None;
+        };
         let canonical = "raw-utf8".to_owned();
         let ty = TypeShape::canonical_structural(TypeKind::String { max, canonical })?;
         Some(TypedValue {

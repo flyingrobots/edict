@@ -307,3 +307,7 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | Case ID | Status | Kind | Requirements | Scenario and oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-127 | implemented | Duplicate handler recovery | CSPINE-REQ-049 | A duplicate failure key must not hide an independently unsupported binder or target payload in either arm order; the invalid binding never becomes Core. | duplicate_obstruction_maps_preserve_independent_arm_errors | crates/edict-syntax/tests/binding_recovery.rs | Valid control and single-arm error controls distinguish duplicate-caused suppression. |
+
+| Case ID | Status | Kind | Requirements | Scenario and oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-128 | implemented | Independent bound overflow | CSPINE-REQ-049 | Visiting an independent string concatenation after a poisoned operand reports InvalidBound on overflowing maximums rather than panicking or wrapping. | independent_string_bound_overflow_is_a_diagnostic | crates/edict-syntax/tests/binding_recovery.rs | Exact U64 maximum-sum control, direct overflow and both poisoned operand orders; exact independent expression span. |

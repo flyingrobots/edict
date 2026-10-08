@@ -312,3 +312,8 @@ arm diagnostics. Every source arm is checked, including a duplicate that would
 otherwise be overwritten by key indexing. These diagnostic checks allocate no
 obstruction locals and publish no recovered map; valid maps retain their
 existing canonical ordering and Core output.
+
+String concatenation uses checked maximum-bound addition and reports
+`InvalidBound` if the sum exceeds U64. This also applies when recovery visits
+an independent concatenation after another operand failed; no wrapped bound or
+recovered value is constructed. A sum equal to U64's maximum remains representable.
