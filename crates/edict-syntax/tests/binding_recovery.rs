@@ -540,6 +540,8 @@ fn contextual_yield_inference_preserves_both_branch_causes() {
     for (left, right) in [
         ("{ first: 0, second: 1u64 }", "{ first: 1u64, second: 0 }"),
         ("0", "1u64"),
+        ("1u64", "0"),
+        ("{ first: 1u64 }", "{ first: 0 }"),
     ] {
         let valid = insert_bindings(&format!("  let chosen = if true {{ let left = true; yield {left}; }} else {{ let right = false; yield {right}; }};"));
         compile(&valid).expect("valid contextual yield control");

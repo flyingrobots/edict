@@ -267,3 +267,9 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-120 | implemented | Callee shadow recovery | CSPINE-REQ-049 | Poisoned callee roots do not resolve outer source/imported helpers; independent argument errors remain visible. | poisoned_callees_do_not_resolve_outer_helpers | crates/edict-syntax/tests/binding_recovery.rs | Public type-check boundary; surface validation is separate. |
+
+## Mirrored Contextual Yield Recovery
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-121 | implemented | Yield width recovery | CSPINE-REQ-049 | A valid typed then-yield supplies else literal context despite unrelated branch errors, for scalar and record yields. | contextual_yield_inference_preserves_both_branch_causes | crates/edict-syntax/tests/binding_recovery.rs | Both branch orders, valid controls and exact independent origins. |

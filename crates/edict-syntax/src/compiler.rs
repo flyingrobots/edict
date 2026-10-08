@@ -2658,11 +2658,18 @@ impl<'a> TypeChecker<'a> {
         );
         let then_steps = state.accumulated_steps;
         state.accumulated_steps = baseline_steps;
-        let else_expected = shared_expected.or_else(|| {
-            contains_contextual_bare_integer(&else_source.value)
-                .then(|| then_result.as_ref().map(|(_, shape)| shape))
-                .flatten()
-        });
+        let inferred_then_shape =
+            if shared_expected.is_none() && contains_contextual_bare_integer(&else_source.value) {
+                then_result
+                    .as_ref()
+                    .map(|(_, shape)| shape.clone())
+                    .or_else(|| {
+                        self.infer_yield_block_shape(intent, output_shape, then_source, env, state)
+                    })
+            } else {
+                None
+            };
+        let else_expected = shared_expected.or(inferred_then_shape.as_ref());
         let else_result = self.check_yield_block(
             intent,
             output_shape,
