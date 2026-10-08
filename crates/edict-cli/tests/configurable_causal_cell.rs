@@ -316,6 +316,7 @@ fn configurable_cell_real_provider_accepts_both_variants() {
                 "verification is independent of application directory"
             );
         }
+        check_invalid_configurations(&root, scalars, bytes, &package, &report);
         check_invalid_closures(&root, scalars, bytes, &digest, &package, &report);
         fs::remove_dir_all(root).unwrap();
     }
@@ -414,4 +415,64 @@ fn check_invalid_closures(
         report,
         fs::read(root.join(".build/application/verification-report.cbor")).unwrap()
     );
+}
+
+// Characterize existing provider refusal behavior through public authoring and
+// application build. Re-authoring and repinning bypass stale-digest rejection,
+// so these assertions exercise schema admission and the pinned provider,
+// rather than stopping at a stale manifest pin.
+fn check_invalid_configurations(
+    root: &std::path::Path,
+    scalars: &str,
+    bytes: &str,
+    package: &[u8],
+    report: &[u8],
+) {
+    use std::fs;
+    let original = fs::read(root.join("edict.lawpack.json")).unwrap();
+    let source = fs::read(root.join("src/create.edict")).unwrap();
+    for case in ["zero-cap", "aliased-fields"] {
+        let mut document: serde_json::Value = serde_json::from_slice(&original).unwrap();
+        let configuration = &mut document["lawpack"]["localResources"][0]["value"];
+        match case {
+            "zero-cap" => configuration["maxReplacementBytes"] = 0.into(),
+            "aliased-fields" => {
+                configuration["invocationBinding"]["replacementField"] = "key".into();
+            }
+            _ => unreachable!(),
+        }
+        fs::write(
+            root.join("edict.lawpack.json"),
+            serde_json::to_vec(&document).unwrap(),
+        )
+        .unwrap();
+        let authored = run_public_build(root, "lawpack", "edict.lawpack.json");
+        assert_eq!(authored.status.code(), Some(0), "{case}: {authored:?}");
+        let digest = fs::read_to_string(root.join("vendor/cell/manifest.sha256")).unwrap();
+        fs::write(
+            root.join("src/create.edict"),
+            command::render(&["source", "64", scalars, bytes, digest.trim()]).unwrap(),
+        )
+        .unwrap();
+        assert_public_failure(
+            &run_public_build(root, "application", "edict.application.json"),
+            if case == "zero-cap" {
+                "InvalidProviderInvocation"
+            } else {
+                "ProviderLowererRefused"
+            },
+        );
+        assert_eq!(
+            package,
+            fs::read(root.join(".build/application/executable-operation-package.cbor")).unwrap()
+        );
+        assert_eq!(
+            report,
+            fs::read(root.join(".build/application/verification-report.cbor")).unwrap()
+        );
+    }
+    fs::write(root.join("edict.lawpack.json"), original).unwrap();
+    fs::write(root.join("src/create.edict"), source).unwrap();
+    let restored = run_public_build(root, "lawpack", "edict.lawpack.json");
+    assert_eq!(restored.status.code(), Some(0), "{restored:?}");
 }

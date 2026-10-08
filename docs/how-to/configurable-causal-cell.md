@@ -108,6 +108,10 @@ identical executable-package and report bytes for identical inputs.
   `InvalidApplicationClosure`; regenerate source from the new manifest sidecar.
 - A repinned lawpack with an insufficient `maxOutputBytes` budget produces
   `InvalidBound`. Keep the helper's derived budget or justify a larger one.
+- A reauthored, repinned zero replacement cap produces
+  `InvalidProviderInvocation` during provider schema admission. Aliasing the key
+  and replacement fields produces `ProviderLowererRefused`. Updating hashes
+  does not make either configuration valid.
 - Failed application compilation preserves the last successfully published
   package and report; it does not make those old files the output of the failure.
 
