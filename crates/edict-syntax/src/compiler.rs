@@ -2100,63 +2100,76 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        let Some(request_shape) = self.type_ref_shape(request_type, span) else {
-            return;
-        };
-        let TypeKind::ExternalActionRequest { settlement } = &request_shape.kind else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::TypeMismatch,
-                "request binding type must be ExternalActionRequest<Settlement>",
-                span,
-            ));
-            return;
-        };
-        let settlement_type = settlement.coord.clone();
-        let Some((operation_resource, input)) =
-            self.check_external_action_operation(operation, env, span)
-        else {
-            return;
-        };
-        if !requestable_operation_family(&operation_resource.coordinate) {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::UnrequestableExternalOperation,
-                format!(
-                    "external operation family `{}` is not requestable",
-                    operation_resource.coordinate
-                ),
-                span,
-            ));
-            return;
-        }
-        let Some(authority_scope) = self.check_expr(authority_scope, env) else {
-            return;
-        };
-        let Some(basis) = self.check_expr(basis, env) else {
-            return;
-        };
+        let request_shape = self.type_ref_shape(request_type, span);
+        let settlement_type = request_shape.as_ref().and_then(|shape| {
+            if let TypeKind::ExternalActionRequest { settlement } = &shape.kind {
+                Some(settlement.coord.clone())
+            } else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "request binding type must be ExternalActionRequest<Settlement>",
+                    span,
+                ));
+                None
+            }
+        });
+        let operation = self
+            .check_external_action_operation(operation, env, span)
+            .filter(|(resource, _)| {
+                if requestable_operation_family(&resource.coordinate) {
+                    true
+                } else {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnrequestableExternalOperation,
+                        format!(
+                            "external operation family `{}` is not requestable",
+                            resource.coordinate
+                        ),
+                        span,
+                    ));
+                    false
+                }
+            });
+        let authority_scope = self.check_expr(authority_scope, env);
+        let basis = self.check_expr(basis, env);
         let settlement_budget_shape = integer_shape("U64");
-        let Some(max_settlement_bytes) = self.check_expr_with_expected(
+        let max_settlement_bytes = self.check_expr_with_expected(
             max_settlement_bytes,
             env,
             Some(&settlement_budget_shape),
-        ) else {
-            return;
-        };
+        );
         let attempt_budget_shape = integer_shape("U32");
-        let Some(max_attempts) =
-            self.check_expr_with_expected(max_attempts, env, Some(&attempt_budget_shape))
+        let max_attempts =
+            self.check_expr_with_expected(max_attempts, env, Some(&attempt_budget_shape));
+        let input_schema = self.request_resource(input_schema);
+        let settlement_schema = self.request_resource(settlement_schema);
+        let reconciliation_law = self.request_resource(reconciliation_law);
+        let (
+            Some(request_shape),
+            Some(settlement_type),
+            Some((operation_resource, input)),
+            Some(authority_scope),
+            Some(basis),
+            Some(max_settlement_bytes),
+            Some(max_attempts),
+            Some(input_schema),
+            Some(settlement_schema),
+            Some(reconciliation_law),
+        ) = (
+            request_shape,
+            settlement_type,
+            operation,
+            authority_scope,
+            basis,
+            max_settlement_bytes,
+            max_attempts,
+            input_schema,
+            settlement_schema,
+            reconciliation_law,
+        )
         else {
-            return;
-        };
-        let Some(input_schema) = self.request_resource(input_schema) else {
-            return;
-        };
-        let Some(settlement_schema) = self.request_resource(settlement_schema) else {
-            return;
-        };
-        let Some(reconciliation_law) = self.request_resource(reconciliation_law) else {
             return;
         };
         let local = next_local(&mut state.local_index, request_shape.coord.clone());

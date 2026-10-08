@@ -791,9 +791,8 @@ fn compile_call_recovery(source: &str) -> Result<CoreModule, Vec<CompilerError>>
     compile_to_core(&module, &context)
 }
 
-#[test]
-fn failed_request_binding_suppresses_dependent_return_only() {
-    let valid = format!(
+fn valid_recovery_request() -> String {
+    format!(
         r#"package recovery.requests@1;
 use capability workspace.snapshot.observe@1 digest "sha256:{operation}" as snapshot;
 type RequestInput = {{ payload: Bytes<max=1024>, scope: Bytes<max=32>, basis: Bytes<max=32>, }};
@@ -811,7 +810,12 @@ intent evaluate(input: RequestInput) returns ExternalActionRequest<Bytes<max=655
         schema = "b".repeat(64),
         settlement = "c".repeat(64),
         law = "d".repeat(64)
-    );
+    )
+}
+
+#[test]
+fn failed_request_binding_suppresses_dependent_return_only() {
+    let valid = valid_recovery_request();
     compile_function_recovery(&valid).expect("valid request control compiles");
     let source = valid.replace("snapshot(input.payload)", "snapshot(missingRequestCause)");
     let errors =
@@ -1114,6 +1118,50 @@ fn unavailable_outer_annotations_preserve_intrinsic_family_errors() {
         assert_eq!(
             errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
             [CompilerErrorKind::UnresolvedType, kind]
+        );
+    }
+}
+
+#[test]
+fn failed_request_clauses_preserve_independent_causes() {
+    let valid = valid_recovery_request();
+    compile_function_recovery(&valid).expect("valid request control compiles");
+    for fail_annotation in [false, true] {
+        let mut source = valid
+            .replace("snapshot(input.payload)", "snapshot(missingOperation)")
+            .replace(
+                "authority input.scope basis input.basis",
+                "authority missingAuthority basis missingBasis",
+            )
+            .replace(
+                "maxSettlementBytes 65536u64 maxAttempts 4u32",
+                "maxSettlementBytes missingBytes maxAttempts missingAttempts",
+            );
+        if fail_annotation {
+            source = source.replace(
+                "request pending: ExternalActionRequest<Bytes<max=65536>>",
+                "request pending: MissingRequestType",
+            );
+        }
+        let errors = compile_function_recovery(&source).expect_err("invalid request has no Core");
+        assert_eq!(
+            errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+            vec![CompilerErrorKind::UnresolvedType; 5 + usize::from(fail_annotation)]
+        );
+        let origins: Vec<_> = errors
+            .iter()
+            .skip(usize::from(fail_annotation))
+            .map(|e| &source[e.span.start..e.span.end])
+            .collect();
+        assert_eq!(
+            origins,
+            [
+                "missingOperation",
+                "missingAuthority",
+                "missingBasis",
+                "missingBytes",
+                "missingAttempts"
+            ]
         );
     }
 }

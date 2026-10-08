@@ -249,3 +249,9 @@ Out of scope:
 | CSPINE-TP-117 | implemented | Intrinsic operand families | CSPINE-REQ-049 | An unavailable outer annotation does not suppress intrinsically invalid predicate, concatenation or bytes operands. | unavailable_outer_annotations_preserve_intrinsic_family_errors | crates/edict-syntax/tests/binding_recovery.rs | Missing literal width remains suppressed only where a valid missing annotation could supply it. |
 
 CSPINE-REQ-049 remains planned pending the complete production-path audit and final current-head review. The implemented rows establish their named fixtures, including byte slices, failed loop iterators/bounds and independent effect maps. They do not certify untested variants or satisfy review gates by themselves.
+
+## Independent Request Clauses
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-118 | implemented | Request clause recovery | CSPINE-REQ-049 | Failed request annotation or operation does not hide independent authority, basis or budget errors; no invalid request lowers. | failed_request_clauses_preserve_independent_causes | crates/edict-syntax/tests/binding_recovery.rs | Valid digest-locked request control and exact kind/span vectors. |
