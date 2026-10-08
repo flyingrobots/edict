@@ -3898,7 +3898,12 @@ impl<'a> TypeChecker<'a> {
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
-        let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
+        let Some((source_coordinate, fact)) = self.resolve_pure_function(callee, span) else {
+            for arg in args {
+                self.check_expr_with_unavailable_expected_type(arg, env);
+            }
+            return None;
+        };
         if self
             .resolved
             .effect_write_classes

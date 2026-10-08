@@ -1356,3 +1356,23 @@ fn check_call_arity_recovery(source_owned: bool) {
         }
     }
 }
+
+#[test]
+fn unresolved_helper_preserves_independent_argument_errors() {
+    compile(SOURCE).expect("valid authenticated control");
+    let source = insert_bindings(
+        "  let failed = missingCallCause;\n  let result = absent.helper(failed, missingCallPeer, 1);",
+    );
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedFunction,
+            CompilerErrorKind::UnresolvedType,
+        ],
+    );
+    assert_eq!(
+        &source[errors[2].span.start..errors[2].span.end],
+        "missingCallPeer"
+    );
+}

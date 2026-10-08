@@ -296,3 +296,7 @@ Source and imported helper calls retain independent supplied-argument diagnostic
 after an argument-count mismatch. Known parameter positions retain their type
 context; extra arguments are checked without inventing an expected type. Invalid
 calls produce no Core value. [CSPINE-TP-124]
+
+When helper resolution fails, supplied arguments still retain independent
+diagnostics without an expected parameter type. Poisoned dependencies remain
+suppressed and the compiler constructs no call. [CSPINE-TP-125]

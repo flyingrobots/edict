@@ -291,3 +291,9 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-124 | implemented | Helper argument count | CSPINE-REQ-049 | Source/imported calls retain independent supplied-argument errors after an arity mismatch; poisoned arguments add no dependent error and extra bare literals acquire no invented width. | source_call_arity_failure_keeps_argument_causes, imported_call_arity_failure_keeps_argument_causes | crates/edict-syntax/tests/binding_recovery.rs | Valid controls, missing/excess argument cases, exact kinds and origins. |
+
+## Unresolved Helper Recovery
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-125 | implemented | Missing helper | CSPINE-REQ-049 | Missing helper resolution retains an independent unknown argument, suppresses poisoned-name cascades, and does not invent a width for a bare integer argument. | unresolved_helper_preserves_independent_argument_errors | crates/edict-syntax/tests/binding_recovery.rs | Valid authenticated control; exact error kinds and independent argument span. |

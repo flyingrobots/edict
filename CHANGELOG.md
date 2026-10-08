@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Retain independent argument errors after helper resolution fails, without inventing parameter types or constructing a call.
+
 - Preserve independent supplied-argument diagnostics after source/imported helper arity errors, without constructing invalid calls or inventing types for extra arguments.
 
 - Preserve independent effect-binding diagnostics after a rejected operation profile, without constructing the rejected effect in Core.
