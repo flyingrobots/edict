@@ -279,3 +279,9 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-122 | implemented | Comparison width recovery | CSPINE-REQ-049 | Missing outer annotations cannot suppress independent comparison operand width errors. | unavailable_annotations_preserve_comparison_width_errors | crates/edict-syntax/tests/binding_recovery.rs | Direct, conditional and record contexts; typed controls and exact kinds. |
+
+## Rejected Effect Profile Recovery
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-123 | implemented | Effect profile recovery | CSPINE-REQ-049 | A known disallowed effect profile does not hide an independently unresolved argument; valid effect control compiles and a profile-only failure emits only ProfileEffectMismatch. | disallowed_effect_profile_preserves_independent_binding_errors | crates/edict-syntax/tests/binding_recovery.rs | Explicit read-only compiler profile fact with the authenticated existing lawpack. |

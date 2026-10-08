@@ -11,6 +11,14 @@ fn compile(source: &str) -> Result<CoreModule, Vec<CompilerError>> {
 }
 
 fn compile_with_surface(source: &str, surface: bool) -> Result<CoreModule, Vec<CompilerError>> {
+    compile_with_profile(source, surface, None)
+}
+
+fn compile_with_profile(
+    source: &str,
+    surface: bool,
+    profile: Option<(&str, &str)>,
+) -> Result<CoreModule, Vec<CompilerError>> {
     let module = parse_module(source).expect("recovery fixture parses");
     let bundle = decode_lawpack_bundle(
         include_bytes!("../../../fixtures/lawpack/hello-echo/manifest.cbor"),
@@ -25,10 +33,16 @@ fn compile_with_surface(source: &str, surface: bool) -> Result<CoreModule, Vec<C
     .expect("exact adapter");
     let prepared = prepare_lawpack_compilation(&module, &bundle, &adapter)
         .expect("authenticated recovery context");
+    let mut context = prepared.compiler_context().clone();
+    if let Some((coordinate, meaning)) = profile {
+        context = context
+            .with_operation_profile(coordinate, meaning)
+            .with_operation_profile_write_classes(coordinate, [edict_syntax::WriteClass::Read]);
+    }
     if surface {
-        compile_to_core(&module, prepared.compiler_context())
+        compile_to_core(&module, &context)
     } else {
-        let resolved = edict_syntax::resolve_module(&module, prepared.compiler_context())?;
+        let resolved = edict_syntax::resolve_module(&module, &context)?;
         let typed = edict_syntax::type_check(&resolved)?;
         edict_syntax::lower_core(&typed)
     }
@@ -1261,4 +1275,34 @@ fn unavailable_annotations_preserve_comparison_width_errors() {
             ],
         );
     }
+}
+
+#[test]
+fn disallowed_effect_profile_preserves_independent_binding_errors() {
+    compile(SOURCE).expect("valid effect profile control");
+    let source = SOURCE.replace("profile hello.createGreeting", "profile recovery.read");
+    let profile = Some(("recovery.read", "continuum.profile.read-only/v1"));
+    let errors =
+        compile_with_profile(&source, true, profile).expect_err("read-only profile cannot create");
+    assert_eq!(
+        errors.iter().map(|error| error.kind).collect::<Vec<_>>(),
+        [CompilerErrorKind::ProfileEffectMismatch]
+    );
+    let source = source.replace(
+        "hello.createGreeting(input)",
+        "hello.createGreeting(missingProfileArgument)",
+    );
+    let errors = compile_with_profile(&source, true, profile)
+        .expect_err("invalid effect cannot produce Core");
+    assert_eq!(
+        errors.iter().map(|error| error.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::ProfileEffectMismatch,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingProfileArgument"
+    );
 }

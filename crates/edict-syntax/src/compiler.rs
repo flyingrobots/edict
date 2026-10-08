@@ -3005,9 +3005,7 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        if !self.check_effect_profile(intent, stmt.value, stmt.span) {
-            return;
-        }
+        let profile_matches = self.check_effect_profile(intent, stmt.value, stmt.span);
         let Some(binding_shape) = self.effect_binding_shape(stmt.ty, stmt.span) else {
             self.check_effect_input(stmt.value, env, stmt.span);
             self.check_failed_effect_handler(&stmt, handler, state);
@@ -3019,6 +3017,10 @@ impl<'a> TypeChecker<'a> {
             self.check_failed_effect_handler(&stmt, handler, state);
             return;
         };
+        if !profile_matches {
+            self.check_failed_effect_handler(&stmt, handler, state);
+            return;
+        }
         let local = next_local(&mut state.local_index, binding_shape.coord.clone());
         locals.push(local.clone());
         let Some(obstruction_map) = self.check_obstruction_handler(
