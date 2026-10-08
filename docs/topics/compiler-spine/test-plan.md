@@ -198,3 +198,21 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-095 | implemented | Independent branches and operands | CSPINE-REQ-049 | Poisoned conditions, concatenation operands and failed yield branches do not prevent independent sibling diagnostics. | poisoned_condition_does_not_hide_independent_branch_errors, poisoned_concatenation_does_not_hide_an_independent_operand_error, failed_yield_branch_does_not_hide_an_independent_other_branch | crates/edict-syntax/tests/binding_recovery.rs | Invalid subexpressions do not produce Core. |
+
+## Effect Signature Mismatch Detail
+
+| ID | Status | Requirement | Source |
+| --- | --- | --- | --- |
+| CSPINE-REQ-048 | implemented | Effect signature failures report TypeMismatch at the exact call span while identifying a deterministic first incompatible field, input/receipt boundary and expected/actual bounded types in structured context. | issue #239 |
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-077 | implemented | Input field bound | CSPINE-REQ-048 | An equivalent structural input compiles; widening only key beyond the exported bound identifies input.key and the expected/actual scalar bounds. | input_signature_error_identifies_first_incompatible_field | crates/edict-syntax/tests/effect_signature_diagnostics.rs, fixtures/lawpack/hello-echo/create-greeting.edict | Kind and call span remain stable. |
+| CSPINE-TP-078 | implemented | Receipt field bound | CSPINE-REQ-048 | An equivalent receipt annotation compiles; narrowing only key identifies receipt.key and its expected/actual scalar bounds. | receipt_signature_error_identifies_first_incompatible_field | crates/edict-syntax/tests/effect_signature_diagnostics.rs, fixtures/lawpack/hello-echo/create-greeting.edict | Expected is binding annotation, actual is exported receipt. |
+| CSPINE-TP-079 | implemented | Structured first difference | CSPINE-REQ-048 | Nested records, missing/extra fields, nominal identity and list bounds use deterministic first-difference paths without altering compatibility; independent failures remain visible. | signature_first_difference_is_lexical_and_preserves_independent_errors, signature_missing_and_extra_fields_have_typed_absence, nested_and_list_signature_paths_preserve_bounds_and_order, nominal_signature_mismatch_names_exact_identity_without_unwrapping | crates/edict-syntax/tests/effect_signature_diagnostics.rs | Seven library cases pass after canonical fixture setup corrections; public build metadata is separately verified. |
+
+## Exact Signature Mismatch Spans
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-089 | implemented | Exact call span | CSPINE-REQ-048 | Both input and receipt mismatches identify exactly the call expression byte range, excluding the binding annotation, failure handler and semicolon. | input_signature_error_identifies_first_incompatible_field, receipt_signature_error_identifies_first_incompatible_field | crates/edict-syntax/tests/effect_signature_diagnostics.rs | Containment is insufficient evidence. |

@@ -271,3 +271,11 @@ The compiler keeps lexical failure markers separate from typed local values. A f
 Records continue checking independent siblings after a failed value. Statement branches are checked even when their condition fails, and annotated yield branches and concatenation operands are checked independently. Invalid composites produce no typed value. A syntactically present failed return differs from an absent return, preventing a redundant missing-return error. A truly absent return retains its error.
 
 [CSPINE-REQ-049]
+
+## Effect signature mismatch detail
+
+Explicit mapped effect bindings report `TypeMismatch` at the exact call span when their argument or receipt annotation differs from the exact exported signature. `CompilerError.signature_mismatch` identifies the source effect, input or receipt boundary, typed structural path, and expected/actual self-describing bounded types. Record fields use lexical depth-first first-difference order. List-length incompatibility identifies the list itself; a compatible length with an incompatible item descends through a `listItem` segment. Nominal types retain their distinct coordinates. A missing field has no actual type; an extra field has no expected type. Compatibility rules are unchanged, and independent later errors remain visible.
+
+This is an implementation-crate Rust API addition: code constructing `CompilerError` with a struct literal must initialize `signature_mismatch`, usually to `None`. The curated facade adds no named re-export of the new context types. Bare-call classification and dependent-error suppression remain separate work.
+
+[CSPINE-REQ-048]

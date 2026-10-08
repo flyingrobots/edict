@@ -1225,12 +1225,16 @@ fn parse_diagnostic_item(error: &ParseError) -> Value {
 }
 
 fn compiler_diagnostic_item(error: &CompilerError) -> Value {
-    json!({
+    let mut record = json!({
         "stage": compiler_stage_name(error.stage),
         "kind": compiler_error_kind_name(error.kind),
         "severity": "error",
         "span": span_value(error.span),
-    })
+    });
+    if let Some(detail) = &error.signature_mismatch {
+        record["signatureMismatch"] = json!(detail);
+    }
+    record
 }
 
 fn span_value(span: Span) -> Value {
@@ -2337,6 +2341,11 @@ fn write_application_source_failure(
             Some(message),
         );
         record["sourceLocation"] = json!({ "path": path, "line": line, "column": column });
+        if let ApplicationSourceError::Compiler(error) = error {
+            if let Some(detail) = &error.signature_mismatch {
+                record["signatureMismatch"] = json!(detail);
+            }
+        }
         write_record(&mut stderr, &record);
     }
     let summary = CliFailure {
