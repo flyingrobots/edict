@@ -362,3 +362,11 @@ The generated rules, compatibility and fixture resources are declarations;
 their digest identities do not establish independent assurance or runtime
 execution. These authoring witnesses do not prove provider acceptance or Echo
 execution. Application-build and provider cases are tracked in the test plan.
+
+The configurable-cell helper enforces its scalar-to-byte-cap relationship before
+authoring. The pinned v1 Echo provider also accepts independently declared
+smaller byte caps when documents and pins are reauthored; its successful build
+is not a general parameter-consistency check. The explicit real-provider test
+checks that the emitted program retains that smaller cap and that restoring the
+original documents restores the exact package and report. See the
+[recipe](../../how-to/configurable-causal-cell.md) for the boundary and invocation.

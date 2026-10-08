@@ -29,7 +29,8 @@ zero cap to reach the lowerer; schema admission rejected it earlier, and the
 expected kind was corrected. This is characterization of existing behavior,
 not evidence of a new behavior fix or a claimed RED/GREEN cycle.
 
-The broader LAUTH-TP-020 scalar/type-to-byte-cap consistency witness remains
-planned. These two refusals do not establish arbitrary metadata consistency,
+At this witness snapshot the broader LAUTH-TP-020 scalar/type-to-byte-cap
+consistency witness remained planned; the subsequent independent-cap experiment
+and correction are recorded in F06.md. These two refusals do not establish arbitrary metadata consistency,
 independent verifier rejection of a substituted executable package, or runtime
 execution. The default suite does not run this ignored provider test.

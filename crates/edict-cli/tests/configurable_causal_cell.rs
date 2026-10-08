@@ -317,6 +317,7 @@ fn configurable_cell_real_provider_accepts_both_variants() {
             );
         }
         check_invalid_configurations(&root, scalars, bytes, &package, &report);
+        check_independent_byte_cap(&root, scalars, bytes, &package, &report);
         check_invalid_closures(&root, scalars, bytes, &digest, &package, &report);
         fs::remove_dir_all(root).unwrap();
     }
@@ -475,4 +476,79 @@ fn check_invalid_configurations(
     fs::write(root.join("src/create.edict"), source).unwrap();
     let restored = run_public_build(root, "lawpack", "edict.lawpack.json");
     assert_eq!(restored.status.code(), Some(0), "{restored:?}");
+}
+
+// The v1 provider admits independently declared byte caps. This witness makes
+// that limitation explicit instead of assigning the helper's consistency
+// guarantee to the lowerer or verifier.
+fn check_independent_byte_cap(
+    root: &std::path::Path,
+    scalars: &str,
+    bytes: &str,
+    package: &[u8],
+    report: &[u8],
+) {
+    use std::fs;
+    let original = fs::read(root.join("edict.lawpack.json")).unwrap();
+    let source = fs::read(root.join("src/create.edict")).unwrap();
+    let mut document: serde_json::Value = serde_json::from_slice(&original).unwrap();
+    document["lawpack"]["localResources"][0]["value"]["maxReplacementBytes"] = 1.into();
+    fs::write(
+        root.join("edict.lawpack.json"),
+        serde_json::to_vec(&document).unwrap(),
+    )
+    .unwrap();
+    let authored = run_public_build(root, "lawpack", "edict.lawpack.json");
+    assert_eq!(authored.status.code(), Some(0), "{authored:?}");
+    let digest = fs::read_to_string(root.join("vendor/cell/manifest.sha256")).unwrap();
+    fs::write(
+        root.join("src/create.edict"),
+        command::render(&["source", "64", scalars, bytes, digest.trim()]).unwrap(),
+    )
+    .unwrap();
+    let built = run_public_build(root, "application", "edict.application.json");
+    assert_eq!(
+        built.status.code(),
+        Some(0),
+        "independent byte cap: {built:?}"
+    );
+    let changed =
+        fs::read(root.join(".build/application/executable-operation-package.cbor")).unwrap();
+    assert_ne!(
+        changed, package,
+        "new configuration changes executable identity"
+    );
+    let decoded = edict_syntax::decode_canonical_cbor(&changed).unwrap();
+    let CanonicalValue::Bytes(program) = map_field(&decoded, "program") else {
+        panic!("package must contain canonical program bytes");
+    };
+    let program = edict_syntax::decode_canonical_cbor(program).unwrap();
+    assert_eq!(
+        map_field(&program, "max_replacement_bytes"),
+        &CanonicalValue::Integer(1)
+    );
+    fs::write(root.join("edict.lawpack.json"), original).unwrap();
+    fs::write(root.join("src/create.edict"), source).unwrap();
+    let restored = run_public_build(root, "lawpack", "edict.lawpack.json");
+    assert_eq!(restored.status.code(), Some(0), "{restored:?}");
+    let restored = run_public_build(root, "application", "edict.application.json");
+    assert_eq!(restored.status.code(), Some(0), "{restored:?}");
+    assert_eq!(
+        package,
+        fs::read(root.join(".build/application/executable-operation-package.cbor")).unwrap()
+    );
+    assert_eq!(
+        report,
+        fs::read(root.join(".build/application/verification-report.cbor")).unwrap()
+    );
+}
+
+fn map_field<'a>(value: &'a CanonicalValue, key: &str) -> &'a CanonicalValue {
+    let CanonicalValue::Map(fields) = value else {
+        panic!("expected canonical map");
+    };
+    fields
+        .iter()
+        .find_map(|(name, value)| (name == &CanonicalValue::Text(key.into())).then_some(value))
+        .expect("required program field")
 }

@@ -35,6 +35,12 @@ The first row matches the stock *byte cap*, not its 256-scalar value type. A
 The result budget includes canonical CBOR map, field-name and text headers.
 The allocation budget is a declared reservation, not a runtime allocation proof.
 
+The consistency rule belongs to this helper. The pinned v1 provider can build
+and verify a manually reauthored lawpack whose physical cap is smaller than the
+value type's worst-case UTF-8 size. Such a build does not promise that every
+value admitted by the type will fit the operation's byte cap. Use the helper's
+paired limits; do not treat provider verification as a general consistency check.
+
 ## Author a fresh application
 
 Create a new application directory. These commands use the larger variant:
