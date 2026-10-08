@@ -756,6 +756,14 @@ fn compile_call_recovery_with_parameter(
     source: &str,
     parameter: &str,
 ) -> Result<CoreModule, Vec<CompilerError>> {
+    compile_call_recovery_phase(source, parameter, true)
+}
+
+fn compile_call_recovery_phase(
+    source: &str,
+    parameter: &str,
+    surface: bool,
+) -> Result<CoreModule, Vec<CompilerError>> {
     let module = parse_module(source).expect("call recovery source parses");
     let lawpack = edict_syntax::ResourceRef {
         coordinate: "recovery.helpers@1".into(),
@@ -795,7 +803,13 @@ fn compile_call_recovery_with_parameter(
                 },
             );
     }
-    compile_to_core(&module, &context)
+    if surface {
+        compile_to_core(&module, &context)
+    } else {
+        let resolved = edict_syntax::resolve_module(&module, &context)?;
+        let typed = edict_syntax::type_check(&resolved)?;
+        edict_syntax::lower_core(&typed)
+    }
 }
 
 fn valid_recovery_request() -> String {
@@ -1197,5 +1211,23 @@ fn unavailable_imported_parameter_preserves_argument_causes() {
         if errors.len() > 1 {
             assert_eq!(&source[errors[1].span.start..errors[1].span.end], argument);
         }
+    }
+}
+
+#[test]
+fn poisoned_callees_do_not_resolve_outer_helpers() {
+    for (declaration, root, callee) in [
+        ("fn pair(left: Bool, right: Bool) -> Bool { return left; }", "pair", "pair"),
+        ("use lawpack recovery.helpers@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;", "helpers", "helpers.pair"),
+    ] {
+        let valid = format!("package recovery.calls@1; {declaration} intent evaluate(input: Bool) returns Bool profile p.read basis none budget <= p.large {{ let result = {callee}(true, false); return result; }}");
+        compile_call_recovery(&valid).expect("valid helper control");
+        let source = valid.replace("let result =", &format!("let {root} = missingCalleeCause; let result =")).replace("(true, false)", "(1u64, missingArgumentPeer)");
+        // Exercise the public type-check boundary directly, including ASTs
+        // whose shadowing may be refused by the separate surface validator.
+        let errors = compile_call_recovery_phase(&source, "Bool", false).expect_err("poisoned callee cannot produce Core");
+        assert_eq!(errors.iter().map(|e| e.kind).collect::<Vec<_>>(), [CompilerErrorKind::UnresolvedType, CompilerErrorKind::UnresolvedType]);
+        let origins: Vec<_> = errors.iter().map(|e| &source[e.span.start..e.span.end]).collect();
+        assert_eq!(origins, ["missingCalleeCause", "missingArgumentPeer"]);
     }
 }

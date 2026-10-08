@@ -261,3 +261,9 @@ CSPINE-REQ-049 remains planned pending the complete production-path audit and fi
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-119 | implemented | Imported argument recovery | CSPINE-REQ-049 | Unavailable imported parameter types retain independent argument errors without inventing bare literal widths. | unavailable_imported_parameter_preserves_argument_causes | crates/edict-syntax/tests/binding_recovery.rs | Explicit trusted compiler facts; compiler boundary only. |
+
+## Poisoned Callee Recovery
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-120 | implemented | Callee shadow recovery | CSPINE-REQ-049 | Poisoned callee roots do not resolve outer source/imported helpers; independent argument errors remain visible. | poisoned_callees_do_not_resolve_outer_helpers | crates/edict-syntax/tests/binding_recovery.rs | Public type-check boundary; surface validation is separate. |

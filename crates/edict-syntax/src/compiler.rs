@@ -3854,6 +3854,12 @@ impl<'a> TypeChecker<'a> {
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
+        if plain_path_root(callee).is_some_and(|root| env.poisoned.contains(root)) {
+            for arg in args {
+                self.check_expr_with_unavailable_expected_type(arg, env);
+            }
+            return None;
+        }
         if let Expr::Ident { name, .. } = callee {
             if let Some(signature) = self.function_signatures.get(name).cloned() {
                 return self
