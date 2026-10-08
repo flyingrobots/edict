@@ -8,7 +8,7 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
-- Add application-owned configurable-cell authoring support with checked Unicode/byte limits, derived result budgets, and repeatable public lawpack-publication witnesses.
+- Add an application-owned configurable-cell example command and how-to with checked Unicode/byte limits, derived result budgets, repeatable public lawpack/application builds, and pinned Echo provider witnesses.
 
 - Correct the retained study validation helper to remove staged deletions and old rename paths from copied validation snapshots.
 

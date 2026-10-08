@@ -341,6 +341,9 @@ receipt on this path.
 
 ## Configurable cell document generator
 
+Follow [Author a causal-cell lawpack with your own limits](../../how-to/configurable-causal-cell.md)
+to generate the documents and run the public build commands.
+
 The application-owned support modules under
 `crates/edict-cli/examples/configurable_causal_cell/` derive a complete
 `edict.lawpack-build/v1` document from explicit key/value scalar bounds and a
