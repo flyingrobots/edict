@@ -1036,3 +1036,48 @@ fn poisoned_loop_iterators_preserve_independent_body_causes() {
         ]
     );
 }
+
+#[test]
+fn failed_effect_inputs_preserve_independent_map_errors() {
+    let valid = insert_bindings("  let failed = input;");
+    compile(&valid).expect("valid mapped effect control");
+    let duplicate = "else { alreadyExists(existing) => hello.AlreadyExists, alreadyExists(other) => hello.AlreadyExists }";
+    let source = valid
+        .replace("let failed = input;", "let failed = missingEffectCause;")
+        .replace(
+            "hello.createGreeting(input)",
+            "hello.createGreeting(failed)",
+        )
+        .replace(
+            "else { alreadyExists(existing) => hello.AlreadyExists }",
+            duplicate,
+        );
+    check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::DuplicateObstructionFailure,
+        ],
+    );
+    let source = SOURCE
+        .replace(
+            "let receipt: hello.GreetingReceipt",
+            "let receipt: MissingRecoveryType",
+        )
+        .replace(
+            "hello.createGreeting(input)",
+            "hello.createGreeting(missingEffectArgument)",
+        )
+        .replace(
+            "else { alreadyExists(existing) => hello.AlreadyExists }",
+            duplicate,
+        );
+    check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::DuplicateObstructionFailure,
+        ],
+    );
+}

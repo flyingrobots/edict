@@ -2989,11 +2989,14 @@ impl<'a> TypeChecker<'a> {
             return;
         }
         let Some(binding_shape) = self.effect_binding_shape(stmt.ty, stmt.span) else {
+            self.check_effect_input(stmt.value, env, stmt.span);
+            self.check_failed_effect_handler(&stmt, handler, state);
             return;
         };
         let Some((effect, input)) =
             self.check_effect_call(stmt.value, env, &binding_shape, stmt.span)
         else {
+            self.check_failed_effect_handler(&stmt, handler, state);
             return;
         };
         let local = next_local(&mut state.local_index, binding_shape.coord.clone());
@@ -3014,6 +3017,33 @@ impl<'a> TypeChecker<'a> {
             obstruction_map,
         });
         env.insert(stmt.name.to_owned(), (local, binding_shape));
+    }
+
+    fn check_failed_effect_handler(
+        &mut self,
+        stmt: &LetStatement<'_>,
+        handler: &ObstructionHandler,
+        state: &BodyState,
+    ) {
+        let Some(effect) = effect_coordinate(stmt.value) else {
+            return;
+        };
+        if let Some(signature) = self.resolved.effect_signatures.get(&effect) {
+            if !self.fact_matches_source_import(&effect, &signature.coordinate, &signature.lawpack)
+                || !signature.type_parameters.is_empty()
+            {
+                return;
+            }
+        }
+        let mut obstruction_index = state.obstruction_index;
+        let mut diagnostic_locals = Vec::new();
+        self.check_obstruction_handler(
+            handler,
+            &effect,
+            &mut obstruction_index,
+            &mut diagnostic_locals,
+            stmt.span,
+        );
     }
 
     fn check_effect_profile(&mut self, intent: &ResolvedIntent, call: &Expr, span: Span) -> bool {
@@ -3103,6 +3133,28 @@ impl<'a> TypeChecker<'a> {
         binding_shape: &TypeShape,
         span: Span,
     ) -> Option<(String, CoreExpr)> {
+        let (effect, input, output) = self.check_effect_input(call, env, span)?;
+        if let Some(output) = output {
+            if let Some(failure) = signature_diagnostic::mismatch(
+                &effect,
+                SignatureMismatchPosition::Receipt,
+                binding_shape,
+                &output,
+                expr_span(call),
+            ) {
+                self.errors.push(failure);
+                return None;
+            }
+        }
+        Some((effect, input.expr))
+    }
+
+    fn check_effect_input(
+        &mut self,
+        call: &Expr,
+        env: &LocalEnvironment,
+        span: Span,
+    ) -> Option<(String, TypedValue, Option<TypeShape>)> {
         let effect = effect_coordinate(call)?;
         let Expr::Call {
             args, type_args, ..
@@ -3131,6 +3183,7 @@ impl<'a> TypeChecker<'a> {
         };
         let input = self.check_expr(arg, env)?;
         let signature = self.resolved.effect_signatures.get(&effect).cloned();
+        let mut output_shape = None;
         if let Some(signature) = signature {
             if !self.fact_matches_source_import(&effect, &signature.coordinate, &signature.lawpack)
                 || !signature.type_parameters.is_empty()
@@ -3177,21 +3230,13 @@ impl<'a> TypeChecker<'a> {
                 &expected_input,
                 &input.ty,
                 expr_span(call),
-            )
-            .or_else(|| {
-                signature_diagnostic::mismatch(
-                    &effect,
-                    SignatureMismatchPosition::Receipt,
-                    binding_shape,
-                    &effect_output,
-                    expr_span(call),
-                )
-            }) {
+            ) {
                 self.errors.push(failure);
                 return None;
             }
+            output_shape = Some(effect_output);
         }
-        Some((effect, input.expr))
+        Some((effect, input, output_shape))
     }
 
     fn check_obstruction_handler(
