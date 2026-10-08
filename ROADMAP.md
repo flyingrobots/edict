@@ -49,6 +49,8 @@ Every implementation PR requires Code Lawyer, current-head agy-review, required 
 A plan review is not implementation approval. The retained plan verdict is REQUEST CHANGES; revisions are reconciled without claiming reapproval.
 Record each merged PR and integration commit before marking a task complete.
 
+The [F02C current review handoff](docs/plans/study-feedback/F02C.md#current-review-handoff-2026-10-08) reconciles the published recovery fixes and remaining acceptance work. Passing its focused tests and CI does not close the task or replace independent review.
+
 ## Release Gates
 
 Every release cut must satisfy these gates on the release commit:
