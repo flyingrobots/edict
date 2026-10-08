@@ -1233,3 +1233,32 @@ fn poisoned_callees_do_not_resolve_outer_helpers() {
         assert_eq!(origins, ["missingCalleeCause", "missingArgumentPeer"]);
     }
 }
+
+#[test]
+fn unavailable_annotations_preserve_comparison_width_errors() {
+    for expression in [
+        "0u64 == 1u64",
+        "if 0u64 == 1u64 then true else false",
+        "{ flag: 0u64 == 1u64 }",
+    ] {
+        let valid = insert_bindings(&format!("  let chosen = {expression};"));
+        compile(&valid).expect("typed comparison control");
+        let invalid = valid.replace("0u64 == 1u64", "0 == 1");
+        check_kinds(
+            &invalid,
+            &[
+                CompilerErrorKind::TypeMismatch,
+                CompilerErrorKind::TypeMismatch,
+            ],
+        );
+        let source = invalid.replace("let chosen =", "let chosen: MissingComparisonType =");
+        check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::TypeMismatch,
+                CompilerErrorKind::TypeMismatch,
+            ],
+        );
+    }
+}

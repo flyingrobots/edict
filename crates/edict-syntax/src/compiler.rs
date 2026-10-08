@@ -3600,6 +3600,17 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn check_predicate(&mut self, expr: &Expr, env: &LocalEnvironment) -> Option<CorePredicate> {
+        let previous = std::mem::replace(&mut self.expected_type_unavailable, false);
+        let checked = self.check_predicate_inner(expr, env);
+        self.expected_type_unavailable = previous;
+        checked
+    }
+
+    fn check_predicate_inner(
+        &mut self,
+        expr: &Expr,
+        env: &LocalEnvironment,
+    ) -> Option<CorePredicate> {
         let checked = match expr {
             Expr::Bool { value, .. } => Some(if *value {
                 CorePredicate::True

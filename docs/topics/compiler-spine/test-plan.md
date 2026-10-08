@@ -273,3 +273,9 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-121 | implemented | Yield width recovery | CSPINE-REQ-049 | A valid typed then-yield supplies else literal context despite unrelated branch errors, for scalar and record yields. | contextual_yield_inference_preserves_both_branch_causes | crates/edict-syntax/tests/binding_recovery.rs | Both branch orders, valid controls and exact independent origins. |
+
+## Predicate Intrinsic Context
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-122 | implemented | Comparison width recovery | CSPINE-REQ-049 | Missing outer annotations cannot suppress independent comparison operand width errors. | unavailable_annotations_preserve_comparison_width_errors | crates/edict-syntax/tests/binding_recovery.rs | Direct, conditional and record contexts; typed controls and exact kinds. |
