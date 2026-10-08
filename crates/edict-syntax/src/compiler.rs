@@ -2205,10 +2205,9 @@ impl<'a> TypeChecker<'a> {
         env: &LocalEnvironment,
         state: &mut BodyState,
     ) {
-        let Some(predicate) = self.check_predicate(predicate, env) else {
-            return;
-        };
-        let Some(arm) = self.check_require_else_arm(arm, env) else {
+        let predicate = self.check_predicate(predicate, env);
+        let arm = self.check_require_else_arm(arm, env);
+        let (Some(predicate), Some(arm)) = (predicate, arm) else {
             return;
         };
         state.nodes.push(CoreNode::Require { predicate, arm });
@@ -2226,16 +2225,16 @@ impl<'a> TypeChecker<'a> {
             }
             RequireElseArm::ContinueObstructed(obstruction) => {
                 let reason_kind =
-                    self.check_reason_kind(&obstruction.reason, env, obstruction.span)?;
+                    self.check_reason_kind(&obstruction.reason, env, obstruction.span);
                 let payload = self.check_reason_payload(
                     &obstruction.payload,
                     env,
                     ReasonPayloadMode::SkipReasonField,
-                )?;
+                );
                 Some(CoreRequireFailureArm::ContinueObstructed {
                     reason: CoreObstructionReason {
-                        kind: reason_kind,
-                        payload,
+                        kind: reason_kind?,
+                        payload: payload?,
                     },
                 })
             }

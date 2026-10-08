@@ -234,3 +234,5 @@ Out of scope:
 | CSPINE-TP-100 | implemented | Logical predicate siblings | CSPINE-REQ-049 | Both AND/OR operands retain independent diagnostics; valid predicates retain their existing Core semantics. | poisoned_logical_operand_keeps_the_independent_peer | crates/edict-syntax/tests/binding_recovery.rs | Compile-time traversal does not change runtime short circuiting. |
 
 | CSPINE-TP-101 | implemented | Source function recovery | CSPINE-REQ-049 | Failed function locals suppress dependent uses while later independent locals remain diagnosed; a present failed return is not reported absent. | source_function_failed_locals_preserve_later_causes | crates/edict-syntax/tests/binding_recovery.rs | Invalid functions cannot produce Core. |
+
+| CSPINE-TP-102 | implemented | Require failure arms | CSPINE-REQ-049 | Failed predicates do not hide terminal/continuing payload causes; invalid continuing reason and payload are checked independently. | poisoned_require_predicate_keeps_failure_payload_causes, invalid_require_reason_keeps_independent_payload_cause | crates/edict-syntax/tests/binding_recovery.rs | No Core require is built from missing parts. |

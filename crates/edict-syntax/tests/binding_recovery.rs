@@ -369,3 +369,52 @@ fn compile_function_recovery(source: &str) -> Result<CoreModule, Vec<CompilerErr
         );
     compile_to_core(&module, &context)
 }
+
+#[test]
+fn poisoned_require_predicate_keeps_failure_payload_causes() {
+    for arm in [
+        "example.Failure({ payload: true })",
+        "continue obstructed { reason: example.Failure, payload: true }",
+    ] {
+        let valid = insert_bindings(&format!(
+            "  let failed = true;\n  require failed else {arm};"
+        ));
+        compile(&valid).expect("valid require failure arm control");
+        let source = valid
+            .replace("let failed = true;", "let failed = missingRequireCause;")
+            .replace("payload: true", "payload: missingRequirePayload");
+        let errors = check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::UnresolvedType,
+            ],
+        );
+        assert_eq!(
+            &source[errors[1].span.start..errors[1].span.end],
+            "missingRequirePayload"
+        );
+    }
+}
+
+#[test]
+fn invalid_require_reason_keeps_independent_payload_cause() {
+    let valid = insert_bindings(
+        "  require true else continue obstructed { reason: example.Failure, payload: true };",
+    );
+    compile(&valid).expect("valid continuing obstruction control");
+    let source = valid
+        .replace("reason: example.Failure", "reason: true")
+        .replace("payload: true", "payload: missingIndependentPayload");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnsupportedSourceShape,
+            CompilerErrorKind::UnresolvedType,
+        ],
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingIndependentPayload"
+    );
+}
