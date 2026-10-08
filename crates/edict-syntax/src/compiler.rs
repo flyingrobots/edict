@@ -1713,22 +1713,29 @@ impl<'a> TypeChecker<'a> {
                 max_attempts,
                 reconciliation_law,
                 span,
-            } => self.check_external_action_request(
-                name,
-                request_type,
-                operation,
-                input_schema,
-                settlement_schema,
-                authority_scope,
-                basis,
-                max_settlement_bytes,
-                max_attempts,
-                reconciliation_law,
-                *span,
-                env,
-                locals,
-                state,
-            ),
+            } => {
+                let previous_id = env.get(name).map(|(local, _)| local.id.clone());
+                self.check_external_action_request(
+                    name,
+                    request_type,
+                    operation,
+                    input_schema,
+                    settlement_schema,
+                    authority_scope,
+                    basis,
+                    max_settlement_bytes,
+                    max_attempts,
+                    reconciliation_law,
+                    *span,
+                    env,
+                    locals,
+                    state,
+                );
+                let current_id = env.get(name).map(|(local, _)| local.id.clone());
+                if current_id.is_none() || current_id == previous_id {
+                    env.poison(name);
+                }
+            }
             Stmt::Require { predicate, arm, .. } => {
                 self.check_require_stmt(predicate, arm, env, state);
             }

@@ -790,3 +790,55 @@ fn compile_call_recovery(source: &str) -> Result<CoreModule, Vec<CompilerError>>
     }
     compile_to_core(&module, &context)
 }
+
+#[test]
+fn failed_request_binding_suppresses_dependent_return_only() {
+    let valid = format!(
+        r#"package recovery.requests@1;
+use capability workspace.snapshot.observe@1 digest "sha256:{operation}" as snapshot;
+type RequestInput = {{ payload: Bytes<max=1024>, scope: Bytes<max=32>, basis: Bytes<max=32>, }};
+intent evaluate(input: RequestInput) returns ExternalActionRequest<Bytes<max=65536>>
+  profile p.read basis input.basis budget <= p.large {{
+  request pending: ExternalActionRequest<Bytes<max=65536>> = snapshot(input.payload)
+    input schema workspace.snapshot.input@1 digest "sha256:{schema}"
+    settlement schema workspace.snapshot.settlement@1 digest "sha256:{settlement}"
+    authority input.scope basis input.basis
+    budget maxSettlementBytes 65536u64 maxAttempts 4u32
+    reconcile workspace.snapshot.reconcile@1 digest "sha256:{law}";
+  return pending;
+}}"#,
+        operation = "a".repeat(64),
+        schema = "b".repeat(64),
+        settlement = "c".repeat(64),
+        law = "d".repeat(64)
+    );
+    compile_function_recovery(&valid).expect("valid request control compiles");
+    let source = valid.replace("snapshot(input.payload)", "snapshot(missingRequestCause)");
+    let errors =
+        compile_function_recovery(&source).expect_err("failed request cannot produce Core");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [CompilerErrorKind::UnresolvedType]
+    );
+    assert_eq!(
+        &source[errors[0].span.start..errors[0].span.end],
+        "missingRequestCause"
+    );
+    let source = source.replace(
+        "return pending;",
+        "let independent = missingRequestPeer; return pending;",
+    );
+    let errors =
+        compile_function_recovery(&source).expect_err("independent request error retained");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingRequestPeer"
+    );
+}
