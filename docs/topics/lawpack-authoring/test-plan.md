@@ -81,10 +81,10 @@ oracle; these tests do not execute helper bodies, loops, or provider packages.
 
 | ID | Status | Requirement | Source |
 | --- | --- | --- | --- |
-| LAUTH-REQ-008 | planned | An application-owned helper derives consistent causal-cell types, byte caps and budgets, and public authoring/application builds consume both stock-byte-cap and 4 KiB variants without modifying shared fixture generators. | docs/plans/study-feedback/F06.md |
+| LAUTH-REQ-009 | planned | An application-owned helper derives consistent causal-cell types, byte caps and budgets, and public authoring/application builds consume both stock-byte-cap and 4 KiB variants without modifying shared fixture generators. | docs/plans/study-feedback/F06.md |
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| LAUTH-TP-017 | planned | Parameter contract | LAUTH-REQ-008 | Reject zero, overflow and scalar/byte inconsistencies; derive deterministic documents for 256-byte/64-scalar and 4096-byte/1024-scalar values. | - | - | Write behavioral tests before the helper. |
-| LAUTH-TP-018 | planned | Public authoring/build | LAUTH-REQ-008 | Public lawpack and application builds accept both variants, reproduce exact artifacts across directories, and refuse stale pins or undersized output budgets. | - | - | Use real public binaries and decode canonical artifacts. |
-| LAUTH-TP-019 | planned | Provider boundary | LAUTH-REQ-008 | Exact pinned provider verifies consistent Core/configuration and refuses substituted inconsistent metadata; four-byte scalar witnesses match the declared caps. | - | - | Compilation alone is not runtime execution or general ingress enforcement. |
+| LAUTH-TP-018 | planned | Parameter contract | LAUTH-REQ-009 | Reject zero, overflow and scalar/byte inconsistencies; derive deterministic documents for 256-byte/64-scalar and 4096-byte/1024-scalar values. | - | - | Write behavioral tests before the helper. |
+| LAUTH-TP-019 | planned | Public authoring/build | LAUTH-REQ-009 | Public lawpack and application builds accept both variants, reproduce exact artifacts across directories, and refuse stale pins or undersized output budgets. | - | - | Use real public binaries and decode canonical artifacts. |
+| LAUTH-TP-020 | planned | Provider boundary | LAUTH-REQ-009 | Exact pinned provider verifies consistent Core/configuration and refuses substituted inconsistent metadata; four-byte scalar witnesses match the declared caps. | - | - | Compilation alone is not runtime execution or general ingress enforcement. |
