@@ -4242,28 +4242,13 @@ impl<'a> TypeChecker<'a> {
             }
         }
         if !accepted {
-            if let Some(expected_fields) = expected_fields {
-                for (name, actual) in &field_types {
-                    if expected_fields
-                        .get(name)
-                        .is_none_or(|expected| !compatible(expected, actual))
-                    {
-                        self.errors.push(error(
-                            CompilerStage::TypeCheck,
-                            CompilerErrorKind::TypeMismatch,
-                            format!("record field `{name}` does not match its expected type"),
-                            field_spans[name],
-                        ));
-                    }
-                }
-            } else if expected.is_some() {
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::TypeMismatch,
-                    "record value does not match its non-record expected type",
-                    span,
-                ));
-            }
+            self.report_unavailable_record_mismatches(
+                entries,
+                expected,
+                &field_types,
+                &field_spans,
+                span,
+            );
             return None;
         }
         let ty = TypeShape::canonical_structural(TypeKind::Record(field_types))?;
@@ -4271,6 +4256,71 @@ impl<'a> TypeChecker<'a> {
             expr: CoreExpr::Record { fields },
             ty,
         })
+    }
+    fn report_unavailable_record_mismatches(
+        &mut self,
+        entries: &[RecordEntry],
+        expected: Option<&TypeShape>,
+        field_types: &BTreeMap<String, TypeShape>,
+        field_spans: &BTreeMap<String, Span>,
+        span: Span,
+    ) {
+        let Some(expected) = expected else { return };
+        let TypeKind::Record(expected_fields) = &expected.kind else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                "record value does not match its non-record expected type",
+                span,
+            ));
+            return;
+        };
+        for (name, actual) in field_types {
+            if expected_fields
+                .get(name)
+                .is_some_and(|expected| !compatible(expected, actual))
+            {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    format!("record field `{name}` does not match its expected type"),
+                    field_spans[name],
+                ));
+            }
+        }
+        let mut authored_keys = BTreeSet::new();
+        let mut has_spread = false;
+        for entry in entries {
+            let (name, field_span) = match entry {
+                RecordEntry::Field { name, value } => (name, expr_span(value)),
+                RecordEntry::Shorthand { name, span } => (name, *span),
+                RecordEntry::Spread(_) => {
+                    has_spread = true;
+                    continue;
+                }
+            };
+            authored_keys.insert(name.as_str());
+            if !expected_fields.contains_key(name) {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    format!("record has unexpected field `{name}`"),
+                    field_span,
+                ));
+            }
+        }
+        if !has_spread {
+            for name in expected_fields.keys() {
+                if !authored_keys.contains(name.as_str()) {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::TypeMismatch,
+                        format!("record is missing expected field `{name}`"),
+                        span,
+                    ));
+                }
+            }
+        }
     }
 }
 

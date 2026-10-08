@@ -586,3 +586,52 @@ fn poisoned_reason_roots_keep_only_independent_causes() {
     );
     check_kinds(&live, &[CompilerErrorKind::UnsupportedSourceShape]);
 }
+
+#[test]
+fn poisoned_record_retains_missing_required_field_mismatch() {
+    let valid = insert_bindings(
+        "  let failed = true;\n  let chosen: RecoveryExpected = { item: failed, required: true };",
+    )
+    .replace(
+        "intent createGreeting",
+        "type RecoveryExpected = { item: Bool, required: Bool, };\nintent createGreeting",
+    );
+    compile(&valid).expect("valid required record keys control");
+    let all_keys = valid.replace("let failed = true;", "let failed = missingRecordKeyCause;");
+    check_kinds(&all_keys, &[CompilerErrorKind::UnresolvedType]);
+    let source = all_keys.replace(", required: true", "");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "{ item: failed }"
+    );
+}
+
+#[test]
+fn poisoned_record_retains_poisoned_extra_field_mismatch() {
+    let valid = insert_bindings(
+        "  let failed = true;\n  let chosen: RecoveryExpected = { item: true, required: true };",
+    )
+    .replace(
+        "intent createGreeting",
+        "type RecoveryExpected = { item: Bool, required: Bool, };\nintent createGreeting",
+    );
+    compile(&valid).expect("valid closed record control");
+    let source = valid
+        .replace("let failed = true;", "let failed = missingExtraKeyCause;")
+        .replace("required: true }", "required: true, extra: failed }");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert_eq!(&source[errors[1].span.start..errors[1].span.end], "failed");
+}
