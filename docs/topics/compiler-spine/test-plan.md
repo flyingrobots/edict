@@ -222,3 +222,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-097 | implemented | Independent operand type | CSPINE-REQ-049 | A Boolean concatenation operand beside a poisoned local retains its own TypeMismatch at the Boolean expression. | poisoned_concatenation_does_not_hide_an_independent_operand_type_error | crates/edict-syntax/tests/binding_recovery.rs | Do not infer a type for the failed peer. |
+
+## Recovery Review Regressions
+
+| Case ID | Status | Category | Requirements | Oracle | Tests | Source | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-098 | implemented | Obstruction shorthand | CSPINE-REQ-049 | A poisoned shorthand emits no dependent identifier error; genuinely unknown shorthand still fails and a valid payload compiles. | poisoned_obstruction_shorthand_keeps_only_its_cause | crates/edict-syntax/tests/binding_recovery.rs | PR247 Codex and agy finding. |

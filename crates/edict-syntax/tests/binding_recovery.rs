@@ -252,3 +252,22 @@ fn failed_yield_branch_does_not_hide_an_independent_other_branch() {
         "missingElse"
     );
 }
+
+#[test]
+fn poisoned_obstruction_shorthand_keeps_only_its_cause() {
+    let valid =
+        insert_bindings("  let failed = true;\n  require true else example.Failure({ failed });");
+    compile(&valid).expect("valid obstruction shorthand control");
+    let source = valid.replace("let failed = true;", "let failed = missingPayloadCause;");
+    let errors = check_kinds(&source, &[CompilerErrorKind::UnresolvedType]);
+    assert_eq!(
+        &source[errors[0].span.start..errors[0].span.end],
+        "missingPayloadCause"
+    );
+    let unknown = insert_bindings("  require true else example.Failure({ unknownPayload });");
+    let errors = check_kinds(&unknown, &[CompilerErrorKind::UnresolvedType]);
+    assert_eq!(
+        &unknown[errors[0].span.start..errors[0].span.end],
+        "unknownPayload"
+    );
+}

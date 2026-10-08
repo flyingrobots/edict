@@ -2350,12 +2350,14 @@ impl<'a> TypeChecker<'a> {
                         continue;
                     }
                     let Some((local, _)) = env.get(name) else {
-                        self.errors.push(error(
-                            CompilerStage::TypeCheck,
-                            CompilerErrorKind::UnresolvedType,
-                            format!("obstruction reason payload field `{name}` has no binding"),
-                            *span,
-                        ));
+                        if !env.poisoned.contains(name) {
+                            self.errors.push(error(
+                                CompilerStage::TypeCheck,
+                                CompilerErrorKind::UnresolvedType,
+                                format!("obstruction reason payload field `{name}` has no binding"),
+                                *span,
+                            ));
+                        }
                         accepted = false;
                         continue;
                     };
