@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Correct the retained study validation helper to remove staged deletions and old rename paths from copied validation snapshots.
+
 - Signature mismatch spans identify exactly the effect call, excluding its enclosing binding and failure handler.
 
 - Add typed first-difference detail to explicit effect signature `TypeMismatch` diagnostics, retaining the kind and call span. Build diagnostics expose optional `signatureMismatch` metadata; strict schema consumers must update their schema. `edict-syntax::CompilerError` struct-literal users must initialize its new optional field.

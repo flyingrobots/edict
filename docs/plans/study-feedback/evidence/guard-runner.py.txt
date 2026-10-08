@@ -51,7 +51,10 @@ def prepare():
     print(json.dumps({'launch_contract':{'worker':WORKER,'image':'rust:1.96.0','lock':['host/heavy-work','host/docker/edict-validation/'],'outputs':['/cache cargo+target+owned toolchain','/work source+git snapshot','/tmp','/data tests',str(SCRATCH)+' bounded logs+snapshots'],'build_limit':20*GiB,'data_limit':4*GiB,'log_limit':128*1024**2,'cpu':4,'memory':12*GiB,'guard':'fail-closed 2-second usage monitor; read-only layer; bounded tmpfs; 3 x 1MiB Docker logs','timeout_seconds':2400,'stop':WORKER,'measurements':m}}),flush=True)
     run(['git','bundle','create',str(SCRATCH/'source.bundle'),'--all'],cwd=ROOT)
     files=read(['git','ls-files','--cached','--others','--exclude-standard']).splitlines() if Path.cwd()==ROOT else read(['git','-C',str(ROOT),'ls-files','--cached','--others','--exclude-standard']).splitlines()
-    deleted=set(read(['git','-C',str(ROOT),'ls-files','--deleted']).splitlines())
+    # HEAD-relative deletions include staged removals and rename sources.
+    # Index-relative missing files also cover additions deleted before commit.
+    deleted=set(read(['git','-C',str(ROOT),'diff','--no-renames','--name-only','--diff-filter=D','HEAD','--']).splitlines())
+    deleted.update(read(['git','-C',str(ROOT),'ls-files','--deleted']).splitlines())
     files=[file for file in files if file not in deleted]
     if os.environ.get('EDICT_PARENT_WITNESS') == '1':
         files=['crates/edict-syntax/tests/return_budget.rs']
