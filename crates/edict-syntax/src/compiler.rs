@@ -3861,7 +3861,7 @@ impl<'a> TypeChecker<'a> {
                 lhs,
                 rhs,
                 span,
-            } => self.check_concat(lhs, rhs, env, *span),
+            } => self.check_concat(lhs, rhs, env, expectation, *span),
             Expr::Binary {
                 op: BinOp::Sub,
                 lhs,
@@ -4624,13 +4624,28 @@ impl<'a> TypeChecker<'a> {
         lhs: &Expr,
         rhs: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
-        let left = self.check_expr_with_effect_expectation(
-            lhs,
-            env,
-            EffectOutputExpectation::ConcatenationPeer(rhs),
-        )?;
+        let operand_expectation = match expectation {
+            EffectOutputExpectation::Bytes | EffectOutputExpectation::String => expectation,
+            EffectOutputExpectation::Value(Some(shape)) => match shape.kind {
+                TypeKind::Bytes { .. } => EffectOutputExpectation::Bytes,
+                TypeKind::String { .. } => EffectOutputExpectation::String,
+                _ => EffectOutputExpectation::ConcatenationPeer(rhs),
+            },
+            _ => EffectOutputExpectation::ConcatenationPeer(rhs),
+        };
+        let left = self.check_expr_with_effect_expectation(lhs, env, operand_expectation)?;
+        if let Some(kind) = operand_expectation.rejection(&left.ty) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                kind,
+                "concatenation operand does not satisfy the enclosing expression family",
+                expr_span(lhs),
+            ));
+            return None;
+        }
         let family = match left.ty.kind {
             TypeKind::Bytes { .. } => EffectOutputExpectation::Bytes,
             TypeKind::String { .. } => EffectOutputExpectation::String,

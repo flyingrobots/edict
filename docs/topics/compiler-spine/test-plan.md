@@ -265,3 +265,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-125 | implemented | Mixed effect concatenation | CSPINE-REQ-047 | String effect projections and byte operands report TypeMismatch before mapping guidance in either order. | effect_concatenation_requires_matching_operand_families | crates/edict-syntax/tests/effect_diagnostics.rs | Valid byte/string controls; authenticated effect signature. |
+
+## Nested Operator Context
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-126 | implemented | Nested effect operator context | CSPINE-REQ-047 | A string-producing concatenation used as bytes must report its intrinsic type incompatibility before effect mapping advice. | nested_effect_operator_context_preserves_primary_type_error | crates/edict-syntax/tests/effect_diagnostics.rs | Valid string length-independent control; direct length on string establishes expected kind. |

@@ -321,3 +321,5 @@ Concatenation checks authenticated effect outputs for string-or-bytes membership
 Unsigned subtraction checks authenticated effect outputs for U32/U64 and any available expected operand type before mapping advice. Exported field projections retain the same requirement. Accepted pure subtraction still requires its existing no-underflow proof.
 
 For concatenation with a direct or field-projected effect operand, the opposite operand is checked against the authenticated output family before mapping advice. A diagnostic-only compiler copy checks the peer when the left effect has no value; only independent errors leave that copy. No effect output is fabricated as a typed value.
+
+Enclosing string or bytes requirements propagate through concatenation operands, including nested concatenations. Length and slice therefore reject a string concatenation before advising how to map an effect within it; known pure operands retain the same family requirement.

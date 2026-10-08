@@ -482,3 +482,31 @@ fn effect_concatenation_requires_matching_operand_families() {
         );
     }
 }
+
+#[test]
+fn nested_effect_operator_context_preserves_primary_type_error() {
+    let plain = SOURCE.replace(
+        "  let receipt:",
+        "  let bad = len(input.key + \"x\");\n  let receipt:",
+    );
+    assert_eq!(
+        compile(&plain).expect_err("string concatenation is not bytes")[0].kind,
+        CompilerErrorKind::TypeMismatch
+    );
+    for expression in [
+        "len(hello.createGreeting(input).key + \"x\")",
+        "len(\"x\" + hello.createGreeting(input).key)",
+        "len((hello.createGreeting(input).key + \"x\") + \"y\")",
+        "slice(hello.createGreeting(input).key + \"x\", 0u64, 0u64)",
+    ] {
+        let source = SOURCE.replace(
+            "  let receipt:",
+            &format!("  let bad = {expression};\n  let receipt:"),
+        );
+        assert_eq!(
+            compile(&source).expect_err("effect string concatenation is not bytes")[0].kind,
+            CompilerErrorKind::TypeMismatch,
+            "{expression}"
+        );
+    }
+}
