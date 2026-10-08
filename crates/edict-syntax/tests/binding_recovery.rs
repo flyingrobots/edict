@@ -534,3 +534,29 @@ fn poisoned_conditional_arm_keeps_independent_expected_type_error() {
         "\"wrong\""
     );
 }
+
+#[test]
+fn contextual_yield_inference_preserves_both_branch_causes() {
+    for (left, right) in [
+        ("{ first: 0, second: 1u64 }", "{ first: 1u64, second: 0 }"),
+        ("0", "1u64"),
+    ] {
+        let valid = insert_bindings(&format!("  let chosen = if true {{ let left = true; yield {left}; }} else {{ let right = false; yield {right}; }};"));
+        compile(&valid).expect("valid contextual yield control");
+        let source = valid
+            .replace("let left = true;", "let left = missingContextualThen;")
+            .replace("let right = false;", "let right = missingContextualElse;");
+        let errors = check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::UnresolvedType,
+            ],
+        );
+        let origins: Vec<_> = errors
+            .iter()
+            .map(|e| &source[e.span.start..e.span.end])
+            .collect();
+        assert_eq!(origins, ["missingContextualThen", "missingContextualElse"]);
+    }
+}

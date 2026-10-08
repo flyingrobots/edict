@@ -2548,102 +2548,33 @@ impl<'a> TypeChecker<'a> {
         } else {
             None
         };
-        let (then_block, then_shape, else_block, else_shape) = if let Some(joint_shape) =
-            joint_shape
-        {
-            self.check_yield_blocks_with_shared_expected(
-                intent,
-                output_shape,
-                then_source,
-                else_source,
-                env,
-                state,
-                baseline_steps,
-                &joint_shape,
-            )?
-        } else if annotation_shape.is_none() && contains_contextual_bare_integer(&then_source.value)
-        {
-            let inferred_else_shape =
-                self.infer_yield_block_shape(intent, output_shape, else_source, env, state)?;
-            let (then_block, then_shape) = self.check_yield_block(
-                intent,
-                output_shape,
-                then_source,
-                env,
-                state,
-                Some(&inferred_else_shape),
-            )?;
-            let then_steps = state.accumulated_steps;
-            state.accumulated_steps = baseline_steps;
-            let (else_block, else_shape) =
-                self.check_yield_block(intent, output_shape, else_source, env, state, None)?;
-            state.accumulated_steps = then_steps.max(state.accumulated_steps);
-            (then_block, then_shape, else_block, else_shape)
-        } else {
-            let then_result = self.check_yield_block(
-                intent,
-                output_shape,
-                then_source,
-                env,
-                state,
-                annotation_shape,
-            );
-            let then_steps = state.accumulated_steps;
-            state.accumulated_steps = baseline_steps;
-            let branch_expectation = if annotation_shape.is_some() {
-                annotation_shape
-            } else if contains_contextual_bare_integer(&else_source.value) {
-                then_result.as_ref().map(|(_, shape)| shape)
+        let shared_expected = annotation_shape.or(joint_shape.as_ref());
+        let inferred_else_shape =
+            if shared_expected.is_none() && contains_contextual_bare_integer(&then_source.value) {
+                self.infer_yield_block_shape(intent, output_shape, else_source, env, state)
             } else {
                 None
             };
-            let else_result = self.check_yield_block(
-                intent,
-                output_shape,
-                else_source,
-                env,
-                state,
-                branch_expectation,
-            );
-            state.accumulated_steps = then_steps.max(state.accumulated_steps);
-            let (then_block, then_shape) = then_result?;
-            let (else_block, else_shape) = else_result?;
-            (then_block, then_shape, else_block, else_shape)
-        };
-        Some((then_block, then_shape, else_block, else_shape))
-    }
-
-    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-    fn check_yield_blocks_with_shared_expected(
-        &mut self,
-        intent: &ResolvedIntent,
-        output_shape: &TypeShape,
-        then_source: &YieldBlock,
-        else_source: &YieldBlock,
-        env: &LocalEnvironment,
-        state: &mut BodyState,
-        baseline_steps: u64,
-        expected: &TypeShape,
-    ) -> Option<(CoreBlock, TypeShape, CoreBlock, TypeShape)> {
-        let (then_block, then_shape) = self.check_yield_block(
+        let then_result = self.check_yield_block(
             intent,
             output_shape,
             then_source,
             env,
             state,
-            Some(expected),
-        )?;
+            shared_expected.or(inferred_else_shape.as_ref()),
+        );
         let then_steps = state.accumulated_steps;
         state.accumulated_steps = baseline_steps;
-        let (else_block, else_shape) = self.check_yield_block(
-            intent,
-            output_shape,
-            else_source,
-            env,
-            state,
-            Some(expected),
-        )?;
+        let else_expected = shared_expected.or_else(|| {
+            contains_contextual_bare_integer(&else_source.value)
+                .then(|| then_result.as_ref().map(|(_, shape)| shape))
+                .flatten()
+        });
+        let else_result =
+            self.check_yield_block(intent, output_shape, else_source, env, state, else_expected);
         state.accumulated_steps = then_steps.max(state.accumulated_steps);
+        let (then_block, then_shape) = then_result?;
+        let (else_block, else_shape) = else_result?;
         Some((then_block, then_shape, else_block, else_shape))
     }
 
@@ -2697,36 +2628,13 @@ impl<'a> TypeChecker<'a> {
         if let Some(shape) = self.inferred_yield_shapes.get(&cache_key) {
             return Some(shape.clone());
         }
-        // A yield block may introduce types, locals, effects, and diagnostics, so
-        // the complete checker state is the smallest existing isolation boundary.
-        // Discarding this clone keeps inference observational: the real blocks
-        // still lower once, in source order, into the authoritative state. Share
-        // successful nested shape results back into this compilation so a nested
-        // bare-integer branch cannot trigger exponential repeated inference.
-        let mut inference_checker = self.clone();
-        let inference_error_count = inference_checker.errors.len();
-        let mut inference_state = BodyState {
-            local_index: state.local_index,
-            obstruction_index: state.obstruction_index,
-            step_factor: state.step_factor,
-            accumulated_steps: state.accumulated_steps,
-            ..BodyState::default()
-        };
-        let shape = inference_checker
-            .check_yield_block(intent, output_shape, block, env, &mut inference_state, None)
-            .map(|(_, shape)| shape);
-        self.inferred_yield_shapes
-            .append(&mut inference_checker.inferred_yield_shapes);
+        // Shape probes are observational. Recovered environments retain failed
+        // names without values; only the real branch checks publish diagnostics
+        // and decide whether a Core block can be constructed.
+        let nested_env = self.infer_yield_block_env(intent, output_shape, block, env, state)?;
+        let shape = self.infer_expr_shape(&block.value, &nested_env);
         if let Some(shape) = &shape {
             self.inferred_yield_shapes.insert(cache_key, shape.clone());
-        }
-        if shape.is_none() {
-            self.errors.extend(
-                inference_checker
-                    .errors
-                    .into_iter()
-                    .skip(inference_error_count),
-            );
         }
         shape
     }
@@ -2763,7 +2671,6 @@ impl<'a> TypeChecker<'a> {
             return Some(env.clone());
         }
         let mut checker = self.clone();
-        let error_count = checker.errors.len();
         let mut nested_env = env.clone();
         let mut nested_locals = Vec::new();
         let mut nested_state = BodyState {
@@ -2785,9 +2692,6 @@ impl<'a> TypeChecker<'a> {
                 &mut nested_locals,
                 &mut nested_state,
             );
-        }
-        if checker.errors.len() != error_count {
-            return None;
         }
         self.inferred_yield_shapes
             .append(&mut checker.inferred_yield_shapes);
