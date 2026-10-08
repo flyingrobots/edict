@@ -228,3 +228,5 @@ Out of scope:
 | Case ID | Status | Category | Requirements | Oracle | Tests | Source | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-098 | implemented | Obstruction shorthand | CSPINE-REQ-049 | A poisoned shorthand emits no dependent identifier error; genuinely unknown shorthand still fails and a valid payload compiles. | poisoned_obstruction_shorthand_keeps_only_its_cause | crates/edict-syntax/tests/binding_recovery.rs | PR247 Codex and agy finding. |
+
+| CSPINE-TP-099 | implemented | Failed yield predicate | CSPINE-REQ-049 | Both annotated yield branches report independent errors after a poisoned condition; valid yield still compiles. | poisoned_yield_condition_keeps_both_branch_errors | crates/edict-syntax/tests/binding_recovery.rs | Do not construct a branch without a valid predicate. |

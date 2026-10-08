@@ -2479,9 +2479,7 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        let Some(predicate) = self.check_predicate(pred, env) else {
-            return;
-        };
+        let predicate = self.check_predicate(pred, env);
         let annotation_shape = match stmt.ty {
             Some(annotation) => match self.type_ref_shape(annotation, stmt.span) {
                 Some(shape) => Some(shape),
@@ -2502,6 +2500,9 @@ impl<'a> TypeChecker<'a> {
                 annotation_shape.as_ref(),
             )
         else {
+            return;
+        };
+        let Some(predicate) = predicate else {
             return;
         };
         let Some(binding_shape) = self.join_branch_shapes(

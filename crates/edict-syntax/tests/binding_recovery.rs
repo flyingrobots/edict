@@ -271,3 +271,33 @@ fn poisoned_obstruction_shorthand_keeps_only_its_cause() {
         "unknownPayload"
     );
 }
+
+#[test]
+fn poisoned_yield_condition_keeps_both_branch_errors() {
+    let valid = insert_bindings("  let failed = true;\n  let chosen: Bool = if failed { let left = true; yield left; } else { let right = false; yield right; };");
+    compile(&valid).expect("valid annotated yield control");
+    let source = valid
+        .replace("let failed = true;", "let failed = missingYieldCondition;")
+        .replace("let left = true;", "let left = missingYieldLeft;")
+        .replace("let right = false;", "let right = missingYieldRight;");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+        ],
+    );
+    let origins: Vec<_> = errors
+        .iter()
+        .map(|error| &source[error.span.start..error.span.end])
+        .collect();
+    assert_eq!(
+        origins,
+        [
+            "missingYieldCondition",
+            "missingYieldLeft",
+            "missingYieldRight"
+        ]
+    );
+}
