@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Check authenticated effect result field paths and their enclosing type constraints before failure-map guidance.
+
 - Check unsuffixed comparison literals against authenticated effect output types and numeric ranges before advising a failure map.
 
 - Label filtered effect failure guidance as domain-mappable failures; mixed authority classes remain excluded from the advised map.

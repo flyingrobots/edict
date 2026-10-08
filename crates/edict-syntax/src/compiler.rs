@@ -762,13 +762,45 @@ enum EffectOutputExpectation<'a> {
     Predicate,
     Comparison(&'a TypeShape),
     ComparisonLiteral(&'a Expr),
+    Field {
+        name: &'a str,
+        next: &'a Self,
+        span: Span,
+    },
 }
 
 impl<'a> EffectOutputExpectation<'a> {
     fn value(self) -> Option<&'a TypeShape> {
         match self {
             Self::Value(shape) => shape,
-            Self::Predicate | Self::Comparison(_) | Self::ComparisonLiteral(_) => None,
+            Self::Predicate
+            | Self::Comparison(_)
+            | Self::ComparisonLiteral(_)
+            | Self::Field { .. } => None,
+        }
+    }
+
+    fn project<'s>(
+        self,
+        output: &'s TypeShape,
+    ) -> Result<(&'s TypeShape, Self), (CompilerErrorKind, Span, &'a str)> {
+        if let Self::Field { name, next, span } = self {
+            let TypeKind::Record(fields) = &output.kind else {
+                return Err((CompilerErrorKind::TypeMismatch, span, name));
+            };
+            let Some(field) = fields.get(name) else {
+                return Err((CompilerErrorKind::UnknownField, span, name));
+            };
+            next.project(field)
+        } else {
+            Ok((output, self))
+        }
+    }
+
+    fn origin(self, fallback: Span) -> Span {
+        match self {
+            Self::Field { next, span, .. } => next.origin(span),
+            _ => fallback,
         }
     }
 
@@ -3708,6 +3740,9 @@ impl<'a> TypeChecker<'a> {
     }
 
     fn is_authenticated_effect_call(&self, expr: &Expr) -> bool {
+        if let Expr::Field { base, .. } = expr {
+            return self.is_authenticated_effect_call(base);
+        }
         let Expr::Call { callee, .. } = expr else {
             return false;
         };
@@ -3789,7 +3824,9 @@ impl<'a> TypeChecker<'a> {
                 operand,
                 span,
             } => self.check_negated_integer(operand, expected, *span),
-            Expr::Field { base, field, span } => self.check_field(base, field, *span, env),
+            Expr::Field { base, field, span } => {
+                self.check_field(base, field, *span, env, expectation)
+            }
             Expr::Binary {
                 op: BinOp::Add,
                 lhs,
@@ -3835,17 +3872,7 @@ impl<'a> TypeChecker<'a> {
                     | BinOp::Or,
                 ..
             }
-            | Expr::Unary { op: UnOp::Not, .. } => {
-                let predicate = self.check_predicate(expr, env)?;
-                Some(TypedValue {
-                    expr: CoreExpr::If {
-                        predicate: Box::new(predicate),
-                        then_value: Box::new(CoreExpr::Const(CoreValue::Bool(true))),
-                        else_value: Box::new(CoreExpr::Const(CoreValue::Bool(false))),
-                    },
-                    ty: TypeShape::canonical_structural(TypeKind::Bool)?,
-                })
-            }
+            | Expr::Unary { op: UnOp::Not, .. } => self.check_predicate_value(expr, env),
             Expr::Binary { .. }
             | Expr::Digest { .. }
             | Expr::IfYield { .. }
@@ -3866,6 +3893,22 @@ impl<'a> TypeChecker<'a> {
             }
         }
         checked
+    }
+
+    fn check_predicate_value(
+        &mut self,
+        expr: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<TypedValue> {
+        let predicate = self.check_predicate(expr, env)?;
+        Some(TypedValue {
+            expr: CoreExpr::If {
+                predicate: Box::new(predicate),
+                then_value: Box::new(CoreExpr::Const(CoreValue::Bool(true))),
+                else_value: Box::new(CoreExpr::Const(CoreValue::Bool(false))),
+            },
+            ty: TypeShape::canonical_structural(TypeKind::Bool)?,
+        })
     }
 
     fn check_pure_call(
@@ -4221,21 +4264,13 @@ impl<'a> TypeChecker<'a> {
                     return None;
                 }
                 self.check_bare_effect_input(&source_coordinate, signature, &args[0], env, span)?;
-                let output = self.effect_output_shape(&source_coordinate, signature, span)?;
-                if let Some(kind) = expectation.rejection(&output) {
-                    self.errors.push(error(
-                        CompilerStage::TypeCheck,
-                        kind,
-                        format!(
-                            "effect `{source_coordinate}` output does not match the expected type"
-                        ),
-                        span,
-                    ));
-                    return None;
-                }
-                if let EffectOutputExpectation::ComparisonLiteral(peer) = expectation {
-                    self.check_expr_with_expected(peer, env, Some(&output))?;
-                }
+                self.check_bare_effect_output(
+                    &source_coordinate,
+                    signature,
+                    expectation,
+                    env,
+                    span,
+                )?;
                 self.errors
                     .push(effect_mapping_error(&source_coordinate, signature, span));
                 return None;
@@ -4267,6 +4302,42 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
         Some((source_coordinate, fact))
+    }
+
+    fn check_bare_effect_output(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        expectation: EffectOutputExpectation<'_>,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<()> {
+        let output = self.effect_output_shape(effect, signature, span)?;
+        let (projected, terminal) = match expectation.project(&output) {
+            Ok(projection) => projection,
+            Err((kind, span, name)) => {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    kind,
+                    format!("effect `{effect}` result cannot select field `{name}`"),
+                    span,
+                ));
+                return None;
+            }
+        };
+        if let Some(kind) = terminal.rejection(projected) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                kind,
+                format!("effect `{effect}` output does not match the expected type"),
+                expectation.origin(span),
+            ));
+            return None;
+        }
+        if let EffectOutputExpectation::ComparisonLiteral(peer) = terminal {
+            self.check_expr_with_expected(peer, env, Some(projected))?;
+        }
+        Some(())
     }
 
     fn shape_for_helper_coordinate(
@@ -4443,8 +4514,17 @@ impl<'a> TypeChecker<'a> {
         field: &str,
         span: Span,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expectation: EffectOutputExpectation<'_>,
     ) -> Option<TypedValue> {
-        let base = self.check_expr(base, env)?;
+        let base = self.check_expr_with_effect_expectation(
+            base,
+            env,
+            EffectOutputExpectation::Field {
+                name: field,
+                next: &expectation,
+                span,
+            },
+        )?;
         let TypeKind::Record(fields) = &base.ty.kind else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,

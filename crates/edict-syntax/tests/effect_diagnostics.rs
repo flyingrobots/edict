@@ -336,3 +336,54 @@ fn effect_integer_comparisons_report_incompatibility_before_map_guidance() {
         assert!(!errors[0].message.contains("with `else`"));
     }
 }
+
+#[test]
+fn effect_field_selection_validates_the_exported_record_before_map_guidance() {
+    for (value, expected) in [
+        (
+            "hello.createGreeting(input).missing",
+            CompilerErrorKind::UnknownField,
+        ),
+        (
+            "hello.createGreeting(input).key.missing",
+            CompilerErrorKind::TypeMismatch,
+        ),
+    ] {
+        let source = SOURCE.replace("key: receipt.key", &format!("key: {value}"));
+        let errors = compile(&source).expect_err("invalid effect result selection");
+        assert_eq!(errors[0].kind, expected, "{value}: {errors:?}");
+        assert_eq!(&source[errors[0].span.start..errors[0].span.end], value);
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+    let source = SOURCE.replace("key: receipt.key", "key: hello.createGreeting(input).key");
+    assert_eq!(
+        compile(&source).expect_err("valid projection still needs map")[0].kind,
+        CompilerErrorKind::EffectWithoutFailureMapping
+    );
+}
+
+#[test]
+fn effect_field_selection_preserves_predicate_and_comparison_requirements() {
+    for (predicate, expected) in [
+        (
+            "hello.createGreeting(input).key",
+            CompilerErrorKind::ExpectedPredicate,
+        ),
+        (
+            "hello.createGreeting(input).key == 1",
+            CompilerErrorKind::TypeMismatch,
+        ),
+        (
+            "1 == hello.createGreeting(input).key",
+            CompilerErrorKind::TypeMismatch,
+        ),
+    ] {
+        let source = SOURCE.replace(
+            "  let receipt:",
+            &format!("  require {predicate} else hello.AlreadyExists;\n  let receipt:"),
+        );
+        let errors = compile(&source).expect_err("projected string cannot be this predicate");
+        assert_eq!(errors[0].kind, expected, "{predicate}: {errors:?}");
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+}

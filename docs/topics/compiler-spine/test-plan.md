@@ -241,3 +241,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-089 | implemented | Exact call span | CSPINE-REQ-048 | Both input and receipt mismatches identify exactly the call expression byte range, excluding the binding annotation, failure handler and semicolon. | input_signature_error_identifies_first_incompatible_field, receipt_signature_error_identifies_first_incompatible_field | crates/edict-syntax/tests/effect_signature_diagnostics.rs | Containment is insufficient evidence. |
+
+## Effect Result Field Selection
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-096 | implemented | Exported result projection | CSPINE-REQ-047 | Missing and non-record field selectors on authenticated effect outputs report UnknownField or TypeMismatch before mapping advice; valid selectors retain map guidance and preserve enclosing predicate/comparison requirements. | effect_field_selection_validates_the_exported_record_before_map_guidance, effect_field_selection_preserves_predicate_and_comparison_requirements | crates/edict-syntax/tests/effect_diagnostics.rs | Exact selector spans; no invented Core effect value. |

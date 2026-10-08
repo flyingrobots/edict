@@ -313,3 +313,5 @@ Explicit mapped effect bindings report `TypeMismatch` at the exact call span whe
 This is an implementation-crate Rust API addition: code constructing `CompilerError` with a struct literal must initialize `signature_mismatch`, usually to `None`. The curated facade adds no named re-export of the new context types. Bare-call classification and dependent-error suppression remain separate work.
 
 [CSPINE-REQ-048]
+
+Field selectors on authenticated bare effect results are checked against the exported record shape before mapping advice. Chained selectors retain their enclosing expected value, predicate, or comparison requirement. Missing fields report UnknownField; selection from a non-record reports TypeMismatch. The span identifies the failing selector. Valid result selections still require an explicit mapped effect binding, and no effect result is synthesized in Core.
