@@ -3558,19 +3558,21 @@ impl<'a> TypeChecker<'a> {
                 lhs,
                 rhs,
                 ..
-            } => Some(CorePredicate::All(vec![
-                self.check_predicate(lhs, env)?,
-                self.check_predicate(rhs, env)?,
-            ])),
+            } => {
+                let left = self.check_predicate(lhs, env);
+                let right = self.check_predicate(rhs, env);
+                Some(CorePredicate::All(vec![left?, right?]))
+            }
             Expr::Binary {
                 op: BinOp::Or,
                 lhs,
                 rhs,
                 ..
-            } => Some(CorePredicate::Any(vec![
-                self.check_predicate(lhs, env)?,
-                self.check_predicate(rhs, env)?,
-            ])),
+            } => {
+                let left = self.check_predicate(lhs, env);
+                let right = self.check_predicate(rhs, env);
+                Some(CorePredicate::Any(vec![left?, right?]))
+            }
             Expr::Binary { op, lhs, rhs, .. } => {
                 if let Some(op) = compare_op(*op) {
                     self.check_compare_predicate(op, lhs, rhs, env, expr_span(expr))

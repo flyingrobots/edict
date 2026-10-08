@@ -301,3 +301,30 @@ fn poisoned_yield_condition_keeps_both_branch_errors() {
         ]
     );
 }
+
+#[test]
+fn poisoned_logical_operand_keeps_the_independent_peer() {
+    for op in ["&&", "||"] {
+        let valid = insert_bindings(&format!(
+            "  let failed = true;\n  if failed {op} false {{ let branch = true; }}"
+        ));
+        compile(&valid).expect("valid logical predicate control");
+        let source = valid
+            .replace("let failed = true;", "let failed = missingLogicalCause;")
+            .replace(
+                &format!("failed {op} false"),
+                &format!("failed {op} missingLogicalPeer"),
+            );
+        let errors = check_kinds(
+            &source,
+            &[
+                CompilerErrorKind::UnresolvedType,
+                CompilerErrorKind::UnresolvedType,
+            ],
+        );
+        assert_eq!(
+            &source[errors[1].span.start..errors[1].span.end],
+            "missingLogicalPeer"
+        );
+    }
+}
