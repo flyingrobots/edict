@@ -122,8 +122,9 @@ pub use canonical::{
 };
 pub use compiler::{
     compile_to_core, lower_core, resolve_module, type_check, BoundFact, CompilerContext,
-    CompilerError, CompilerErrorKind, CompilerStage, PureFunctionFact, PureHelperCostFact,
-    ResolvedIntent, ResolvedModule, ResolvedTypeDecl, TypeShapeFact, TypedIntent, TypedModule,
+    CompilerError, CompilerErrorKind, CompilerStage, EffectSignatureMismatch, PureFunctionFact,
+    PureHelperCostFact, ResolvedIntent, ResolvedModule, ResolvedTypeDecl,
+    SignatureMismatchPosition, SignaturePathSegment, TypeShapeFact, TypedIntent, TypedModule,
 };
 pub use contract_bundle::{
     assemble_contract_bundle, assemble_contract_bundle_from_target_ir,

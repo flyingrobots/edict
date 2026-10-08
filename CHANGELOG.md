@@ -14,6 +14,10 @@ versions still track specification maturity rather than a released product.
 
 - Check direct bare effect comparison outputs against their peer before failure-map guidance, preserving symmetric comparison rules.
 
+- Signature mismatch spans identify exactly the effect call, excluding its enclosing binding and failure handler.
+
+- Add typed first-difference detail to explicit effect signature `TypeMismatch` diagnostics, retaining the kind and call span. Build diagnostics expose optional `signatureMismatch` metadata; strict schema consumers must update their schema. `edict-syntax::CompilerError` struct-literal users must initialize its new optional field.
+
 ### Changed
 
 - Propagate predicate output requirements into direct and conditional effect calls before failure-map guidance; describe only domain-mappable names in the current contract.
