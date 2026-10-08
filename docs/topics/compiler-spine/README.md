@@ -300,3 +300,9 @@ calls produce no Core value. [CSPINE-TP-124]
 When helper resolution fails, supplied arguments still retain independent
 diagnostics without an expected parameter type. Poisoned dependencies remain
 suppressed and the compiler constructs no call. [CSPINE-TP-125]
+
+Supported branch-yield bindings check effect profiles while checking each
+branch, rather than rejecting the whole binding during a recursive preflight.
+A disallowed mapped effect leaves independent sibling diagnostics visible;
+predicate and yielded-value profile checks still reject disallowed effects.
+[CSPINE-TP-126]

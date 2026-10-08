@@ -1376,3 +1376,34 @@ fn unresolved_helper_preserves_independent_argument_errors() {
         "missingCallPeer"
     );
 }
+
+#[test]
+fn rejected_profile_in_yield_branch_keeps_independent_causes() {
+    let valid = SOURCE.replace(
+        "  let receipt: hello.GreetingReceipt = hello.createGreeting(input)\n    else { alreadyExists(existing) => hello.AlreadyExists };",
+        "  let receipt: hello.GreetingReceipt = if true { let nested: hello.GreetingReceipt = hello.createGreeting(input) else { alreadyExists(existing) => hello.AlreadyExists }; let peer = true; yield nested; } else { let other: hello.GreetingReceipt = hello.createGreeting(input) else { alreadyExists(existing) => hello.AlreadyExists }; yield other; };",
+    );
+    assert_ne!(valid, SOURCE);
+    compile(&valid).expect("valid mapped effects in both yield branches");
+    let source = valid
+        .replace("profile hello.createGreeting", "profile recovery.read")
+        .replace("let peer = true;", "let peer = missingYieldPeer;");
+    let errors = compile_with_profile(
+        &source,
+        true,
+        Some(("recovery.read", "continuum.profile.read-only/v1")),
+    )
+    .expect_err("invalid nested effects cannot produce Core");
+    assert_eq!(
+        errors.iter().map(|error| error.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::ProfileEffectMismatch,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::ProfileEffectMismatch,
+        ]
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingYieldPeer"
+    );
+}

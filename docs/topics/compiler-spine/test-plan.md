@@ -297,3 +297,9 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-125 | implemented | Missing helper | CSPINE-REQ-049 | Missing helper resolution retains an independent unknown argument, suppresses poisoned-name cascades, and does not invent a width for a bare integer argument. | unresolved_helper_preserves_independent_argument_errors | crates/edict-syntax/tests/binding_recovery.rs | Valid authenticated control; exact error kinds and independent argument span. |
+
+## Yield Profile Recovery
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-126 | implemented | Yield profile recovery | CSPINE-REQ-049 | Rejected profiles on mapped effects in yield branches preserve independent sibling failures and suppress dependent yielded bindings. | rejected_profile_in_yield_branch_keeps_independent_causes | crates/edict-syntax/tests/binding_recovery.rs | Valid two-branch authenticated control; exact error kinds and peer span. |

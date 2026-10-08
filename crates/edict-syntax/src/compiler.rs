@@ -2503,9 +2503,6 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        if !self.check_known_effect_profiles(intent, stmt.value) {
-            return;
-        }
         if let Expr::IfYield {
             pred,
             then_block,
@@ -2525,6 +2522,9 @@ impl<'a> TypeChecker<'a> {
                 locals,
                 state,
             );
+            return;
+        }
+        if !self.check_known_effect_profiles(intent, stmt.value) {
             return;
         }
         let annotation_shape = match stmt.ty {
@@ -2568,7 +2568,11 @@ impl<'a> TypeChecker<'a> {
         locals: &mut Vec<LocalRef>,
         state: &mut BodyState,
     ) {
-        let predicate = self.check_predicate(pred, env);
+        let predicate = if self.check_known_effect_profiles(intent, pred) {
+            self.check_predicate(pred, env)
+        } else {
+            None
+        };
         let annotation_shape = stmt
             .ty
             .and_then(|annotation| self.type_ref_shape(annotation, stmt.span));
@@ -2952,6 +2956,9 @@ impl<'a> TypeChecker<'a> {
                 &mut nested_locals,
                 &mut nested_state,
             );
+        }
+        if !self.check_known_effect_profiles(intent, &block.value) {
+            return None;
         }
         let value = if expected_unavailable && expected.is_none() {
             self.check_expr_with_unavailable_expected_type(&block.value, &nested_env)
