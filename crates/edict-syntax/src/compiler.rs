@@ -51,6 +51,7 @@ pub enum CompilerErrorKind {
     UnsupportedSourceShape,
     UnresolvedType,
     UnresolvedFunction,
+    EffectWithoutFailureMapping,
     InvalidBound,
     UnknownField,
     TypeMismatch,
@@ -87,6 +88,13 @@ pub(crate) struct EffectSignatureFact {
     pub(crate) input_type: String,
     pub(crate) output_type: String,
     pub(crate) failure_payload_types: BTreeMap<String, String>,
+    pub(crate) domain_mappable_failures: BTreeSet<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AuthenticatedEffectExports {
+    lawpack: ResourceRef,
+    names: BTreeSet<String>,
 }
 
 /// Canonical identity and Core definition for one imported lawpack type.
@@ -135,6 +143,7 @@ pub struct CompilerContext {
     operation_profile_budgets: BTreeMap<String, String>,
     effect_write_classes: BTreeMap<String, WriteClass>,
     effect_signatures: BTreeMap<String, EffectSignatureFact>,
+    authenticated_effect_exports: BTreeMap<String, AuthenticatedEffectExports>,
     pure_functions: BTreeMap<String, PureFunctionFact>,
     pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -198,6 +207,18 @@ impl CompilerContext {
     }
 
     #[must_use]
+    pub(crate) fn with_authenticated_effect_exports(
+        mut self,
+        alias: String,
+        lawpack: ResourceRef,
+        names: BTreeSet<String>,
+    ) -> Self {
+        self.authenticated_effect_exports
+            .insert(alias, AuthenticatedEffectExports { lawpack, names });
+        self
+    }
+
+    #[must_use]
     pub(crate) fn with_effect_signature(
         mut self,
         source_effect_coordinate: impl Into<String>,
@@ -255,6 +276,7 @@ pub struct ResolvedModule {
     pub imports: Vec<CoreImport>,
     pub effect_write_classes: BTreeMap<String, WriteClass>,
     pub(crate) effect_signatures: BTreeMap<String, EffectSignatureFact>,
+    authenticated_effect_exports: BTreeMap<String, AuthenticatedEffectExports>,
     pub pure_functions: BTreeMap<String, PureFunctionFact>,
     pub pure_helper_costs: BTreeMap<String, PureHelperCostFact>,
     pub type_shapes: BTreeMap<String, TypeShapeFact>,
@@ -375,6 +397,7 @@ pub fn resolve_module(
             imports,
             effect_write_classes: context.effect_write_classes.clone(),
             effect_signatures: context.effect_signatures.clone(),
+            authenticated_effect_exports: context.authenticated_effect_exports.clone(),
             pure_functions: context.pure_functions.clone(),
             pure_helper_costs: context.pure_helper_costs.clone(),
             type_shapes: context.type_shapes.clone(),
@@ -733,6 +756,108 @@ struct LetStatement<'a> {
     span: Span,
 }
 
+#[derive(Debug, Clone, Copy)]
+enum EffectOutputExpectation<'a> {
+    Value(Option<&'a TypeShape>),
+    Predicate,
+    Concatenation,
+    ConcatenationPeer(&'a Expr),
+    String,
+    Bytes,
+    Unsigned(Option<&'a TypeShape>),
+    Comparison(&'a TypeShape),
+    ComparisonLiteral(&'a Expr),
+    Field {
+        name: &'a str,
+        next: &'a Self,
+        span: Span,
+    },
+}
+
+impl<'a> EffectOutputExpectation<'a> {
+    fn value(self) -> Option<&'a TypeShape> {
+        match self {
+            Self::Value(shape) | Self::Unsigned(shape) => shape,
+            Self::Predicate
+            | Self::Concatenation
+            | Self::ConcatenationPeer(_)
+            | Self::String
+            | Self::Bytes
+            | Self::Comparison(_)
+            | Self::ComparisonLiteral(_)
+            | Self::Field { .. } => None,
+        }
+    }
+
+    fn project<'s>(
+        self,
+        output: &'s TypeShape,
+    ) -> Result<(&'s TypeShape, Self), (CompilerErrorKind, Span, &'a str)> {
+        if let Self::Field { name, next, span } = self {
+            let TypeKind::Record(fields) = &output.kind else {
+                return Err((CompilerErrorKind::TypeMismatch, span, name));
+            };
+            let Some(field) = fields.get(name) else {
+                return Err((CompilerErrorKind::UnknownField, span, name));
+            };
+            next.project(field)
+        } else {
+            Ok((output, self))
+        }
+    }
+
+    fn origin(self, fallback: Span) -> Span {
+        match self {
+            Self::Field { next, span, .. } => next.origin(span),
+            _ => fallback,
+        }
+    }
+
+    fn rejection(self, output: &TypeShape) -> Option<CompilerErrorKind> {
+        match self {
+            Self::Value(Some(expected)) if !compatible(expected, output) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Concatenation | Self::ConcatenationPeer(_)
+                if !matches!(
+                    output.kind,
+                    TypeKind::String { .. } | TypeKind::Bytes { .. }
+                ) =>
+            {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Unsigned(expected)
+                if !matches!(&output.kind, TypeKind::Int { width } if width == "U32" || width == "U64")
+                    || expected.is_some_and(|shape| !compatible(shape, output)) =>
+            {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::String if !matches!(output.kind, TypeKind::String { .. }) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Bytes if !matches!(output.kind, TypeKind::Bytes { .. }) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Predicate if !matches!(output.kind, TypeKind::Bool) => {
+                Some(CompilerErrorKind::ExpectedPredicate)
+            }
+            Self::Comparison(peer) if !comparable(peer, output) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::ComparisonLiteral(_) if !matches!(output.kind, TypeKind::Int { .. }) => {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct EffectBindingProfile {
+    name: String,
+    allowed_write_classes: Option<BTreeSet<WriteClass>>,
+}
+
 #[derive(Debug, Clone)]
 struct TypeChecker<'a> {
     resolved: &'a ResolvedModule,
@@ -742,6 +867,7 @@ struct TypeChecker<'a> {
     source_predicate_costs: BTreeMap<usize, HelperCost>,
     source_value_bounds: BTreeMap<usize, (u64, u64)>,
     input_proof_constraints: Vec<CorePredicate>,
+    effect_binding_profile: Option<EffectBindingProfile>,
     errors: Vec<CompilerError>,
     named_types: BTreeMap<String, TypeShape>,
     core_types: BTreeMap<String, CoreType>,
@@ -759,6 +885,7 @@ impl<'a> TypeChecker<'a> {
             source_predicate_costs: BTreeMap::new(),
             source_value_bounds: BTreeMap::new(),
             input_proof_constraints: Vec::new(),
+            effect_binding_profile: None,
             errors: Vec::new(),
             named_types: BTreeMap::new(),
             core_types: BTreeMap::new(),
@@ -1089,7 +1216,12 @@ impl<'a> TypeChecker<'a> {
             .iter()
             .map(|constraint| constraint.predicate.clone())
             .collect();
+        self.effect_binding_profile = Some(EffectBindingProfile {
+            name: intent.profile.clone(),
+            allowed_write_classes: intent.allowed_write_classes.clone(),
+        });
         let body = self.check_body(intent, &output_shape, &mut env, &mut locals);
+        self.effect_binding_profile = None;
         self.input_proof_constraints.clear();
         let body = body?;
         if !self.resolved.source_functions.is_empty() {
@@ -3002,36 +3134,22 @@ impl<'a> TypeChecker<'a> {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
                 CompilerErrorKind::MissingContextFact,
-                format!("effect `{effect}` has no compiler context fact"),
+                self.missing_effect_context_message(&effect),
                 span,
             ));
             return false;
         };
-        let Some(allowed_write_classes) = &intent.allowed_write_classes else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::MissingContextFact,
-                format!(
-                    "operation profile `{}` has no write-class compiler context fact",
-                    intent.profile
-                ),
-                span,
-            ));
-            return false;
-        };
-        if allowed_write_classes.contains(write_class) {
-            true
-        } else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::ProfileEffectMismatch,
-                format!(
-                    "effect `{effect}` requires write class {write_class:?}, which profile `{}` does not allow",
-                    intent.profile
-                ),
-                span,
-            ));
+        if let Some(failure) = effect_profile_error(
+            &effect,
+            write_class,
+            &intent.profile,
+            intent.allowed_write_classes.as_ref(),
+            span,
+        ) {
+            self.errors.push(failure);
             false
+        } else {
+            true
         }
     }
 
@@ -3095,11 +3213,10 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
-        let input = self.check_expr(arg, env)?;
-        let signature = self.resolved.effect_signatures.get(&effect).cloned();
-        if let Some(signature) = signature {
+        let (input, signature) = if let Some(signature) =
+            self.resolved.effect_signatures.get(&effect).cloned()
+        {
             if !self.fact_matches_source_import(&effect, &signature.coordinate, &signature.lawpack)
-                || !signature.type_parameters.is_empty()
             {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -3109,34 +3226,23 @@ impl<'a> TypeChecker<'a> {
                 ));
                 return None;
             }
-            let Some(expected_input) =
-                self.shape_for_helper_coordinate(&signature.input_type, &signature.lawpack)
-            else {
+            if !signature.type_parameters.is_empty() {
                 self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::UnresolvedType,
-                    format!(
-                        "effect `{effect}` input type `{}` is outside its exact exported type closure",
-                        signature.input_type
-                    ),
-                    span,
-                ));
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        format!("generic semantic effects such as `{effect}` are not supported by source compilation"),
+                        span,
+                    ));
                 return None;
-            };
-            let Some(effect_output) =
-                self.shape_for_helper_coordinate(&signature.output_type, &signature.lawpack)
-            else {
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::UnresolvedType,
-                    format!(
-                        "effect `{effect}` output type `{}` is outside its exact exported type closure",
-                        signature.output_type
-                    ),
-                    span,
-                ));
-                return None;
-            };
+            }
+            let expected = self.effect_input_shape(&effect, &signature, span)?;
+            let input = self.check_expr_with_expected(arg, env, Some(&expected))?;
+            (input, Some((signature, expected)))
+        } else {
+            (self.check_expr(arg, env)?, None)
+        };
+        if let Some((signature, expected_input)) = signature {
+            let effect_output = self.effect_output_shape(&effect, &signature, span)?;
             if let Some(failure) = signature_diagnostic::mismatch(
                 &effect,
                 SignatureMismatchPosition::Input,
@@ -3553,7 +3659,11 @@ impl<'a> TypeChecker<'a> {
                 let expected = TypeShape::canonical_structural(TypeKind::Bool)?;
                 // Check the operand on its own terms before applying the
                 // predicate requirement; nested typing failures stay distinct.
-                let value = self.check_expr(expr, env)?;
+                let value = self.check_expr_with_effect_expectation(
+                    expr,
+                    env,
+                    EffectOutputExpectation::Predicate,
+                )?;
                 if !compatible(&expected, &value.ty) {
                     self.errors.push(error(
                         CompilerStage::TypeCheck,
@@ -3593,6 +3703,24 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         span: Span,
     ) -> Option<CorePredicate> {
+        // A bare effect always rejects in this value position. Validate its
+        // own guards and exported numeric output before inferring its peer.
+        if self.is_authenticated_effect_call(lhs) && is_bare_integer_literal(rhs) {
+            self.check_expr_with_effect_expectation(
+                lhs,
+                env,
+                EffectOutputExpectation::ComparisonLiteral(rhs),
+            )?;
+            return None;
+        }
+        if self.is_authenticated_effect_call(rhs) && is_bare_integer_literal(lhs) {
+            self.check_expr_with_effect_expectation(
+                rhs,
+                env,
+                EffectOutputExpectation::ComparisonLiteral(lhs),
+            )?;
+            return None;
+        }
         let (left, right) = match (is_bare_integer_literal(lhs), is_bare_integer_literal(rhs)) {
             (true, false) => {
                 let right = self.check_expr(rhs, env)?;
@@ -3604,7 +3732,24 @@ impl<'a> TypeChecker<'a> {
                 let right = self.check_expr_with_expected(rhs, env, Some(&left.ty))?;
                 (left, right)
             }
-            _ => (self.check_expr(lhs, env)?, self.check_expr(rhs, env)?),
+            _ if self.is_authenticated_effect_call(lhs) => {
+                let right = self.check_expr(rhs, env)?;
+                let left = self.check_expr_with_effect_expectation(
+                    lhs,
+                    env,
+                    EffectOutputExpectation::Comparison(&right.ty),
+                )?;
+                (left, right)
+            }
+            _ => {
+                let left = self.check_expr(lhs, env)?;
+                let right = self.check_expr_with_effect_expectation(
+                    rhs,
+                    env,
+                    EffectOutputExpectation::Comparison(&left.ty),
+                )?;
+                (left, right)
+            }
         };
         if comparable(&left.ty, &right.ty) {
             Some(CorePredicate::Compare {
@@ -3621,6 +3766,28 @@ impl<'a> TypeChecker<'a> {
             ));
             None
         }
+    }
+
+    fn is_authenticated_effect_call(&self, expr: &Expr) -> bool {
+        if let Expr::Field { base, .. } = expr {
+            return self.is_authenticated_effect_call(base);
+        }
+        let Expr::Call { callee, .. } = expr else {
+            return false;
+        };
+        let Some(coordinate) = plain_callee_coordinate(callee) else {
+            return false;
+        };
+        self.resolved
+            .effect_signatures
+            .get(&coordinate)
+            .is_some_and(|signature| {
+                self.fact_matches_source_import(
+                    &coordinate,
+                    &signature.coordinate,
+                    &signature.lawpack,
+                )
+            })
     }
 
     fn check_expr(
@@ -3655,6 +3822,16 @@ impl<'a> TypeChecker<'a> {
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
         expected: Option<&TypeShape>,
     ) -> Option<TypedValue> {
+        self.check_expr_with_effect_expectation(expr, env, EffectOutputExpectation::Value(expected))
+    }
+
+    fn check_expr_with_effect_expectation(
+        &mut self,
+        expr: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expectation: EffectOutputExpectation<'_>,
+    ) -> Option<TypedValue> {
+        let expected = expectation.value();
         let checked = match expr {
             Expr::Ident { name, span } => self.check_ident(name, *span, env),
             Expr::Str { value, .. } => string_value(value),
@@ -3676,13 +3853,15 @@ impl<'a> TypeChecker<'a> {
                 operand,
                 span,
             } => self.check_negated_integer(operand, expected, *span),
-            Expr::Field { base, field, span } => self.check_field(base, field, *span, env),
+            Expr::Field { base, field, span } => {
+                self.check_field(base, field, *span, env, expectation)
+            }
             Expr::Binary {
                 op: BinOp::Add,
                 lhs,
                 rhs,
                 span,
-            } => self.check_concat(lhs, rhs, env, *span),
+            } => self.check_concat(lhs, rhs, env, expectation, *span),
             Expr::Binary {
                 op: BinOp::Sub,
                 lhs,
@@ -3701,7 +3880,7 @@ impl<'a> TypeChecker<'a> {
                 } else if matches!(callee.as_ref(), Expr::Ident { name, .. } if name == "slice") {
                     self.check_byte_slice(type_args, args, env, *span)
                 } else {
-                    self.check_pure_call(callee, type_args, args, env, expected, *span)
+                    self.check_pure_call(callee, type_args, args, env, expectation, *span)
                 }
             }
             Expr::If {
@@ -3709,7 +3888,7 @@ impl<'a> TypeChecker<'a> {
                 then,
                 els,
                 span,
-            } => self.check_pure_conditional(cond, then, els, env, expected, *span),
+            } => self.check_pure_conditional(cond, then, els, env, expectation, *span),
             Expr::Binary {
                 op:
                     BinOp::Eq
@@ -3722,17 +3901,7 @@ impl<'a> TypeChecker<'a> {
                     | BinOp::Or,
                 ..
             }
-            | Expr::Unary { op: UnOp::Not, .. } => {
-                let predicate = self.check_predicate(expr, env)?;
-                Some(TypedValue {
-                    expr: CoreExpr::If {
-                        predicate: Box::new(predicate),
-                        then_value: Box::new(CoreExpr::Const(CoreValue::Bool(true))),
-                        else_value: Box::new(CoreExpr::Const(CoreValue::Bool(false))),
-                    },
-                    ty: TypeShape::canonical_structural(TypeKind::Bool)?,
-                })
-            }
+            | Expr::Unary { op: UnOp::Not, .. } => self.check_predicate_value(expr, env),
             Expr::Binary { .. }
             | Expr::Digest { .. }
             | Expr::IfYield { .. }
@@ -3755,22 +3924,45 @@ impl<'a> TypeChecker<'a> {
         checked
     }
 
+    fn check_predicate_value(
+        &mut self,
+        expr: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<TypedValue> {
+        let predicate = self.check_predicate(expr, env)?;
+        Some(TypedValue {
+            expr: CoreExpr::If {
+                predicate: Box::new(predicate),
+                then_value: Box::new(CoreExpr::Const(CoreValue::Bool(true))),
+                else_value: Box::new(CoreExpr::Const(CoreValue::Bool(false))),
+            },
+            ty: TypeShape::canonical_structural(TypeKind::Bool)?,
+        })
+    }
+
     fn check_pure_call(
         &mut self,
         callee: &Expr,
         type_args: &[TypeRef],
         args: &[Expr],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        expected: Option<&TypeShape>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
         if let Expr::Ident { name, .. } = callee {
             if let Some(signature) = self.function_signatures.get(name).cloned() {
-                return self
-                    .check_source_call(name, &signature, type_args, args, env, expected, span);
+                return self.check_source_call(
+                    name,
+                    &signature,
+                    type_args,
+                    args,
+                    env,
+                    expectation.value(),
+                    span,
+                );
             }
         }
-        self.check_imported_pure_call(callee, type_args, args, env, expected, span)
+        self.check_imported_pure_call(callee, type_args, args, env, expectation, span)
     }
 
     fn check_imported_pure_call(
@@ -3779,10 +3971,12 @@ impl<'a> TypeChecker<'a> {
         type_args: &[TypeRef],
         args: &[Expr],
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        expected: Option<&TypeShape>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
-        let (source_coordinate, fact) = self.resolve_pure_function(callee, span)?;
+        let (source_coordinate, fact) =
+            self.resolve_pure_function(callee, type_args, args, env, expectation, span)?;
+        let expected = expectation.value();
         if self
             .resolved
             .effect_write_classes
@@ -3907,9 +4101,148 @@ impl<'a> TypeChecker<'a> {
             })
     }
 
+    fn missing_effect_context_message(&self, effect: &str) -> String {
+        let Some((alias, _)) = effect.split_once('.') else {
+            return format!("effect `{effect}` has no compiler context fact");
+        };
+        let Some(import) = self.resolved.imports.iter().find(|import| {
+            import.kind == CoreImportKind::Lawpack && import.alias.as_deref() == Some(alias)
+        }) else {
+            return format!("effect `{effect}` has no compiler context fact");
+        };
+        let available = self
+            .resolved
+            .effect_signatures
+            .iter()
+            .filter(|(source, fact)| {
+                source
+                    .split_once('.')
+                    .is_some_and(|(source_alias, _)| source_alias == alias)
+                    && fact.lawpack == import.resource
+                    && self.fact_matches_source_import(source, &fact.coordinate, &fact.lawpack)
+            })
+            .map(|(source, _)| source.as_str())
+            .collect::<Vec<_>>();
+        if available.is_empty() {
+            if let Some(surface) = self
+                .resolved
+                .authenticated_effect_exports
+                .get(alias)
+                .filter(|surface| surface.lawpack == import.resource)
+            {
+                if surface.names.is_empty() {
+                    return format!("effect `{effect}` has no compiler context fact; imported lawpack `{}` has no authenticated effect exports", import.resource.coordinate);
+                }
+                let names = surface.names.iter().cloned().collect::<Vec<_>>().join(", ");
+                return format!("effect `{effect}` has no compiler context fact; authenticated effect exports from imported lawpack `{}` lack compiler signatures in this context: {names}", import.resource.coordinate);
+            }
+            return format!(
+                "effect `{effect}` has no compiler context fact; missing authenticated effect export information for imported lawpack `{}`",
+                import.resource.coordinate
+            );
+        }
+        format!(
+            "effect `{effect}` has no compiler context fact; available authenticated effect exports in this compiler context for imported lawpack `{}`: {}",
+            import.resource.coordinate,
+            available.join(", ")
+        )
+    }
+
+    fn bare_effect_profile_error(&self, effect: &str, span: Span) -> Option<CompilerError> {
+        let Some(profile) = self.effect_binding_profile.as_ref() else {
+            return Some(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnsupportedSourceShape,
+                format!("semantic effect `{effect}` is unavailable in this pure context"),
+                span,
+            ));
+        };
+        let Some(write_class) = self.resolved.effect_write_classes.get(effect) else {
+            return Some(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::MissingContextFact,
+                self.missing_effect_context_message(effect),
+                span,
+            ));
+        };
+        effect_profile_error(
+            effect,
+            write_class,
+            &profile.name,
+            profile.allowed_write_classes.as_ref(),
+            span,
+        )
+    }
+
+    fn effect_input_shape(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        span: Span,
+    ) -> Option<TypeShape> {
+        self.shape_for_helper_coordinate(&signature.input_type, &signature.lawpack)
+            .or_else(|| {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!(
+                        "effect `{effect}` input type `{}` is outside its exact exported type closure",
+                        signature.input_type
+                    ),
+                    span,
+                ));
+                None
+            })
+    }
+
+    fn effect_output_shape(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        span: Span,
+    ) -> Option<TypeShape> {
+        self.shape_for_helper_coordinate(&signature.output_type, &signature.lawpack)
+            .or_else(|| {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::UnresolvedType,
+                    format!("effect `{effect}` output type `{}` is outside its exact exported type closure", signature.output_type),
+                    span,
+                ));
+                None
+            })
+    }
+
+    fn check_bare_effect_input(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        arg: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<()> {
+        let expected = self.effect_input_shape(effect, signature, span)?;
+        let input = self.check_expr_with_expected(arg, env, Some(&expected))?;
+        if compatible(&expected, &input.ty) {
+            Some(())
+        } else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!("effect `{effect}` call does not match its exported signature"),
+                span,
+            ));
+            None
+        }
+    }
+
     fn resolve_pure_function(
         &mut self,
         callee: &Expr,
+        type_args: &[TypeRef],
+        args: &[Expr],
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<(String, PureFunctionFact)> {
         let Some(source_coordinate) = plain_callee_coordinate(callee) else {
@@ -3921,6 +4254,57 @@ impl<'a> TypeChecker<'a> {
             ));
             return None;
         };
+        let resolved = self.resolved;
+        if let Some(signature) = resolved.effect_signatures.get(&source_coordinate) {
+            if self.fact_matches_source_import(
+                &source_coordinate,
+                &signature.coordinate,
+                &signature.lawpack,
+            ) {
+                if !type_args.is_empty() {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "semantic effect calls do not support effect type arguments",
+                        span,
+                    ));
+                    return None;
+                }
+                if args.len() != 1 {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        "semantic effect calls support exactly one effect argument",
+                        span,
+                    ));
+                    return None;
+                }
+                if !signature.type_parameters.is_empty() {
+                    self.errors.push(error(
+                        CompilerStage::TypeCheck,
+                        CompilerErrorKind::UnsupportedSourceShape,
+                        format!("generic semantic effects such as `{source_coordinate}` are not supported by source compilation"),
+                        span,
+                    ));
+                    return None;
+                }
+                if let Some(failure) = self.bare_effect_profile_error(&source_coordinate, span) {
+                    self.errors.push(failure);
+                    return None;
+                }
+                self.check_bare_effect_input(&source_coordinate, signature, &args[0], env, span)?;
+                self.check_bare_effect_output(
+                    &source_coordinate,
+                    signature,
+                    expectation,
+                    env,
+                    span,
+                )?;
+                self.errors
+                    .push(effect_mapping_error(&source_coordinate, signature, span));
+                return None;
+            }
+        }
         let Some(fact) = self
             .resolved
             .pure_functions
@@ -3947,6 +4331,79 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
         Some((source_coordinate, fact))
+    }
+
+    fn check_bare_effect_output(
+        &mut self,
+        effect: &str,
+        signature: &EffectSignatureFact,
+        expectation: EffectOutputExpectation<'_>,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        span: Span,
+    ) -> Option<()> {
+        let output = self.effect_output_shape(effect, signature, span)?;
+        let (projected, terminal) = match expectation.project(&output) {
+            Ok(projection) => projection,
+            Err((kind, span, name)) => {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    kind,
+                    format!("effect `{effect}` result cannot select field `{name}`"),
+                    span,
+                ));
+                return None;
+            }
+        };
+        if let Some(kind) = terminal.rejection(projected) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                kind,
+                format!("effect `{effect}` output does not match the expected type"),
+                expectation.origin(span),
+            ));
+            return None;
+        }
+        if let EffectOutputExpectation::ComparisonLiteral(peer) = terminal {
+            self.check_expr_with_expected(peer, env, Some(projected))?;
+        }
+        if let EffectOutputExpectation::ConcatenationPeer(peer) = terminal {
+            self.check_effect_concat_peer(projected, peer, env)?;
+        }
+        Some(())
+    }
+
+    fn check_effect_concat_peer(
+        &mut self,
+        output: &TypeShape,
+        peer: &Expr,
+        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+    ) -> Option<()> {
+        let family = if matches!(output.kind, TypeKind::Bytes { .. }) {
+            EffectOutputExpectation::Bytes
+        } else {
+            EffectOutputExpectation::String
+        };
+        let mut probe = self.clone();
+        probe.errors.clear();
+        if let Some(value) = probe.check_expr_with_effect_expectation(peer, env, family) {
+            if let Some(kind) = family.rejection(&value.ty) {
+                probe.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    kind,
+                    "concatenation requires matching string or byte operand families",
+                    expr_span(peer),
+                ));
+            }
+        }
+        probe
+            .errors
+            .retain(|error| error.kind != CompilerErrorKind::EffectWithoutFailureMapping);
+        if probe.errors.is_empty() {
+            Some(())
+        } else {
+            self.errors.extend(probe.errors);
+            None
+        }
     }
 
     fn shape_for_helper_coordinate(
@@ -4003,9 +4460,10 @@ impl<'a> TypeChecker<'a> {
         then: &Expr,
         els: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
-        expected: Option<&TypeShape>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
+        let expected = expectation.value();
         let predicate = self.check_predicate(cond, env)?;
         let (then_value, else_value) = match expected {
             Some(expected) => (
@@ -4013,18 +4471,18 @@ impl<'a> TypeChecker<'a> {
                 self.check_expr_with_expected(els, env, Some(expected))?,
             ),
             None if is_bare_integer_literal(then) => {
-                let else_value = self.check_expr_with_expected(els, env, None)?;
+                let else_value = self.check_expr_with_effect_expectation(els, env, expectation)?;
                 let then_value = self.check_expr_with_expected(then, env, Some(&else_value.ty))?;
                 (then_value, else_value)
             }
             None if is_bare_integer_literal(els) => {
-                let then_value = self.check_expr_with_expected(then, env, None)?;
+                let then_value = self.check_expr_with_effect_expectation(then, env, expectation)?;
                 let else_value = self.check_expr_with_expected(els, env, Some(&then_value.ty))?;
                 (then_value, else_value)
             }
             None => (
-                self.check_expr_with_expected(then, env, None)?,
-                self.check_expr_with_expected(els, env, None)?,
+                self.check_expr_with_effect_expectation(then, env, expectation)?,
+                self.check_expr_with_effect_expectation(els, env, expectation)?,
             ),
         };
 
@@ -4122,8 +4580,17 @@ impl<'a> TypeChecker<'a> {
         field: &str,
         span: Span,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expectation: EffectOutputExpectation<'_>,
     ) -> Option<TypedValue> {
-        let base = self.check_expr(base, env)?;
+        let base = self.check_expr_with_effect_expectation(
+            base,
+            env,
+            EffectOutputExpectation::Field {
+                name: field,
+                next: &expectation,
+                span,
+            },
+        )?;
         let TypeKind::Record(fields) = &base.ty.kind else {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
@@ -4157,10 +4624,34 @@ impl<'a> TypeChecker<'a> {
         lhs: &Expr,
         rhs: &Expr,
         env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        expectation: EffectOutputExpectation<'_>,
         span: Span,
     ) -> Option<TypedValue> {
-        let left = self.check_expr(lhs, env)?;
-        let right = self.check_expr(rhs, env)?;
+        let operand_expectation = match expectation {
+            EffectOutputExpectation::Bytes | EffectOutputExpectation::String => expectation,
+            EffectOutputExpectation::Value(Some(shape)) => match shape.kind {
+                TypeKind::Bytes { .. } => EffectOutputExpectation::Bytes,
+                TypeKind::String { .. } => EffectOutputExpectation::String,
+                _ => EffectOutputExpectation::ConcatenationPeer(rhs),
+            },
+            _ => EffectOutputExpectation::ConcatenationPeer(rhs),
+        };
+        let left = self.check_expr_with_effect_expectation(lhs, env, operand_expectation)?;
+        if let Some(kind) = operand_expectation.rejection(&left.ty) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                kind,
+                "concatenation operand does not satisfy the enclosing expression family",
+                expr_span(lhs),
+            ));
+            return None;
+        }
+        let family = match left.ty.kind {
+            TypeKind::Bytes { .. } => EffectOutputExpectation::Bytes,
+            TypeKind::String { .. } => EffectOutputExpectation::String,
+            _ => EffectOutputExpectation::Concatenation,
+        };
+        let right = self.check_expr_with_effect_expectation(rhs, env, family)?;
         if matches!(
             (&left.ty.kind, &right.ty.kind),
             (TypeKind::Bytes { .. }, TypeKind::Bytes { .. })
@@ -4835,6 +5326,61 @@ fn expr_span(expr: &Expr) -> Span {
         | Expr::IfYield { span, .. }
         | Expr::VariantLit { span, .. }
         | Expr::Match { span, .. } => *span,
+    }
+}
+
+fn effect_mapping_error(
+    effect: &str,
+    signature: &EffectSignatureFact,
+    span: Span,
+) -> CompilerError {
+    let guidance = if signature.failure_payload_types.is_empty() {
+        "no declared failures; effect bindings without a failure map are not supported".to_owned()
+    } else if signature.domain_mappable_failures.is_empty() {
+        "no domain-mappable failures; effect bindings without an authored failure map are not supported".to_owned()
+    } else {
+        let failures = signature
+            .domain_mappable_failures
+            .iter()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("use an annotated effect binding with `else`; domain-mappable failures: {failures}")
+    };
+    error(
+        CompilerStage::TypeCheck,
+        CompilerErrorKind::EffectWithoutFailureMapping,
+        format!("effect `{effect}` is not a pure helper; {guidance}"),
+        span,
+    )
+}
+
+fn effect_profile_error(
+    effect: &str,
+    write_class: &WriteClass,
+    profile: &str,
+    allowed_write_classes: Option<&BTreeSet<WriteClass>>,
+    span: Span,
+) -> Option<CompilerError> {
+    let Some(allowed) = allowed_write_classes else {
+        return Some(error(
+            CompilerStage::TypeCheck,
+            CompilerErrorKind::MissingContextFact,
+            format!("operation profile `{profile}` has no write-class compiler context fact"),
+            span,
+        ));
+    };
+    if allowed.contains(write_class) {
+        None
+    } else {
+        Some(error(
+            CompilerStage::TypeCheck,
+            CompilerErrorKind::ProfileEffectMismatch,
+            format!(
+                "effect `{effect}` requires write class {write_class:?}, which profile `{profile}` does not allow"
+            ),
+            span,
+        ))
     }
 }
 

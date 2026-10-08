@@ -8,11 +8,42 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Check effect output families for concatenation, length, slicing and unsigned subtraction before failure-mapping advice, including exported field projections and mismatched string/byte concatenation peers and nested concatenation family requirements.
+
+- Check authenticated effect result field paths and their enclosing type constraints before failure-map guidance.
+
+- Check unsuffixed comparison literals against authenticated effect output types and numeric ranges before advising a failure map.
+
+- Label filtered effect failure guidance as domain-mappable failures; mixed authority classes remain excluded from the advised map.
+
+- Check direct bare effect comparison outputs against their peer before failure-map guidance, preserving symmetric comparison rules.
+
 - Signature mismatch spans identify exactly the effect call, excluding its enclosing binding and failure handler.
 
 - Add typed first-difference detail to explicit effect signature `TypeMismatch` diagnostics, retaining the kind and call span. Build diagnostics expose optional `signatureMismatch` metadata; strict schema consumers must update their schema. `edict-syntax::CompilerError` struct-literal users must initialize its new optional field.
 
 ### Changed
+
+- Propagate predicate output requirements into direct and conditional effect calls before failure-map guidance; describe only domain-mappable names in the current contract.
+
+- Use authenticated contextual input/output types for effect diagnostics; distinguish validated empty effect surfaces and name only domain-mappable failures in map guidance.
+
+- Validate bare semantic-effect input expressions and exported input types before failure-map guidance.
+
+- Check intent profile permissions before failure-map guidance in all bare effect expression positions.
+
+- Reject unsupported effect call arity before recommending failure-map syntax.
+
+- Reject explicit semantic-effect type arguments before suggesting an unsupported failure-map rewrite.
+
+- Report `EffectWithoutFailureMapping` for exact imported effects used as pure
+  calls in intent bodies, with declared failure names and the call span. Generic
+  effects and effects in pure contexts report `UnsupportedSourceShape`,
+  preserving their unsupported execution boundary. Zero-failure effects
+  report the unsupported binding shape instead of suggesting an empty map.
+  Unknown-effect `MissingContextFact` diagnostics list available exact-owner
+  effects under the selected alias. This changes primary guidance only; effect
+  authority, signature compatibility, and dependent-error recovery remain unchanged.
 
 - Application builds emit individual structured parser and compiler diagnostics
   with byte spans and separate source file/line/scalar-column locations. Existing

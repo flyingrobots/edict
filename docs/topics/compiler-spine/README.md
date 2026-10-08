@@ -37,6 +37,44 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 
+A bare call in an intent body that resolves to an exact nongeneric semantic
+effect reports
+`EffectWithoutFailureMapping`, rather than classifying it as an unresolved pure
+helper. The diagnostic names the domain-mappable failures and retains the call span.
+Generic semantic effects and effects in pure contexts, including source-owned
+functions and intent clauses, report `UnsupportedSourceShape` rather than
+recommending an unavailable effect binding. Explicit effect type arguments
+also report `UnsupportedSourceShape` in mapped and bare forms. Effect calls
+with zero or multiple arguments report the same unsupported shape before map guidance. Mapping guidance is enabled only
+while checking an intent body and is restored afterward. Every bare exact
+effect call also checks the current profile permission before map guidance,
+including direct or nested returns.
+For a zero-failure effect, it reports that bindings without a failure map are
+unsupported instead of suggesting an empty `else` map.
+An unknown effect in an explicit effect binding retains `MissingContextFact`
+and lists available effects from its exact imported owner and source alias.
+A bare unknown call retains `UnresolvedFunction`; the compiler does not infer
+whether an unknown coordinate denotes an effect or a pure helper. Unrelated write-class facts do not
+become exported capability guidance. Available names describe authenticated
+signatures in the supplied compiler context. When those signatures are absent,
+the diagnostic reports missing export information; it does not claim the
+lawpack exports nothing. Valid mapped calls remain unchanged.
+Before failure-map guidance, the compiler checks the effect argument and its
+authenticated input type. Wrong types and unresolved argument expressions retain
+their primary diagnostic kinds and spans.
+Authenticated signatures supply contextual input types in mapped and bare calls,
+including scalar and record integer literals. Predicate operands carry a separate
+effect-output requirement, so non-Boolean direct and conditional effect values
+report `ExpectedPredicate` before map guidance. Ordinary nested operand typing
+retains its existing constraints. A bare effect also checks its
+output against any surrounding expected type before map guidance.
+Guidance lists only `domainMappable` failure coordinates. Effects with no such
+coordinates report the current unsupported no-map binding shape. Validated empty
+export surfaces are distinguished from absent authentication information; declared
+but unprojected exports are not described as an empty lawpack.
+[CSPINE-REQ-047]
+
+
 Source-owned pure functions compile with signatures collected before bodies,
 isolated lexical frames, ordered immutable bindings and one terminal return.
 Calls stay explicit and retain ordered arguments, including arguments unused
@@ -264,6 +302,10 @@ Those items remain assigned to later lowerability/admission milestones.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
 
+A direct authenticated bare effect used as a comparison operand is checked against its typed peer before failure-map guidance. The requirement uses symmetric comparability, preserving ordinary comparison compatibility. Existing integer-literal inference remains unchanged. This rule covers direct effect calls; it does not establish general recovery for multiple invalid operands or dependent bindings.
+
+When the peer of a direct authenticated effect comparison is an unsuffixed integer literal, the compiler validates the effect's guards and exported output first. Non-integer outputs report TypeMismatch. Numeric outputs provide the peer literal's width and range check before failure-map guidance. Signed and unsigned literal inference otherwise retains its existing rules.
+
 ## Effect signature mismatch detail
 
 Explicit mapped effect bindings report `TypeMismatch` at the exact call span when their argument or receipt annotation differs from the exact exported signature. `CompilerError.signature_mismatch` identifies the source effect, input or receipt boundary, typed structural path, and expected/actual self-describing bounded types. Record fields use lexical depth-first first-difference order. List-length incompatibility identifies the list itself; a compatible length with an incompatible item descends through a `listItem` segment. Nominal types retain their distinct coordinates. A missing field has no actual type; an extra field has no expected type. Compatibility rules are unchanged, and independent later errors remain visible.
@@ -271,3 +313,13 @@ Explicit mapped effect bindings report `TypeMismatch` at the exact call span whe
 This is an implementation-crate Rust API addition: code constructing `CompilerError` with a struct literal must initialize `signature_mismatch`, usually to `None`. The curated facade adds no named re-export of the new context types. Bare-call classification and dependent-error suppression remain separate work.
 
 [CSPINE-REQ-048]
+
+Field selectors on authenticated bare effect results are checked against the exported record shape before mapping advice. Chained selectors retain their enclosing expected value, predicate, or comparison requirement. Missing fields report UnknownField; selection from a non-record reports TypeMismatch. The span identifies the failing selector. Valid result selections still require an explicit mapped effect binding, and no effect result is synthesized in Core.
+
+Concatenation checks authenticated effect outputs for string-or-bytes membership before mapping advice. Length and slice require bytes. These requirements also follow exported field projections; a valid projected string still requires effect failure mapping.
+
+Unsigned subtraction checks authenticated effect outputs for U32/U64 and any available expected operand type before mapping advice. Exported field projections retain the same requirement. Accepted pure subtraction still requires its existing no-underflow proof.
+
+For concatenation with a direct or field-projected effect operand, the opposite operand is checked against the authenticated output family before mapping advice. A diagnostic-only compiler copy checks the peer when the left effect has no value; only independent errors leave that copy. No effect output is fabricated as a typed value.
+
+Enclosing string or bytes requirements propagate through concatenation operands, including nested concatenations. Length and slice therefore reject a string concatenation before advising how to map an effect within it; known pure operands retain the same family requirement.
