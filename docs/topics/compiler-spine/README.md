@@ -37,6 +37,20 @@ enter the same `compiler_context_from_authority_facts` path. [CSPINE-REQ-010]
 
 ## Current Contract
 
+Every ordinary result has a checked canonical-CBOR size bound within the
+intent's `maxOutputBytes`. This check applies without source functions. It
+includes record keys, definite-length headers, fixed-width integer maxima,
+list cardinality, authenticated nominal representations, and four UTF-8 bytes
+per possible Unicode scalar. An excess or arithmetic overflow reports
+`InvalidBound` before Core exists. [CSPINE-REQ-046]
+
+A direct `ExternalActionRequest` result remains protocol data under the existing
+external-action contract. This ordinary-result check does not infer its wire
+size. Ordinary results containing nested opaque requests report
+`UnsupportedSourceShape`. Request-only protocol evidence remains separate from
+canonical result-projection evidence. [CSPINE-REQ-046]
+
+
 Source-owned pure functions compile with signatures collected before bodies,
 isolated lexical frames, ordered immutable bindings and one terminal return.
 Calls stay explicit and retain ordered arguments, including arguments unused
