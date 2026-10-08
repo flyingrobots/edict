@@ -26,7 +26,7 @@ F01 keeps required positive-fixture corrections with the compiler check, so its 
 
 - [ ] [F01: Enforce canonical return-size bounds for every intent](docs/plans/study-feedback/F01.md) — [#231](https://github.com/flyingrobots/edict/issues/231).
 - [ ] [F02A: Identify missing effect mappings and unknown exports](docs/plans/study-feedback/F02A.md) — [#238](https://github.com/flyingrobots/edict/issues/238).
-- [ ] [F02B: Identify the incompatible field in effect signatures](docs/plans/study-feedback/F02B.md) — [#239](https://github.com/flyingrobots/edict/issues/239).
+- [x] [F02B: Identify the incompatible field in effect signatures](docs/plans/study-feedback/F02B.md) — [#239](https://github.com/flyingrobots/edict/issues/239), [PR246](https://github.com/flyingrobots/edict/pull/246), main `e60411f`.
 - [ ] [F02C: Suppress errors that depend on failed compiler bindings](docs/plans/study-feedback/F02C.md) — [#240](https://github.com/flyingrobots/edict/issues/240).
 - [x] [F03: Emit structured compiler diagnostics for application builds](docs/plans/study-feedback/F03.md) — [#233](https://github.com/flyingrobots/edict/issues/233); [PR #245](https://github.com/flyingrobots/edict/pull/245), merged as `618aa4f84ff88a0873849f8d9cfa55e1f340ffb9`.
 - [x] [F04: Correct README safety guarantees and compiler/runtime status](docs/plans/study-feedback/F04.md) — [#229](https://github.com/flyingrobots/edict/issues/229); [PR #242](https://github.com/flyingrobots/edict/pull/242), merged as `392ecdc7ae1335a76f96106dad16893d75815a55`.
