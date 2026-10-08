@@ -23,7 +23,11 @@ use crate::core_ir::{
 mod byte_concat;
 mod byte_length;
 mod byte_slice;
+mod signature_diagnostic;
 mod source_functions;
+pub use signature_diagnostic::{
+    EffectSignatureMismatch, SignatureMismatchPosition, SignaturePathSegment,
+};
 mod unsigned_subtraction;
 
 use crate::lowerability::WriteClass;
@@ -116,6 +120,8 @@ pub struct CompilerError {
     pub kind: CompilerErrorKind,
     pub message: String,
     pub span: Span,
+    /// Optional typed detail for an exported effect signature mismatch.
+    pub signature_mismatch: Option<EffectSignatureMismatch>,
 }
 
 /// Deterministic facts supplied to the compiler spine by the caller.
@@ -316,6 +322,7 @@ pub fn compile_to_core(
                 kind: CompilerErrorKind::SurfaceValidation,
                 message: err.message,
                 span: err.span,
+                signature_mismatch: None,
             })
             .collect::<Vec<_>>()
     })?;
@@ -430,6 +437,7 @@ pub fn lower_core(typed: &TypedModule) -> Result<CoreModule, Vec<CompilerError>>
             kind: CompilerErrorKind::InvalidCoreTypeIntegrity,
             message: failure.to_string(),
             span: Span::new(0, 0),
+            signature_mismatch: None,
         }]),
     }
 }
@@ -3129,14 +3137,23 @@ impl<'a> TypeChecker<'a> {
                 ));
                 return None;
             };
-            if !compatible(&expected_input, &input.ty) || !compatible(binding_shape, &effect_output)
-            {
-                self.errors.push(error(
-                    CompilerStage::TypeCheck,
-                    CompilerErrorKind::TypeMismatch,
-                    format!("effect `{effect}` call does not match its exported signature"),
-                    span,
-                ));
+            if let Some(failure) = signature_diagnostic::mismatch(
+                &effect,
+                SignatureMismatchPosition::Input,
+                &expected_input,
+                &input.ty,
+                expr_span(call),
+            )
+            .or_else(|| {
+                signature_diagnostic::mismatch(
+                    &effect,
+                    SignatureMismatchPosition::Receipt,
+                    binding_shape,
+                    &effect_output,
+                    expr_span(call),
+                )
+            }) {
+                self.errors.push(failure);
                 return None;
             }
         }
@@ -4832,6 +4849,7 @@ fn error(
         kind,
         message: message.into(),
         span,
+        signature_mismatch: None,
     }
 }
 
