@@ -4170,6 +4170,18 @@ impl<'a> TypeChecker<'a> {
         })
     }
 
+    fn check_expr_with_intrinsic_context(
+        &mut self,
+        expr: &Expr,
+        env: &LocalEnvironment,
+    ) -> Option<TypedValue> {
+        let previous = self.expected_type_unavailable;
+        self.expected_type_unavailable = false;
+        let value = self.check_expr(expr, env);
+        self.expected_type_unavailable = previous;
+        value
+    }
+
     fn check_expr_with_unavailable_expected_type(
         &mut self,
         expr: &Expr,
@@ -4298,8 +4310,8 @@ impl<'a> TypeChecker<'a> {
         env: &LocalEnvironment,
         span: Span,
     ) -> Option<TypedValue> {
-        let left = self.check_expr(lhs, env);
-        let right = self.check_expr(rhs, env);
+        let left = self.check_expr_with_intrinsic_context(lhs, env);
+        let right = self.check_expr_with_intrinsic_context(rhs, env);
         if left.is_none() || right.is_none() {
             for (value, expression) in [(&left, lhs), (&right, rhs)] {
                 if value.as_ref().is_some_and(|value| {

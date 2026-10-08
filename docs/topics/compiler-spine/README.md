@@ -278,6 +278,8 @@ Invalid annotations retain independently checkable initializer errors in intent,
 
 Byte slices check all operands before constructing a value or proving bounds. Failed loop iterators retain independent body errors with their binder unavailable; when the iterator type is known but its bound fails, body diagnostics use the real item type without constructing a loop. Failed effect inputs and invalid receipt annotations still permit independent obstruction-map checks using existing effect facts and discarded diagnostic locals.
 
+Intrinsic concatenation and byte-input requirements remain active even when an outer annotation is unavailable. Missing outer context does not make integer operands admissible to concatenation, slice or length. Direct numeric predicates retain their existing ExpectedPredicate refusal.
+
 The complete recovery requirement remains planned pending the production-path audit and final current-head review. Implemented cases establish only their named evidence. The test plan records the complete requirement as planned and names the implemented cases; passing those cases does not establish the remaining paths.
 
 [CSPINE-REQ-049]

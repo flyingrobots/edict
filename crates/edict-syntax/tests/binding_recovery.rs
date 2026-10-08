@@ -1081,3 +1081,39 @@ fn failed_effect_inputs_preserve_independent_map_errors() {
         ],
     );
 }
+
+#[test]
+fn unavailable_outer_annotations_preserve_intrinsic_family_errors() {
+    for (valid_expression, invalid_expression, kind) in [
+        (
+            "if true then true else false",
+            "if 0 then true else false",
+            CompilerErrorKind::ExpectedPredicate,
+        ),
+        (
+            "\"x\" + \"x\"",
+            "0 + \"x\"",
+            CompilerErrorKind::TypeMismatch,
+        ),
+        ("len(input)", "len(0)", CompilerErrorKind::TypeMismatch),
+        (
+            "slice(input, 0u64, 0u64)",
+            "slice(0, 0u64, 0u64)",
+            CompilerErrorKind::TypeMismatch,
+        ),
+    ] {
+        let valid = format!("package recovery.intrinsics@1; intent evaluate(input: Bytes<max=4>) returns Bool profile p.read basis none budget <= p.large {{ let chosen = {valid_expression}; return true; }}");
+        compile_function_recovery(&valid).expect("valid intrinsic family control");
+        let invalid = valid.replace(valid_expression, invalid_expression);
+        let errors =
+            compile_function_recovery(&invalid).expect_err("intrinsically invalid operand");
+        assert_eq!(errors.iter().map(|e| e.kind).collect::<Vec<_>>(), [kind]);
+        let source = invalid.replace("let chosen =", "let chosen: MissingRecoveryType =");
+        let errors = compile_function_recovery(&source)
+            .expect_err("outer annotation cannot hide an intrinsic family error");
+        assert_eq!(
+            errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+            [CompilerErrorKind::UnresolvedType, kind]
+        );
+    }
+}

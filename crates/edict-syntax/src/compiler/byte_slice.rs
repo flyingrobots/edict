@@ -31,7 +31,7 @@ impl TypeChecker<'_> {
             ));
             return None;
         }
-        let bytes = self.check_expr(bytes, env);
+        let bytes = self.check_expr_with_intrinsic_context(bytes, env);
         let max = bytes.as_ref().and_then(|value| {
             if let TypeKind::Bytes { max, .. } = value.ty.kind {
                 Some(max)

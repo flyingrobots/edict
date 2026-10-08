@@ -30,7 +30,7 @@ impl TypeChecker<'_> {
             ));
             return None;
         }
-        let value = self.check_expr(argument, env)?;
+        let value = self.check_expr_with_intrinsic_context(argument, env)?;
         if !matches!(value.ty.kind, TypeKind::Bytes { .. }) {
             self.errors.push(error(
                 CompilerStage::TypeCheck,
