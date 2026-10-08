@@ -2454,13 +2454,13 @@ impl<'a> TypeChecker<'a> {
             return;
         }
         let annotation_shape = match stmt.ty {
-            Some(annotation) => match self.type_ref_shape(annotation, stmt.span) {
-                Some(shape) => Some(shape),
-                None => {
+            Some(annotation) => {
+                let Some(shape) = self.type_ref_shape(annotation, stmt.span) else {
                     self.check_expr_with_unavailable_expected_type(stmt.value, env);
                     return;
-                }
-            },
+                };
+                Some(shape)
+            }
             None => None,
         };
         let Some(value) = self.check_expr_with_expected(stmt.value, env, annotation_shape.as_ref())
@@ -3792,6 +3792,49 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
 
+        let core_args = self.check_imported_arguments(args, env, &fact, &source_coordinate, span);
+
+        let Some(return_shape) = self.shape_for_helper_coordinate(&fact.return_type, &fact.lawpack)
+        else {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::UnresolvedType,
+                format!(
+                    "pure helper `{source_coordinate}` return type `{}` is not available in the module type closure",
+                    fact.return_type
+                ),
+                span,
+            ));
+            return None;
+        };
+        if expected.is_some_and(|expected| !compatible(expected, &return_shape)) {
+            self.errors.push(error(
+                CompilerStage::TypeCheck,
+                CompilerErrorKind::TypeMismatch,
+                format!("pure helper `{source_coordinate}` return type does not match its use"),
+                span,
+            ));
+            return None;
+        }
+
+        Some(TypedValue {
+            expr: CoreExpr::Call {
+                callee: fact.coordinate,
+                type_args: Vec::new(),
+                args: core_args?,
+            },
+            ty: return_shape,
+        })
+    }
+
+    fn check_imported_arguments(
+        &mut self,
+        args: &[Expr],
+        env: &LocalEnvironment,
+        fact: &PureFunctionFact,
+        source_coordinate: &str,
+        span: Span,
+    ) -> Option<Vec<CoreExpr>> {
         let mut core_args = Vec::with_capacity(args.len());
         let mut accepted = true;
         for (arg, parameter_type) in args.iter().zip(&fact.parameter_types) {
@@ -3827,40 +3870,7 @@ impl<'a> TypeChecker<'a> {
             core_args.push(value.expr);
         }
 
-        let Some(return_shape) = self.shape_for_helper_coordinate(&fact.return_type, &fact.lawpack)
-        else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::UnresolvedType,
-                format!(
-                    "pure helper `{source_coordinate}` return type `{}` is not available in the module type closure",
-                    fact.return_type
-                ),
-                span,
-            ));
-            return None;
-        };
-        if expected.is_some_and(|expected| !compatible(expected, &return_shape)) {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::TypeMismatch,
-                format!("pure helper `{source_coordinate}` return type does not match its use"),
-                span,
-            ));
-            return None;
-        }
-
-        if !accepted {
-            return None;
-        }
-        Some(TypedValue {
-            expr: CoreExpr::Call {
-                callee: fact.coordinate,
-                type_args: Vec::new(),
-                args: core_args,
-            },
-            ty: return_shape,
-        })
+        accepted.then_some(core_args)
     }
 
     fn fact_matches_source_import(
