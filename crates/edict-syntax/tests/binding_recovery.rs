@@ -328,3 +328,44 @@ fn poisoned_logical_operand_keeps_the_independent_peer() {
         );
     }
 }
+
+#[test]
+fn source_function_failed_locals_preserve_later_causes() {
+    let valid = "package recovery.functions@1; fn recover() -> Bool { let failed = true; let dependent = failed; let independent = false; return dependent; } intent evaluate(input: Bool) returns Bool profile p.read basis none budget <= p.large { let anchor = input; return anchor; }";
+    compile_function_recovery(valid).expect("valid source-function recovery control");
+    let source = valid
+        .replace("let failed = true;", "let failed = missingFunctionCause;")
+        .replace(
+            "let independent = false;",
+            "let independent = missingFunctionSibling;",
+        );
+    let errors =
+        compile_function_recovery(&source).expect_err("invalid function never produces Core");
+    assert_eq!(
+        errors.iter().map(|error| error.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    let origins: Vec<_> = errors
+        .iter()
+        .map(|error| &source[error.span.start..error.span.end])
+        .collect();
+    assert_eq!(origins, ["missingFunctionCause", "missingFunctionSibling"]);
+}
+
+fn compile_function_recovery(source: &str) -> Result<CoreModule, Vec<CompilerError>> {
+    let module = parse_module(source).expect("function recovery source parses");
+    let context = edict_syntax::CompilerContext::new()
+        .with_operation_profile("p.read", "continuum.profile.read-only/v1")
+        .with_budget(
+            "p.large",
+            edict_syntax::CoreBudget {
+                max_steps: 4096,
+                max_allocated_bytes: u64::MAX,
+                max_output_bytes: u64::MAX,
+            },
+        );
+    compile_to_core(&module, &context)
+}

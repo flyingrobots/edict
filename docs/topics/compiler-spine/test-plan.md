@@ -232,3 +232,5 @@ Out of scope:
 | CSPINE-TP-099 | implemented | Failed yield predicate | CSPINE-REQ-049 | Both annotated yield branches report independent errors after a poisoned condition; valid yield still compiles. | poisoned_yield_condition_keeps_both_branch_errors | crates/edict-syntax/tests/binding_recovery.rs | Do not construct a branch without a valid predicate. |
 
 | CSPINE-TP-100 | implemented | Logical predicate siblings | CSPINE-REQ-049 | Both AND/OR operands retain independent diagnostics; valid predicates retain their existing Core semantics. | poisoned_logical_operand_keeps_the_independent_peer | crates/edict-syntax/tests/binding_recovery.rs | Compile-time traversal does not change runtime short circuiting. |
+
+| CSPINE-TP-101 | implemented | Source function recovery | CSPINE-REQ-049 | Failed function locals suppress dependent uses while later independent locals remain diagnosed; a present failed return is not reported absent. | source_function_failed_locals_preserve_later_causes | crates/edict-syntax/tests/binding_recovery.rs | Invalid functions cannot produce Core. |
