@@ -635,3 +635,41 @@ fn poisoned_record_retains_poisoned_extra_field_mismatch() {
     );
     assert_eq!(&source[errors[1].span.start..errors[1].span.end], "failed");
 }
+
+#[test]
+fn poisoned_subtraction_operand_preserves_independent_peer() {
+    let valid = insert_bindings("  let failed = 9u64;\n  let distance: U64 = failed - 0u64;");
+    compile(&valid).expect("valid proven subtraction control");
+    let source = valid
+        .replace("let failed = 9u64;", "let failed = missingSubtractCause;")
+        .replace("failed - 0u64", "failed - missingSubtractPeer");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+        ],
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingSubtractPeer"
+    );
+    let source = source.replace("missingSubtractPeer", "false");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch,
+        ],
+    );
+    assert_eq!(&source[errors[1].span.start..errors[1].span.end], "false");
+    let source = source.replace("distance: U64", "distance");
+    let errors = check_kinds(
+        &source,
+        &[
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnsupportedSourceShape,
+        ],
+    );
+    assert_eq!(&source[errors[1].span.start..errors[1].span.end], "false");
+}
