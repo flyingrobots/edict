@@ -31,32 +31,42 @@ impl TypeChecker<'_> {
             ));
             return None;
         }
-        let bytes = self.check_expr(bytes, env)?;
-        let TypeKind::Bytes { max, .. } = bytes.ty.kind else {
-            self.errors.push(error(
-                CompilerStage::TypeCheck,
-                CompilerErrorKind::TypeMismatch,
-                "slice requires bounded structural Bytes",
-                expr_span(&args[0]),
-            ));
-            return None;
-        };
+        let bytes = self.check_expr(bytes, env);
+        let max = bytes.as_ref().and_then(|value| {
+            if let TypeKind::Bytes { max, .. } = value.ty.kind {
+                Some(max)
+            } else {
+                self.errors.push(error(
+                    CompilerStage::TypeCheck,
+                    CompilerErrorKind::TypeMismatch,
+                    "slice requires bounded structural Bytes",
+                    expr_span(&args[0]),
+                ));
+                None
+            }
+        });
         let index_type = integer_shape("U64");
-        let start = self.check_expr_with_expected(start, env, Some(&index_type))?;
-        let end = self.check_expr_with_expected(end, env, Some(&index_type))?;
+        let start = self.check_expr_with_expected(start, env, Some(&index_type));
+        let end = self.check_expr_with_expected(end, env, Some(&index_type));
+        let mut accepted = true;
         for (value, operand) in [(&start, &args[1]), (&end, &args[2])] {
-            if value.ty != index_type {
+            if value.as_ref().is_some_and(|value| value.ty != index_type) {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
                     CompilerErrorKind::TypeMismatch,
                     "slice endpoint must have type U64",
                     expr_span(operand),
                 ));
+                accepted = false;
             }
         }
-        if start.ty != index_type || end.ty != index_type {
+        if !accepted {
             return None;
         }
+        let max = max?;
+        let bytes = bytes?;
+        let start = start?;
+        let end = end?;
         let coordinate = bytes.ty.value_type_coord();
         let length = CoreExpr::Call {
             callee: "core.bytes.length".into(),

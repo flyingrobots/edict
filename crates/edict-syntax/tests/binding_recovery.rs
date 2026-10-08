@@ -935,3 +935,40 @@ fn unavailable_annotations_do_not_invent_literal_width() {
         "18446744073709551616u64"
     );
 }
+
+#[test]
+fn poisoned_slice_operands_preserve_independent_causes() {
+    let valid = "package recovery.slices@1; intent evaluate(input: Bytes<max=4>) returns Bool profile p.read basis none budget <= p.large { let failed = input; let piece = slice(failed, 0u64, 0u64); return true; }";
+    compile_function_recovery(valid).expect("valid empty byte slice control");
+    let source = valid
+        .replace("let failed = input;", "let failed = missingBytesCause;")
+        .replace(
+            "slice(failed, 0u64, 0u64)",
+            "slice(failed, missingStart, missingEnd)",
+        );
+    let errors = compile_function_recovery(&source).expect_err("invalid slice cannot produce Core");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    let origins: Vec<_> = errors
+        .iter()
+        .map(|e| &source[e.span.start..e.span.end])
+        .collect();
+    assert_eq!(origins, ["missingBytesCause", "missingStart", "missingEnd"]);
+    let source = source.replace("missingEnd", "false");
+    let errors = compile_function_recovery(&source).expect_err("invalid endpoint type retained");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch
+        ]
+    );
+    assert_eq!(&source[errors[2].span.start..errors[2].span.end], "false");
+}
