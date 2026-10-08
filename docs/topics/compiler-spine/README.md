@@ -306,3 +306,9 @@ branch, rather than rejecting the whole binding during a recursive preflight.
 A disallowed mapped effect leaves independent sibling diagnostics visible;
 predicate and yielded-value profile checks still reject disallowed effects.
 [CSPINE-TP-126]
+
+Duplicate failure-map keys reject the complete map while retaining independent
+arm diagnostics. Every source arm is checked, including a duplicate that would
+otherwise be overwritten by key indexing. These diagnostic checks allocate no
+obstruction locals and publish no recovered map; valid maps retain their
+existing canonical ordering and Core output.

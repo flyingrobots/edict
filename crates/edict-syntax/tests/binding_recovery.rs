@@ -1407,3 +1407,31 @@ fn rejected_profile_in_yield_branch_keeps_independent_causes() {
         "missingYieldPeer"
     );
 }
+
+#[test]
+fn duplicate_obstruction_maps_preserve_independent_arm_errors() {
+    compile(SOURCE).expect("valid mapped effect control");
+    let valid_arm = "alreadyExists(existing) => hello.AlreadyExists";
+    for invalid_arm in [
+        "alreadyExists => hello.AlreadyExists",
+        "alreadyExists(other) => hello.AlreadyExists(true)",
+    ] {
+        let single = SOURCE.replace(valid_arm, invalid_arm);
+        check_kinds(&single, &[CompilerErrorKind::UnsupportedSourceShape]);
+        for arms in [
+            format!("{invalid_arm}, {valid_arm}"),
+            format!("{valid_arm}, {invalid_arm}"),
+        ] {
+            let source = SOURCE.replace(valid_arm, &arms);
+            let errors = check_kinds(
+                &source,
+                &[
+                    CompilerErrorKind::DuplicateObstructionFailure,
+                    CompilerErrorKind::UnsupportedSourceShape,
+                ],
+            );
+            let span = errors[1].span;
+            assert!(invalid_arm.contains(&source[span.start..span.end]));
+        }
+    }
+}

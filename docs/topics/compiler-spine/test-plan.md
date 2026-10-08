@@ -303,3 +303,7 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-126 | implemented | Yield profile recovery | CSPINE-REQ-049 | Rejected profiles on mapped effects in yield branches preserve independent sibling failures and suppress dependent yielded bindings. | rejected_profile_in_yield_branch_keeps_independent_causes | crates/edict-syntax/tests/binding_recovery.rs | Valid two-branch authenticated control; exact error kinds and peer span. |
+
+| Case ID | Status | Kind | Requirements | Scenario and oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-127 | implemented | Duplicate handler recovery | CSPINE-REQ-049 | A duplicate failure key must not hide an independently unsupported binder or target payload in either arm order; the invalid binding never becomes Core. | duplicate_obstruction_maps_preserve_independent_arm_errors | crates/edict-syntax/tests/binding_recovery.rs | Valid control and single-arm error controls distinguish duplicate-caused suppression. |

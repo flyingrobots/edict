@@ -3302,6 +3302,13 @@ impl<'a> TypeChecker<'a> {
             }
         }
         if !accepted {
+            // Duplicate keys invalidate the entire map, but each source arm can
+            // still contain an independent error. Inspect all arms (including
+            // overwritten duplicates) without allocating locals or publishing
+            // a recovered obstruction map.
+            for arm in arms {
+                let _ = self.check_obstruction_arm(effect, arm, *obstruction_index);
+            }
             return None;
         }
 

@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Preserve independent obstruction-arm diagnostics when a failure map contains duplicate keys, without publishing a recovered map.
+
 - Preserve independent branch-yield statement errors after an effect profile refusal, while retaining predicate and yielded-value profile checks.
 
 - Retain independent argument errors after helper resolution fails, without inventing parameter types or constructing a call.
