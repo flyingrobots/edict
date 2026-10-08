@@ -248,7 +248,7 @@ Out of scope:
 | CSPINE-TP-116 | implemented | Independent effect maps | CSPINE-REQ-049 | Known effect maps retain duplicate-arm errors after unavailable inputs; invalid receipt annotations do not hide independent initializer/map failures. | failed_effect_inputs_preserve_independent_map_errors | crates/edict-syntax/tests/binding_recovery.rs | Existing exact signature mismatch and valid mapped-effect controls remain required. |
 | CSPINE-TP-117 | implemented | Intrinsic operand families | CSPINE-REQ-049 | An unavailable outer annotation does not suppress intrinsically invalid predicate, concatenation or bytes operands. | unavailable_outer_annotations_preserve_intrinsic_family_errors | crates/edict-syntax/tests/binding_recovery.rs | Missing literal width remains suppressed only where a valid missing annotation could supply it. |
 
-CSPINE-REQ-049 remains planned pending the complete production-path audit and final current-head review. The implemented rows establish their named fixtures, including byte slices, failed loop iterators/bounds and independent effect maps. They do not certify untested variants or satisfy review gates by themselves.
+CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtures, including byte slices, failed loop iterators/bounds and independent effect maps. They do not certify untested production paths or variants.
 
 ## Independent Request Clauses
 
