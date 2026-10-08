@@ -311,3 +311,7 @@ CSPINE-REQ-049 remains planned. The implemented rows establish their named fixtu
 | Case ID | Status | Kind | Requirements | Scenario and oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-128 | implemented | Independent bound overflow | CSPINE-REQ-049 | Visiting an independent string concatenation after a poisoned operand reports InvalidBound on overflowing maximums rather than panicking or wrapping. | independent_string_bound_overflow_is_a_diagnostic | crates/edict-syntax/tests/binding_recovery.rs | Exact U64 maximum-sum control, direct overflow and both poisoned operand orders; exact independent expression span. |
+
+| Case ID | Status | Kind | Requirements | Scenario and oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-129 | implemented | Duplicate payload recovery | CSPINE-REQ-049 | A duplicate obstruction payload key retains an independently unresolved explicit value or shorthand name in terminal and continuing failure arms. | duplicate_payload_fields_preserve_independent_value_errors | crates/edict-syntax/tests/binding_recovery.rs | Valid unique payload controls; exact error kinds and value origin. |

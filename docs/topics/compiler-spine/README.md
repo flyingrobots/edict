@@ -317,3 +317,9 @@ String concatenation uses checked maximum-bound addition and reports
 `InvalidBound` if the sum exceeds U64. This also applies when recovery visits
 an independent concatenation after another operand failed; no wrapped bound or
 recovered value is constructed. A sum equal to U64's maximum remains representable.
+
+Duplicate obstruction payload fields retain independent value/name diagnostics
+in both terminal and continuing failure arms. A duplicate explicit value or
+shorthand is still checked, while poisoned-name reads remain suppressed. Any
+duplicate keeps the complete payload map invalid; checked values do not make
+that map eligible for Core publication.

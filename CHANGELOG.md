@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Retain independent explicit-value and shorthand diagnostics on duplicate obstruction payload keys.
+
 - Reject overflowing string concatenation bounds with InvalidBound, including independent operands visited during error recovery.
 
 - Preserve independent obstruction-arm diagnostics when a failure map contains duplicate keys, without publishing a recovered map.

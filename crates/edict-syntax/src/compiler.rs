@@ -2416,7 +2416,7 @@ impl<'a> TypeChecker<'a> {
                             expr_span(value),
                         ));
                         accepted = false;
-                        continue;
+                        // Still diagnose this independently authored value.
                     }
                     if let Some(value) = self.check_expr(value, env) {
                         fields.insert(name.clone(), value.expr);
@@ -2433,7 +2433,7 @@ impl<'a> TypeChecker<'a> {
                             *span,
                         ));
                         accepted = false;
-                        continue;
+                        // A repeated key does not resolve its shorthand name.
                     }
                     let Some((local, _)) = env.get(name) else {
                         if !env.poisoned.contains(name) {

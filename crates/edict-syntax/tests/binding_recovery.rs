@@ -1459,3 +1459,37 @@ fn independent_string_bound_overflow_is_a_diagnostic() {
         );
     }
 }
+
+#[test]
+fn duplicate_payload_fields_preserve_independent_value_errors() {
+    for template in [
+        "example.Failure({ PAYLOAD })",
+        "continue obstructed { reason: example.Failure, PAYLOAD }",
+    ] {
+        let valid = insert_bindings(&format!(
+            "  require true else {};",
+            template.replace("PAYLOAD", "payload: true, other: false")
+        ));
+        compile(&valid).expect("valid unique payload control");
+        for fields in [
+            "payload: true, payload: missingIndependentPayload",
+            "missingIndependentPayload: true, missingIndependentPayload",
+        ] {
+            let source = insert_bindings(&format!(
+                "  require true else {};",
+                template.replace("PAYLOAD", fields)
+            ));
+            let errors = check_kinds(
+                &source,
+                &[
+                    CompilerErrorKind::DuplicateObstructionPayloadField,
+                    CompilerErrorKind::UnresolvedType,
+                ],
+            );
+            assert_eq!(
+                &source[errors[1].span.start..errors[1].span.end],
+                "missingIndependentPayload"
+            );
+        }
+    }
+}
