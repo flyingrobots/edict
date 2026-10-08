@@ -700,3 +700,93 @@ fn poisoned_payload_fields_retain_duplicate_key_errors() {
         );
     }
 }
+
+#[test]
+fn source_call_arguments_preserve_later_causes() {
+    check_call_argument_recovery(true);
+}
+
+#[test]
+fn imported_call_arguments_preserve_later_causes() {
+    check_call_argument_recovery(false);
+}
+
+fn check_call_argument_recovery(source_owned: bool) {
+    let declaration = if source_owned {
+        "fn pair(left: Bool, right: Bool) -> Bool { return left; }"
+    } else {
+        "use lawpack recovery.helpers@1 digest \"sha256:1111111111111111111111111111111111111111111111111111111111111111\" as helpers;"
+    };
+    let call = if source_owned { "pair" } else { "helpers.pair" };
+    let valid = format!("package recovery.calls@1; {declaration} intent evaluate(input: Bool) returns Bool profile p.read basis none budget <= p.large {{ let failed = true; let result = {call}(failed, false); return result; }}");
+    compile_call_recovery(&valid).expect("valid source/imported call control");
+    let source = valid
+        .replace("let failed = true;", "let failed = missingArgumentCause;")
+        .replace("(failed, false)", "(failed, missingArgumentPeer)");
+    let errors = compile_call_recovery(&source).expect_err("invalid call never produces Core");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::UnresolvedType
+        ]
+    );
+    assert_eq!(
+        &source[errors[1].span.start..errors[1].span.end],
+        "missingArgumentPeer"
+    );
+    let source = source.replace("missingArgumentPeer", "1u64");
+    let errors =
+        compile_call_recovery(&source).expect_err("invalid argument type never produces Core");
+    assert_eq!(
+        errors.iter().map(|e| e.kind).collect::<Vec<_>>(),
+        [
+            CompilerErrorKind::UnresolvedType,
+            CompilerErrorKind::TypeMismatch
+        ]
+    );
+    assert_eq!(&source[errors[1].span.start..errors[1].span.end], "1u64");
+}
+
+fn compile_call_recovery(source: &str) -> Result<CoreModule, Vec<CompilerError>> {
+    let module = parse_module(source).expect("call recovery source parses");
+    let lawpack = edict_syntax::ResourceRef {
+        coordinate: "recovery.helpers@1".into(),
+        digest: Some(format!("sha256:{}", "1".repeat(64))),
+    };
+    let budget = edict_syntax::CoreBudget {
+        max_steps: 4096,
+        max_allocated_bytes: u64::MAX,
+        max_output_bytes: u64::MAX,
+    };
+    let mut context = edict_syntax::CompilerContext::new()
+        .with_operation_profile("p.read", "continuum.profile.read-only/v1")
+        .with_budget("p.large", budget.clone());
+    if source.contains("use lawpack") {
+        context = context
+            .with_pure_function(
+                "helpers.pair",
+                edict_syntax::PureFunctionFact {
+                    lawpack: lawpack.clone(),
+                    coordinate: "recovery.helpers@1.pair".into(),
+                    type_parameters: vec![],
+                    parameter_types: vec!["Bool".into(), "Bool".into()],
+                    return_type: "Bool".into(),
+                    cost_template: "recovery.helpers@1.cost".into(),
+                },
+            )
+            .with_pure_helper_cost(
+                "helpers.cost",
+                edict_syntax::PureHelperCostFact {
+                    lawpack,
+                    coordinate: "recovery.helpers@1.cost".into(),
+                    budget: edict_syntax::CoreBudget {
+                        max_steps: 1,
+                        max_allocated_bytes: 64,
+                        max_output_bytes: 1,
+                    },
+                },
+            );
+    }
+    compile_to_core(&module, &context)
+}

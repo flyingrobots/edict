@@ -3766,6 +3766,7 @@ impl<'a> TypeChecker<'a> {
         }
 
         let mut core_args = Vec::with_capacity(args.len());
+        let mut accepted = true;
         for (arg, parameter_type) in args.iter().zip(&fact.parameter_types) {
             let Some(parameter_shape) =
                 self.shape_for_helper_coordinate(parameter_type, &fact.lawpack)
@@ -3778,9 +3779,14 @@ impl<'a> TypeChecker<'a> {
                     ),
                     span,
                 ));
-                return None;
+                accepted = false;
+                continue;
             };
-            let value = self.check_expr_with_expected(arg, env, Some(&parameter_shape))?;
+            let Some(value) = self.check_expr_with_expected(arg, env, Some(&parameter_shape))
+            else {
+                accepted = false;
+                continue;
+            };
             if !compatible(&parameter_shape, &value.ty) {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -3788,7 +3794,8 @@ impl<'a> TypeChecker<'a> {
                     format!("argument does not match pure helper `{source_coordinate}` signature"),
                     expr_span(arg),
                 ));
-                return None;
+                accepted = false;
+                continue;
             }
             core_args.push(value.expr);
         }
@@ -3816,6 +3823,9 @@ impl<'a> TypeChecker<'a> {
             return None;
         }
 
+        if !accepted {
+            return None;
+        }
         Some(TypedValue {
             expr: CoreExpr::Call {
                 callee: fact.coordinate,

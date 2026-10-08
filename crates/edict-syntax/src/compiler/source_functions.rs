@@ -259,8 +259,12 @@ impl TypeChecker<'_> {
             return None;
         }
         let mut arguments = Vec::new();
+        let mut accepted = true;
         for (argument, parameter) in args.iter().zip(&signature.params) {
-            let value = self.check_expr_with_expected(argument, env, Some(parameter))?;
+            let Some(value) = self.check_expr_with_expected(argument, env, Some(parameter)) else {
+                accepted = false;
+                continue;
+            };
             if !compatible(parameter, &value.ty) {
                 self.errors.push(error(
                     CompilerStage::TypeCheck,
@@ -268,7 +272,8 @@ impl TypeChecker<'_> {
                     "source function argument type does not match signature",
                     expr_span(argument),
                 ));
-                return None;
+                accepted = false;
+                continue;
             }
             arguments.push(value.expr);
         }
@@ -279,6 +284,9 @@ impl TypeChecker<'_> {
                 "source function result does not match its use",
                 span,
             ));
+            return None;
+        }
+        if !accepted {
             return None;
         }
         Some(TypedValue {
