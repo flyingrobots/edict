@@ -421,3 +421,30 @@ fn effect_operator_families_reject_before_mapping_guidance() {
         CompilerErrorKind::EffectWithoutFailureMapping
     );
 }
+
+#[test]
+fn effect_subtraction_rejects_incompatible_outputs_before_mapping() {
+    let control = SOURCE.replace(
+        "  let receipt:",
+        "  let difference = 1u64 - 0u64;\n  let receipt:",
+    );
+    compile(&control).expect("proven unsigned subtraction control");
+    for expression in [
+        "hello.createGreeting(input) - 0u64",
+        "0u64 - hello.createGreeting(input)",
+        "hello.createGreeting(input).key - 0",
+        "0 - hello.createGreeting(input).key",
+    ] {
+        let source = SOURCE.replace(
+            "  let receipt:",
+            &format!("  let difference = {expression};\n  let receipt:"),
+        );
+        let errors = compile(&source).expect_err("non-unsigned effect cannot subtract");
+        assert_eq!(
+            errors[0].kind,
+            CompilerErrorKind::TypeMismatch,
+            "{expression}: {errors:?}"
+        );
+        assert!(!errors[0].message.contains("with `else`"));
+    }
+}

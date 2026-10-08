@@ -317,3 +317,5 @@ This is an implementation-crate Rust API addition: code constructing `CompilerEr
 Field selectors on authenticated bare effect results are checked against the exported record shape before mapping advice. Chained selectors retain their enclosing expected value, predicate, or comparison requirement. Missing fields report UnknownField; selection from a non-record reports TypeMismatch. The span identifies the failing selector. Valid result selections still require an explicit mapped effect binding, and no effect result is synthesized in Core.
 
 Concatenation checks authenticated effect outputs for string-or-bytes membership before mapping advice. Length and slice require bytes. These requirements also follow exported field projections; a valid projected string still requires effect failure mapping.
+
+Unsigned subtraction checks authenticated effect outputs for U32/U64 and any available expected operand type before mapping advice. Exported field projections retain the same requirement. Accepted pure subtraction still requires its existing no-underflow proof.

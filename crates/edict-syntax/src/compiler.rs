@@ -762,6 +762,7 @@ enum EffectOutputExpectation<'a> {
     Predicate,
     Concatenation,
     Bytes,
+    Unsigned(Option<&'a TypeShape>),
     Comparison(&'a TypeShape),
     ComparisonLiteral(&'a Expr),
     Field {
@@ -774,7 +775,7 @@ enum EffectOutputExpectation<'a> {
 impl<'a> EffectOutputExpectation<'a> {
     fn value(self) -> Option<&'a TypeShape> {
         match self {
-            Self::Value(shape) => shape,
+            Self::Value(shape) | Self::Unsigned(shape) => shape,
             Self::Predicate
             | Self::Concatenation
             | Self::Bytes
@@ -818,6 +819,12 @@ impl<'a> EffectOutputExpectation<'a> {
                     output.kind,
                     TypeKind::String { .. } | TypeKind::Bytes { .. }
                 ) =>
+            {
+                Some(CompilerErrorKind::TypeMismatch)
+            }
+            Self::Unsigned(expected)
+                if !matches!(&output.kind, TypeKind::Int { width } if width == "U32" || width == "U64")
+                    || expected.is_some_and(|shape| !compatible(shape, output)) =>
             {
                 Some(CompilerErrorKind::TypeMismatch)
             }

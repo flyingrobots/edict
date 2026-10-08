@@ -253,3 +253,9 @@ Out of scope:
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | CSPINE-TP-123 | implemented | Operator effect diagnostics | CSPINE-REQ-047 | Exported effect output families are checked before mapping advice for concatenation, length and slicing, including field projections. | effect_operator_families_reject_before_mapping_guidance | crates/edict-syntax/tests/effect_diagnostics.rs | Exact authenticated fixture; valid string projection retains mapping requirement. |
+
+## Effect Subtraction Operands
+
+| ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| CSPINE-TP-124 | implemented | Unsigned effect operands | CSPINE-REQ-047 | Non-unsigned effect outputs used in subtraction report TypeMismatch before mapping guidance in either operand position. | effect_subtraction_rejects_incompatible_outputs_before_mapping | crates/edict-syntax/tests/effect_diagnostics.rs | Exact authenticated output and field projections; valid pure subtraction control. |

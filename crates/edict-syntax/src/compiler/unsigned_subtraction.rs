@@ -1,8 +1,8 @@
 //! Conservative totality proof for unsigned differences in intent bodies.
 use super::{
     error, is_bare_integer_literal, BTreeMap, CompareOp, CompilerErrorKind, CompilerStage,
-    CoreExpr, CorePredicate, CoreValue, Expr, LocalRef, Span, TypeChecker, TypeKind, TypeShape,
-    TypedValue,
+    CoreExpr, CorePredicate, CoreValue, EffectOutputExpectation, Expr, LocalRef, Span, TypeChecker,
+    TypeKind, TypeShape, TypedValue,
 };
 
 impl TypeChecker<'_> {
@@ -15,14 +15,26 @@ impl TypeChecker<'_> {
         span: Span,
     ) -> Option<TypedValue> {
         let (left, right) = if is_bare_integer_literal(lhs) && !is_bare_integer_literal(rhs) {
-            let right = self.check_expr_with_expected(rhs, env, expected)?;
+            let right = self.check_expr_with_effect_expectation(
+                rhs,
+                env,
+                EffectOutputExpectation::Unsigned(expected),
+            )?;
             (
                 self.check_expr_with_expected(lhs, env, Some(&right.ty))?,
                 right,
             )
         } else {
-            let left = self.check_expr_with_expected(lhs, env, expected)?;
-            let right = self.check_expr_with_expected(rhs, env, Some(&left.ty))?;
+            let left = self.check_expr_with_effect_expectation(
+                lhs,
+                env,
+                EffectOutputExpectation::Unsigned(expected),
+            )?;
+            let right = self.check_expr_with_effect_expectation(
+                rhs,
+                env,
+                EffectOutputExpectation::Unsigned(Some(&left.ty)),
+            )?;
             (left, right)
         };
         if left.ty != right.ty {
