@@ -85,6 +85,6 @@ oracle; these tests do not execute helper bodies, loops, or provider packages.
 
 | ID | Status | Category | Requirement | Oracle | Evidence | Fixtures | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| LAUTH-TP-018 | planned | Parameter contract | LAUTH-REQ-009 | Reject zero, overflow and scalar/byte inconsistencies; derive deterministic documents for 256-byte/64-scalar and 4096-byte/1024-scalar values. | - | - | Write behavioral tests before the helper. |
+| LAUTH-TP-018 | planned | Parameter contract | LAUTH-REQ-009 | Reject zero, overflow and scalar/byte inconsistencies; derive deterministic documents for 256-byte/64-scalar and 4096-byte/1024-scalar values. | configurable_cell_budgets_match_maximum_unicode_encoding, configurable_cell_limits_reject_inconsistent_and_overflowing_parameters | crates/edict-cli/tests/configurable_causal_cell.rs | Budget calculation has observed RED/GREEN; document generation remains planned. |
 | LAUTH-TP-019 | planned | Public authoring/build | LAUTH-REQ-009 | Public lawpack and application builds accept both variants, reproduce exact artifacts across directories, and refuse stale pins or undersized output budgets. | - | - | Use real public binaries and decode canonical artifacts. |
 | LAUTH-TP-020 | planned | Provider boundary | LAUTH-REQ-009 | Exact pinned provider verifies consistent Core/configuration and refuses substituted inconsistent metadata; four-byte scalar witnesses match the declared caps. | - | - | Compilation alone is not runtime execution or general ingress enforcement. |
