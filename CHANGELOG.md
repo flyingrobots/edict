@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Add an application-owned configurable-cell example command and how-to with checked Unicode/byte limits, derived result budgets, repeatable public lawpack/application builds, and pinned Echo provider witnesses.
+
 - Correct the retained study validation helper to remove staged deletions and old rename paths from copied validation snapshots.
 
 - Signature mismatch spans identify exactly the effect call, excluding its enclosing binding and failure handler.
