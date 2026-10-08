@@ -1,8 +1,8 @@
 //! Proven half-open slicing over bounded raw bytes.
 use super::{
-    error, expr_span, integer_shape, unsigned_subtraction::proven_order, BTreeMap,
-    CompilerErrorKind, CompilerStage, CoreExpr, Expr, LocalRef, Span, TypeChecker, TypeKind,
-    TypeRef, TypeShape, TypedValue,
+    error, expr_span, integer_shape, unsigned_subtraction::proven_order, CompilerErrorKind,
+    CompilerStage, CoreExpr, Expr, LocalEnvironment, Span, TypeChecker, TypeKind, TypeRef,
+    TypeShape, TypedValue,
 };
 
 impl TypeChecker<'_> {
@@ -10,7 +10,7 @@ impl TypeChecker<'_> {
         &mut self,
         type_args: &[TypeRef],
         args: &[Expr],
-        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        env: &LocalEnvironment,
         span: Span,
     ) -> Option<TypedValue> {
         let [bytes, start, end] = args else {

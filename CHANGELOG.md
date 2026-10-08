@@ -8,6 +8,8 @@ versions still track specification maturity rather than a released product.
 
 ## [Unreleased]
 
+- Recover failed lexical let bindings without reporting dependent name errors or inventing Core values. Preserve independent record siblings, branches, yield branches, and concatenation operand errors; distinguish failed returns from absent returns.
+
 ### Changed
 
 - Application builds emit individual structured parser and compiler diagnostics

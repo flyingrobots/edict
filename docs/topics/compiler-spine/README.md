@@ -263,3 +263,11 @@ The following are not implemented by this compiler-spine slice:
 Those items remain assigned to later lowerability/admission milestones.
 
 The verification matrix is tracked in [test-plan.md](./test-plan.md).
+
+## Failed binding recovery
+
+The compiler keeps lexical failure markers separate from typed local values. A failed let binding removes any value for that name in its scope and marks dependent uses as unavailable. Cloned branch environments retain those markers without leaking them back to the outer scope. No failure marker has a Core value, local reference, or type. Source-level shadowing remains rejected by surface validation; the explicit public type-check phase also recovers safely on an invalid shadowed AST.
+
+Records continue checking independent siblings after a failed value. Statement branches are checked even when their condition fails, and annotated yield branches and concatenation operands are checked independently. Invalid composites produce no typed value. A syntactically present failed return differs from an absent return, preventing a redundant missing-return error. A truly absent return retains its error.
+
+[CSPINE-REQ-049]

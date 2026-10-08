@@ -4,8 +4,8 @@ use std::collections::BTreeMap;
 use super::{
     compare_op, compatible, error, expr_span, expression_identity, next_local, BinOp,
     CompilerErrorKind, CompilerStage, CoreExpr, CoreFunction, CorePureBinding, CorePureBlock, Expr,
-    FunctionDecl, HelperCost, LetStatement, LocalRef, Span, Stmt, TypeChecker, TypeKind, TypeRef,
-    TypeShape, TypedValue, UnOp,
+    FunctionDecl, HelperCost, LetStatement, LocalEnvironment, LocalRef, Span, Stmt, TypeChecker,
+    TypeKind, TypeRef, TypeShape, TypedValue, UnOp,
 };
 
 const VALUE_CELL_BYTES: u64 = 64;
@@ -105,7 +105,7 @@ impl TypeChecker<'_> {
     fn check_source_function(&mut self, definition: &FunctionDecl) -> Option<CoreFunction> {
         let signature = self.function_signatures.get(&definition.name)?.clone();
         self.input_proof_constraints.clear();
-        let mut env = BTreeMap::new();
+        let mut env = LocalEnvironment::default();
         let params = definition
             .params
             .iter()
@@ -199,7 +199,7 @@ impl TypeChecker<'_> {
     fn check_source_return(
         &mut self,
         value: &Expr,
-        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        env: &LocalEnvironment,
         expected: &TypeShape,
         span: Span,
     ) -> Option<CoreExpr> {
@@ -223,7 +223,7 @@ impl TypeChecker<'_> {
         signature: &Signature,
         type_args: &[TypeRef],
         args: &[Expr],
-        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        env: &LocalEnvironment,
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {

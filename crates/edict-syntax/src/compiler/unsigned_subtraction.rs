@@ -1,7 +1,7 @@
 //! Conservative totality proof for unsigned differences in intent bodies.
 use super::{
-    error, is_bare_integer_literal, BTreeMap, CompareOp, CompilerErrorKind, CompilerStage,
-    CoreExpr, CorePredicate, CoreValue, Expr, LocalRef, Span, TypeChecker, TypeKind, TypeShape,
+    error, is_bare_integer_literal, CompareOp, CompilerErrorKind, CompilerStage, CoreExpr,
+    CorePredicate, CoreValue, Expr, LocalEnvironment, Span, TypeChecker, TypeKind, TypeShape,
     TypedValue,
 };
 
@@ -10,7 +10,7 @@ impl TypeChecker<'_> {
         &mut self,
         lhs: &Expr,
         rhs: &Expr,
-        env: &BTreeMap<String, (LocalRef, TypeShape)>,
+        env: &LocalEnvironment,
         expected: Option<&TypeShape>,
         span: Span,
     ) -> Option<TypedValue> {
